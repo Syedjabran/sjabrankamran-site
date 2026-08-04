@@ -79,7 +79,7 @@ export type TeachingRole = {
 };
 
 export const currentlyTeaching: TeachingRole[] = [
-  { institution: "International School Lahore (ISL)", curriculum: "A-Level Physics", status: "current", monogram: "ISL" },
+  { institution: "International School Lahore (ISL)", curriculum: "A-Level Physics", status: "current", logo: "/schools/isl.jpg", onDark: true },
   { institution: "LGS 55 Main", curriculum: "A-Level Physics", status: "current", logo: "/schools/lgs.png", onDark: true },
   { institution: "LGS Paragon", curriculum: "A-Level Physics", status: "current", logo: "/schools/lgs.png", onDark: true },
   { institution: "LACAS", curriculum: "A-Level Physics", status: "current", logo: "/schools/lacas.webp" },

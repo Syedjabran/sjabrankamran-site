@@ -32,10 +32,11 @@ export function SchoolLogo({
   if (logo) {
     if (onDark) {
       return (
-        <span className="flex shrink-0 items-center" style={{ height }}>
+        <span className="flex shrink-0 items-center overflow-hidden rounded-lg" style={{ height }}>
           <img
             src={logo}
             alt={`${name} logo`}
+            className="rounded-lg"
             style={{ height: "100%", width: "auto", maxWidth: height * 2.6, objectFit: "contain" }}
             loading="lazy"
           />
