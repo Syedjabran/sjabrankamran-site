@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, GraduationCap } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { PageHero } from "@/components/page-hero";
+import { SchoolLogo } from "@/components/school-logo";
 import { Section, SectionHeading } from "@/components/ui/section";
 import { CtaLink } from "@/components/ui/cta-link";
 import { Reveal } from "@/components/ui/reveal";
@@ -53,9 +54,12 @@ export default function EducationPage() {
           {currentlyTeaching.map((role, i) => (
             <Reveal key={role.institution} delay={i * 0.06}>
               <div className="card card-hover flex h-full flex-col gap-3 p-5">
-                <span className="flex items-center gap-2 text-xs font-medium text-cyan">
-                  <span className="h-2 w-2 animate-pulse-soft rounded-full bg-cyan" /> Currently teaching
-                </span>
+                <div className="flex items-center justify-between">
+                  <SchoolLogo logo={role.logo} monogram={role.monogram} name={role.institution} size={48} />
+                  <span className="flex items-center gap-1.5 text-[11px] font-medium text-cyan">
+                    <span className="h-2 w-2 animate-pulse-soft rounded-full bg-cyan" /> Currently teaching
+                  </span>
+                </div>
                 <p className="font-display text-lg font-semibold text-ice">{role.institution}</p>
                 <p className="mt-auto font-mono text-xs uppercase tracking-widelabel text-dust">{role.curriculum}</p>
               </div>
@@ -112,10 +116,8 @@ export default function EducationPage() {
         <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {previousTeaching.map((role, i) => (
             <Reveal key={role.institution} delay={i * 0.03}>
-              <div className="card flex items-center gap-3 p-4">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/10 text-dust">
-                  <GraduationCap size={16} />
-                </span>
+              <div className="card card-hover flex items-center gap-3 p-4">
+                <SchoolLogo logo={role.logo} monogram={role.monogram} name={role.institution} size={44} />
                 <div>
                   <p className="text-sm font-medium leading-tight text-ice">{role.institution}</p>
                   <p className="font-mono text-[10px] uppercase tracking-widelabel text-dust">{role.curriculum}</p>
@@ -125,8 +127,9 @@ export default function EducationPage() {
           ))}
         </div>
         <p className="mt-6 max-w-3xl text-xs leading-relaxed text-dust">
-          Institution names are listed to describe teaching experience and do not imply endorsement.
-          Logos are not used; names are presented typographically.
+          Institution names and logos are shown solely to describe teaching experience. Logos are the
+          trademarks of their respective institutions; their use here does not imply endorsement or
+          affiliation. Where an official logo was unavailable, a typographic monogram is used.
         </p>
       </Section>
 

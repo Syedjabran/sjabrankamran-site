@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, GraduationCap, Building2, Cpu } from "lucide-react";
 import { PhysicsField } from "@/components/physics-field";
+import { SchoolLogo } from "@/components/school-logo";
 import { Section, SectionHeading } from "@/components/ui/section";
 import { CtaLink } from "@/components/ui/cta-link";
 import { Reveal } from "@/components/ui/reveal";
@@ -82,9 +83,12 @@ export default function HomePage() {
           {currentlyTeaching.map((role, i) => (
             <Reveal key={role.institution} delay={i * 0.06}>
               <div className="card card-hover flex h-full flex-col gap-3 p-5">
-                <span className="flex items-center gap-2 text-xs font-medium text-cyan">
-                  <span className="h-2 w-2 animate-pulse-soft rounded-full bg-cyan" /> Active
-                </span>
+                <div className="flex items-center justify-between">
+                  <SchoolLogo logo={role.logo} monogram={role.monogram} name={role.institution} size={48} />
+                  <span className="flex items-center gap-1.5 text-[11px] font-medium text-cyan">
+                    <span className="h-2 w-2 animate-pulse-soft rounded-full bg-cyan" /> Active
+                  </span>
+                </div>
                 <p className="font-display text-lg font-semibold text-ice">{role.institution}</p>
                 <p className="mt-auto font-mono text-xs uppercase tracking-widelabel text-dust">
                   {role.curriculum}

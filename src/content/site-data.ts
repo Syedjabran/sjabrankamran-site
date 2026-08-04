@@ -73,28 +73,30 @@ export type TeachingRole = {
   institution: string;
   curriculum: string; // A-Level / O-Level / IBDP
   status: "current" | "previous";
+  logo?: string;      // official brand logo in /public/schools (shown in a white chip)
+  monogram?: string;  // fallback typographic monogram when no logo
 };
 
 export const currentlyTeaching: TeachingRole[] = [
-  { institution: "International School Lahore (ISL)", curriculum: "A-Level Physics", status: "current" },
-  { institution: "LGS 55 Main", curriculum: "A-Level Physics", status: "current" },
-  { institution: "LGS Paragon", curriculum: "A-Level Physics", status: "current" },
-  { institution: "LACAS", curriculum: "A-Level Physics", status: "current" },
+  { institution: "International School Lahore (ISL)", curriculum: "A-Level Physics", status: "current", monogram: "ISL" },
+  { institution: "LGS 55 Main", curriculum: "A-Level Physics", status: "current", logo: "/schools/lgs.png" },
+  { institution: "LGS Paragon", curriculum: "A-Level Physics", status: "current", logo: "/schools/lgs.png" },
+  { institution: "LACAS", curriculum: "A-Level Physics", status: "current", logo: "/schools/lacas.webp" },
 ];
 
 export const previousTeaching: TeachingRole[] = [
-  { institution: "LGS Defence Phase V", curriculum: "A-Level", status: "previous" },
-  { institution: "LGS Johar Town", curriculum: "A-Level", status: "previous" },
-  { institution: "Roots IVY DHA Phase V", curriculum: "A-Level", status: "previous" },
-  { institution: "Roots International Askari XI", curriculum: "A-Level", status: "previous" },
-  { institution: "The City School Ravi Campus", curriculum: "A-Level", status: "previous" },
-  { institution: "LACAS Barki", curriculum: "A-Level", status: "previous" },
-  { institution: "Beaconhouse College Campus", curriculum: "IBDP Programme", status: "previous" },
-  { institution: "Bloomfield Hall Gulberg", curriculum: "A-Level", status: "previous" },
-  { institution: "NGS Gulberg", curriculum: "A-Level", status: "previous" },
-  { institution: "Beaconhouse Garden Town", curriculum: "O-Level", status: "previous" },
-  { institution: "LACAS Johar Town", curriculum: "O-Level", status: "previous" },
-  { institution: "Scarsdale International School", curriculum: "O-Level", status: "previous" },
+  { institution: "LGS Defence Phase V", curriculum: "A-Level", status: "previous", logo: "/schools/lgs.png" },
+  { institution: "LGS Johar Town", curriculum: "A-Level", status: "previous", logo: "/schools/lgs.png" },
+  { institution: "Roots IVY DHA Phase V", curriculum: "A-Level", status: "previous", monogram: "RI" },
+  { institution: "Roots International Askari XI", curriculum: "A-Level", status: "previous", logo: "/schools/rootsintl.png" },
+  { institution: "The City School Ravi Campus", curriculum: "A-Level", status: "previous", logo: "/schools/cityschool.svg" },
+  { institution: "LACAS Barki", curriculum: "A-Level", status: "previous", logo: "/schools/lacas.webp" },
+  { institution: "Beaconhouse College Campus", curriculum: "IBDP Programme", status: "previous", logo: "/schools/beaconhouse.png" },
+  { institution: "Bloomfield Hall Gulberg", curriculum: "A-Level", status: "previous", monogram: "BH" },
+  { institution: "NGS Gulberg", curriculum: "A-Level", status: "previous", monogram: "NGS" },
+  { institution: "Beaconhouse Garden Town", curriculum: "O-Level", status: "previous", logo: "/schools/beaconhouse.png" },
+  { institution: "LACAS Johar Town", curriculum: "O-Level", status: "previous", logo: "/schools/lacas.webp" },
+  { institution: "Scarsdale International School", curriculum: "O-Level", status: "previous", logo: "/schools/scarsdale.png" },
 ];
 
 export const teachingCapabilities = [
@@ -237,9 +239,10 @@ export const techWork = [
 
 export const timeline = [
   { year: "2009", track: "education", title: "Began teaching Physics", body: "Started a Cambridge Physics teaching career now spanning 16+ years." },
-  { year: "2024", track: "enterprise", title: "Founded Jabran & Co", body: "Began operating an international business & advisory group (formally registered 2026)." },
+  { year: "2014", track: "enterprise", title: "Jabran & Co begins (informally)", body: "Started informally as advisory and trading work that would later become Jabran & Co." },
+  { year: "2024", track: "enterprise", title: "Jabran & Co formalised", body: "Brought into formal operations as an international business & advisory group." },
   { year: "2025", track: "enterprise", title: "Eleventh Hour Cleaning Ltd (UK)", body: "Incorporated a UK facilities-management company (Companies House No. 16613599)." },
-  { year: "2026", track: "technology", title: "AI operations & enterprise systems", body: "Deployed AI-driven CRM/ERP and a self-hosted AI-agent operations stack." },
+  { year: "2026", track: "enterprise", title: "Jabran & Co formally registered", body: "Jabran & Co formally registered as a firm; alongside it, deployed AI-driven CRM/ERP and a self-hosted AI-agent operations stack." },
 ];
 
 export const philosophy = {
