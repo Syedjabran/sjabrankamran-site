@@ -74,21 +74,22 @@ export type TeachingRole = {
   curriculum: string; // A-Level / O-Level / IBDP
   status: "current" | "previous";
   logo?: string;      // official brand logo in /public/schools
+  onDark?: boolean;   // white-art logo rendered directly on the dark background
   monogram?: string;  // fallback typographic monogram when no logo
 };
 
 export const currentlyTeaching: TeachingRole[] = [
   { institution: "International School Lahore (ISL)", curriculum: "A-Level Physics", status: "current", monogram: "ISL" },
-  { institution: "LGS 55 Main", curriculum: "A-Level Physics", status: "current", logo: "/schools/lgs.png" },
-  { institution: "LGS Paragon", curriculum: "A-Level Physics", status: "current", logo: "/schools/lgs.png" },
+  { institution: "LGS 55 Main", curriculum: "A-Level Physics", status: "current", logo: "/schools/lgs.png", onDark: true },
+  { institution: "LGS Paragon", curriculum: "A-Level Physics", status: "current", logo: "/schools/lgs.png", onDark: true },
   { institution: "LACAS", curriculum: "A-Level Physics", status: "current", logo: "/schools/lacas.webp" },
 ];
 
 export const previousTeaching: TeachingRole[] = [
-  { institution: "LGS Defence Phase V", curriculum: "A-Level", status: "previous", logo: "/schools/lgs.png" },
-  { institution: "LGS Johar Town", curriculum: "A-Level", status: "previous", logo: "/schools/lgs.png" },
+  { institution: "LGS Defence Phase V", curriculum: "A-Level", status: "previous", logo: "/schools/lgs.png", onDark: true },
+  { institution: "LGS Johar Town", curriculum: "A-Level", status: "previous", logo: "/schools/lgs.png", onDark: true },
   { institution: "Roots IVY DHA Phase V", curriculum: "A-Level", status: "previous", logo: "/schools/rootsivy.jpg" },
-  { institution: "Roots International Askari XI", curriculum: "A-Level", status: "previous", logo: "/schools/rootsintl.png" },
+  { institution: "Roots International Askari XI", curriculum: "A-Level", status: "previous", logo: "/schools/rootsintl.png", onDark: true },
   { institution: "The City School Ravi Campus", curriculum: "A-Level", status: "previous", logo: "/schools/cityschool.svg" },
   { institution: "LACAS Barki", curriculum: "A-Level", status: "previous", logo: "/schools/lacas.webp" },
   { institution: "Beaconhouse College Campus", curriculum: "IBDP Programme", status: "previous", logo: "/schools/beaconhouse.png" },

@@ -55,7 +55,7 @@ export default function EducationPage() {
             <Reveal key={role.institution} delay={i * 0.06}>
               <div className="card card-hover flex h-full flex-col gap-3 p-5">
                 <div className="flex items-center justify-between">
-                  <SchoolLogo logo={role.logo} monogram={role.monogram} name={role.institution} size={56} />
+                  <SchoolLogo logo={role.logo} onDark={role.onDark} monogram={role.monogram} name={role.institution} height={48} />
                   <span className="flex items-center gap-1.5 text-[11px] font-medium text-cyan">
                     <span className="h-2 w-2 animate-pulse-soft rounded-full bg-cyan" /> Currently teaching
                   </span>
@@ -117,7 +117,7 @@ export default function EducationPage() {
           {previousTeaching.map((role, i) => (
             <Reveal key={role.institution} delay={i * 0.03}>
               <div className="card card-hover flex items-center gap-3 p-4">
-                <SchoolLogo logo={role.logo} monogram={role.monogram} name={role.institution} size={52} />
+                <SchoolLogo logo={role.logo} onDark={role.onDark} monogram={role.monogram} name={role.institution} height={44} />
                 <div>
                   <p className="text-sm font-medium leading-tight text-ice">{role.institution}</p>
                   <p className="font-mono text-[10px] uppercase tracking-widelabel text-dust">{role.curriculum}</p>
