@@ -1,35 +1,130 @@
 /**
- * Seed content — VERIFIED facts only, drawn from the Discovery Report.
- * Items needing confirmation are marked `unverified: true` and are NOT rendered
- * as hard claims until JB approves. Later this data moves into Supabase.
+ * Content model — VERIFIED facts only.
+ * Education-first positioning per JB's redesign brief (2026-08-04).
+ * Teaching institutions supplied and approved directly by JB.
  */
 
-export const coreAreas = [
+/* ------------------------------------------------------------------ */
+/* POSITIONING                                                         */
+/* ------------------------------------------------------------------ */
+
+export const positioning = {
+  name: "Syed Jabran Ali Kamran",
+  title: "Physics Educator · Entrepreneur · AI & Technology Consultant",
+  headline: "Physics first. Everything else is applied physics.",
+  subhead:
+    "Sixteen years teaching Cambridge Physics taught me to think in first principles — to measure before I claim, and to rebuild understanding from the ground up. That same discipline is how I now build ventures and intelligent systems.",
+  hierarchy: [
+    "Physics Educator & Academic Mentor",
+    "Entrepreneur & Corporate Strategist",
+    "Technology, IT & AI Consultant",
+  ],
+};
+
+/* ------------------------------------------------------------------ */
+/* THREE ECOSYSTEMS                                                    */
+/* ------------------------------------------------------------------ */
+
+export type Ecosystem = {
+  key: "education" | "enterprise" | "technology";
+  label: string;
+  tagline: string;
+  weight: string;
+  href: string;
+  accent: string; // tailwind text/border accent token
+  body: string;
+};
+
+export const ecosystems: Ecosystem[] = [
   {
-    title: "Education",
-    body: "Sixteen years teaching O/A-Level Physics — the discipline of measurement, evidence, and first principles.",
+    key: "education",
+    label: "Education & Physics",
+    tagline: "The foundation — how I think.",
+    weight: "16+ years",
+    href: "/education",
+    accent: "cyan",
+    body: "Cambridge A-Level, O-Level and IBDP Physics. Conceptual understanding over memorisation, exam craft grounded in examiner language, and mentoring that builds independent thinkers.",
   },
   {
-    title: "Strategic Advisory",
-    body: "Helping owners and operators turn strategy into execution across trade, operations, and growth.",
+    key: "enterprise",
+    label: "Enterprise & Ventures",
+    tagline: "The build — how I create.",
+    weight: "Multi-venture",
+    href: "/enterprise",
+    accent: "emerald",
+    body: "Founding and leading ventures across Pakistan and the United Kingdom — strategic advisory, industrial performance, global trade, and institution building.",
   },
   {
-    title: "Industrial Performance",
-    body: "Evidence-based production plant audits and operational improvement for manufacturers.",
-  },
-  {
-    title: "Global Trade & Sourcing",
-    body: "Connecting buyers and suppliers with reliable international procurement and customs support.",
-  },
-  {
-    title: "AI & Digital Transformation",
-    body: "Architecting AI-driven enterprise systems, CRM/ERP platforms, and workflow automation.",
-  },
-  {
-    title: "Institution Building",
-    body: "Founding and structuring ventures across Pakistan and the United Kingdom.",
+    key: "technology",
+    label: "AI & Technology",
+    tagline: "The scale — how ideas travel.",
+    weight: "AI-native",
+    href: "/ai-technology",
+    accent: "magenta",
+    body: "AI-agent operations, multi-model orchestration, and Supabase-backed enterprise systems with human approval — technology that produces measurable business outcomes.",
   },
 ];
+
+/* ------------------------------------------------------------------ */
+/* EDUCATION — verified, JB-approved                                   */
+/* ------------------------------------------------------------------ */
+
+export type TeachingRole = {
+  institution: string;
+  curriculum: string; // A-Level / O-Level / IBDP
+  status: "current" | "previous";
+};
+
+export const currentlyTeaching: TeachingRole[] = [
+  { institution: "International School Lahore (ISL)", curriculum: "A-Level Physics", status: "current" },
+  { institution: "LGS 55 Main", curriculum: "A-Level Physics", status: "current" },
+  { institution: "LGS Paragon", curriculum: "A-Level Physics", status: "current" },
+  { institution: "LACAS", curriculum: "A-Level Physics", status: "current" },
+];
+
+export const previousTeaching: TeachingRole[] = [
+  { institution: "LGS Defence Phase V", curriculum: "A-Level", status: "previous" },
+  { institution: "LGS Johar Town", curriculum: "A-Level", status: "previous" },
+  { institution: "Roots IVY DHA Phase V", curriculum: "A-Level", status: "previous" },
+  { institution: "Roots International Askari XI", curriculum: "A-Level", status: "previous" },
+  { institution: "The City School Ravi Campus", curriculum: "A-Level", status: "previous" },
+  { institution: "LACAS Barki", curriculum: "A-Level", status: "previous" },
+  { institution: "Beaconhouse College Campus", curriculum: "IBDP Programme", status: "previous" },
+  { institution: "Bloomfield Hall Gulberg", curriculum: "A-Level", status: "previous" },
+  { institution: "NGS Gulberg", curriculum: "A-Level", status: "previous" },
+  { institution: "Beaconhouse Garden Town", curriculum: "O-Level", status: "previous" },
+  { institution: "LACAS Johar Town", curriculum: "O-Level", status: "previous" },
+  { institution: "Scarsdale International School", curriculum: "O-Level", status: "previous" },
+];
+
+export const teachingCapabilities = [
+  "Conceptual understanding & first principles",
+  "Mathematical application in physics",
+  "Practical & experimental physics",
+  "Planning investigations",
+  "Data & graphical analysis",
+  "Error & uncertainty",
+  "Past-paper analysis",
+  "Mark-scheme interpretation",
+  "Examiner-language exam technique",
+  "University guidance & mentoring",
+  "Confidence & independent learning",
+  "Responsible use of AI in education",
+];
+
+export const teachingMethod = [
+  { step: "Diagnose", body: "Find the conceptual gap — not just the wrong answer, but why it's wrong." },
+  { step: "Rebuild", body: "Reconstruct understanding from first principles so it holds under pressure." },
+  { step: "Apply", body: "Translate concepts into mathematical reasoning and real problems." },
+  { step: "Practise", body: "Structured question practice mapped to the syllabus and paper style." },
+  { step: "Analyse", body: "Error analysis and mark-scheme interpretation to close the marks gap." },
+  { step: "Communicate", body: "Examiner-standard written answers — precise units, significant figures, clear reasoning." },
+  { step: "Think Independently", body: "Develop the judgement to solve unfamiliar problems without being told how." },
+];
+
+/* ------------------------------------------------------------------ */
+/* ENTERPRISE — verified ventures                                      */
+/* ------------------------------------------------------------------ */
 
 export type Venture = {
   slug: string;
@@ -39,6 +134,7 @@ export type Venture = {
   sector: string;
   geography: string;
   summary: string;
+  contribution: string;
   url?: string;
   featured: boolean;
 };
@@ -48,10 +144,12 @@ export const ventures: Venture[] = [
     slug: "jabran-co",
     name: "Jabran & Co",
     role: "Founder & CEO",
-    sector: "International Business Group",
+    sector: "International Business & Advisory Group",
     geography: "Pakistan · United Kingdom",
     summary:
-      "An international business group delivering strategic advisory, production plant audit, global trade and sourcing, architecture and interiors, corporate training, and customs clearance consultancy. Positioning: strategic partners, not just suppliers — where strategy meets execution.",
+      "An international business group delivering strategic advisory, production-plant audit, global trade & sourcing, architecture & interiors, corporate training, and customs-clearance consultancy.",
+    contribution:
+      "Founded and lead the group; author of its evidence-based audit methodology and strategy-to-execution operating model.",
     url: "https://www.jabranandco.com",
     featured: true,
   },
@@ -63,19 +161,23 @@ export const ventures: Venture[] = [
     sector: "Facilities Management",
     geography: "United Kingdom",
     summary:
-      "A UK facilities and maintenance company (Companies House No. 16613599) delivering professional cleaning and property-turnover services, built on proof-driven quality systems.",
+      "A UK facilities and maintenance company (Companies House No. 16613599) delivering professional cleaning and property-turnover services built on proof-driven quality systems.",
+    contribution:
+      "Founded the venture and designed its operational and quality systems for reliable, repeatable service delivery.",
     url: "https://www.eleventhhourcleaning.co.uk",
     featured: true,
   },
   {
     slug: "consultalogix",
-    name: "Consultalogix",
+    name: "ConsultaLogix",
     role: "Co-Founder & Managing Director",
     roleUnverified: true,
     sector: "Technology & Digital Transformation",
     geography: "United Kingdom · Pakistan",
     summary:
       "An IT and digital-transformation consultancy focused on business technology, automation, data, CRM/ERP systems, and AI integration.",
+    contribution:
+      "Co-founded and lead delivery of practical digital-transformation and AI-integration engagements.",
     featured: true,
   },
   {
@@ -85,28 +187,66 @@ export const ventures: Venture[] = [
     sector: "Luxury Interiors & Architectural Surfaces",
     geography: "Pakistan",
     summary:
-      "A premium interiors and architectural-surfaces brand — luxury materials, fit-out, and design in a refined black-and-gold aesthetic.",
+      "A premium interiors and architectural-surfaces brand — luxury materials, fit-out, and refined design.",
+    contribution:
+      "Founded the atelier and set its design language and material standards.",
     featured: true,
   },
 ];
 
-export const consultingCapabilities = [
-  { title: "Strategy & Business Development", body: "Growth strategy, market development, and turning direction into measurable results." },
-  { title: "AI Transformation & Automation", body: "AI agents, workflow automation, and enterprise system architecture that improve real operations." },
-  { title: "Production Plant Audit & Performance", body: "Independent, evidence-based audits of manufacturing operations, OEE, and line balancing." },
-  { title: "Global Sourcing & Trade", body: "International procurement, supplier reliability, and customs clearance support." },
-  { title: "Supply Chain Consultancy", body: "Process improvement, capacity planning, and operational excellence." },
-  { title: "Corporate Training", body: "Leadership, AI-adoption, and business-development training for teams and organisations." },
+/* ------------------------------------------------------------------ */
+/* TECHNOLOGY — practical AI/systems work                              */
+/* ------------------------------------------------------------------ */
+
+export const techWork = [
+  {
+    title: "AI-Agent Operations Stack",
+    body: "A self-hosted AI-agent system that runs above enterprise systems as an operations command centre — with human approval on every consequential action.",
+    outcome: "Autonomous routine operations, human-controlled decisions.",
+  },
+  {
+    title: "Multi-Model Orchestration",
+    body: "A provider-independent layer routing between Claude, OpenAI and Gemini by accuracy, cost, latency and availability, with failover.",
+    outcome: "Best model for each task; no single-vendor lock-in.",
+  },
+  {
+    title: "Enterprise Business Operating System",
+    body: "A Supabase-backed CRM/ERP + trade + finance + client-portal platform secured entirely by Row-Level Security.",
+    outcome: "One system of record with a strict security boundary.",
+  },
+  {
+    title: "Educational AI (Physics Studio)",
+    body: "An AI physics tutor that teaches rather than answers, with every response routed through teacher review before it enters the public library.",
+    outcome: "AI-assisted learning with a human educator in the loop.",
+  },
+  {
+    title: "Approval-Controlled Automation",
+    body: "Workflow automation where AI drafts and prepares, but a person approves — enquiry → structured CRM record → action.",
+    outcome: "Speed of automation, safety of human judgement.",
+  },
+  {
+    title: "Analytics & Decision Support",
+    body: "Data pipelines and dashboards that turn operational data into management decisions.",
+    outcome: "Evidence-based decisions, not gut feel.",
+  },
 ];
 
+/* ------------------------------------------------------------------ */
+/* TIMELINE                                                            */
+/* ------------------------------------------------------------------ */
+
 export const timeline = [
-  { year: "2009", title: "Began teaching Physics", body: "Started a teaching career in O/A-Level Physics that now spans over sixteen years." },
-  { year: "2024", title: "Founded Jabran & Co", body: "Began operating an international business and advisory group (formally registered 2026)." },
-  { year: "2025", title: "Eleventh Hour Cleaning Ltd (UK)", body: "Incorporated a UK facilities-management company (Companies House No. 16613599)." },
-  { year: "2026", title: "AI operations & enterprise systems", body: "Deployed AI-driven CRM/ERP and a self-hosted AI-agent operations stack." },
+  { year: "2009", track: "education", title: "Began teaching Physics", body: "Started a Cambridge Physics teaching career now spanning 16+ years." },
+  { year: "2024", track: "enterprise", title: "Founded Jabran & Co", body: "Began operating an international business & advisory group (formally registered 2026)." },
+  { year: "2025", track: "enterprise", title: "Eleventh Hour Cleaning Ltd (UK)", body: "Incorporated a UK facilities-management company (Companies House No. 16613599)." },
+  { year: "2026", track: "technology", title: "AI operations & enterprise systems", body: "Deployed AI-driven CRM/ERP and a self-hosted AI-agent operations stack." },
 ];
 
 export const philosophy = {
-  quote: "Goods move. Advice lasts. Partnerships endure.",
-  body: "Great businesses aren't built by selling products — they're built by solving problems. The through-line across teaching, consulting, and building companies is the same: rigor, evidence, and execution.",
+  quote: "Measure before you claim. Rebuild before you memorise.",
+  body: "The through-line across teaching, building companies, and engineering systems is the same physicist's discipline: define the problem, respect the evidence, and reason from first principles to something that actually works.",
 };
+
+/* legacy exports kept for any remaining references */
+export const coreAreas = ecosystems.map((e) => ({ title: e.label, body: e.body }));
+export const consultingCapabilities = techWork.map((t) => ({ title: t.title, body: t.body }));

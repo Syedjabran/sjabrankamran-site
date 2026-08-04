@@ -1,10 +1,27 @@
-export function PageHero({ eyebrow, title, intro }: { eyebrow: string; title: string; intro: string }) {
+import { PhysicsField } from "@/components/physics-field";
+import { cn } from "@/lib/utils";
+
+export function PageHero({
+  eyebrow,
+  title,
+  intro,
+  tone = "cyan",
+  field = false,
+}: {
+  eyebrow: string;
+  title: string;
+  intro: string;
+  tone?: "cyan" | "emerald" | "magenta";
+  field?: boolean;
+}) {
+  const eb = { cyan: "eyebrow", emerald: "eyebrow-emerald", magenta: "eyebrow-magenta" }[tone];
   return (
-    <section className="border-b border-white/10 bg-charcoal py-20 md:py-28">
-      <div className="container-x max-w-5xl">
-        <p className="eyebrow">{eyebrow}</p>
-        <h1 className="mt-5 text-5xl leading-[1.02] text-ivory md:text-7xl">{title}</h1>
-        <p className="mt-7 max-w-3xl text-lg leading-8 text-mutedlight md:text-xl">{intro}</p>
+    <section className="relative overflow-hidden border-b border-white/[0.06] py-20 md:py-28">
+      {field ? <PhysicsField /> : null}
+      <div className="container-x relative max-w-5xl">
+        <p className={cn(eb)}>{eyebrow}</p>
+        <h1 className="mt-5 text-4xl font-semibold leading-[1.04] text-ice md:text-6xl">{title}</h1>
+        <p className="mt-6 max-w-3xl text-lg leading-8 text-fog md:text-xl">{intro}</p>
       </div>
     </section>
   );

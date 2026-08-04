@@ -4,18 +4,18 @@ import { cn } from "@/lib/utils";
 export function Section({
   children,
   className,
-  tone = "dark",
+  tone = "abyss",
   id,
 }: {
   children: ReactNode;
   className?: string;
-  tone?: "dark" | "light" | "graphite";
+  tone?: "abyss" | "void" | "space";
   id?: string;
 }) {
   const tones = {
-    dark: "bg-midnight text-ivory",
-    graphite: "bg-charcoal text-ivory",
-    light: "bg-ivory text-ink",
+    abyss: "bg-transparent text-ice",
+    void: "bg-void/60 text-ice",
+    space: "bg-space text-ice",
   };
   return (
     <section id={id} className={cn("py-20 md:py-28", tones[tone], className)}>
@@ -26,26 +26,25 @@ export function Section({
 
 export function SectionHeading({
   eyebrow,
+  eyebrowTone = "cyan",
   title,
   intro,
-  tone = "dark",
 }: {
   eyebrow?: string;
+  eyebrowTone?: "cyan" | "emerald" | "magenta";
   title: string;
   intro?: string;
-  tone?: "dark" | "light";
 }) {
+  const eb = {
+    cyan: "eyebrow",
+    emerald: "eyebrow-emerald",
+    magenta: "eyebrow-magenta",
+  }[eyebrowTone];
   return (
     <div className="max-w-2xl">
-      {eyebrow ? <p className="eyebrow mb-3">{eyebrow}</p> : null}
-      <h2 className={cn("text-3xl md:text-4xl", tone === "light" ? "text-ink" : "text-ivory")}>
-        {title}
-      </h2>
-      {intro ? (
-        <p className={cn("mt-4 text-lg leading-relaxed", tone === "light" ? "text-muted" : "text-mutedlight/70")}>
-          {intro}
-        </p>
-      ) : null}
+      {eyebrow ? <p className={cn(eb, "mb-3")}>{eyebrow}</p> : null}
+      <h2 className="text-3xl text-ice md:text-4xl">{title}</h2>
+      {intro ? <p className="mt-4 text-lg leading-relaxed text-fog">{intro}</p> : null}
     </div>
   );
 }

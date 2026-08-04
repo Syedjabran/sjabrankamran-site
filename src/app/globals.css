@@ -3,8 +3,8 @@
 @tailwind utilities;
 
 :root {
-  --background: #0b0f14;
-  --foreground: #f8f8f6;
+  --background: #0a1024;
+  --foreground: #eef2ff;
 }
 
 @layer base {
@@ -12,11 +12,15 @@
     scroll-behavior: smooth;
   }
   body {
-    @apply bg-midnight text-ivory font-sans antialiased;
+    @apply bg-abyss text-ice font-sans antialiased;
     text-rendering: optimizeLegibility;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(91,108,240,0.14), transparent 60%),
+      radial-gradient(ellipse 60% 40% at 90% 10%, rgba(240,61,206,0.06), transparent 60%);
+    background-attachment: fixed;
   }
   ::selection {
-    @apply bg-gold/30 text-ivory;
+    @apply bg-cyan/30 text-ice;
   }
   h1, h2, h3, h4 {
     @apply font-display tracking-tightest;
@@ -28,17 +32,60 @@
     @apply mx-auto w-full max-w-content px-6 md:px-10;
   }
   .eyebrow {
-    @apply font-mono text-xs uppercase tracking-widelabel text-gold;
+    @apply font-mono text-xs uppercase tracking-widelabel text-cyan;
   }
+  .eyebrow-emerald { @apply font-mono text-xs uppercase tracking-widelabel text-emerald2; }
+  .eyebrow-magenta { @apply font-mono text-xs uppercase tracking-widelabel text-magenta; }
+
   .link-underline {
-    @apply relative after:absolute after:bottom-0 after:left-0 after:h-px after:w-0 after:bg-gold after:transition-all after:duration-300 hover:after:w-full;
+    @apply relative after:absolute after:bottom-0 after:left-0 after:h-px after:w-0 after:bg-cyan after:transition-all after:duration-300 hover:after:w-full;
+  }
+
+  /* Glass card — subtle, not heavy glassmorphism */
+  .card {
+    @apply rounded-2xl border border-white/[0.07] bg-white/[0.02] backdrop-blur-sm;
+  }
+  .card-hover {
+    @apply transition-all duration-300 hover:border-cyan/30 hover:bg-white/[0.04];
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center gap-2 rounded-full bg-cyan px-6 py-3 text-sm font-semibold text-space transition-all duration-300 hover:bg-cyan-soft;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center gap-2 rounded-full border border-white/15 px-6 py-3 text-sm font-medium text-ice transition-all duration-300 hover:border-cyan hover:text-cyan;
+  }
+
+  .grid-bg {
+    background-image: linear-gradient(to right, rgba(120,140,220,0.05) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(120,140,220,0.05) 1px, transparent 1px);
+    background-size: 48px 48px;
   }
 }
 
+/* Reveal-on-scroll (progressive enhancement via IntersectionObserver) */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  * {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  body { background-attachment: scroll; }
 }
