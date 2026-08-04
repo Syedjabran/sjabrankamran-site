@@ -73,7 +73,8 @@ export type TeachingRole = {
   institution: string;
   curriculum: string; // A-Level / O-Level / IBDP
   status: "current" | "previous";
-  logo?: string;      // official brand logo in /public/schools (shown in a white chip)
+  logo?: string;      // official brand logo in /public/schools
+  noChip?: boolean;   // true when the logo art is light and can sit directly on dark bg
   monogram?: string;  // fallback typographic monogram when no logo
 };
 
@@ -88,7 +89,7 @@ export const previousTeaching: TeachingRole[] = [
   { institution: "LGS Defence Phase V", curriculum: "A-Level", status: "previous", logo: "/schools/lgs.png" },
   { institution: "LGS Johar Town", curriculum: "A-Level", status: "previous", logo: "/schools/lgs.png" },
   { institution: "Roots IVY DHA Phase V", curriculum: "A-Level", status: "previous", monogram: "RI" },
-  { institution: "Roots International Askari XI", curriculum: "A-Level", status: "previous", logo: "/schools/rootsintl.png" },
+  { institution: "Roots International Askari XI", curriculum: "A-Level", status: "previous", logo: "/schools/rootsintl.png", noChip: true },
   { institution: "The City School Ravi Campus", curriculum: "A-Level", status: "previous", logo: "/schools/cityschool.svg" },
   { institution: "LACAS Barki", curriculum: "A-Level", status: "previous", logo: "/schools/lacas.webp" },
   { institution: "Beaconhouse College Campus", curriculum: "IBDP Programme", status: "previous", logo: "/schools/beaconhouse.png" },
