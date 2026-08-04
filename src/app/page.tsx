@@ -84,7 +84,7 @@ export default function HomePage() {
             <Reveal key={role.institution} delay={i * 0.06}>
               <div className="card card-hover flex h-full flex-col gap-3 p-5">
                 <div className="flex items-center justify-between">
-                  <SchoolLogo logo={role.logo} monogram={role.monogram} name={role.institution} size={48} chip={!role.noChip} />
+                  <SchoolLogo logo={role.logo} monogram={role.monogram} name={role.institution} size={56} />
                   <span className="flex items-center gap-1.5 text-[11px] font-medium text-cyan">
                     <span className="h-2 w-2 animate-pulse-soft rounded-full bg-cyan" /> Active
                   </span>

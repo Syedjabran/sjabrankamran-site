@@ -1,14 +1,11 @@
 import Image from "next/image";
 
 /**
- * SchoolLogo — renders an institution's official logo.
- *
- * Original logos are used as-is (never recreated). All raster logos have
- * transparent backgrounds. Where a logo's artwork is LIGHT it is placed
- * directly on the dark site (transparent, no chip). Where the artwork is
- * DARK (and would be invisible on dark navy) it sits on a neutral light
- * chip so it stays legible. When no reliable official logo exists, a
- * typographic monogram is shown instead.
+ * SchoolLogo — renders an institution's OFFICIAL logo, unmodified, on a
+ * uniform light chip so every logo is legible and consistent on the dark
+ * site (school logos are designed for light backgrounds and vary in colour
+ * and transparency). Logos are never recreated. When no reliable official
+ * logo exists, a typographic monogram is shown instead.
  *
  * Logos are third-party trademarks shown solely to describe teaching
  * history; their use does not imply endorsement.
@@ -17,35 +14,19 @@ export function SchoolLogo({
   logo,
   monogram,
   name,
-  size = 44,
-  chip = true, // dark-art logos need a light chip; light-art logos pass chip={false}
+  size = 52,
 }: {
   logo?: string;
   monogram?: string;
   name: string;
   size?: number;
-  chip?: boolean;
 }) {
   if (logo) {
-    if (chip) {
-      return (
-        <span
-          className="grid shrink-0 place-items-center overflow-hidden rounded-lg bg-white p-1.5 ring-1 ring-black/5"
-          style={{ width: size, height: size }}
-        >
-          <Image
-            src={logo}
-            alt={`${name} logo`}
-            width={size * 2}
-            height={size * 2}
-            className="h-full w-full object-contain"
-          />
-        </span>
-      );
-    }
-    // Transparent logo with light artwork — placed directly on the dark site.
     return (
-      <span className="grid shrink-0 place-items-center" style={{ width: size, height: size }}>
+      <span
+        className="grid shrink-0 place-items-center overflow-hidden rounded-xl bg-white p-2 shadow-sm ring-1 ring-black/5"
+        style={{ width: size, height: size }}
+      >
         <Image
           src={logo}
           alt={`${name} logo`}
@@ -58,7 +39,7 @@ export function SchoolLogo({
   }
   return (
     <span
-      className="grid shrink-0 place-items-center rounded-lg border border-cyan/25 bg-cyan/[0.06] font-display text-xs font-bold text-cyan"
+      className="grid shrink-0 place-items-center rounded-xl border border-cyan/25 bg-cyan/[0.06] font-display text-sm font-bold text-cyan"
       style={{ width: size, height: size }}
       aria-label={`${name} monogram`}
     >
