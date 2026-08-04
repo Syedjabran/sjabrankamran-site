@@ -1,0 +1,4 @@
+import { PageHero } from "@/components/page-hero";
+import { Section } from "@/components/ui/section";
+export const metadata={title:"Insights",description:"Writing on education, entrepreneurship, operations, AI, and international business."};
+export default function InsightsPage(){return <><PageHero eyebrow="Insights" title="Notes from the intersection of ideas and execution." intro="A forthcoming publication on education, entrepreneurship, manufacturing, global trade, leadership, and applied artificial intelligence."/><Section tone="light"><div className="rounded-sm border border-stone p-10 text-center md:p-16"><p className="eyebrow">Publishing system ready</p><h2 className="mt-4 text-3xl text-ink">The first essays are being prepared.</h2><p className="mx-auto mt-4 max-w-xl leading-7 text-secondary">Articles will be published only after editorial review, with searchable categories, structured metadata, and author attribution.</p></div></Section></>}
