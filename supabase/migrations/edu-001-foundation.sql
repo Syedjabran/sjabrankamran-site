@@ -917,8 +917,9 @@ on conflict (code) do nothing;
 --   on conflict do nothing;
 -- (Included here so it self-applies if the account already exists.)
 insert into edu_user_roles (user_id, role)
-select id, 'super_admin'::edu_role from auth.users
-where email = 'syedjabran.rjgroup@gmail.com'
+select u.id, 'super_admin'::edu_role
+from auth.users as u
+where u.email = 'syedjabran.rjgroup@gmail.com'
 on conflict do nothing;
 
 -- ============================================================
