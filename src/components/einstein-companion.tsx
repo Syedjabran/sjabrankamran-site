@@ -49,6 +49,44 @@ export function EinsteinCompanion() {
 
   const timers = useRef<number[]>([]);
   const panelRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  // Drag-to-reposition: hold the mouse button (or a finger) on him and move.
+  const [dragging, setDragging] = useState(false);
+  const dragMoved = useRef(false);
+  const grabOffset = useRef({ x: 0, y: 0 });
+
+  function onGrab(e: React.PointerEvent) {
+    if (open) return; // don't drag while the ask panel is open
+    const rect = wrapperRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    grabOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    dragMoved.current = false;
+    setDragging(true);
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+  }
+
+  function onDragMove(e: React.PointerEvent) {
+    if (!dragging) return;
+    const nx = e.clientX - grabOffset.current.x;
+    const ny = e.clientY - grabOffset.current.y;
+    if (!dragMoved.current) {
+      // Ignore tiny jitters so a normal click still opens the panel.
+      const rect = wrapperRef.current?.getBoundingClientRect();
+      if (rect && Math.hypot(nx - rect.left, ny - rect.top) < 6) return;
+      dragMoved.current = true;
+    }
+    setPos({
+      x: Math.min(Math.max(4, nx), window.innerWidth - 90),
+      y: Math.min(Math.max(4, ny), window.innerHeight - 90),
+    });
+  }
+
+  function onRelease() {
+    if (!dragging) return;
+    setDragging(false);
+    if (dragMoved.current) setRoaming(false); // he stays where the visitor put him
+  }
 
   // Free-roaming position (top-left translate offsets).
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
@@ -123,7 +161,7 @@ export function EinsteinCompanion() {
       setPos(parkPosition(open));
       return;
     }
-    if (!roaming) return; // paused by the visitor — stay where he is
+    if (!roaming || dragging) return; // paused or being carried — stay put
     const wander = window.setInterval(() => setPos(randomPosition()), 13000);
     const first = window.setTimeout(() => setPos(randomPosition()), 2500);
     const onResize = () => setPos((p) => (p ? { x: Math.min(p.x, window.innerWidth - 120), y: Math.min(p.y, window.innerHeight - 120) } : p));
@@ -134,7 +172,7 @@ export function EinsteinCompanion() {
       clearTimeout(first);
       window.removeEventListener("resize", onResize);
     };
-  }, [dismissed, visible, open, reducedMotion, roaming]);
+  }, [dismissed, visible, open, reducedMotion, roaming, dragging]);
 
   async function ask(e?: React.FormEvent) {
     e?.preventDefault();
@@ -189,14 +227,17 @@ export function EinsteinCompanion() {
 
   return (
     <div
+      ref={wrapperRef}
       className="pointer-events-none fixed left-0 top-0 z-40 flex flex-col items-end gap-2"
       style={{
         transform: pos ? `translate3d(${pos.x}px, ${pos.y}px, 0)` : undefined,
-        transition: reducedMotion
-          ? undefined
-          : open
-            ? "transform 0.7s cubic-bezier(0.22, 1, 0.36, 1)"
-            : "transform 6.5s cubic-bezier(0.45, 0.05, 0.35, 1)",
+        transition: dragging
+          ? "none"
+          : reducedMotion
+            ? undefined
+            : open
+              ? "transform 0.7s cubic-bezier(0.22, 1, 0.36, 1)"
+              : "transform 6.5s cubic-bezier(0.45, 0.05, 0.35, 1)",
         willChange: "transform",
       }}
       aria-live="polite"
@@ -332,12 +373,23 @@ export function EinsteinCompanion() {
       <div className="pointer-events-auto relative">
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-label={open ? "Close the ask panel" : "Ask Einstein a physics question"}
+          onClick={() => {
+            if (dragMoved.current) {
+              dragMoved.current = false;
+              return; // that was a drag, not a click
+            }
+            setOpen((v) => !v);
+          }}
+          onPointerDown={onGrab}
+          onPointerMove={onDragMove}
+          onPointerUp={onRelease}
+          onPointerCancel={onRelease}
+          aria-label={open ? "Close the ask panel" : "Ask Einstein a physics question (hold and drag to move him)"}
           aria-expanded={open}
-          className={`relative block h-20 w-20 cursor-pointer rounded-full border border-cyan/20 bg-abyss/70 shadow-lg outline-none transition hover:scale-105 focus-visible:ring-2 focus-visible:ring-cyan sm:h-24 sm:w-24 ${
-            reducedMotion || open || !roaming ? "" : "animate-einstein-float"
-          }`}
+          className={`relative block h-20 w-20 rounded-full border border-cyan/20 bg-abyss/70 shadow-lg outline-none transition hover:scale-105 focus-visible:ring-2 focus-visible:ring-cyan sm:h-24 sm:w-24 ${
+            dragging ? "cursor-grabbing scale-105" : "cursor-grab"
+          } ${reducedMotion || open || !roaming || dragging ? "" : "animate-einstein-float"}`}
+          style={{ touchAction: "none" }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
