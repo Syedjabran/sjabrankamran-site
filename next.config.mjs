@@ -2,6 +2,9 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  experimental: {
+    serverActions: { bodySizeLimit: "8mb" },
+  },
   images: {
     dangerouslyAllowSVG: true,
     contentDispositionType: "attachment",

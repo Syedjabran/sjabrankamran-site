@@ -17,8 +17,12 @@ function navFor(roles: EduRole[]) {
   if (isAdmin(roles) || roles.includes("teacher") || roles.includes("teaching_assistant")) {
     items.push({ href: "/portal/teach", label: "My Classes" });
   }
-  // Student / parent module routes are added as they ship,
-  // so the nav never contains dead links.
+  if (roles.includes("student")) {
+    items.push({ href: "/portal/learn", label: "My Learning" });
+  }
+  if (roles.includes("parent")) {
+    items.push({ href: "/portal/family", label: "My Children" });
+  }
   return items;
 }
 
