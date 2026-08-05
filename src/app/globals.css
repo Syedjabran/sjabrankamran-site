@@ -89,3 +89,18 @@
   }
   body { background-attachment: scroll; }
 }
+
+/* Physics Studio equation rendering */
+.katex-display {
+  margin: 1.25rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.75rem 0.25rem;
+  color: #f4f8ff;
+  text-align: left;
+}
+
+.katex {
+  color: #f4f8ff;
+  font-size: 1.08em;
+}

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Sparkles, Send, Loader2, ShieldCheck } from "lucide-react";
+import { MarkdownRenderer } from "./markdown-renderer";
 
 const CURRICULA = ["A-Level", "O-Level", "IBDP", "General", "Other"] as const;
 const TOPICS = [
@@ -160,7 +161,9 @@ export function PhysicsStudioForm() {
               <ShieldCheck size={12} /> {result.label}
             </span>
             {result.answer ? (
-              <div className="whitespace-pre-wrap text-sm leading-relaxed text-fog">{result.answer}</div>
+              <div className="text-sm leading-relaxed text-fog">
+                <MarkdownRenderer content={result.answer} />
+              </div>
             ) : (
               <p className="text-sm leading-relaxed text-fog">
                 Your question has been sent for personal review. You&rsquo;ll be notified when the reviewed answer is ready.
