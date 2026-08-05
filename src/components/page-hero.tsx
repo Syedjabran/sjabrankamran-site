@@ -19,9 +19,9 @@ export function PageHero({
     <section className="relative overflow-hidden border-b border-white/[0.06] py-20 md:py-28">
       {field ? <PhysicsField /> : null}
       <div className="container-x relative max-w-5xl">
-        <p className={cn(eb)}>{eyebrow}</p>
-        <h1 className="mt-5 text-4xl font-semibold leading-[1.04] text-ice md:text-6xl">{title}</h1>
-        <p className="mt-6 max-w-3xl text-lg leading-8 text-fog md:text-xl">{intro}</p>
+        <p className={cn(eb, "hero-item hero-item-1")}>{eyebrow}</p>
+        <h1 className="hero-item hero-item-2 mt-5 text-4xl font-semibold leading-[1.04] text-ice md:text-6xl">{title}</h1>
+        <p className="hero-item hero-item-3 mt-6 max-w-3xl text-lg leading-8 text-fog md:text-xl">{intro}</p>
       </div>
     </section>
   );

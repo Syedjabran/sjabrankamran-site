@@ -46,11 +46,11 @@
     @apply rounded-2xl border border-white/[0.07] bg-white/[0.02] backdrop-blur-sm;
   }
   .card-hover {
-    @apply transition-all duration-300 hover:border-cyan/30 hover:bg-white/[0.04];
+    @apply transition-all duration-300 hover:-translate-y-1 hover:border-cyan/30 hover:bg-white/[0.04] hover:shadow-[0_14px_40px_-18px_rgba(61,225,240,0.25)];
   }
 
   .btn-primary {
-    @apply inline-flex items-center gap-2 rounded-full bg-cyan px-6 py-3 text-sm font-semibold text-space transition-all duration-300 hover:bg-cyan-soft;
+    @apply inline-flex items-center gap-2 rounded-full bg-cyan px-6 py-3 text-sm font-semibold text-space transition-all duration-300 hover:bg-cyan-soft hover:shadow-[0_0_28px_-6px_rgba(61,225,240,0.55)];
   }
   .btn-ghost {
     @apply inline-flex items-center gap-2 rounded-full border border-white/15 px-6 py-3 text-sm font-medium text-ice transition-all duration-300 hover:border-cyan hover:text-cyan;
@@ -103,6 +103,54 @@
 .katex {
   color: #f4f8ff;
   font-size: 1.08em;
+}
+
+/* Page-transition entrance (template.tsx) */
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.page-enter {
+  animation: page-enter 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Hero staggered entrance */
+@keyframes hero-item {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.hero-item {
+  animation: hero-item 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.hero-item-1 { animation-delay: 0.05s; }
+.hero-item-2 { animation-delay: 0.15s; }
+.hero-item-3 { animation-delay: 0.28s; }
+.hero-item-4 { animation-delay: 0.4s; }
+
+/* Skeleton shimmer for loading states */
+@keyframes shimmer {
+  from { background-position: -400px 0; }
+  to { background-position: 400px 0; }
+}
+.skeleton {
+  border-radius: 0.5rem;
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.09) 37%, rgba(255,255,255,0.04) 63%);
+  background-size: 800px 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+/* Travelling wave (WaveDivider) */
+@keyframes wave-flow {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -240; }
+}
+.wave-flow {
+  stroke-dasharray: 160 80;
+  animation: wave-flow 6s linear infinite;
+}
+.wave-flow-slow {
+  stroke-dasharray: 120 120;
+  animation: wave-flow 9s linear infinite;
 }
 
 /* Einstein companion */

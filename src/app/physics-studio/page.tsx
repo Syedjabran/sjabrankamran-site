@@ -4,6 +4,7 @@ import { Section, SectionHeading } from "@/components/ui/section";
 import { Reveal } from "@/components/ui/reveal";
 import { PhysicsStudioForm } from "@/components/physics-studio-form";
 import { EinsteinCompanion } from "@/components/einstein-companion";
+import { WaveDivider } from "@/components/wave-divider";
 
 export const metadata: Metadata = {
   title: "Physics Studio — AI-Assisted, Teacher-Reviewed Physics Help",
@@ -36,6 +37,8 @@ export default function PhysicsStudioPage() {
           <PhysicsStudioForm />
         </div>
       </Section>
+
+      <WaveDivider />
 
       <Section>
         <SectionHeading

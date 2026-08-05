@@ -6,10 +6,12 @@ import { SchoolLogo } from "@/components/school-logo";
 import { Section, SectionHeading } from "@/components/ui/section";
 import { CtaLink } from "@/components/ui/cta-link";
 import { Reveal } from "@/components/ui/reveal";
+import { AnimatedCounter } from "@/components/ui/counter";
 import {
   positioning,
   ecosystems,
   currentlyTeaching,
+  previousTeaching,
   teachingMethod,
   ventures,
   timeline,
@@ -31,14 +33,14 @@ export default function HomePage() {
         <PhysicsField dense />
         <div className="container-x relative grid items-center gap-12 py-16 md:grid-cols-[1.15fr_0.85fr] md:py-24">
           <div>
-            <p className="eyebrow mb-5">Physics Educator · Entrepreneur · AI &amp; Technology Consultant</p>
-            <h1 className="text-4xl font-semibold leading-[1.03] text-ice sm:text-5xl md:text-6xl">
+            <p className="hero-item hero-item-1 eyebrow mb-5">Physics Educator · Entrepreneur · AI &amp; Technology Consultant</p>
+            <h1 className="hero-item hero-item-2 text-4xl font-semibold leading-[1.03] text-ice sm:text-5xl md:text-6xl">
               {positioning.headline}
             </h1>
-            <p className="mt-6 max-w-xl text-lg leading-8 text-fog">
+            <p className="hero-item hero-item-3 mt-6 max-w-xl text-lg leading-8 text-fog">
               {positioning.subhead}
             </p>
-            <div className="mt-9 flex flex-wrap gap-3">
+            <div className="hero-item hero-item-4 mt-9 flex flex-wrap gap-3">
               <CtaLink href="/education">Explore my teaching journey</CtaLink>
               <Link href="/physics-studio" className="btn-ghost">
                 Enter Physics Studio <ArrowRight size={16} />
@@ -72,8 +74,29 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ============ CURRENT TEACHING ============ */}
+      {/* ============ VERIFIED NUMBERS ============ */}
       <Section tone="void">
+        <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
+          {[
+            { value: 16, suffix: "+", label: "Years teaching Cambridge Physics" },
+            { value: currentlyTeaching.length, suffix: "", label: "Current A-Level institutions" },
+            { value: previousTeaching.length + currentlyTeaching.length, suffix: "", label: "Institutions taught across Lahore" },
+            { value: ventures.length, suffix: "", label: "Ventures founded or co-led" },
+          ].map((s, i) => (
+            <Reveal key={s.label} delay={i * 0.07}>
+              <div className="text-center">
+                <p className="font-display text-4xl font-semibold text-cyan md:text-5xl">
+                  <AnimatedCounter value={s.value} suffix={s.suffix} />
+                </p>
+                <p className="mt-2 text-xs uppercase tracking-widelabel text-dust">{s.label}</p>
+              </div>
+            </Reveal>
+          ))}
+        </div>
+      </Section>
+
+      {/* ============ CURRENT TEACHING ============ */}
+      <Section>
         <SectionHeading
           eyebrow="Currently Teaching"
           title="Active A-Level Physics positions"

@@ -160,8 +160,18 @@ export function PhysicsStudioForm() {
       </form>
 
       {/* RESULT */}
-      <div className="card flex min-h-[320px] flex-col p-6">
-        {!result ? (
+      <div className="card flex min-h-[320px] flex-col p-6" aria-busy={loading}>
+        {loading ? (
+          <div className="flex flex-col gap-3" role="status" aria-label="The tutor is preparing your answer">
+            <div className="skeleton h-6 w-40" />
+            <div className="skeleton h-4 w-full" />
+            <div className="skeleton h-4 w-11/12" />
+            <div className="skeleton h-16 w-full" />
+            <div className="skeleton h-4 w-3/4" />
+            <div className="skeleton h-4 w-5/6" />
+            <p className="mt-2 text-center text-xs text-dust">Working through the physics…</p>
+          </div>
+        ) : !result ? (
           <div className="m-auto max-w-xs text-center text-dust">
             <Sparkles className="mx-auto mb-3 text-cyan/60" size={28} />
             <p className="text-sm">Your guided answer will appear here. The tutor teaches — expect explanation, not just a final number.</p>
