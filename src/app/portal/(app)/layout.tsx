@@ -14,7 +14,10 @@ function navFor(roles: EduRole[]) {
       { href: "/portal/admin/finance", label: "Fees & Finance" }
     );
   }
-  // Teacher / student / parent module routes are added as they ship,
+  if (isAdmin(roles) || roles.includes("teacher") || roles.includes("teaching_assistant")) {
+    items.push({ href: "/portal/teach", label: "My Classes" });
+  }
+  // Student / parent module routes are added as they ship,
   // so the nav never contains dead links.
   return items;
 }
