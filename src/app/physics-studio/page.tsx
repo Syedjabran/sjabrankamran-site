@@ -3,6 +3,7 @@ import { PageHero } from "@/components/page-hero";
 import { Section, SectionHeading } from "@/components/ui/section";
 import { Reveal } from "@/components/ui/reveal";
 import { PhysicsStudioForm } from "@/components/physics-studio-form";
+import { EinsteinCompanion } from "@/components/einstein-companion";
 
 export const metadata: Metadata = {
   title: "Physics Studio — AI-Assisted, Teacher-Reviewed Physics Help",
@@ -21,6 +22,7 @@ const FLOW = [
 export default function PhysicsStudioPage() {
   return (
     <>
+      <EinsteinCompanion />
       <PageHero
         eyebrow="Physics Studio"
         title="Ask physics. Get taught, not just told."

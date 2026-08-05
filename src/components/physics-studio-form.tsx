@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Sparkles, Send, Loader2, ShieldCheck } from "lucide-react";
 import { MarkdownRenderer } from "./markdown-renderer";
 
@@ -30,6 +30,16 @@ export function PhysicsStudioForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result>(null);
+
+  // Einstein companion can inject example questions.
+  useEffect(() => {
+    const onExample = (e: Event) => {
+      const q = (e as CustomEvent<string>).detail;
+      if (typeof q === "string") setQuestion(q);
+    };
+    window.addEventListener("physics-studio:example", onExample);
+    return () => window.removeEventListener("physics-studio:example", onExample);
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -69,6 +79,7 @@ export function PhysicsStudioForm() {
         <div>
           <label className="mb-1.5 block text-sm font-medium text-ice">Your physics question</label>
           <textarea
+            id="physics-question-input"
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             rows={5}

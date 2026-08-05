@@ -1,3 +1,12 @@
+/**
+ * Public-website AI Physics Tutor. SERVER-ONLY.
+ *
+ * POLICY (per JB, 2026-08-05): the public website uses GOOGLE GEMINI ONLY.
+ * Claude and OpenAI are reserved for the Admin Portal — do not wire them
+ * into any public-facing route. If GEMINI_API_KEY is missing or the call
+ * fails, the question defers to teacher review instead of erroring.
+ */
+
 export type TutorResult = { provider: string | null; answer: string | null; error?: string };
 
 const SYSTEM = `You are the AI Physics Tutor for Physics Studio, created for the official website of Cambridge Physics educator Syed Jabran Ali Kamran.
@@ -17,11 +26,6 @@ PHYSICS AND MATHEMATICS NOTATION RULES:
 
 Be concise, supportive, and explicit about uncertainty. If a question is ambiguous or missing data, say what is missing instead of inventing it.`;
 
-// Helper to wrap providers with fallbacks
-async function tryProvider(_provider: string, call: () => Promise<string | null>): Promise<string | null> {
-  try { return await call(); } catch { return null; }
-}
-
 export async function askPhysicsTutor(input: {
   question: string; curriculum: string; topic?: string; responseMode?: string;
 }): Promise<TutorResult> {
@@ -31,53 +35,24 @@ export async function askPhysicsTutor(input: {
     "", `Student question:`, input.question
   ].filter(Boolean).join("\n");
 
-  // 1. Anthropic (Primary)
-  if (process.env.ANTHROPIC_API_KEY) {
-    const res = await tryProvider("claude", async () => {
-      const r = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "x-api-key": process.env.ANTHROPIC_API_KEY!, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-        body: JSON.stringify({
-          model: process.env.ANTHROPIC_MODEL || "claude-3-5-sonnet-latest",
-          max_tokens: 1200, system: SYSTEM, messages: [{ role: "user", content: prompt }]
-        })
-      });
-      const j = await r.json();
-      return j?.content?.map((c: any) => c.text).join("\n").trim() || null;
-    });
-    if (res) return { provider: "claude", answer: res };
+  if (!process.env.GEMINI_API_KEY) {
+    // No provider configured → defer to teacher review.
+    return { provider: null, answer: null };
   }
 
-  // 2. OpenAI (Fallback 1)
-  if (process.env.OPENAI_API_KEY) {
-    const res = await tryProvider("openai", async () => {
-      const r = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: { authorization: `Bearer ${process.env.OPENAI_API_KEY!}`, "content-type": "application/json" },
-        body: JSON.stringify({
-          model: process.env.OPENAI_MODEL || "gpt-4o",
-          messages: [{ role: "system", content: SYSTEM }, { role: "user", content: prompt }]
-        })
-      });
-      const j = await r.json();
-      return j?.choices?.[0]?.message?.content?.trim() || null;
+  try {
+    const model = process.env.GEMINI_MODEL || "gemini-flash-latest";
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ systemInstruction: { parts: [{ text: SYSTEM }] }, contents: [{ parts: [{ text: prompt }] }] })
     });
-    if (res) return { provider: "openai", answer: res };
-  }
-
-  // 3. Google Gemini (Fallback 2)
-  if (process.env.GEMINI_API_KEY) {
-    const res = await tryProvider("gemini", async () => {
-      const model = process.env.GEMINI_MODEL || "gemini-flash-latest";
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ systemInstruction: { parts: [{ text: SYSTEM }] }, contents: [{ parts: [{ text: prompt }] }] })
-      });
-      const j = await r.json();
-      return j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("\n").trim() || null;
-    });
-    if (res) return { provider: "gemini", answer: res };
+    if (!r.ok) return { provider: null, answer: null, error: `gemini http ${r.status}` };
+    const j = await r.json();
+    const text = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text).join("\n").trim();
+    if (text) return { provider: "gemini", answer: text };
+  } catch (e) {
+    return { provider: null, answer: null, error: (e as Error).message };
   }
 
   return { provider: null, answer: null };
