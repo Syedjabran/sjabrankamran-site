@@ -611,7 +611,7 @@ drop policy if exists p_edu_classes_sel on edu_classes;
 create policy p_edu_classes_sel on edu_classes for select
   using (edu_is_staff()
          or exists (select 1 from edu_enrolments e join edu_students s on s.id = e.student_id
-                    where e.class_id = id and (s.profile_id = auth.uid() or edu_is_my_ward(s.id))));
+                    where e.class_id = edu_classes.id and (s.profile_id = auth.uid() or edu_is_my_ward(s.id))));
 drop policy if exists p_edu_classes_all on edu_classes;
 create policy p_edu_classes_all on edu_classes for all
   using (edu_is_admin()) with check (edu_is_admin());
