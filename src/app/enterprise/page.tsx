@@ -20,6 +20,8 @@ export default function EnterprisePage() {
         title="Building, from first principles"
         intro="The same discipline that governs a physics problem governs a business one: define it precisely, respect the evidence, and reason toward something that works. Here are the ventures I have built and lead."
         tone="emerald"
+        video="/videos/hero-enterprise.mp4"
+        poster="/videos/hero-enterprise-poster.jpg"
       />
 
       <Section tone="void">

@@ -3,7 +3,6 @@ import { PageHero } from "@/components/page-hero";
 import { Section, SectionHeading } from "@/components/ui/section";
 import { Reveal } from "@/components/ui/reveal";
 import { PhysicsStudioForm } from "@/components/physics-studio-form";
-import { EinsteinCompanion } from "@/components/einstein-companion";
 import { WaveDivider } from "@/components/wave-divider";
 
 export const metadata: Metadata = {
@@ -23,7 +22,6 @@ const FLOW = [
 export default function PhysicsStudioPage() {
   return (
     <>
-      <EinsteinCompanion />
       <PageHero
         eyebrow="Physics Studio"
         title="Ask physics. Get taught, not just told."

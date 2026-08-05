@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { Loader2, Send, Sparkles, X } from "lucide-react";
+import Link from "next/link";
+import { MarkdownRenderer } from "./markdown-renderer";
 
 /**
- * Einstein-inspired interactive companion for the Physics Studio.
- * Original illustration (not a copyrighted meme asset). Two frames
- * (tongue-out / smile) cross-fade for a playful "tongue" animation.
- * Respects prefers-reduced-motion; dismissible; mobile-friendly.
+ * Einstein-inspired floating companion — site-wide "ask a physics question"
+ * widget. Original illustration (not a copyrighted meme asset). Two frames
+ * (tongue-out / smile) cross-fade playfully. Clicking the character opens a
+ * mini ask panel powered by the same /api/physics-question endpoint as the
+ * Physics Studio. Respects prefers-reduced-motion; dismissible per session.
  */
 
 const MESSAGES = [
@@ -23,17 +26,55 @@ const MESSAGES = [
 const EXAMPLES = [
   "Why does a satellite in a higher orbit move more slowly?",
   "A car brakes from 30 m/s to rest in 60 m. Find the deceleration.",
-  "Explain the difference between e.m.f. and potential difference.",
+  "What is the difference between e.m.f. and potential difference?",
 ];
+
+const CURRICULA = ["A-Level", "O-Level", "IBDP", "General"] as const;
 
 export function EinsteinCompanion() {
   const [visible, setVisible] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [msgIndex, setMsgIndex] = useState(0);
   const [tongueOut, setTongueOut] = useState(true);
-  const [helpOpen, setHelpOpen] = useState(false);
+  const [open, setOpen] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+
+  const [question, setQuestion] = useState("");
+  const [curriculum, setCurriculum] = useState<(typeof CURRICULA)[number]>("A-Level");
+  const [loading, setLoading] = useState(false);
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [label, setLabel] = useState<string>("");
+  const [error, setError] = useState<string | null>(null);
+
   const timers = useRef<number[]>([]);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Free-roaming position (top-left translate offsets).
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+
+  // Wrapper is right-aligned (items-end); pos is the wrapper's top-left offset.
+  function parkPosition(panel: boolean) {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const width = panel ? Math.min(400, w - 16) : 250;
+    const height = panel ? Math.min(h * 0.75, 620) : 210;
+    return { x: Math.max(8, w - width - 16), y: Math.max(8, h - height - 12) };
+  }
+
+  function randomPosition() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const bw = 250; // approx wrapper width incl. speech bubble
+    const bh = 220; // approx wrapper height
+    const minX = 8;
+    const maxX = Math.max(minX, w - bw - 8);
+    const minY = 76; // keep clear of the sticky header
+    const maxY = Math.max(minY, h - bh - 8);
+    return {
+      x: minX + Math.random() * (maxX - minX),
+      y: minY + Math.random() * (maxY - minY),
+    };
+  }
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -44,7 +85,7 @@ export function EinsteinCompanion() {
     if (sessionStorage.getItem("einstein-dismissed") === "1") {
       setDismissed(true);
     } else {
-      // Ease into view after a moment rather than popping instantly.
+      setPos(parkPosition(false));
       const t = window.setTimeout(() => setVisible(true), 1200);
       timers.current.push(t);
     }
@@ -54,9 +95,8 @@ export function EinsteinCompanion() {
     };
   }, []);
 
-  // Rotate messages; subtle tongue in/out swap. Skipped under reduced motion.
   useEffect(() => {
-    if (dismissed || !visible) return;
+    if (dismissed || !visible || open) return;
     const msgTimer = window.setInterval(
       () => setMsgIndex((i) => (i + 1) % MESSAGES.length),
       8000
@@ -73,20 +113,69 @@ export function EinsteinCompanion() {
       clearInterval(msgTimer);
       if (tongueTimer) clearInterval(tongueTimer);
     };
-  }, [dismissed, visible, reducedMotion]);
+  }, [dismissed, visible, reducedMotion, open]);
 
-  function focusQuestion() {
-    const el = document.getElementById("physics-question-input");
-    if (el) {
-      el.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
-      window.setTimeout(() => (el as HTMLTextAreaElement).focus({ preventScroll: true }), reducedMotion ? 0 : 450);
+  // Free roaming: glide to a new random spot every so often (panel closed only).
+  useEffect(() => {
+    if (dismissed || !visible) return;
+    if (open || reducedMotion) {
+      setPos(parkPosition(open));
+      return;
     }
-  }
+    const wander = window.setInterval(() => setPos(randomPosition()), 13000);
+    const first = window.setTimeout(() => setPos(randomPosition()), 2500);
+    const onResize = () => setPos((p) => (p ? { x: Math.min(p.x, window.innerWidth - 120), y: Math.min(p.y, window.innerHeight - 120) } : p));
+    window.addEventListener("resize", onResize);
+    timers.current.push(first);
+    return () => {
+      clearInterval(wander);
+      clearTimeout(first);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [dismissed, visible, open, reducedMotion]);
 
-  function useExample(q: string) {
-    window.dispatchEvent(new CustomEvent("physics-studio:example", { detail: q }));
-    setHelpOpen(false);
-    focusQuestion();
+  async function ask(e?: React.FormEvent) {
+    e?.preventDefault();
+    setError(null);
+    if (question.trim().length < 10) {
+      setError("Please write a slightly longer question (at least 10 characters).");
+      return;
+    }
+    setLoading(true);
+    setAnswer(null);
+    try {
+      const res = await fetch("/api/physics-question", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          question,
+          curriculum,
+          topic: "",
+          responseMode: "Explain the concept",
+          requestReview: false,
+          email: "",
+          consent: false,
+          website: "",
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        setError(j.error || "Something went wrong. Please try again.");
+      } else if (j.answer) {
+        setAnswer(j.answer);
+        setLabel(j.label || "AI Physics Tutor");
+      } else {
+        setAnswer(null);
+        setLabel("");
+        setError(
+          "The tutor is offline right now — your question was saved for a personal teacher review. Try the full Physics Studio to leave your email."
+        );
+      }
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   function dismiss() {
@@ -98,48 +187,154 @@ export function EinsteinCompanion() {
 
   return (
     <div
-      className="pointer-events-none fixed bottom-3 right-3 z-40 flex flex-col items-end gap-2 sm:bottom-6 sm:right-6"
+      className="pointer-events-none fixed left-0 top-0 z-40 flex flex-col items-end gap-2"
+      style={{
+        transform: pos ? `translate3d(${pos.x}px, ${pos.y}px, 0)` : undefined,
+        transition: reducedMotion
+          ? undefined
+          : open
+            ? "transform 0.7s cubic-bezier(0.22, 1, 0.36, 1)"
+            : "transform 6.5s cubic-bezier(0.45, 0.05, 0.35, 1)",
+        willChange: "transform",
+      }}
       aria-live="polite"
     >
-      {/* Help bubble */}
-      {helpOpen && (
-        <div className="pointer-events-auto w-64 rounded-2xl border border-white/10 bg-space/95 p-4 shadow-xl backdrop-blur sm:w-72">
-          <p className="text-xs font-semibold text-ice">How to ask a great question</p>
-          <p className="mt-1 text-xs leading-relaxed text-fog">
-            Say what you tried, what you expected, and where it went wrong. Or start from an example:
-          </p>
-          <ul className="mt-2 space-y-1.5">
-            {EXAMPLES.map((q) => (
-              <li key={q}>
+      {/* Ask panel */}
+      {open && (
+        <div
+          ref={panelRef}
+          className="pointer-events-auto flex max-h-[70vh] w-[calc(100vw-1.5rem)] max-w-sm flex-col overflow-hidden rounded-2xl border border-cyan/20 bg-space/95 shadow-2xl backdrop-blur sm:w-96"
+          role="dialog"
+          aria-label="Ask Einstein a physics question"
+        >
+          <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+            <p className="flex items-center gap-2 text-sm font-semibold text-ice">
+              <Sparkles size={14} className="text-cyan" /> Ask a physics question
+            </p>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close the ask panel"
+              className="text-dust transition hover:text-ice"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
+            {answer ? (
+              <div>
+                <span className="mb-2 inline-flex items-center rounded-full border border-cyan/30 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-widelabel text-cyan">
+                  {label}
+                </span>
+                <div className="text-sm leading-relaxed text-fog">
+                  <MarkdownRenderer content={answer} />
+                </div>
                 <button
                   type="button"
-                  onClick={() => useExample(q)}
-                  className="w-full rounded-lg border border-white/10 bg-abyss/60 px-2.5 py-1.5 text-left text-xs leading-snug text-fog transition hover:border-cyan/50 hover:text-ice"
+                  onClick={() => {
+                    setAnswer(null);
+                    setQuestion("");
+                  }}
+                  className="mt-3 text-xs text-cyan underline-offset-2 hover:underline"
                 >
-                  {q}
+                  Ask another question
                 </button>
-              </li>
-            ))}
-          </ul>
+              </div>
+            ) : loading ? (
+              <div className="space-y-2" role="status" aria-label="The tutor is preparing your answer">
+                <div className="skeleton h-4 w-11/12" />
+                <div className="skeleton h-4 w-full" />
+                <div className="skeleton h-14 w-full" />
+                <div className="skeleton h-4 w-3/4" />
+                <p className="pt-1 text-center text-xs text-dust">Working through the physics…</p>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs leading-relaxed text-fog">
+                  Ask anything from your physics course — the AI tutor explains step by step. Or start from an
+                  example:
+                </p>
+                <ul className="space-y-1.5">
+                  {EXAMPLES.map((q) => (
+                    <li key={q}>
+                      <button
+                        type="button"
+                        onClick={() => setQuestion(q)}
+                        className="w-full rounded-lg border border-white/10 bg-abyss/60 px-2.5 py-1.5 text-left text-xs leading-snug text-fog transition hover:border-cyan/50 hover:text-ice"
+                      >
+                        {q}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+            {error ? <p className="text-xs leading-relaxed text-signal">{error}</p> : null}
+          </div>
+
+          {!answer && (
+            <form onSubmit={ask} className="space-y-2 border-t border-white/10 px-4 py-3">
+              <textarea
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                rows={2}
+                placeholder="Type your physics question…"
+                className="w-full resize-none rounded-xl border border-white/10 bg-abyss/60 px-3 py-2 text-sm text-ice placeholder:text-dust focus:border-cyan focus:outline-none"
+              />
+              <div className="flex items-center gap-2">
+                <select
+                  value={curriculum}
+                  onChange={(e) => setCurriculum(e.target.value as (typeof CURRICULA)[number])}
+                  aria-label="Curriculum"
+                  className="rounded-lg border border-white/10 bg-abyss/60 px-2 py-1.5 text-xs text-ice focus:border-cyan focus:outline-none"
+                >
+                  {CURRICULA.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="btn-primary ml-auto !px-4 !py-1.5 text-xs disabled:opacity-60"
+                >
+                  {loading ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Ask
+                </button>
+              </div>
+              <p className="text-center text-[10px] leading-snug text-dust">
+                AI-assisted · answers are labelled ·{" "}
+                <Link href="/physics-studio" className="text-cyan hover:underline" onClick={() => setOpen(false)}>
+                  open the full Physics Studio
+                </Link>
+              </p>
+            </form>
+          )}
         </div>
       )}
 
       {/* Speech bubble */}
-      <div className="pointer-events-auto max-w-[13rem] rounded-2xl rounded-br-sm border border-cyan/20 bg-space/95 px-3.5 py-2.5 shadow-lg backdrop-blur sm:max-w-[15rem]">
-        <p key={msgIndex} className={reducedMotion ? "text-xs leading-snug text-ice" : "animate-msg-fade text-xs leading-snug text-ice"}>
-          {MESSAGES[msgIndex]}
-        </p>
-      </div>
+      {!open && (
+        <div className="pointer-events-auto max-w-[13rem] rounded-2xl rounded-br-sm border border-cyan/20 bg-space/95 px-3.5 py-2.5 shadow-lg backdrop-blur sm:max-w-[15rem]">
+          <p
+            key={msgIndex}
+            className={reducedMotion ? "text-xs leading-snug text-ice" : "animate-msg-fade text-xs leading-snug text-ice"}
+          >
+            {MESSAGES[msgIndex]}
+          </p>
+        </div>
+      )}
 
       {/* Character */}
       <div className="pointer-events-auto relative">
         <button
           type="button"
-          onClick={() => setHelpOpen((v) => !v)}
-          onDoubleClick={focusQuestion}
-          aria-label="Physics Studio helper — open question tips"
+          onClick={() => setOpen((v) => !v)}
+          aria-label={open ? "Close the ask panel" : "Ask Einstein a physics question"}
+          aria-expanded={open}
           className={`relative block h-20 w-20 cursor-pointer rounded-full border border-cyan/20 bg-abyss/70 shadow-lg outline-none transition hover:scale-105 focus-visible:ring-2 focus-visible:ring-cyan sm:h-24 sm:w-24 ${
-            reducedMotion ? "" : "animate-einstein-float"
+            reducedMotion || open ? "" : "animate-einstein-float"
           }`}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}

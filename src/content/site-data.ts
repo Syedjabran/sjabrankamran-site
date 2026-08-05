@@ -164,7 +164,7 @@ export const ventures: Venture[] = [
     sector: "Facilities Management",
     geography: "United Kingdom",
     summary:
-      "A UK facilities and maintenance company (Companies House No. 16613599) delivering professional cleaning and property-turnover services built on proof-driven quality systems.",
+      "A UK facilities and maintenance company founded in 2020 as Eleventh Hour Services LLP and later renamed Eleventh Hour Cleaning & Maintenance Services Ltd (Companies House No. 16613599), delivering professional cleaning and property-turnover services built on proof-driven quality systems.",
     contribution:
       "Founded the venture and designed its operational and quality systems for reliable, repeatable service delivery.",
     url: "https://www.eleventhhourcleaning.co.uk",
@@ -241,9 +241,9 @@ export const techWork = [
 export const timeline = [
   { year: "2009", track: "education", title: "Began teaching Physics", body: "Started a Cambridge Physics teaching career now spanning 16+ years." },
   { year: "2014", track: "enterprise", title: "Jabran & Co begins (informally)", body: "Started informally as advisory and trading work that would later become Jabran & Co." },
+  { year: "2020", track: "enterprise", title: "Eleventh Hour founded (UK)", body: "Founded Eleventh Hour Services LLP in the United Kingdom — later renamed Eleventh Hour Cleaning & Maintenance Services Ltd (Companies House No. 16613599)." },
   { year: "2024", track: "enterprise", title: "Jabran & Co formalised", body: "Brought into formal operations as an international business & advisory group." },
-  { year: "2025", track: "enterprise", title: "Eleventh Hour Cleaning Ltd (UK)", body: "Incorporated a UK facilities-management company (Companies House No. 16613599)." },
-  { year: "2026", track: "enterprise", title: "Jabran & Co formally registered", body: "Jabran & Co formally registered as a firm; alongside it, deployed AI-driven CRM/ERP and a self-hosted AI-agent operations stack." },
+  { year: "2026", track: "enterprise", title: "AI-driven operations", body: "Deployed AI-driven CRM/ERP systems and a self-hosted AI-agent operations stack across the group." },
 ];
 
 export const philosophy = {

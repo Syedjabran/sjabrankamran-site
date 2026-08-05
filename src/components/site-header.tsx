@@ -20,9 +20,12 @@ export function SiteHeader() {
     <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-abyss/80 backdrop-blur-xl">
       <div className="container-x flex h-16 items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5" aria-label="Home">
-          <span className="grid h-8 w-8 place-items-center rounded-lg border border-cyan/40 font-display text-sm font-bold text-cyan">
-            J
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/brand/sjak-monogram.webp"
+            alt="SJAK monogram"
+            className="h-10 w-auto mix-blend-screen"
+          />
           <span className="font-display text-[15px] font-semibold tracking-tightest text-ice">
             Syed Jabran Ali Kamran
           </span>

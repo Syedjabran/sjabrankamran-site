@@ -40,7 +40,8 @@ export default function EducationPage() {
         eyebrow="Education & Physics"
         title="Sixteen years of teaching physics"
         intro="Cambridge A-Level, O-Level and IBDP Physics. I teach students to think in physics — to reason from first principles, respect evidence, and communicate answers the way an examiner expects."
-        field
+        video="/videos/hero-education.mp4"
+        poster="/videos/hero-education-poster.jpg"
       />
 
       {/* CURRENTLY TEACHING */}

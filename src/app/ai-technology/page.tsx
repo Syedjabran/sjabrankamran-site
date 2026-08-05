@@ -28,7 +28,8 @@ export default function AiTechnologyPage() {
         title="Intelligence, with a human in the loop"
         intro="I build AI systems that produce measurable business outcomes — agents that assist, systems that scale, and automation that always keeps a person in control of the decisions that matter."
         tone="magenta"
-        field
+        video="/videos/hero-technology.mp4"
+        poster="/videos/hero-technology-poster.jpg"
       />
 
       <Section tone="void">
