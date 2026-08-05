@@ -12,6 +12,7 @@ const NAV = [
   { href: "/enterprise", label: "Enterprise" },
   { href: "/ai-technology", label: "AI & Technology" },
   { href: "/insights", label: "Insights" },
+  { href: "/portal", label: "Portal" },
 ];
 
 export function SiteHeader() {
