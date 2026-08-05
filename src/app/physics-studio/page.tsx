@@ -26,7 +26,8 @@ export default function PhysicsStudioPage() {
         eyebrow="Physics Studio"
         title="Ask physics. Get taught, not just told."
         intro="An AI-assisted learning environment built by a Cambridge Physics educator. Every answer is clearly labelled, and you can always request a personal teacher review."
-        field
+        video="/videos/hero-studio.mp4"
+        poster="/videos/hero-studio-poster.jpg"
       />
 
       <Section tone="void">

@@ -24,7 +24,7 @@ export function SiteHeader() {
           <img
             src="/brand/sjak-monogram.webp"
             alt="SJAK monogram"
-            className="h-10 w-auto mix-blend-screen"
+            className="h-10 w-auto"
           />
           <span className="font-display text-[15px] font-semibold tracking-tightest text-ice">
             Syed Jabran Ali Kamran

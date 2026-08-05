@@ -21,3 +21,6 @@ Notes:
   sit behind a dark overlay and are acceptable credit notices, not branding.
 - Videos are muted, looped, lazy-loaded, poster-backed, and disabled under
   `prefers-reduced-motion` and the Save-Data client hint.
+
+| `/videos/hero-home.mp4` | Home hero | NHQ_2019_0626_Earth Views from the ISS | Earth Views from the ISS (~305–321 s; top 14% cropped to remove the corner caption) | images.nasa.gov/details/NHQ_2019_0626_Earth Views from the ISS |
+| `/videos/hero-studio.mp4` | Physics Studio hero | GSFC_20150501_SDO_m11864_Phoenix | Phoenix Prominence Eruption (~28–44 s, clean solar footage, no overlays) | images.nasa.gov/details/GSFC_20150501_SDO_m11864_Phoenix |

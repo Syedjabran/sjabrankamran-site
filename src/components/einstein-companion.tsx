@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Send, Sparkles, X } from "lucide-react";
+import { Loader2, Pause, Play, Send, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { MarkdownRenderer } from "./markdown-renderer";
 
@@ -38,6 +38,7 @@ export function EinsteinCompanion() {
   const [tongueOut, setTongueOut] = useState(true);
   const [open, setOpen] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [roaming, setRoaming] = useState(true);
 
   const [question, setQuestion] = useState("");
   const [curriculum, setCurriculum] = useState<(typeof CURRICULA)[number]>("A-Level");
@@ -122,6 +123,7 @@ export function EinsteinCompanion() {
       setPos(parkPosition(open));
       return;
     }
+    if (!roaming) return; // paused by the visitor — stay where he is
     const wander = window.setInterval(() => setPos(randomPosition()), 13000);
     const first = window.setTimeout(() => setPos(randomPosition()), 2500);
     const onResize = () => setPos((p) => (p ? { x: Math.min(p.x, window.innerWidth - 120), y: Math.min(p.y, window.innerHeight - 120) } : p));
@@ -132,7 +134,7 @@ export function EinsteinCompanion() {
       clearTimeout(first);
       window.removeEventListener("resize", onResize);
     };
-  }, [dismissed, visible, open, reducedMotion]);
+  }, [dismissed, visible, open, reducedMotion, roaming]);
 
   async function ask(e?: React.FormEvent) {
     e?.preventDefault();
@@ -334,7 +336,7 @@ export function EinsteinCompanion() {
           aria-label={open ? "Close the ask panel" : "Ask Einstein a physics question"}
           aria-expanded={open}
           className={`relative block h-20 w-20 cursor-pointer rounded-full border border-cyan/20 bg-abyss/70 shadow-lg outline-none transition hover:scale-105 focus-visible:ring-2 focus-visible:ring-cyan sm:h-24 sm:w-24 ${
-            reducedMotion || open ? "" : "animate-einstein-float"
+            reducedMotion || open || !roaming ? "" : "animate-einstein-float"
           }`}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -359,6 +361,15 @@ export function EinsteinCompanion() {
           className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-white/15 bg-abyss text-dust transition hover:text-ice"
         >
           <X size={11} />
+        </button>
+        <button
+          type="button"
+          onClick={() => setRoaming((r) => !r)}
+          aria-label={roaming ? "Stop the helper from moving around" : "Let the helper move around again"}
+          title={roaming ? "Stop him here" : "Let him roam"}
+          className="absolute -left-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-white/15 bg-abyss text-dust transition hover:text-cyan"
+        >
+          {roaming ? <Pause size={10} /> : <Play size={10} />}
         </button>
       </div>
     </div>

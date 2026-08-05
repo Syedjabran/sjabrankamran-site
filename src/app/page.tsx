@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, GraduationCap, Building2, Cpu } from "lucide-react";
+import { HeroVideo } from "@/components/hero-video";
 import { PhysicsField } from "@/components/physics-field";
 import { SchoolLogo } from "@/components/school-logo";
 import { Section, SectionHeading } from "@/components/ui/section";
@@ -30,7 +31,7 @@ export default function HomePage() {
     <>
       {/* ============ HERO ============ */}
       <section className="relative overflow-hidden">
-        <PhysicsField dense />
+        <HeroVideo src="/videos/hero-home.mp4" poster="/videos/hero-home-poster.jpg" />
         <div className="container-x relative grid items-center gap-12 py-16 md:grid-cols-[1.15fr_0.85fr] md:py-24">
           <div>
             <p className="hero-item hero-item-1 eyebrow mb-5">Physics Educator · Entrepreneur · AI &amp; Technology Consultant</p>
