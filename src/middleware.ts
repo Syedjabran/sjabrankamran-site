@@ -32,15 +32,23 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
-  const isAuthPage = pathname.startsWith("/portal/login") || pathname.startsWith("/portal/reset");
+  // Pages reachable while signed out (login, password reset, and the auth
+  // callback that exchanges recovery/magic-link codes for a session).
+  const isPublicAuthPath =
+    pathname.startsWith("/portal/login") ||
+    pathname.startsWith("/portal/reset") ||
+    pathname.startsWith("/portal/auth");
 
-  if (!user && !isAuthPage) {
+  if (!user && !isPublicAuthPath) {
     const url = request.nextUrl.clone();
     url.pathname = "/portal/login";
     url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
   }
-  if (user && isAuthPage) {
+  // Only bounce already-signed-in users away from the login screen. Do NOT
+  // redirect off /portal/reset — a recovery session lands there specifically
+  // to set a new password, and off /portal/auth which is a transient handler.
+  if (user && pathname.startsWith("/portal/login")) {
     const url = request.nextUrl.clone();
     url.pathname = "/portal";
     url.search = "";

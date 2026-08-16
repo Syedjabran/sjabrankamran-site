@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, KeyRound } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
@@ -11,6 +12,24 @@ export function ResetForm() {
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // null = still checking, true/false = whether a recovery session exists.
+  const [hasSession, setHasSession] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+    let active = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (active) setHasSession(!!data.session);
+    });
+    // A recovery session may settle a moment after the callback redirect.
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      if (active) setHasSession(!!session);
+    });
+    return () => {
+      active = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,11 +47,29 @@ export function ResetForm() {
     const { error } = await supabase.auth.updateUser({ password });
     setLoading(false);
     if (error) {
-      setError(error.message);
+      setError(
+        /session/i.test(error.message)
+          ? "Your reset link has expired or was already used. Request a new one from the sign-in page."
+          : error.message
+      );
       return;
     }
     router.replace("/portal");
     router.refresh();
+  }
+
+  if (hasSession === false) {
+    return (
+      <div className="space-y-4 text-center">
+        <p className="text-sm leading-relaxed text-fog">
+          This page needs a valid password-reset link. Please open the most recent
+          &ldquo;reset your password&rdquo; email and tap its link, then you can set a new password here.
+        </p>
+        <Link href="/portal/login" className="btn-ghost mx-auto w-fit !px-4 !py-2 text-sm">
+          Back to sign in
+        </Link>
+      </div>
+    );
   }
 
   return (

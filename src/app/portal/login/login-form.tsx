@@ -11,7 +11,8 @@ export function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
+  const [error, setError] = useState<string | null>(() => params.get("error"));
   const [notice, setNotice] = useState<string | null>(null);
 
   async function signIn(e: React.FormEvent) {
@@ -37,16 +38,27 @@ export function LoginForm() {
   async function resetPassword() {
     setError(null);
     setNotice(null);
-    if (!email) {
-      setError("Enter your email above first, then tap “Forgot password”.");
+    const target = email.trim();
+    if (!target || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(target)) {
+      setError("Enter your email in the field above, then tap “Forgot password”.");
       return;
     }
-    const supabase = createClient();
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/portal/reset`,
-    });
-    if (error) setError(error.message);
-    else setNotice("Password-reset email sent. Check your inbox.");
+    setResetting(true);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.resetPasswordForEmail(target, {
+        redirectTo: `${window.location.origin}/portal/auth/callback?next=/portal/reset`,
+      });
+      if (error) setError(error.message);
+      else
+        setNotice(
+          "If an account exists for that email, a password-reset link is on its way. Check your inbox (and spam)."
+        );
+    } catch {
+      setError("Could not send the reset email. Please try again shortly.");
+    } finally {
+      setResetting(false);
+    }
   }
 
   return (
@@ -92,9 +104,10 @@ export function LoginForm() {
       <button
         type="button"
         onClick={resetPassword}
-        className="block w-full text-center text-xs text-dust transition hover:text-cyan"
+        disabled={resetting}
+        className="block w-full text-center text-xs text-dust transition hover:text-cyan disabled:opacity-60"
       >
-        Forgot password?
+        {resetting ? "Sending reset link…" : "Forgot password?"}
       </button>
     </form>
   );
