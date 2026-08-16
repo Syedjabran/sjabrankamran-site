@@ -5,6 +5,20 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, LogIn } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 
+/** True when the raw error string carries no real message (e.g. "{}", "[object Object]"). */
+function isEmptyError(msg?: string | null) {
+  if (!msg) return true;
+  const t = msg.trim();
+  return t === "" || t === "{}" || t === "[object Object]" || t === "null" || t === "undefined";
+}
+
+/** Never surface an opaque "{}" to the user — fall back to a readable message. */
+function cleanError(msg?: string | null): string | null {
+  if (msg == null) return null;
+  if (isEmptyError(msg)) return "Something went wrong. Please try again.";
+  return msg;
+}
+
 export function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
@@ -12,7 +26,7 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [error, setError] = useState<string | null>(() => params.get("error"));
+  const [error, setError] = useState<string | null>(() => cleanError(params.get("error")));
   const [notice, setNotice] = useState<string | null>(null);
 
   async function signIn(e: React.FormEvent) {
@@ -27,7 +41,7 @@ export function LoginForm() {
       setError(
         error.message === "Invalid login credentials"
           ? "Incorrect email or password. Please try again."
-          : error.message
+          : cleanError(error.message)
       );
       return;
     }
@@ -49,11 +63,19 @@ export function LoginForm() {
       const { error } = await supabase.auth.resetPasswordForEmail(target, {
         redirectTo: `${window.location.origin}/portal/auth/callback?next=/portal/reset`,
       });
-      if (error) setError(error.message);
-      else
+      if (error) {
+        // A 4xx/5xx from GoTrue when SMTP isn't configured often serialises to an
+        // empty body → show something actionable instead of a raw "{}".
+        setError(
+          /sending|smtp|email|500|unexpected/i.test(error.message) || isEmptyError(error.message)
+            ? "We couldn't send the reset email — the portal's email delivery isn't set up yet. Please ask the admin to reset your password directly."
+            : cleanError(error.message)
+        );
+      } else {
         setNotice(
           "If an account exists for that email, a password-reset link is on its way. Check your inbox (and spam)."
         );
+      }
     } catch {
       setError("Could not send the reset email. Please try again shortly.");
     } finally {
