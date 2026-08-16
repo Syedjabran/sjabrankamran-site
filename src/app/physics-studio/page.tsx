@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { ArrowRight, BadgeCheck } from "lucide-react";
 import { PageHero } from "@/components/page-hero";
 import { Section, SectionHeading } from "@/components/ui/section";
 import { Reveal } from "@/components/ui/reveal";
@@ -34,6 +36,14 @@ export default function PhysicsStudioPage() {
         <SectionHeading eyebrow="Ask a question" title="Physics Studio tutor" />
         <div className="mt-8">
           <PhysicsStudioForm />
+        </div>
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald2/25 bg-emerald2/[0.04] px-5 py-4">
+          <span className="inline-flex items-center gap-2 text-sm text-fog">
+            <BadgeCheck size={16} className="text-emerald2" /> Browse the growing library of teacher-reviewed answers.
+          </span>
+          <Link href="/physics-studio/library" className="btn-ghost !px-3.5 !py-1.5 text-xs">
+            Open the library <ArrowRight size={13} />
+          </Link>
         </div>
       </Section>
 

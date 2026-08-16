@@ -17,6 +17,9 @@ function navFor(roles: EduRole[]) {
   if (isAdmin(roles) || roles.includes("teacher") || roles.includes("teaching_assistant")) {
     items.push({ href: "/portal/teach", label: "My Classes" });
   }
+  if (isStaff(roles)) {
+    items.push({ href: "/portal/studio", label: "Physics Studio" });
+  }
   if (roles.includes("student")) {
     items.push({ href: "/portal/learn", label: "My Learning" });
   }
