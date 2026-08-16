@@ -19,7 +19,9 @@ export function AnimatedCounter({
   className?: string;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
-  const [display, setDisplay] = useState(0);
+  // Initialise with the real value so it is server-rendered and visible without
+  // JS (SEO / no-JS / slow scroll never see a misleading "0"). Integrity rule.
+  const [display, setDisplay] = useState(value);
   const started = useRef(false);
 
   useEffect(() => {
@@ -34,6 +36,8 @@ export function AnimatedCounter({
         if (!entry.isIntersecting || started.current) return;
         started.current = true;
         obs.disconnect();
+        // Snap to 0 only now (in-view) and animate up, as progressive enhancement.
+        setDisplay(0);
         const t0 = performance.now();
         const tick = (t: number) => {
           const p = Math.min((t - t0) / duration, 1);

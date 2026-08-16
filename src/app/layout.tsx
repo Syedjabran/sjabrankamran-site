@@ -1,5 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, Inter, IBM_Plex_Mono } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import "katex/dist/katex.min.css";
 import { SITE } from "@/lib/utils";
@@ -69,6 +70,11 @@ export const metadata: Metadata = {
   alternates: { canonical: SITE.url },
 };
 
+export const viewport: Viewport = {
+  themeColor: "#0B0F14",
+  colorScheme: "dark",
+};
+
 const personSchema = {
   "@context": "https://schema.org",
   "@type": "Person",
@@ -106,6 +112,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main>{children}</main>
         <SiteFooter />
         <EinsteinCompanion />
+        <Analytics />
       </body>
     </html>
   );
