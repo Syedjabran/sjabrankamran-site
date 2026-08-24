@@ -41,12 +41,25 @@ export async function askPhysicsTutor(input: {
   }
 
   try {
-    const model = process.env.GEMINI_MODEL || "gemini-flash-latest";
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ systemInstruction: { parts: [{ text: SYSTEM }] }, contents: [{ parts: [{ text: prompt }] }] })
-    });
+    // Pin to the fast, non-thinking flash-lite tier (group standard). The generic
+    // "gemini-flash-latest" alias now resolves to a heavy reasoning model whose
+    // latency (10-20s+) blows the serverless time budget, so the tutor silently
+    // returned null and every question fell through to "teacher review". (2026-08-24)
+    const model = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
+    // Abort a slow provider quickly and degrade gracefully instead of hanging.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 12_000);
+    let r: Response;
+    try {
+      r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ systemInstruction: { parts: [{ text: SYSTEM }] }, contents: [{ parts: [{ text: prompt }] }] }),
+        signal: ctrl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
     if (!r.ok) return { provider: null, answer: null, error: `gemini http ${r.status}` };
     const j = await r.json();
     const text = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text).join("\n").trim();
