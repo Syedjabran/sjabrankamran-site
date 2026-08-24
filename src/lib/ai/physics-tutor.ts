@@ -45,7 +45,13 @@ export async function askPhysicsTutor(input: {
     // "gemini-flash-latest" alias now resolves to a heavy reasoning model whose
     // latency (10-20s+) blows the serverless time budget, so the tutor silently
     // returned null and every question fell through to "teacher review". (2026-08-24)
-    const model = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
+    // Group-standard fast tier. Guard against the generic "*-latest" reasoning
+    // aliases: even when supplied via GEMINI_MODEL in the host env, they resolve
+    // to slow thinking models that exceed the serverless budget and make the
+    // tutor look unresponsive. Any explicit, non-blocked model is still honoured.
+    const SLOW_ALIASES = new Set(["gemini-flash-latest", "gemini-pro-latest"]);
+    const configured = (process.env.GEMINI_MODEL || "").trim();
+    const model = configured && !SLOW_ALIASES.has(configured) ? configured : "gemini-3.1-flash-lite";
     // Abort a slow provider quickly and degrade gracefully instead of hanging.
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 12_000);
