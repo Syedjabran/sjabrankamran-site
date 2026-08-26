@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, CheckCircle2, Eye, RotateCcw, Printer, Clock, ArrowLeft } from "lucide-react";
+import { Loader2, CheckCircle2, Eye, RotateCcw, Printer, Clock, ArrowLeft, Sparkles } from "lucide-react";
 import type { ImgQuestion } from "@/lib/exam-lab/image-bank";
 
 type UrlMap = Record<string, string>;
@@ -25,6 +25,8 @@ export function PaperRunner({
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, number>>({});
+  const [structAnswers, setStructAnswers] = useState<Record<string, string>>({});
+  const [maxwell, setMaxwell] = useState<Record<string, { loading?: boolean; awarded?: number; outOf?: number; feedback?: string; points?: { earned: boolean; text: string }[]; error?: string }>>({});
   const [submitted, setSubmitted] = useState(false);
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const topRef = useRef<HTMLDivElement>(null);
@@ -66,6 +68,27 @@ export function PaperRunner({
     });
     setRevealed((r) => ({ ...r, ...rev }));
     setTimeout(() => topRef.current?.querySelector(".pr-result")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+  }
+
+  async function markMaxwell(id: string) {
+    const answer = (structAnswers[id] || "").trim();
+    if (answer.length < 3) {
+      setMaxwell((m) => ({ ...m, [id]: { error: "Write your answer first." } }));
+      return;
+    }
+    setMaxwell((m) => ({ ...m, [id]: { loading: true } }));
+    try {
+      const res = await fetch("/api/exam-lab/mark", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, answer }),
+      });
+      const j = await res.json();
+      if (!res.ok) setMaxwell((m) => ({ ...m, [id]: { error: j.error || "Marking failed." } }));
+      else setMaxwell((m) => ({ ...m, [id]: { awarded: j.awarded, outOf: j.outOf, feedback: j.feedback, points: j.points } }));
+    } catch {
+      setMaxwell((m) => ({ ...m, [id]: { error: "Network error." } }));
+    }
   }
 
   const mcqs = questions.filter(isMcq);
@@ -172,13 +195,39 @@ export function PaperRunner({
                 </div>
               ) : (
                 <div className="mt-3">
-                  <textarea disabled={submitted} placeholder="Write your answer / working here…" className="min-h-28 w-full resize-y rounded-xl border border-white/15 bg-void px-3.5 py-3 text-sm text-ice el-noprint" />
-                  <button
-                    onClick={() => setRevealed((r) => ({ ...r, [q.id]: !r[q.id] }))}
-                    className="btn-ghost mt-2 !px-3 !py-1.5 text-xs el-noprint"
-                  >
-                    <Eye size={13} /> {revealed[q.id] ? "Hide" : "Reveal"} mark scheme
-                  </button>
+                  <textarea
+                    value={structAnswers[q.id] || ""}
+                    onChange={(e) => setStructAnswers((s) => ({ ...s, [q.id]: e.target.value }))}
+                    placeholder="Write your answer / working here…"
+                    className="min-h-28 w-full resize-y rounded-xl border border-white/15 bg-void px-3.5 py-3 text-sm text-ice el-noprint"
+                  />
+                  <div className="mt-2 flex flex-wrap gap-2 el-noprint">
+                    <button onClick={() => markMaxwell(q.id)} disabled={maxwell[q.id]?.loading} className="btn-primary !px-3.5 !py-1.5 text-xs disabled:opacity-50">
+                      {maxwell[q.id]?.loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} Mark with Maxwell
+                    </button>
+                    <button onClick={() => setRevealed((r) => ({ ...r, [q.id]: !r[q.id] }))} className="btn-ghost !px-3 !py-1.5 text-xs">
+                      <Eye size={13} /> {revealed[q.id] ? "Hide" : "Reveal"} mark scheme
+                    </button>
+                  </div>
+                  {maxwell[q.id]?.error && <p className="mt-2 text-xs text-signal">{maxwell[q.id]?.error}</p>}
+                  {maxwell[q.id]?.awarded != null && (
+                    <div className="mt-3 rounded-xl border border-violet2/30 bg-violet2/[0.06] p-3">
+                      <p className="flex items-center gap-2 font-display text-sm text-ice">
+                        <Sparkles size={14} className="text-violet2" /> Maxwell: <b className="text-violet2">{maxwell[q.id]?.awarded}/{maxwell[q.id]?.outOf}</b>
+                      </p>
+                      {maxwell[q.id]?.feedback && <p className="mt-1 text-sm text-fog">{maxwell[q.id]?.feedback}</p>}
+                      {!!maxwell[q.id]?.points?.length && (
+                        <ul className="mt-2 space-y-1">
+                          {maxwell[q.id]!.points!.map((pt, k) => (
+                            <li key={k} className="flex gap-2 text-xs text-fog">
+                              <span className={pt.earned ? "text-emerald2" : "text-signal"}>{pt.earned ? "✓" : "✗"}</span>
+                              <span>{pt.text}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
                   {revealed[q.id] && q.ms_img && urls[q.ms_img] && (
                     <div className="mt-3">
                       <p className="mb-1 font-mono text-[11px] uppercase tracking-widest text-cyan">Official mark scheme</p>
