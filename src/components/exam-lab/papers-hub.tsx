@@ -20,7 +20,7 @@ const TOPICS_A2 = ["Circular motion","Gravitational fields","Thermal physics","I
 
 export function PapersHub() {
   const [tab, setTab] = useState<"papers" | "drill">("papers");
-  const [active, setActive] = useState<{ questions: ImgQuestion[]; title: string; subtitle?: string; duration: number; timed: boolean } | null>(null);
+  const [active, setActive] = useState<{ questions: ImgQuestion[]; title: string; subtitle?: string; duration: number; timed: boolean; logMeta: { mode: "paper" | "drill"; code?: string; ref?: string; paperType: "P1" | "P2" | "P4" | "mixed" } } | null>(null);
 
   // drill state
   const [pType, setPType] = useState<"P1" | "P2" | "P4">("P1");
@@ -38,7 +38,7 @@ export function PapersHub() {
   function startPaper(code: string) {
     const qs = IMAGE_BANK.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
     const meta = IMAGE_PAPERS.find((p) => p.code === code)!;
-    setActive({ questions: qs, title: `${PAPER_NAME[meta.paperType]}`, subtitle: `${meta.ref} · ${label(code)}`, duration: meta.duration, timed: true });
+    setActive({ questions: qs, title: `${PAPER_NAME[meta.paperType]}`, subtitle: `${meta.ref} · ${label(code)}`, duration: meta.duration, timed: true, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType } });
   }
 
   const drillPool = useMemo(() => {
@@ -49,7 +49,7 @@ export function PapersHub() {
     const pool = [...drillPool];
     for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
     const qs = pool.slice(0, count);
-    setActive({ questions: qs, title: `Topic drill · ${PAPER_NAME[pType].split(" · ")[0]}`, subtitle: `${qs.length} questions`, duration: Math.max(10, qs.length * (pType === "P1" ? 2 : 8)), timed: false });
+    setActive({ questions: qs, title: `Topic drill · ${PAPER_NAME[pType].split(" · ")[0]}`, subtitle: `${qs.length} questions`, duration: Math.max(10, qs.length * (pType === "P1" ? 2 : 8)), timed: false, logMeta: { mode: "drill", paperType: pType } });
   }
 
   if (active) {

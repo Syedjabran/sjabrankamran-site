@@ -13,6 +13,7 @@ export function PaperRunner({
   timed = true,
   duration = 60,
   onExit,
+  logMeta,
 }: {
   questions: ImgQuestion[];
   title: string;
@@ -20,7 +21,9 @@ export function PaperRunner({
   timed?: boolean;
   duration?: number;
   onExit?: () => void;
+  logMeta?: { mode: "paper" | "drill"; code?: string; ref?: string; paperType: "P1" | "P2" | "P4" | "mixed" };
 }) {
+  const startedAt = useRef(Date.now());
   const [urls, setUrls] = useState<UrlMap>({});
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -67,6 +70,27 @@ export function PaperRunner({
       if (!isMcq(q)) rev[q.id] = true;
     });
     setRevealed((r) => ({ ...r, ...rev }));
+    // log the attempt for the analytics dashboard (best-effort)
+    if (logMeta) {
+      const qlog = questions.map((q) => {
+        const ai = q.answer ? "ABCD".indexOf(q.answer) : -1;
+        const mcq = isMcq(q);
+        const earned = mcq ? (answers[q.id] === ai ? q.marks || 1 : 0) : (maxwell[q.id]?.awarded ?? null);
+        return { id: q.id, topic: q.topic, level: q.level, paperType: q.paperType, marks: q.marks || 1, earned: earned as number | null, correct: mcq ? answers[q.id] === ai : null };
+      });
+      const scored = qlog.filter((q) => q.earned !== null);
+      const score = scored.reduce((s, q) => s + (q.earned || 0), 0);
+      const totalScored = scored.reduce((s, q) => s + q.marks, 0);
+      fetch("/api/exam-lab/attempt", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          mode: logMeta.mode, paperType: logMeta.paperType, code: logMeta.code, ref: logMeta.ref,
+          score, total: totalScored, qCount: questions.length, scoredCount: scored.length,
+          durationSec: Math.round((Date.now() - startedAt.current) / 1000), questions: qlog,
+        }),
+      }).catch(() => {});
+    }
     setTimeout(() => topRef.current?.querySelector(".pr-result")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
   }
 

@@ -21,6 +21,7 @@ function navFor(roles: EduRole[]) {
     items.push({ href: "/portal/studio", label: "Physics Studio" });
   }
   items.push({ href: "/portal/exam-lab", label: "Exam Lab" });
+  items.push({ href: "/portal/progress", label: "My Progress" });
   if (roles.includes("student")) {
     items.push({ href: "/portal/learn", label: "My Learning" });
   }
