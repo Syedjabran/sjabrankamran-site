@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { BANK } from "@/lib/exam-lab/bank";
+import { PASTPAPER_BANK } from "@/lib/exam-lab/pastpaper-bank";
 import { getPortalUser } from "@/lib/edu/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -16,10 +17,10 @@ const schema = z.object({
 /** Authoritative MCQ marking from the seed bank + ingested portal bank. */
 async function correctAnswers(ids: string[]): Promise<Map<string, number>> {
   const map = new Map<string, number>();
-  for (const q of BANK) {
+  for (const q of [...BANK, ...PASTPAPER_BANK]) {
     if (ids.includes(q.id) && q.type === "mcq" && typeof q.ans === "number") map.set(q.id, q.ans);
   }
-  const uuidIds = ids.filter((id) => !id.startsWith("seed-") && !id.startsWith("ai-"));
+  const uuidIds = ids.filter((id) => !id.startsWith("seed-") && !id.startsWith("ai-") && !id.startsWith("pp-"));
   if (uuidIds.length) {
     try {
       const supabase = createAdminClient();

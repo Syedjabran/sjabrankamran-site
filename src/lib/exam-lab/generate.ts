@@ -11,6 +11,7 @@
  * the authored seed bank if the model is unavailable or returns nothing usable.
  */
 import { BANK, ALL_TOPICS, type ELQuestion, type ELLevel, type ELType } from "./bank";
+import { PASTPAPER_BANK } from "./pastpaper-bank";
 import { groundingContext } from "@/lib/ai/web-search";
 
 const SLOW_ALIASES = new Set(["gemini-flash-latest", "gemini-pro-latest"]);
@@ -38,7 +39,9 @@ function shuffle<T>(a: T[]): T[] {
 }
 
 function seedFallback(input: GenerateInput, visibility: "public" | "portal"): ELQuestion[] {
-  const pool = BANK.filter((q) => {
+  // Portal draws from the authored bank PLUS real ingested past-paper MCQs.
+  const source = visibility === "portal" ? [...PASTPAPER_BANK, ...BANK] : BANK;
+  const pool = source.filter((q) => {
     if (visibility === "public" && !(q.visibility === "public" || q.visibility === "both")) return false;
     if (visibility === "portal" && !(q.visibility === "portal" || q.visibility === "both")) return false;
     if (input.topics.length && !input.topics.includes(q.t)) return false;

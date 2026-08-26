@@ -25,7 +25,7 @@ export default async function PortalExamLabPage() {
         Choose an exam pattern (Paper 1 MCQ · Paper 2 AS · Paper 4 A2) or drill specific topics. Your attempts are recorded for teacher review. Bank grows as past papers are ingested.
       </div>
 
-      <ExamRunner mode="portal" maxCount={20} showPatterns />
+      <ExamRunner mode="portal" maxCount={40} showPatterns />
     </div>
   );
 }
