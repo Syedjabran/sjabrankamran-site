@@ -29,9 +29,9 @@ export function PapersHub() {
   const [count, setCount] = useState(8);
 
   const grouped = useMemo(() => {
+    // IMAGE_PAPERS is already sorted chronologically (year → session → variant).
     const g: Record<string, typeof IMAGE_PAPERS> = { P1: [], P2: [], P4: [] };
     IMAGE_PAPERS.forEach((p) => g[p.paperType]?.push(p));
-    Object.values(g).forEach((a) => a.sort((x, y) => x.code.localeCompare(y.code)));
     return g;
   }, []);
 
