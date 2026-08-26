@@ -10,7 +10,7 @@
  * asked for a simple line-delimited format that needs NO escaping. Falls back to
  * the authored seed bank if the model is unavailable or returns nothing usable.
  */
-import { BANK, type ELQuestion, type ELLevel, type ELType } from "./bank";
+import { BANK, ALL_TOPICS, type ELQuestion, type ELLevel, type ELType } from "./bank";
 import { groundingContext } from "@/lib/ai/web-search";
 
 const SLOW_ALIASES = new Set(["gemini-flash-latest", "gemini-pro-latest"]);
@@ -52,6 +52,8 @@ function seedFallback(input: GenerateInput, visibility: "public" | "portal"): EL
 
 // ---------- line-delimited parser (LaTeX-safe) ------------------------------
 type RawQ = {
+  topic?: string;
+  level?: string;
   type?: string;
   command?: string;
   marks?: number;
@@ -61,7 +63,7 @@ type RawQ = {
   scheme: string[];
 };
 
-const KNOWN = new Set(["TYPE", "COMMAND", "MARKS", "STEM", "A", "B", "C", "D", "ANSWER", "MARK"]);
+const KNOWN = new Set(["TOPIC", "LEVEL", "TYPE", "COMMAND", "MARKS", "STEM", "A", "B", "C", "D", "ANSWER", "MARK"]);
 
 function parseBlocks(text: string): RawQ[] {
   const cleaned = text.replace(/```[a-z]*/gi, "").trim();
@@ -82,6 +84,8 @@ function parseBlocks(text: string): RawQ[] {
       }
       const val = m[2].trim();
       switch (key) {
+        case "TOPIC": rec.topic = val; last = "TOPIC"; break;
+        case "LEVEL": rec.level = val.toUpperCase().replace(/[^A-Z]/g, ""); last = "LEVEL"; break;
         case "TYPE": rec.type = val.toLowerCase(); last = "TYPE"; break;
         case "COMMAND": rec.command = val; last = "COMMAND"; break;
         case "MARKS": rec.marks = parseInt(val, 10); last = "MARKS"; break;
@@ -140,6 +144,8 @@ Physics rules:
 
 OUTPUT FORMAT — repeat this block per question, separated by a line containing exactly ===Q===
 ===Q===
+TOPIC: <the ONE syllabus topic this question is about, copied from the list above>
+LEVEL: LOT | HOT
 TYPE: mcq | structured
 COMMAND: <Cambridge command word: State, Define, Calculate, Determine, Explain, Suggest, Show that, Compare, Describe, Sketch>
 MARKS: <integer; mcq=1, structured 3-6>
@@ -189,11 +195,15 @@ Start the first block with ===Q=== and keep each field on its own single line.${
       const wantMcq = input.style === "mcq" || (input.style === "mixed" && g.type === "mcq");
       const isMcq = wantMcq && g.options.length === 4 && !!g.answer;
       const type: ELType = isMcq ? "mcq" : "structured";
-      const lvl = levels[i % levels.length];
+      // Prefer the model's own tags when valid, so labels match the question.
+      const modelLvl = g.level === "LOT" || g.level === "HOT" ? (g.level as ELLevel) : undefined;
+      const lvl: ELLevel = modelLvl && levels.includes(modelLvl) ? modelLvl : levels[i % levels.length];
+      const modelTopic = g.topic && ALL_TOPICS.includes(g.topic) ? g.topic : undefined;
+      const tag = modelTopic || input.topics[i % Math.max(1, input.topics.length)] || (topics[0] as string);
       const ansIdx = g.answer ? "ABCD".indexOf(g.answer) : -1;
       return {
         id: `ai-${Date.now().toString(36)}-${i}`,
-        t: input.topics[i % Math.max(1, input.topics.length)] || (topics[0] as string),
+        t: tag,
         lvl,
         type,
         paper: isMcq ? "P1" : lvl === "HOT" ? "P4" : "P2",
