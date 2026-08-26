@@ -107,8 +107,16 @@ export async function POST(request: Request) {
     { topics: d.topics, levels: d.levels, style: d.style, count },
     { ground }
   );
+  const diag = request.headers.get("x-el-diag") === "1";
   return NextResponse.json(
-    { ok: true, source: res.source, provider: res.provider, available: res.questions.length, questions: res.questions },
+    {
+      ok: true,
+      source: res.source,
+      provider: res.provider,
+      available: res.questions.length,
+      questions: res.questions,
+      ...(diag ? { debug: res.error ?? null } : {}),
+    },
     { status: 200 }
   );
 }

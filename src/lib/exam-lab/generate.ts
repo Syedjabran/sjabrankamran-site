@@ -29,8 +29,29 @@ function pickModel() {
 }
 
 function stripFences(s: string) {
-  return s.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
+  return s.replace(/```(?:json)?/gi, "").trim();
 }
+
+/** Best-effort: parse a JSON array even if the model wrapped it in prose. */
+function extractJsonArray(text: string): unknown | null {
+  const cleaned = stripFences(text);
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const start = cleaned.indexOf("[");
+    const end = cleaned.lastIndexOf("]");
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(cleaned.slice(start, end + 1));
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+const GEN_SYSTEM = `You are a Cambridge International examiner writing ORIGINAL practice questions for AS & A Level Physics 9702 (2025-2027 syllabus). You never copy real past-paper wording. You always reply with a single valid JSON array and nothing else — no prose, no markdown code fences.`;
 
 export type GenerateInput = {
   topics: string[];
@@ -39,7 +60,7 @@ export type GenerateInput = {
   count: number;
 };
 
-export type GenerateResult = { source: "ai" | "seed"; questions: ELQuestion[]; provider: string | null };
+export type GenerateResult = { source: "ai" | "seed"; questions: ELQuestion[]; provider: string | null; error?: string };
 
 function seedFallback(input: GenerateInput, visibility: "public" | "portal"): ELQuestion[] {
   const pool = BANK.filter((q) => {
@@ -65,7 +86,7 @@ export async function generateQuestions(
   const levels = input.levels.length ? input.levels : (["LOT", "HOT"] as ELLevel[]);
 
   if (!process.env.GEMINI_API_KEY) {
-    return { source: "seed", questions: seedFallback(input, "public"), provider: null };
+    return { source: "seed", questions: seedFallback(input, "public"), provider: null, error: "no_key" };
   }
 
   let grounding = "";
@@ -109,7 +130,7 @@ Return ONLY a JSON array (no prose, no markdown fences). Each element:
 
   const model = pickModel();
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 20_000);
+  const timer = setTimeout(() => ctrl.abort(), 22_000);
   try {
     const r = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
@@ -117,19 +138,26 @@ Return ONLY a JSON array (no prose, no markdown fences). Each element:
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          systemInstruction: { parts: [{ text: GEN_SYSTEM }] },
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: "application/json", temperature: 0.9, maxOutputTokens: 4096 },
+          generationConfig: { temperature: 0.9, maxOutputTokens: 4096 },
         }),
         signal: ctrl.signal,
       }
     );
-    if (!r.ok) return { source: "seed", questions: seedFallback(input, "public"), provider: null };
+    if (!r.ok) {
+      const body = await r.text().catch(() => "");
+      return { source: "seed", questions: seedFallback(input, "public"), provider: null, error: `http_${r.status}:${body.slice(0, 160)}` };
+    }
     const j = await r.json();
     const text: string =
       j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text).join("") ?? "";
-    const parsed = genArray.safeParse(JSON.parse(stripFences(text)));
+    if (!text) return { source: "seed", questions: seedFallback(input, "public"), provider: null, error: `empty:${JSON.stringify(j?.candidates?.[0]?.finishReason ?? j?.promptFeedback ?? "none").slice(0,120)}` };
+    const arr = extractJsonArray(text);
+    if (arr === null) return { source: "seed", questions: seedFallback(input, "public"), provider: null, error: `parse_fail:${text.slice(0, 120)}` };
+    const parsed = genArray.safeParse(arr);
     if (!parsed.success || parsed.data.length === 0) {
-      return { source: "seed", questions: seedFallback(input, "public"), provider: null };
+      return { source: "seed", questions: seedFallback(input, "public"), provider: null, error: `zod_fail:${JSON.stringify(parsed.success ? "empty" : parsed.error.issues.slice(0,2)).slice(0,180)}` };
     }
     const questions: ELQuestion[] = parsed.data.slice(0, input.count).map((g, i) => {
       const type = (input.style === "mcq" ? "mcq" : input.style === "structured" ? "structured" : g.type) as ELType;
@@ -152,8 +180,8 @@ Return ONLY a JSON array (no prose, no markdown fences). Each element:
       };
     });
     return { source: "ai", questions, provider: "gemini" };
-  } catch {
-    return { source: "seed", questions: seedFallback(input, "public"), provider: null };
+  } catch (e) {
+    return { source: "seed", questions: seedFallback(input, "public"), provider: null, error: `exception:${(e as Error).message}`.slice(0, 160) };
   } finally {
     clearTimeout(timer);
   }
