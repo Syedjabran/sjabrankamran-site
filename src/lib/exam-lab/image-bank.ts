@@ -16,7 +16,7 @@ const CANON: Record<string, { marks: number; duration: number; name: string }> =
   P4: { marks: 100, duration: 120, name: "Paper 4 · A2 Structured" },
 };
 
-// 2296 questions across 118 papers.
+// 2529 questions across 130 papers.
 export const IMAGE_BANK = rawData as ImgQuestion[];
 
 const SESSORD: Record<string, number> = { m: 0, s: 1, w: 2 };
