@@ -90,6 +90,20 @@
   body { background-attachment: scroll; }
 }
 
+/* Exam Lab — print / Save-as-PDF: hide app chrome, render a clean paper */
+@media print {
+  header, footer, nav, .el-noprint { display: none !important; }
+  body { background: #fff !important; color: #111 !important; background-image: none !important; }
+  .el-paper { border: none !important; background: #fff !important; padding: 0 !important; }
+  .el-q { break-inside: avoid; border-color: #ddd !important; }
+  .el-paper, .el-paper * { color: #111 !important; }
+  .el-scheme { background: #f5f5f5 !important; border-color: #888 !important; }
+  .el-result { background: #f0f0f0 !important; }
+  .katex, .katex-display { color: #111 !important; }
+  textarea { border: 1px solid #999 !important; min-height: 70px !important; }
+  a { color: #111 !important; text-decoration: none; }
+}
+
 /* Physics Studio equation rendering */
 .katex-display {
   margin: 1.25rem 0;

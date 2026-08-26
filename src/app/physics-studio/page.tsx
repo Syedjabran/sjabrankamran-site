@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, BadgeCheck } from "lucide-react";
+import { ArrowRight, BadgeCheck, FlaskConical } from "lucide-react";
 import { PageHero } from "@/components/page-hero";
 import { Section, SectionHeading } from "@/components/ui/section";
 import { Reveal } from "@/components/ui/reveal";
@@ -43,6 +43,14 @@ export default function PhysicsStudioPage() {
           </span>
           <Link href="/physics-studio/library" className="btn-ghost !px-3.5 !py-1.5 text-xs">
             Open the library <ArrowRight size={13} />
+          </Link>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-cyan/25 bg-cyan/[0.04] px-5 py-4">
+          <span className="inline-flex items-center gap-2 text-sm text-fog">
+            <FlaskConical size={16} className="text-cyan" /> New: build an on-demand 9702 practice test — tagged by topic &amp; thinking level, with instant marking and PDF export.
+          </span>
+          <Link href="/physics-studio/exam-lab" className="btn-ghost !px-3.5 !py-1.5 text-xs">
+            Open the Exam Lab <ArrowRight size={13} />
           </Link>
         </div>
       </Section>
