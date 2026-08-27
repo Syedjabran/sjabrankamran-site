@@ -140,6 +140,31 @@ export async function listMail(limit = 200): Promise<MailIndexEntry[]> {
   return idx.slice(-limit).reverse();
 }
 
+/** Re-attempt every queued message (e.g. after the Gmail relay is connected). */
+export async function flushQueued(max = 200): Promise<{ attempted: number; sent: number; stillQueued: number }> {
+  if (!mailConfigured()) return { attempted: 0, sent: 0, stillQueued: 0 };
+  const idx = await readJson<MailIndexEntry[]>("log.json", []);
+  const queuedIds = idx.filter((e) => e.status === "queued").slice(-max).map((e) => e.id);
+  let sent = 0, stillQueued = 0;
+  const byId = new Map(idx.map((e) => [e.id, e]));
+  for (const id of queuedIds) {
+    const rec = await readJson<MailRecord | null>(`msg/${id}.json`, null);
+    if (!rec) continue;
+    const r = await relay(rec);
+    const entry = byId.get(id);
+    if (r.ok) {
+      rec.status = "sent"; delete rec.error; sent++;
+      if (entry) { entry.status = "sent"; delete entry.error; }
+    } else {
+      rec.error = r.error; stillQueued++;
+      if (entry) entry.error = r.error;
+    }
+    await writeJson(`msg/${id}.json`, rec);
+  }
+  if (sent > 0) await writeJson("log.json", idx);
+  return { attempted: queuedIds.length, sent, stillQueued };
+}
+
 export async function getTemplates(): Promise<Template[]> {
   return readJson<Template[]>("templates.json", DEFAULT_TEMPLATES);
 }

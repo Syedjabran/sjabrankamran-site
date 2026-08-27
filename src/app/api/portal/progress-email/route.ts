@@ -3,7 +3,7 @@ import { getPortalUser, isStaff } from "@/lib/edu/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { guardianEmails, EMAIL_RE } from "@/lib/portal/onboarding";
 import { buildStats, composeProgressEmail } from "@/lib/portal/progress-report";
-import { sendMail } from "@/lib/portal/mail";
+import { sendMail, mailConfigured } from "@/lib/portal/mail";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -37,7 +37,9 @@ export async function POST(req: Request) {
   if (!b || (!b.classId && !b.studentUid)) return NextResponse.json({ error: "classId or studentUid required." }, { status: 400 });
   const toParents = b.toParents !== false;
   const toStudent = b.toStudent !== false;
-  const dryRun = !!b.dryRun;
+  // Auto dry-run when the Gmail relay isn't connected yet, so the scheduled
+  // agent never builds a queue backlog before sending is possible.
+  const dryRun = !!b.dryRun || !mailConfigured();
 
   const supabase = createAdminClient();
 
@@ -110,5 +112,5 @@ export async function POST(req: Request) {
     totalSent: results.reduce((s, r) => s + r.sent, 0),
     totalQueued: results.reduce((s, r) => s + r.queued, 0),
   };
-  return NextResponse.json({ ok: true, dryRun, summary, results }, { status: 200 });
+  return NextResponse.json({ ok: true, dryRun, mailConfigured: mailConfigured(), summary, results }, { status: 200 });
 }
