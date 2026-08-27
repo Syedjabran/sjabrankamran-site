@@ -49,7 +49,7 @@ export async function POST(req: Request) {
 
   if (b.classId) {
     const [{ data: enr }, { data: cls }] = await Promise.all([
-      supabase.from("edu_enrolments").select("edu_students(id, profile_id, edu_profiles(full_name, email))").eq("class_id", b.classId).eq("status", "active"),
+      supabase.from("edu_enrolments").select("edu_students(id, profile_id, edu_profiles!edu_students_profile_id_fkey(full_name, email))").eq("class_id", b.classId).eq("status", "active"),
       supabase.from("edu_classes").select("name").eq("id", b.classId).maybeSingle(),
     ]);
     const className = (cls as { name?: string } | null)?.name || "Physics";
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
       targets.push({ studentId: s.id, uid: s.profile_id, name: s.edu_profiles?.full_name || s.edu_profiles?.email || "Student", email: s.edu_profiles?.email || "", className });
     }
   } else if (b.studentUid) {
-    const { data: s } = await supabase.from("edu_students").select("id, profile_id, edu_profiles(full_name, email)").eq("profile_id", b.studentUid).maybeSingle();
+    const { data: s } = await supabase.from("edu_students").select("id, profile_id, edu_profiles!edu_students_profile_id_fkey(full_name, email)").eq("profile_id", b.studentUid).maybeSingle();
     const row = s as { id: string; profile_id: string; edu_profiles?: { full_name?: string; email?: string } } | null;
     if (row) {
       const { data: enr } = await supabase.from("edu_enrolments").select("edu_classes(name)").eq("student_id", row.id).eq("status", "active").limit(1).maybeSingle();

@@ -92,7 +92,7 @@ export async function getClassReport(meta: ClassMeta): Promise<ClassReport> {
   const supabase = createAdminClient();
   const { data: enr } = await supabase
     .from("edu_enrolments")
-    .select("student_id, edu_students(id, student_no, profile_id, edu_profiles(full_name, email))")
+    .select("student_id, edu_students(id, student_no, profile_id, edu_profiles!edu_students_profile_id_fkey(full_name, email))")
     .eq("class_id", meta.id)
     .eq("status", "active");
 

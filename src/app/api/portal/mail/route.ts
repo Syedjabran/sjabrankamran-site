@@ -16,7 +16,7 @@ async function classRecipients(classId: string, audience: "students" | "parents"
   const supabase = createAdminClient();
   const { data: enr } = await supabase
     .from("edu_enrolments")
-    .select("edu_students(profile_id, edu_profiles(email))")
+    .select("edu_students(profile_id, edu_profiles!edu_students_profile_id_fkey(email))")
     .eq("class_id", classId)
     .eq("status", "active");
   type Row = { edu_students?: { profile_id: string; edu_profiles?: { email?: string } } };
