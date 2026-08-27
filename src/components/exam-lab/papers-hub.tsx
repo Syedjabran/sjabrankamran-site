@@ -24,7 +24,7 @@ const TOPICS_A2 = ["Circular motion","Gravitational fields","Thermal physics","I
 type ActiveMeta = { mode: "paper" | "drill"; code?: string; ref?: string; paperType: "P1" | "P2" | "P4" | "mixed" };
 type Active = { questions: ImgQuestion[]; title: string; subtitle?: string; duration: number; timed: boolean; logMeta: ActiveMeta };
 
-export function PapersHub({ candidate }: { candidate?: string }) {
+export function PapersHub() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -98,7 +98,7 @@ export function PapersHub({ candidate }: { candidate?: string }) {
     enter({ questions: p1, title: "Daily Challenge", subtitle: "10 mixed Paper-1 questions · 15 min", duration: 15, timed: true, logMeta: { mode: "drill", paperType: "P1" } });
   }
 
-  if (active) return <PaperRunner {...active} candidate={candidate} onExit={exit} />;
+  if (active) return <PaperRunner {...active} onExit={exit} />;
 
   const availTopics = pType === "P4" ? TOPICS_A2 : TOPICS_AS;
 

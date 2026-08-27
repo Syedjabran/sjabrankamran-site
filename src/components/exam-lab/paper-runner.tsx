@@ -19,7 +19,6 @@ export function PaperRunner({
   duration = 60,
   onExit,
   logMeta,
-  candidate,
 }: {
   questions: ImgQuestion[];
   title: string;
@@ -28,7 +27,6 @@ export function PaperRunner({
   duration?: number; // minutes
   onExit?: () => void;
   logMeta?: LogMeta;
-  candidate?: string;
 }) {
   const [urls, setUrls] = useState<UrlMap>({});
   const [loading, setLoading] = useState(true);
@@ -173,12 +171,11 @@ export function PaperRunner({
   const pct = mcqs.length ? Math.round((got / mcqs.length) * 100) : 0;
 
   const watermark = useMemo(() => {
-    const who = (candidate || "Exam Lab candidate").slice(0, 40);
-    const when = new Date().toLocaleDateString("en-GB");
-    const txt = `${who} · ${when} · sjabrankamran.com`;
+    // Ownership/branding watermark tiled across the live exam.
+    const txt = `physics@sjabrankamran.com`;
     const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='360' height='200'><text x='10' y='120' transform='rotate(-22 180 100)' font-family='monospace' font-size='15' fill='%23ffffff'>${encodeURIComponent(txt).replace(/'/g, "%27")}</text></svg>`;
     return `url("data:image/svg+xml,${svg}")`;
-  }, [candidate]);
+  }, []);
 
   if (loading) {
     return (

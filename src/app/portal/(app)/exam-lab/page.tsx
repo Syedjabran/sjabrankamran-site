@@ -8,7 +8,6 @@ export const metadata = { title: "Exam Lab — Real CAIE 9702 Past Papers", robo
 export default async function PortalExamLabPage() {
   const user = await getPortalUser();
   const first = (user?.fullName || user?.email || "").split(" ")[0];
-  const candidate = user?.fullName || user?.email || "";
 
   return (
     <div>
@@ -28,7 +27,7 @@ export default async function PortalExamLabPage() {
       </div>
 
       <Suspense fallback={<div className="text-sm text-dust">Loading Exam Lab…</div>}>
-        <PapersHub candidate={candidate} />
+        <PapersHub />
       </Suspense>
     </div>
   );

@@ -6,7 +6,11 @@ import { NextResponse, type NextRequest } from "next/server";
  * redirects signed-out visitors to the login page.
  */
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({ request });
+  // Expose the current path to server components (used by the portal layout to
+  // gate students onto the onboarding form without an infinite redirect loop).
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-pathname", request.nextUrl.pathname);
+  let response = NextResponse.next({ request: { headers: requestHeaders } });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -18,7 +22,7 @@ export async function middleware(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          response = NextResponse.next({ request });
+          response = NextResponse.next({ request: { headers: requestHeaders } });
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options)
           );

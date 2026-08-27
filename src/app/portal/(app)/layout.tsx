@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { LogOut, GraduationCap } from "lucide-react";
 import { getPortalUser, ROLE_LABELS, isAdmin, isStaff, type EduRole } from "@/lib/edu/auth";
+import { isOnboardingComplete } from "@/lib/portal/onboarding";
 
 export const metadata = { robots: { index: false } };
 
@@ -19,6 +21,8 @@ function navFor(roles: EduRole[]) {
   }
   if (isStaff(roles)) {
     items.push({ href: "/portal/studio", label: "Physics Studio" });
+    items.push({ href: "/portal/admin/institutions", label: "Institutions" });
+    items.push({ href: "/portal/admin/mail", label: "Email" });
   }
   items.push({ href: "/portal/exam-lab", label: "Exam Lab" });
   items.push({ href: "/portal/progress", label: "My Progress" });
@@ -34,6 +38,14 @@ function navFor(roles: EduRole[]) {
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const user = await getPortalUser();
   if (!user) redirect("/portal/login");
+
+  // Mandatory onboarding gate: a student cannot use ANY activity until their
+  // required profile (incl. a valid parent email) is complete.
+  const pathname = (await headers()).get("x-pathname") || "";
+  const mustOnboard = user.roles.includes("student") && !(await isOnboardingComplete(user.id));
+  if (mustOnboard && !pathname.startsWith("/portal/onboarding")) {
+    redirect("/portal/onboarding");
+  }
 
   const nav = navFor(user.roles);
   const roleBadges = user.roles.length
@@ -68,8 +80,8 @@ export default async function PortalLayout({ children }: { children: React.React
         </div>
       </div>
 
-      <div className="grid gap-8 lg:grid-cols-[13rem_1fr]">
-        <nav aria-label="Portal navigation" className="lg:sticky lg:top-24 lg:self-start">
+      <div className={mustOnboard ? "" : "grid gap-8 lg:grid-cols-[13rem_1fr]"}>
+        <nav aria-label="Portal navigation" className={"lg:sticky lg:top-24 lg:self-start" + (mustOnboard ? " hidden" : "")}>
           <ul className="flex flex-wrap gap-2 lg:flex-col">
             {nav.map((item) => (
               <li key={item.href}>
