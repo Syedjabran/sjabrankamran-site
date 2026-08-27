@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { FlaskConical, ShieldCheck } from "lucide-react";
 import { getPortalUser } from "@/lib/edu/auth";
 import { PapersHub } from "@/components/exam-lab/papers-hub";
@@ -7,6 +8,7 @@ export const metadata = { title: "Exam Lab — Real CAIE 9702 Past Papers", robo
 export default async function PortalExamLabPage() {
   const user = await getPortalUser();
   const first = (user?.fullName || user?.email || "").split(" ")[0];
+  const candidate = user?.fullName || user?.email || "";
 
   return (
     <div>
@@ -25,7 +27,9 @@ export default async function PortalExamLabPage() {
         Sit a full past paper under timed conditions, or drill a topic. Paper 1 auto-marks; Paper 2 &amp; 4 reveal the official mark scheme. Every question is the exact Cambridge original — diagrams, graphs and all.
       </div>
 
-      <PapersHub />
+      <Suspense fallback={<div className="text-sm text-dust">Loading Exam Lab…</div>}>
+        <PapersHub candidate={candidate} />
+      </Suspense>
     </div>
   );
 }

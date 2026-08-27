@@ -182,3 +182,60 @@
 .animate-msg-fade {
   animation: msg-fade 0.5s ease-out both;
 }
+
+/* ===== Exam Lab integrity / anti-cheat ===== */
+/* Screenshot / print deterrent: momentarily black the whole viewport. */
+.el-blackout::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 2147483646;
+  background: #000;
+  pointer-events: none;
+}
+/* Exam content is non-selectable / non-draggable while a drill is live. */
+.el-exam-live, .el-exam-live * {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.el-exam-live img { -webkit-user-drag: none; user-drag: none; }
+/* Forensic identity watermark tiled across the live exam. */
+.el-watermark {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 0.12;
+  background-repeat: repeat;
+  mix-blend-mode: difference;
+}
+/* 15-minutes-left pace alert (large red, auto-dismiss). */
+@keyframes el-pace-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.06); opacity: 0.82; }
+}
+.el-pace-alert {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: grid;
+  place-items: center;
+  background: rgba(9, 6, 6, 0.86);
+  backdrop-filter: blur(3px);
+  text-align: center;
+  animation: el-pace-pulse 1s ease-in-out infinite;
+}
+.el-pace-alert b {
+  color: #FF2D2D;
+  font-weight: 900;
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  text-shadow: 0 0 30px rgba(255, 45, 45, 0.6);
+  font-size: clamp(3rem, 12vw, 9rem);
+}
+@media print {
+  .el-watermark { display: none !important; }
+}

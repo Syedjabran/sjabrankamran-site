@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FileText, Layers, Play, Zap, Library } from "lucide-react";
 import { IMAGE_BANK, IMAGE_PAPERS, type ImgQuestion } from "@/lib/exam-lab/image-bank";
 import { PaperRunner } from "./paper-runner";
@@ -23,9 +24,30 @@ const TOPICS_A2 = ["Circular motion","Gravitational fields","Thermal physics","I
 type ActiveMeta = { mode: "paper" | "drill"; code?: string; ref?: string; paperType: "P1" | "P2" | "P4" | "mixed" };
 type Active = { questions: ImgQuestion[]; title: string; subtitle?: string; duration: number; timed: boolean; logMeta: ActiveMeta };
 
-export function PapersHub() {
+export function PapersHub({ candidate }: { candidate?: string }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const runParam = searchParams.get("run") === "1";
+
   const [tab, setTab] = useState<"papers" | "drill">("papers");
   const [active, setActive] = useState<Active | null>(null);
+
+  // Drive the runner off the URL so the browser Back button and the "Exam Lab"
+  // nav tab both close a paper without a page refresh.
+  useEffect(() => {
+    if (runParam && !active) router.replace(pathname, { scroll: false });
+    else if (!runParam && active) setActive(null);
+  }, [runParam, active, pathname, router]);
+
+  function enter(a: Active) {
+    setActive(a);
+    router.push(`${pathname}?run=1`, { scroll: false });
+    if (typeof window !== "undefined") window.scrollTo({ top: 0 });
+  }
+  function exit() {
+    router.back();
+  }
   const [pType, setPType] = useState<"P1" | "P2" | "P4">("P1");
   const [topics, setTopics] = useState<Set<string>>(new Set());
   const [levels, setLevels] = useState<Set<"LOT" | "HOT">>(new Set(["LOT", "HOT"]));
@@ -48,22 +70,24 @@ export function PapersHub() {
   function startPaper(code: string) {
     const qs = IMAGE_BANK.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
     const meta = IMAGE_PAPERS.find((p) => p.code === code)!;
-    setActive({ questions: qs, title: PAPER_NAME[meta.paperType], subtitle: `${meta.ref} · ${label(code)}`, duration: meta.duration, timed: true, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType } });
+    enter({ questions: qs, title: PAPER_NAME[meta.paperType], subtitle: `${meta.ref} · ${label(code)}`, duration: meta.duration, timed: true, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType } });
   }
 
   const drillPool = useMemo(() => IMAGE_BANK.filter((q) => q.paperType === pType && (!topics.size || (q.topic && topics.has(q.topic))) && levels.has(q.level)), [pType, topics, levels]);
 
   function startDrill() {
     const qs = shuffle([...drillPool]).slice(0, count);
-    setActive({ questions: qs, title: `Topic drill · ${PAPER_NAME[pType].split(" · ")[0]}`, subtitle: `${qs.length} questions`, duration: Math.max(10, qs.length * (pType === "P1" ? 2 : 8)), timed: false, logMeta: { mode: "drill", paperType: pType } });
+    // Timed drill: P1 ~1.5 min/Q, structured ~1.8 min/mark-weighted question.
+    const mins = Math.max(5, Math.round(qs.length * (pType === "P1" ? 1.5 : 9)));
+    enter({ questions: qs, title: `Topic drill · ${PAPER_NAME[pType].split(" · ")[0]}`, subtitle: `${qs.length} questions · ${mins} min`, duration: mins, timed: true, logMeta: { mode: "drill", paperType: pType } });
   }
 
   function dailyChallenge() {
     const p1 = shuffle(IMAGE_BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
-    setActive({ questions: p1, title: "Daily Challenge", subtitle: "10 mixed Paper-1 questions", duration: 15, timed: true, logMeta: { mode: "drill", paperType: "P1" } });
+    enter({ questions: p1, title: "Daily Challenge", subtitle: "10 mixed Paper-1 questions · 15 min", duration: 15, timed: true, logMeta: { mode: "drill", paperType: "P1" } });
   }
 
-  if (active) return <PaperRunner {...active} onExit={() => setActive(null)} />;
+  if (active && runParam) return <PaperRunner {...active} candidate={candidate} onExit={exit} />;
 
   const availTopics = pType === "P4" ? TOPICS_A2 : TOPICS_AS;
 

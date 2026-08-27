@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, CheckCircle2, Eye, RotateCcw, Printer, Clock, ArrowLeft, Sparkles } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Loader2, CheckCircle2, Eye, RotateCcw, Printer, Clock, ArrowLeft, Sparkles,
+  ShieldAlert, Upload, FileText, ScanText, TimerReset,
+} from "lucide-react";
 import type { ImgQuestion } from "@/lib/exam-lab/image-bank";
+import { useExamGuard } from "./use-exam-guard";
 
 type UrlMap = Record<string, string>;
+type LogMeta = { mode: "paper" | "drill"; code?: string; ref?: string; paperType: "P1" | "P2" | "P4" | "mixed" };
 
 export function PaperRunner({
   questions,
@@ -14,29 +19,41 @@ export function PaperRunner({
   duration = 60,
   onExit,
   logMeta,
+  candidate,
 }: {
   questions: ImgQuestion[];
   title: string;
   subtitle?: string;
   timed?: boolean;
-  duration?: number;
+  duration?: number; // minutes
   onExit?: () => void;
-  logMeta?: { mode: "paper" | "drill"; code?: string; ref?: string; paperType: "P1" | "P2" | "P4" | "mixed" };
+  logMeta?: LogMeta;
+  candidate?: string;
 }) {
-  const startedAt = useRef(Date.now());
   const [urls, setUrls] = useState<UrlMap>({});
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [structAnswers, setStructAnswers] = useState<Record<string, string>>({});
-  const [maxwell, setMaxwell] = useState<Record<string, { loading?: boolean; awarded?: number; outOf?: number; feedback?: string; points?: { earned: boolean; text: string }[]; error?: string }>>({});
+  const [maxwell, setMaxwell] = useState<
+    Record<string, { loading?: boolean; awarded?: number; outOf?: number; feedback?: string; points?: { earned: boolean; text: string }[]; error?: string }>
+  >({});
   const [submitted, setSubmitted] = useState(false);
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const topRef = useRef<HTMLDivElement>(null);
 
+  // ---- exam clock / integrity ----
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [remaining, setRemaining] = useState(duration * 60);
+  const [paceAlert, setPaceAlert] = useState(false);
+  const paceFired = useRef(false);
+  const [voided, setVoided] = useState<string | null>(null);
+  const totalSec = duration * 60;
+
   const isMcq = (q: ImgQuestion) => q.paperType === "P1";
   const totalMarks = useMemo(() => questions.reduce((s, q) => s + (q.marks || 0), 0), [questions]);
 
+  // load exact past-paper images
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -63,14 +80,20 @@ export function PaperRunner({
     };
   }, [questions]);
 
-  function submit() {
+  // start the clock once the paper is on screen
+  useEffect(() => {
+    if (!loading && !err && startedAt === null) setStartedAt(Date.now());
+  }, [loading, err, startedAt]);
+
+  const running = timed && startedAt !== null && !submitted && !voided && remaining > 0;
+
+  const submit = useCallback((timeUp = false) => {
     setSubmitted(true);
     const rev: Record<string, boolean> = {};
     questions.forEach((q) => {
       if (!isMcq(q)) rev[q.id] = true;
     });
     setRevealed((r) => ({ ...r, ...rev }));
-    // log the attempt for the analytics dashboard (best-effort)
     if (logMeta) {
       const qlog = questions.map((q) => {
         const ai = q.answer ? "ABCD".indexOf(q.answer) : -1;
@@ -87,12 +110,40 @@ export function PaperRunner({
         body: JSON.stringify({
           mode: logMeta.mode, paperType: logMeta.paperType, code: logMeta.code, ref: logMeta.ref,
           score, total: totalScored, qCount: questions.length, scoredCount: scored.length,
-          durationSec: Math.round((Date.now() - startedAt.current) / 1000), questions: qlog,
+          durationSec: startedAt ? Math.round((Date.now() - startedAt) / 1000) : undefined, questions: qlog,
         }),
       }).catch(() => {});
     }
-    setTimeout(() => topRef.current?.querySelector(".pr-result")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
-  }
+    if (!timeUp) setTimeout(() => topRef.current?.querySelector(".pr-result")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+  }, [answers, maxwell, questions, logMeta, startedAt]);
+
+  // tick the countdown
+  useEffect(() => {
+    if (!running) return;
+    const iv = setInterval(() => {
+      setRemaining((s) => {
+        const n = s - 1;
+        if (!paceFired.current && totalSec > 15 * 60 && n <= 15 * 60) {
+          paceFired.current = true;
+          setPaceAlert(true);
+          setTimeout(() => setPaceAlert(false), 3000);
+        }
+        if (n <= 0) return 0;
+        return n;
+      });
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [running, totalSec]);
+
+  // auto-submit when time is up
+  useEffect(() => {
+    if (timed && startedAt !== null && remaining <= 0 && !submitted && !voided) submit(true);
+  }, [remaining, timed, startedAt, submitted, voided, submit]);
+
+  const seize = useCallback((reason: string) => {
+    setVoided(reason);
+  }, []);
+  useExamGuard({ active: running, onViolation: seize });
 
   async function markMaxwell(id: string) {
     const answer = (structAnswers[id] || "").trim();
@@ -121,6 +172,14 @@ export function PaperRunner({
   const structMarks = questions.filter((q) => !isMcq(q)).reduce((s, q) => s + (q.marks || 0), 0);
   const pct = mcqs.length ? Math.round((got / mcqs.length) * 100) : 0;
 
+  const watermark = useMemo(() => {
+    const who = (candidate || "Exam Lab candidate").slice(0, 40);
+    const when = new Date().toLocaleDateString("en-GB");
+    const txt = `${who} · ${when} · sjabrankamran.com`;
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='360' height='200'><text x='10' y='120' transform='rotate(-22 180 100)' font-family='monospace' font-size='15' fill='%23ffffff'>${encodeURIComponent(txt).replace(/'/g, "%27")}</text></svg>`;
+    return `url("data:image/svg+xml,${svg}")`;
+  }, [candidate]);
+
   if (loading) {
     return (
       <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-8 text-fog">
@@ -132,8 +191,43 @@ export function PaperRunner({
     return <div className="rounded-2xl border border-signal/40 bg-signal/[0.06] p-6 text-signal">Couldn’t load images: {err}. Try again.</div>;
   }
 
+  // ---- SEIZED: malpractice ----
+  if (voided) {
+    return (
+      <div ref={topRef}>
+        <div className="rounded-3xl border border-red-500/40 bg-gradient-to-b from-red-950/60 to-abyss p-8 text-center">
+          <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full border border-red-500/50 bg-red-500/10">
+            <ShieldAlert className="text-red-400" size={30} />
+          </div>
+          <h3 className="font-display text-2xl font-black text-red-400">Drill cancelled</h3>
+          <p className="mx-auto mt-3 max-w-md text-sm text-fog">
+            Your attempt was terminated due to <b className="text-red-300">unethical means of attempting the paper</b>.
+          </p>
+          <p className="mx-auto mt-1 max-w-md font-mono text-xs text-dust">{voided}</p>
+          <p className="mx-auto mt-4 max-w-md text-xs text-dust">
+            Exam Lab drills must be sat in a single, full-screen window — no minimising, tab-switching, split-screen or screenshots once the timer begins.
+          </p>
+          <button onClick={onExit} className="btn-primary mx-auto mt-6"><ArrowLeft size={15} /> Back to Exam Lab</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div ref={topRef}>
+    <div ref={topRef} className={running ? "el-exam-live relative" : "relative"}>
+      {/* 15-minutes-left pace alert */}
+      {paceAlert && (
+        <div className="el-pace-alert">
+          <div>
+            <b>15:00</b>
+            <p className="mt-4 font-display text-xl font-bold uppercase tracking-widest text-red-300">Minutes remaining — pace up</p>
+          </div>
+        </div>
+      )}
+
+      {/* forensic identity watermark while the drill is live */}
+      {running && <div className="el-watermark" style={{ backgroundImage: watermark }} aria-hidden />}
+
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           {onExit && (
@@ -145,10 +239,19 @@ export function PaperRunner({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {timed && !submitted && <Countdown minutes={duration} />}
-          <button onClick={() => window.print()} className="btn-ghost !px-3 !py-1.5 text-xs el-noprint"><Printer size={13} /> PDF</button>
+          {timed && startedAt !== null && !submitted && <ClockPill left={remaining} warn={remaining <= 15 * 60} />}
+          {submitted && (
+            <button onClick={() => window.print()} className="btn-ghost !px-3 !py-1.5 text-xs el-noprint"><Printer size={13} /> PDF</button>
+          )}
         </div>
       </div>
+
+      {running && (
+        <div className="el-noprint mb-4 flex items-center gap-2 rounded-xl border border-amber-400/25 bg-amber-400/[0.05] px-3.5 py-2 text-xs text-amber-200/90">
+          <ShieldAlert size={14} className="text-amber-300" />
+          Proctored drill in progress — do not minimise, switch tabs, split-screen or screenshot, or the drill is cancelled.
+        </div>
+      )}
 
       <div className="mb-4 flex flex-wrap gap-2 font-mono text-[11px] text-dust">
         <span className="rounded-full border border-white/10 px-2.5 py-0.5">{questions.length} questions</span>
@@ -175,6 +278,11 @@ export function PaperRunner({
         </div>
       )}
 
+      {/* answer-script upload (after submit / time up) */}
+      {submitted && logMeta && startedAt !== null && (
+        <ScriptUpload logMeta={logMeta} startedAt={startedAt} durationSec={totalSec} />
+      )}
+
       <ol className="space-y-8">
         {questions.map((q, i) => {
           const chosen = answers[q.id];
@@ -190,7 +298,7 @@ export function PaperRunner({
               </div>
 
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={urls[q.img]} alt={`Question ${q.qnum}`} className="w-full rounded-lg border border-white/10 bg-white" loading="lazy" />
+              <img src={urls[q.img]} alt={`Question ${q.qnum}`} className="w-full rounded-lg border border-white/10 bg-white" loading="lazy" draggable={false} />
 
               {isMcq(q) ? (
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -256,7 +364,7 @@ export function PaperRunner({
                     <div className="mt-3">
                       <p className="mb-1 font-mono text-[11px] uppercase tracking-widest text-cyan">Official mark scheme</p>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={urls[q.ms_img]} alt={`Mark scheme ${q.qnum}`} className="w-full rounded-lg border border-cyan/30 bg-white" loading="lazy" />
+                      <img src={urls[q.ms_img]} alt={`Mark scheme ${q.qnum}`} className="w-full rounded-lg border border-cyan/30 bg-white" loading="lazy" draggable={false} />
                     </div>
                   )}
                 </div>
@@ -268,7 +376,7 @@ export function PaperRunner({
 
       <div className="mt-6 flex flex-wrap justify-center gap-3 el-noprint">
         {!submitted ? (
-          <button onClick={submit} className="btn-primary"><CheckCircle2 size={16} /> Submit &amp; mark</button>
+          <button onClick={() => submit(false)} className="btn-primary"><CheckCircle2 size={16} /> Submit &amp; mark</button>
         ) : onExit ? (
           <button onClick={onExit} className="btn-ghost"><RotateCcw size={16} /> Choose another</button>
         ) : null}
@@ -277,19 +385,123 @@ export function PaperRunner({
   );
 }
 
-function Countdown({ minutes }: { minutes: number }) {
-  const [left, setLeft] = useState(minutes * 60);
-  useEffect(() => {
-    const iv = setInterval(() => setLeft((s) => (s <= 1 ? 0 : s - 1)), 1000);
-    return () => clearInterval(iv);
-  }, []);
+function ClockPill({ left, warn }: { left: number; warn?: boolean }) {
   const h = Math.floor(left / 3600);
   const m = Math.floor((left % 3600) / 60);
   const s = left % 60;
   return (
-    <div className="flex items-center gap-1.5 rounded-xl border border-white/15 px-3 py-1.5 font-mono text-sm" style={{ color: left === 0 ? "#FF7A2F" : "#3DE1F0" }}>
+    <div
+      className="flex items-center gap-1.5 rounded-xl border px-3 py-1.5 font-mono text-sm"
+      style={{ color: left === 0 ? "#FF7A2F" : warn ? "#FF4D4D" : "#3DE1F0", borderColor: warn ? "rgba(255,77,77,.5)" : "rgba(255,255,255,.15)" }}
+    >
       <Clock size={13} />
       {h > 0 ? `${h}:` : ""}{String(m).padStart(2, "0")}:{String(s).padStart(2, "0")}
+    </div>
+  );
+}
+
+function ScriptUpload({ logMeta, startedAt, durationSec }: { logMeta: LogMeta; startedAt: number; durationSec: number }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [result, setResult] = useState<{ status: "ontime" | "late"; path: string } | null>(null);
+  const [reading, setReading] = useState(false);
+  const [transcript, setTranscript] = useState<string | null>(null);
+
+  const deadline = startedAt + (durationSec + 300) * 1000;
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const iv = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(iv);
+  }, []);
+  const windowLeft = Math.max(0, Math.round((deadline - now) / 1000));
+
+  async function upload() {
+    if (!file) return;
+    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+      setMsg("Answer scripts must be a single PDF file.");
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    try {
+      const sign = await fetch("/api/exam-lab/answer", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          mode: logMeta.mode, paperType: logMeta.paperType, code: logMeta.code, ref: logMeta.ref,
+          startedAt, durationSec,
+        }),
+      });
+      const j = await sign.json();
+      if (!sign.ok) throw new Error(j.error || "Upload not authorised.");
+      const put = await fetch(j.signedUrl, { method: "PUT", headers: { "content-type": "application/pdf" }, body: file });
+      if (!put.ok) throw new Error("Upload failed — please retry.");
+      setResult({ status: j.status, path: j.path });
+      setMsg(
+        j.status === "late"
+          ? "Uploaded but marked LATE — this is outside the allowed window (exam time + 5 min) and is flagged as malpractice in the upload folder."
+          : "Answer script uploaded on time."
+      );
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function readIt() {
+    if (!result) return;
+    setReading(true);
+    setTranscript(null);
+    try {
+      const r = await fetch("/api/exam-lab/read-script", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: result.path }),
+      });
+      const j = await r.json();
+      if (!r.ok) setTranscript(`⚠️ ${j.error || "Could not read the script."}`);
+      else setTranscript(j.text);
+    } catch {
+      setTranscript("⚠️ Network error.");
+    } finally {
+      setReading(false);
+    }
+  }
+
+  return (
+    <div className="el-noprint mb-6 rounded-2xl border border-cyan/20 bg-cyan/[0.03] p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-2 font-display text-sm text-ice"><Upload size={15} className="text-cyan" /> Upload your written answer script (PDF)</p>
+        <span className={"flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[11px] " + (windowLeft > 0 ? "border-emerald2/40 text-emerald2" : "border-signal/50 text-signal")}>
+          <TimerReset size={12} /> {windowLeft > 0 ? `window closes in ${Math.floor(windowLeft / 60)}:${String(windowLeft % 60).padStart(2, "0")}` : "upload window closed"}
+        </span>
+      </div>
+      <p className="mt-1 text-xs text-dust">
+        Scan or photograph your handwritten answers as one PDF and upload within the window (exam time + 5 minutes). Later uploads are accepted but flagged <b className="text-signal">late / malpractice</b>.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <label className="btn-ghost !px-3 !py-1.5 cursor-pointer text-xs">
+          <FileText size={13} /> {file ? file.name.slice(0, 28) : "Choose PDF"}
+          <input type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+        </label>
+        <button onClick={upload} disabled={!file || busy || !!result} className="btn-primary !px-3.5 !py-1.5 text-xs disabled:opacity-50">
+          {busy ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} Upload script
+        </button>
+        {result && (
+          <button onClick={readIt} disabled={reading} className="btn-ghost !px-3 !py-1.5 text-xs disabled:opacity-50">
+            {reading ? <Loader2 size={13} className="animate-spin" /> : <ScanText size={13} />} Read my handwriting
+          </button>
+        )}
+      </div>
+      {msg && <p className={"mt-2 text-xs " + (result?.status === "late" ? "text-signal" : "text-emerald2")}>{msg}</p>}
+      {transcript && (
+        <div className="mt-3 rounded-xl border border-violet2/25 bg-violet2/[0.05] p-3">
+          <p className="mb-1 flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widest text-violet2"><ScanText size={12} /> Maxwell read your script</p>
+          <pre className="max-h-72 overflow-auto whitespace-pre-wrap font-mono text-xs text-fog">{transcript}</pre>
+        </div>
+      )}
     </div>
   );
 }
