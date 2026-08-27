@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { TrendingUp, Target, FileText, ListChecks, Trophy, ArrowRight, Sparkles } from "lucide-react";
+import { TrendingUp, Target, FileText, ListChecks, Trophy, ArrowRight, Sparkles, CalendarCheck, GraduationCap } from "lucide-react";
 import { getPortalUser } from "@/lib/edu/auth";
 import { getAttempts } from "@/lib/exam-lab/attempts";
 import { analyse, type TopicStat } from "@/lib/exam-lab/analytics";
+import { getMyPerformance } from "@/lib/edu/performance";
 
 export const metadata = { title: "My Progress — Exam Lab", robots: { index: false } };
 
@@ -49,11 +50,11 @@ function Timeline({ points }: { points: { accuracy: number; label: string }[] })
 
 export default async function ProgressPage() {
   const user = await getPortalUser();
-  const attempts = await getAttempts(user!.id);
+  const [attempts, perf] = await Promise.all([getAttempts(user!.id), getMyPerformance()]);
   const a = analyse(attempts);
   const first = (user?.fullName || user?.email || "").split(" ")[0];
 
-  if (a.totalAttempts === 0) {
+  if (a.totalAttempts === 0 && !perf.hasData) {
     return (
       <div>
         <h1 className="font-display text-2xl text-ice">My Progress</h1>
@@ -62,6 +63,7 @@ export default async function ProgressPage() {
           <p className="mt-4 text-fog">No attempts yet{first ? `, ${first}` : ""}. Sit a past paper or a topic drill and your progress, strengths and weaknesses will appear here.</p>
           <Link href="/portal/exam-lab" className="btn-primary mt-5 inline-flex"><FileText size={16} /> Go to Exam Lab</Link>
         </div>
+        {perf.hasData ? <AcademicsSection perf={perf} /> : null}
       </div>
     );
   }
@@ -158,6 +160,9 @@ export default async function ProgressPage() {
         </div>
       </div>
 
+      {/* Academics: attendance + class results (real school data, RLS-scoped) */}
+      {perf.hasData ? <AcademicsSection perf={perf} /> : null}
+
       {/* Recent attempts */}
       <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.02] p-5">
         <p className="mb-3 font-mono text-[11px] uppercase tracking-widest text-fog">Recent attempts</p>
@@ -176,6 +181,47 @@ export default async function ProgressPage() {
             );
           })}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function AcademicsSection({ perf }: { perf: Awaited<ReturnType<typeof getMyPerformance>> }) {
+  const att = perf.attendance;
+  return (
+    <div className="mt-4 grid gap-4 md:grid-cols-3">
+      {att && (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+          <p className="mb-3 flex items-center gap-2 font-mono text-[11px] uppercase tracking-widest text-fog"><CalendarCheck size={13} className="text-cyan" /> Attendance</p>
+          <div className="flex items-center gap-4">
+            <div className="grid h-20 w-20 flex-none place-items-center rounded-full" style={{ background: `conic-gradient(${accColor(att.pct)} ${att.pct}%, rgba(255,255,255,.08) 0)` }}>
+              <div className="grid h-[62px] w-[62px] place-items-center rounded-full bg-abyss"><b className="font-display text-lg" style={{ color: accColor(att.pct) }}>{att.pct}%</b></div>
+            </div>
+            <div className="font-mono text-xs text-fog">
+              <p><span className="text-emerald2">{att.present}</span> present</p>
+              <p><span className="text-signal">{att.late}</span> late</p>
+              <p><span className="text-magenta">{att.absent}</span> absent</p>
+              <p className="mt-1 text-dust">of {att.total} lessons</p>
+            </div>
+          </div>
+        </div>
+      )}
+      <div className={"rounded-2xl border border-white/10 bg-white/[0.02] p-5 " + (att ? "md:col-span-2" : "md:col-span-3")}>
+        <p className="mb-3 flex items-center gap-2 font-mono text-[11px] uppercase tracking-widest text-fog"><GraduationCap size={13} className="text-cyan" /> Class results {perf.averagePct != null && <span className="text-dust">· avg {perf.averagePct}%</span>}</p>
+        {perf.results.length ? (
+          <div className="space-y-1.5">
+            {perf.results.slice(0, 8).map((r, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-3 rounded-lg border border-white/[0.05] px-3 py-2 text-sm">
+                {r.date && <span className="font-mono text-xs text-dust">{new Date(r.date).toLocaleDateString("en-GB")}</span>}
+                <span className="rounded-full border border-white/15 px-2 py-0.5 font-mono text-[10px] uppercase text-fog">{r.kind}</span>
+                <span className="text-fog">{r.title}</span>
+                <span className="ml-auto font-mono text-xs" style={{ color: r.pct == null ? "#AEB8D8" : accColor(r.pct) }}>
+                  {r.grade ? `${r.grade} · ` : ""}{r.score != null && r.total != null ? `${r.score}/${r.total}` : "—"}{r.pct != null ? ` · ${r.pct}%` : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : <p className="text-sm text-dust">No class results recorded yet.</p>}
       </div>
     </div>
   );
