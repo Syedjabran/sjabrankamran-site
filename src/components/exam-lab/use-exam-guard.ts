@@ -43,16 +43,36 @@ export function useExamGuard({
       cb.current(reason);
     };
 
+    // A focused form field (answer box) means the on-screen keyboard is up on
+    // touch devices — that legitimately shrinks the viewport height and can blur
+    // the window, so we must not treat it as cheating.
+    const fieldFocused = () => {
+      const el = document.activeElement as HTMLElement | null;
+      return !!el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName || "");
+    };
+
     const onVis = () => {
       if (document.hidden) fire("You minimised or switched away from the exam screen.");
     };
-    const onBlur = () => fire("You left the exam window (alt-tab / split-screen / another app).");
+    const onBlur = () => {
+      // Ignore blur that comes from opening the soft keyboard on a field.
+      if (fieldFocused()) return;
+      fire("You left the exam window (alt-tab / split-screen / another app).");
+    };
     const onResize = () => {
-      const b = base.current;
+      let b = base.current;
       if (!b.w) return;
-      if (window.innerWidth < b.w * 0.82 || window.innerHeight < b.h * 0.82) {
-        fire("You resized the window into split-screen.");
+      // Grow the baseline to the largest keyboard-closed size we've seen, so a
+      // drill that started with the keyboard already up still has a true baseline.
+      if (!fieldFocused() && (window.innerWidth > b.w || window.innerHeight > b.h)) {
+        base.current = { w: Math.max(b.w, window.innerWidth), h: Math.max(b.h, window.innerHeight) };
+        b = base.current;
       }
+      // Width shrink => side-by-side split-screen. Height shrink => top/bottom
+      // split, but only if NOT caused by the keyboard (no field focused).
+      const widthDrop = window.innerWidth < b.w * 0.8;
+      const heightDrop = window.innerHeight < b.h * 0.72 && !fieldFocused();
+      if (widthDrop || heightDrop) fire("You resized the window into split-screen.");
     };
 
     const blackout = () => {
