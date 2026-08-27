@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FileText, Layers, Play, Zap, Library } from "lucide-react";
 import { IMAGE_BANK, IMAGE_PAPERS, type ImgQuestion } from "@/lib/exam-lab/image-bank";
@@ -32,15 +32,26 @@ export function PapersHub({ candidate }: { candidate?: string }) {
 
   const [tab, setTab] = useState<"papers" | "drill">("papers");
   const [active, setActive] = useState<Active | null>(null);
+  // Have we actually observed ?run=1 for the current open paper yet? Guards the
+  // transient first render (active set, but the pushed ?run=1 hasn't landed) so
+  // we never clear `active` before it has even shown.
+  const runObserved = useRef(false);
 
-  // Drive the runner off the URL so the browser Back button and the "Exam Lab"
-  // nav tab both close a paper without a page refresh.
+  // The runner renders off `active`; the URL (?run=1) is only used so the browser
+  // Back button AND the "Exam Lab" nav tab both CLOSE an open paper (a real
+  // backward/away navigation drops ?run=1) without a page refresh.
   useEffect(() => {
-    if (runParam && !active) router.replace(pathname, { scroll: false });
-    else if (!runParam && active) setActive(null);
+    if (runParam) {
+      runObserved.current = true;
+      if (!active) router.replace(pathname, { scroll: false }); // stray ?run=1, nothing open
+    } else if (active && runObserved.current) {
+      runObserved.current = false;
+      setActive(null);
+    }
   }, [runParam, active, pathname, router]);
 
   function enter(a: Active) {
+    runObserved.current = false;
     setActive(a);
     router.push(`${pathname}?run=1`, { scroll: false });
     if (typeof window !== "undefined") window.scrollTo({ top: 0 });
@@ -87,7 +98,7 @@ export function PapersHub({ candidate }: { candidate?: string }) {
     enter({ questions: p1, title: "Daily Challenge", subtitle: "10 mixed Paper-1 questions · 15 min", duration: 15, timed: true, logMeta: { mode: "drill", paperType: "P1" } });
   }
 
-  if (active && runParam) return <PaperRunner {...active} candidate={candidate} onExit={exit} />;
+  if (active) return <PaperRunner {...active} candidate={candidate} onExit={exit} />;
 
   const availTopics = pType === "P4" ? TOPICS_A2 : TOPICS_AS;
 
