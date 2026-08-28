@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, UserRound, Users, ShieldCheck, CheckCircle2 } from "lucide-react";
+import { Loader2, UserRound, Users, ShieldCheck, CheckCircle2, ImagePlus, X } from "lucide-react";
 
 type Guardian = { relationship: string; name: string; email: string; phone: string; is_primary?: boolean };
 
@@ -19,9 +19,12 @@ export function OnboardingForm() {
 
   const [form, setForm] = useState({
     full_name: "", preferred_name: "", date_of_birth: "", gender: "",
-    phone: "", whatsapp: "", city: "", address: "", school: "", class_label: "",
+    phone: "", whatsapp: "", city: "", address: "", photo_path: "", school: "", class_label: "",
     emergency_name: "", emergency_phone: "", consent: false,
   });
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoErr, setPhotoErr] = useState<string | null>(null);
   const [guardians, setGuardians] = useState<Guardian[]>([
     { relationship: "Father", name: "", email: "", phone: "", is_primary: true },
     { relationship: "Mother", name: "", email: "", phone: "", is_primary: false },
@@ -40,7 +43,7 @@ export function OnboardingForm() {
           date_of_birth: o?.date_of_birth || d.date_of_birth || "",
           gender: o?.gender || "",
           phone: o?.phone || "", whatsapp: o?.whatsapp || "",
-          city: o?.city || "", address: o?.address || "",
+          city: o?.city || "", address: o?.address || "", photo_path: o?.photo_path || "",
           school: o?.school || d.school || "", class_label: o?.class_label || d.class_label || "",
           emergency_name: o?.emergency_name || "", emergency_phone: o?.emergency_phone || "",
           consent: false,
@@ -53,6 +56,43 @@ export function OnboardingForm() {
       }
     })();
   }, []);
+
+  async function onPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file
+    if (!file) return;
+    setPhotoErr(null);
+    if (!/^image\/(jpe?g|png|webp)$/.test(file.type)) {
+      setPhotoErr("Please choose a JPG, PNG or WebP image.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setPhotoErr("Image is too large (max 5 MB).");
+      return;
+    }
+    setPhotoBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await fetch("/api/portal/onboarding/photo", { method: "POST", body: fd });
+      const j = await r.json();
+      if (r.ok && j.ok) {
+        setForm((f) => ({ ...f, photo_path: j.path }));
+        setPhotoUrl(j.url || null);
+      } else {
+        setPhotoErr(j.error || "Upload failed. Please try again.");
+      }
+    } catch {
+      setPhotoErr("Network error during upload. Please try again.");
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+  function removePhoto() {
+    setForm((f) => ({ ...f, photo_path: "" }));
+    setPhotoUrl(null);
+    setPhotoErr(null);
+  }
 
   function setG(i: number, patch: Partial<Guardian>) {
     setGuardians((gs) => gs.map((g, k) => (k === i ? { ...g, ...patch } : g)));
@@ -125,9 +165,42 @@ export function OnboardingForm() {
             </select>
           </div>
           <div><label className={labelCls}>Your phone *</label><input className={inputCls} placeholder="+92…" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
-          <div><label className={labelCls}>WhatsApp</label><input className={inputCls} placeholder="+92…" value={form.whatsapp} onChange={(e) => setForm({ ...form, whatsapp: e.target.value })} /></div>
+          <div><label className={labelCls}>WhatsApp *</label><input className={inputCls} placeholder="+92…" value={form.whatsapp} onChange={(e) => setForm({ ...form, whatsapp: e.target.value })} /></div>
           <div><label className={labelCls}>City *</label><input className={inputCls} value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} /></div>
           <div><label className={labelCls}>Address</label><input className={inputCls} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></div>
+        </div>
+
+        {/* optional student photo */}
+        <div className="mt-4">
+          <label className={labelCls}>Student photo (optional)</label>
+          <div className="flex items-center gap-4">
+            <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-2xl border border-white/15 bg-void">
+              {photoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={photoUrl} alt="Student" className="h-full w-full object-cover" />
+              ) : form.photo_path ? (
+                <span className="text-center text-[10px] leading-tight text-dust">Photo on file</span>
+              ) : (
+                <ImagePlus size={22} className="text-dust" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="btn-ghost cursor-pointer !px-3.5 !py-1.5 text-xs">
+                  {photoBusy ? <Loader2 size={13} className="animate-spin" /> : <ImagePlus size={13} />}
+                  {form.photo_path ? " Change photo" : " Upload photo"}
+                  <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={onPhoto} disabled={photoBusy} />
+                </label>
+                {form.photo_path && !photoBusy ? (
+                  <button type="button" onClick={removePhoto} className="inline-flex items-center gap-1 text-xs text-dust transition hover:text-signal">
+                    <X size={13} /> Remove
+                  </button>
+                ) : null}
+              </div>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-dust">JPG, PNG or WebP · up to 5 MB. This is optional and can be added later.</p>
+              {photoErr ? <p className="mt-1 text-[11px] text-signal">{photoErr}</p> : null}
+            </div>
+          </div>
         </div>
       </section>
 

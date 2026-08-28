@@ -72,6 +72,7 @@ export async function POST(req: Request) {
     whatsapp: (body.whatsapp || "").slice(0, 40),
     city: (body.city || "").slice(0, 80),
     address: (body.address || "").slice(0, 300),
+    photo_path: (body.photo_path || "").slice(0, 200) || undefined,
     school: (body.school || "").slice(0, 120),
     class_label: (body.class_label || "").slice(0, 120),
     guardians,

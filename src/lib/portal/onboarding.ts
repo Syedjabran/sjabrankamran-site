@@ -25,9 +25,10 @@ export type Onboarding = {
   date_of_birth: string; // YYYY-MM-DD
   gender?: string;
   phone: string;
-  whatsapp?: string;
+  whatsapp: string; // REQUIRED — at least the student's WhatsApp number
   city: string;
   address?: string;
+  photo_path?: string; // OPTIONAL — object path in the private portal-data bucket
   school?: string; // read-only, from enrolment
   class_label?: string; // read-only, from enrolment
   guardians: Guardian[];
@@ -39,12 +40,22 @@ export type Onboarding = {
 
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Student photo upload constraints (optional field).
+export const PHOTO_PREFIX = "photos";
+export const PHOTO_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+export const PHOTO_TYPES: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
+
 /** Server-side required-field validation. Returns list of problems ([] = ok). */
 export function validateOnboarding(o: Partial<Onboarding>): string[] {
   const errs: string[] = [];
   if (!o.full_name || o.full_name.trim().length < 2) errs.push("Full name is required.");
   if (!o.date_of_birth || !/^\d{4}-\d{2}-\d{2}$/.test(o.date_of_birth)) errs.push("A valid date of birth is required.");
   if (!o.phone || o.phone.replace(/\D/g, "").length < 7) errs.push("A valid phone number is required.");
+  if (!o.whatsapp || o.whatsapp.replace(/\D/g, "").length < 7) errs.push("A valid WhatsApp number is required.");
   if (!o.city || o.city.trim().length < 2) errs.push("City is required.");
   const gs = (o.guardians || []).filter((g) => g && (g.name || g.email || g.phone));
   if (gs.length < 1) errs.push("At least one parent/guardian is required.");
