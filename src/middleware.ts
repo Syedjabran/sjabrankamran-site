@@ -36,6 +36,25 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
+  // A prefetch of an auth-gated route (RSC / Next-Router-Prefetch) that always
+  // 307-redirects poisons the App Router client cache with a redirect entry.
+  // The subsequent on-click soft navigation then resolves to that cached
+  // redirect and NO-OPS — the classic “clicking Portal does nothing” bug.
+  // We must never let such a redirect be cached, and never emit a cacheable
+  // prefetch response for a route that redirects.
+  const isRscRequest = request.headers.get("rsc") === "1";
+  const isPrefetch = request.headers.get("next-router-prefetch") === "1";
+
+  function protectedRedirect(url: URL) {
+    const res = NextResponse.redirect(url);
+    // Prevent the router (and any CDN) from caching this redirect so a real
+    // click always re-evaluates auth and follows through to the login page.
+    if (isRscRequest || isPrefetch) {
+      res.headers.set("cache-control", "no-store, must-revalidate");
+    }
+    return res;
+  }
+
   // Pages reachable while signed out (login, password reset, and the auth
   // callback that exchanges recovery/magic-link codes for a session).
   const isPublicAuthPath =
@@ -47,7 +66,7 @@ export async function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/portal/login";
     url.searchParams.set("next", pathname);
-    return NextResponse.redirect(url);
+    return protectedRedirect(url);
   }
   // Only bounce already-signed-in users away from the login screen. Do NOT
   // redirect off /portal/reset — a recovery session lands there specifically

@@ -32,15 +32,23 @@ export function SiteHeader() {
           </span>
         </Link>
         <nav className="hidden items-center gap-6 lg:flex">
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="link-underline text-sm text-fog transition-colors hover:text-ice"
-            >
-              {item.label}
-            </Link>
-          ))}
+          {NAV.map((item) => {
+            // /portal always redirects (auth-gated) via middleware. Prefetching
+            // it poisons the App Router cache with a redirect entry, which then
+            // makes the on-click soft navigation a no-op. Disable prefetch so
+            // the click performs a real navigation that follows the redirect.
+            const isPortal = item.href === "/portal";
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                prefetch={isPortal ? false : undefined}
+                className="link-underline text-sm text-fog transition-colors hover:text-ice"
+              >
+                {item.label}
+              </Link>
+            );
+          })}
           <Link
             href="/contact"
             className="rounded-full border border-cyan/40 px-4 py-1.5 text-sm text-cyan transition-colors hover:bg-cyan hover:text-space"
@@ -68,6 +76,7 @@ export function SiteHeader() {
             <Link
               key={item.href}
               href={item.href}
+              prefetch={item.href === "/portal" ? false : undefined}
               onClick={() => setOpen(false)}
               className="py-2.5 text-fog hover:text-ice"
             >
