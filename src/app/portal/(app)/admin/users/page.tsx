@@ -48,7 +48,10 @@ export default async function UsersPage() {
   const supabase = await createClient();
   const { data: profiles, error } = await supabase
     .from("edu_profiles")
-    .select("id, full_name, email, status, edu_user_roles(role)")
+    // edu_user_roles has TWO FKs back to edu_profiles (user_id AND granted_by),
+    // so the embed MUST be disambiguated by the user_id constraint or PostgREST
+    // errors with PGRST201 (“more than one relationship was found”).
+    .select("id, full_name, email, status, edu_user_roles!edu_user_roles_user_id_fkey(role)")
     .order("created_at", { ascending: false })
     .limit(200);
 
@@ -72,7 +75,9 @@ export default async function UsersPage() {
       ) : (
         <ul className="space-y-3">
           {profiles.map((p) => {
-            const roles = ((p.edu_user_roles as { role: EduRole }[] | null) ?? []).map((r) => r.role);
+            const roles = ((p.edu_user_roles as { role: EduRole }[] | null) ?? []).map(
+              (r) => r.role
+            );
             return (
               <li key={p.id} className="rounded-2xl border border-white/10 bg-space/60 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">

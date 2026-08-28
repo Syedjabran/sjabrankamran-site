@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, LogIn } from "lucide-react";
+import { Loader2, LogIn, Eye, EyeOff } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 
 /** True when the raw error string carries no real message (e.g. "{}", "[object Object]"). */
@@ -24,6 +24,7 @@ export function LoginForm() {
   const params = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [error, setError] = useState<string | null>(() => cleanError(params.get("error")));
@@ -104,16 +105,29 @@ export function LoginForm() {
         <label htmlFor="portal-password" className="mb-1.5 block text-xs font-medium text-fog">
           Password
         </label>
-        <input
-          id="portal-password"
-          type="password"
-          required
-          autoComplete="current-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-xl border border-white/10 bg-abyss/60 px-3.5 py-2.5 text-sm text-ice placeholder:text-dust focus:border-cyan focus:outline-none"
-          placeholder="••••••••"
-        />
+        <div className="relative">
+          <input
+            id="portal-password"
+            type={showPassword ? "text" : "password"}
+            required
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full rounded-xl border border-white/10 bg-abyss/60 px-3.5 py-2.5 pr-11 text-sm text-ice placeholder:text-dust focus:border-cyan focus:outline-none"
+            placeholder="••••••••"
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword((v) => !v)}
+            aria-label={showPassword ? "Hide password" : "Show password"}
+            aria-pressed={showPassword}
+            title={showPassword ? "Hide password" : "Show password"}
+            className="absolute inset-y-0 right-0 flex items-center px-3 text-dust transition hover:text-cyan focus:text-cyan focus:outline-none"
+            tabIndex={-1}
+          >
+            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </div>
       </div>
 
       {error ? <p className="text-xs leading-relaxed text-signal">{error}</p> : null}
