@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { Building2, Users, Target, Activity, CalendarCheck, GraduationCap, TrendingUp } from "lucide-react";
+import { Building2, Users, Target, Activity, CalendarCheck, GraduationCap, TrendingUp, MessageCircle } from "lucide-react";
 import { getPortalUser, isStaff } from "@/lib/edu/auth";
 import { getInstitutionReport, type StudentProgress } from "@/lib/portal/institutions";
 
@@ -27,15 +27,54 @@ function Stat({ icon, label, value, color }: { icon: React.ReactNode; label: str
   );
 }
 
+function waLink(num: string) {
+  const digits = num.replace(/\D/g, "");
+  return digits.length >= 7 ? `https://wa.me/${digits}` : null;
+}
+
+function Avatar({ s }: { s: StudentProgress }) {
+  const initials = (s.name || "?")
+    .split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() || "").join("");
+  return (
+    <span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full border border-white/15 bg-void font-mono text-[10px] text-dust">
+      {s.photoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={s.photoUrl} alt={s.name} className="h-full w-full object-cover" />
+      ) : (
+        initials || "?"
+      )}
+    </span>
+  );
+}
+
 function StudentRow({ s }: { s: StudentProgress }) {
+  const wa = s.whatsapp ? waLink(s.whatsapp) : null;
   return (
     <tr className="border-t border-white/[0.06]">
       <td className="py-2 pr-3">
-        <div className="flex items-center gap-2">
-          <span className="font-display text-sm text-ice">{s.name}</span>
-          {!s.onboarded && <span className="rounded-full border border-amber-400/40 px-1.5 py-0.5 font-mono text-[9px] text-amber-300">onboarding</span>}
+        <div className="flex items-center gap-2.5">
+          <Avatar s={s} />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-display text-sm text-ice">{s.name}</span>
+              {!s.onboarded && <span className="rounded-full border border-amber-400/40 px-1.5 py-0.5 font-mono text-[9px] text-amber-300">onboarding</span>}
+            </div>
+            <div className="font-mono text-[10px] text-dust">{s.studentNo || s.email}</div>
+          </div>
         </div>
-        <div className="font-mono text-[10px] text-dust">{s.studentNo || s.email}</div>
+      </td>
+      <td className="py-2 pr-3 text-center">
+        {s.whatsapp ? (
+          wa ? (
+            <a href={wa} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-mono text-[11px] text-emerald2 hover:underline">
+              <MessageCircle size={11} /> {s.whatsapp}
+            </a>
+          ) : (
+            <span className="font-mono text-[11px] text-fog">{s.whatsapp}</span>
+          )
+        ) : (
+          <span className="font-mono text-[11px] text-dust">—</span>
+        )}
       </td>
       <td className="py-2 pr-3 text-center font-mono text-xs" style={{ color: acc(s.accuracy) }}>{fmtPct(s.accuracy)}</td>
       <td className="py-2 pr-3 text-center font-mono text-xs text-fog">{s.attempts}</td>
@@ -107,10 +146,11 @@ export default async function InstitutionsPage() {
 
                   {cl.students.length > 0 ? (
                     <div className="overflow-x-auto">
-                      <table className="w-full min-w-[520px] text-left">
+                      <table className="w-full min-w-[640px] text-left">
                         <thead>
                           <tr className="font-mono text-[10px] uppercase tracking-widest text-dust">
                             <th className="pb-1 font-normal">Student</th>
+                            <th className="pb-1 text-center font-normal">WhatsApp</th>
                             <th className="pb-1 text-center font-normal">Accuracy</th>
                             <th className="pb-1 text-center font-normal">Attempts</th>
                             <th className="pb-1 text-center font-normal">Level</th>

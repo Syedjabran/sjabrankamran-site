@@ -24,6 +24,8 @@ export type StudentProgress = {
   email: string;
   studentNo: string | null;
   onboarded: boolean;
+  whatsapp: string | null;
+  photoUrl: string | null;
   attempts: number;
   papersSat: number;
   scoredQuestions: number;
@@ -63,16 +65,23 @@ export async function getRegistry(): Promise<Registry> {
   return { updated_at: "", schools: [], classes: [] };
 }
 
-async function onboardedSet(uids: string[]): Promise<Set<string>> {
+type OnbInfo = { completed: boolean; whatsapp: string | null; photoPath: string | null };
+
+/** Read each student's onboarding doc → completion, WhatsApp, and photo path. */
+async function onboardingInfo(uids: string[]): Promise<Map<string, OnbInfo>> {
   const supabase = createAdminClient();
-  const out = new Set<string>();
+  const out = new Map<string, OnbInfo>();
   await Promise.all(
     uids.map(async (uid) => {
       try {
         const { data } = await supabase.storage.from(PORTAL_BUCKET).download(`onboarding/${uid}.json`);
         if (data) {
           const o = JSON.parse(await data.text());
-          if (o?.completed_at) out.add(uid);
+          out.set(uid, {
+            completed: !!o?.completed_at,
+            whatsapp: (o?.whatsapp || "").trim() || null,
+            photoPath: (o?.photo_path || "").trim() || null,
+          });
         }
       } catch {
         /* ignore */
@@ -80,6 +89,28 @@ async function onboardedSet(uids: string[]): Promise<Set<string>> {
     })
   );
   return out;
+}
+
+/** Batch-sign private photo object paths → uid→signed URL (1h). */
+async function signPhotos(info: Map<string, OnbInfo>): Promise<Map<string, string>> {
+  const supabase = createAdminClient();
+  const entries = [...info.entries()].filter(([, v]) => v.photoPath) as [string, OnbInfo][];
+  const urls = new Map<string, string>();
+  if (!entries.length) return urls;
+  const paths = entries.map(([, v]) => v.photoPath as string);
+  try {
+    const { data } = await supabase.storage.from(PORTAL_BUCKET).createSignedUrls(paths, 3600);
+    if (data) {
+      const byPath = new Map(data.map((d) => [d.path, d.signedUrl] as const));
+      for (const [uid, v] of entries) {
+        const u = v.photoPath ? byPath.get(v.photoPath) : null;
+        if (u) urls.set(uid, u);
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return urls;
 }
 
 function avg(nums: (number | null)[]): number | null {
@@ -99,7 +130,8 @@ export async function getClassReport(meta: ClassMeta): Promise<ClassReport> {
   type Row = { student_id: string; edu_students?: { id: string; student_no: string | null; profile_id: string; edu_profiles?: { full_name?: string; email?: string } } };
   const rows = (enr || []) as unknown as Row[];
   const uids = rows.map((r) => r.edu_students?.profile_id).filter((x): x is string => !!x);
-  const onboarded = await onboardedSet(uids);
+  const info = await onboardingInfo(uids);
+  const photos = await signPhotos(info);
 
   const students: StudentProgress[] = await Promise.all(
     rows.map(async (r) => {
@@ -123,7 +155,9 @@ export async function getClassReport(meta: ClassMeta): Promise<ClassReport> {
         name: s?.edu_profiles?.full_name || s?.edu_profiles?.email || "Student",
         email: s?.edu_profiles?.email || "",
         studentNo: s?.student_no ?? null,
-        onboarded: onboarded.has(uid),
+        onboarded: info.get(uid)?.completed ?? false,
+        whatsapp: info.get(uid)?.whatsapp ?? null,
+        photoUrl: photos.get(uid) ?? null,
         attempts: a.totalAttempts,
         papersSat: a.papersSat,
         scoredQuestions: a.scoredQuestions,
