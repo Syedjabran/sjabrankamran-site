@@ -34,9 +34,9 @@ function StatCard({ label, value, icon: Icon, accent = "cyan", href }: {
 }) {
   const inner = (
     <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-space/60 p-5 transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan/30 hover:bg-white/[0.03]">
-      <div className="flex items-center justify-between">
-        <p className="text-[11px] uppercase tracking-widest text-dust">{label}</p>
-        <span className={"grid h-8 w-8 place-items-center rounded-lg border border-white/10 " + (ACCENT[accent] || "text-cyan")}><Icon size={15} /></span>
+      <div className="flex items-start justify-between gap-2">
+        <p className="min-w-0 text-[11px] uppercase leading-tight tracking-wider text-dust">{label}</p>
+        <span className={"grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-white/10 " + (ACCENT[accent] || "text-cyan")}><Icon size={15} /></span>
       </div>
       <p className="mt-3 font-display text-3xl font-semibold text-ice">{value === null ? "—" : value}</p>
       {href ? <span className="mt-1 inline-flex items-center gap-1 text-[11px] text-dust opacity-0 transition group-hover:opacity-100">View <ArrowRight size={11} /></span> : null}

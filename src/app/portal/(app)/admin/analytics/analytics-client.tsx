@@ -382,9 +382,9 @@ function Kpi(props: {
   const { icon, label, value, accent } = props;
   return (
     <div className="rounded-2xl border border-white/10 bg-space/60 p-4">
-      <div className="flex items-center gap-2 text-dust">
-        <span className={accent}>{icon}</span>
-        <span className="text-[10px] uppercase tracking-widest">{label}</span>
+      <div className="flex items-start gap-2 text-dust">
+        <span className={"mt-px shrink-0 " + accent}>{icon}</span>
+        <span className="min-w-0 break-words text-[10px] font-medium uppercase leading-tight tracking-wider">{label}</span>
       </div>
       <p className="mt-2 font-mono text-2xl font-semibold text-ice">{value}</p>
     </div>
@@ -407,13 +407,13 @@ function Highlight(props: {
   return (
     <div className={`rounded-2xl border ${ring} bg-void p-5`}>
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <span
-            className={`grid h-10 w-10 place-items-center rounded-xl ${chipBg} ${chipText}`}
+            className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${chipBg} ${chipText}`}
           >
             {badge}
           </span>
-          <div>
+          <div className="min-w-0">
             <p className={`font-mono text-[10px] uppercase tracking-widest ${chipText}`}>
               {kicker}
             </p>
@@ -425,7 +425,7 @@ function Highlight(props: {
             </p>
           </div>
         </div>
-        <div className="text-right">
+        <div className="shrink-0 text-right">
           <p className="font-mono text-2xl font-semibold text-ice">{score}</p>
           <p className="text-[10px] uppercase tracking-widest text-dust">score</p>
         </div>
@@ -647,7 +647,7 @@ function Skeleton(): ReactNode {
   return (
     <div className="space-y-6">
       <div className="h-9 w-64 animate-pulse rounded-lg bg-white/5" />
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-8">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-8">
         {Array.from({ length: 8 }).map((_, i) => (
           <div
             key={i}
@@ -847,7 +847,7 @@ export function AnalyticsClient() {
       </div>
 
       {/* ---------------- KPI strip ---------------- */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-8">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-8">
         <Kpi
           icon={<School size={15} />}
           label="Schools"

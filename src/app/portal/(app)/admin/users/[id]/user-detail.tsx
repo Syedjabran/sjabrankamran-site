@@ -156,9 +156,9 @@ export function UserDetail({ id, isSuper, selfId }: { id: string; isSuper: boole
         {d.enrolments.length ? (
           <ul className="mb-3 space-y-1.5">
             {d.enrolments.map((e) => (
-              <li key={e.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-abyss/40 px-3 py-2 text-xs">
-                <span className="text-fog">{e.school} — {e.className}{e.section ? ` (${e.section})` : ""} <span className="text-dust">· {e.status}</span></span>
-                <button disabled={!!busy} onClick={() => act("unenrol", { enrolment_id: e.id })} className="text-signal hover:underline">Remove</button>
+              <li key={e.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-abyss/40 px-3 py-2 text-xs">
+                <span className="min-w-0 truncate text-fog">{e.school} — {e.className}{e.section ? ` (${e.section})` : ""} <span className="text-dust">· {e.status}</span></span>
+                <button disabled={!!busy} onClick={() => act("unenrol", { enrolment_id: e.id })} className="shrink-0 text-signal hover:underline">Remove</button>
               </li>
             ))}
           </ul>
@@ -213,7 +213,7 @@ export function UserDetail({ id, isSuper, selfId }: { id: string; isSuper: boole
           {d.results.length ? (
             <ul className="space-y-1 text-xs">
               {d.results.slice(0, 8).map((r, i) => (
-                <li key={i} className="flex justify-between text-fog"><span className="truncate">{r.title}</span><span className="text-dust">{r.score != null ? `${r.score}${r.total ? `/${r.total}` : ""}` : "—"}{r.grade ? ` · ${r.grade}` : ""}</span></li>
+                <li key={i} className="flex justify-between gap-2 text-fog"><span className="min-w-0 truncate">{r.title}</span><span className="shrink-0 text-dust">{r.score != null ? `${r.score}${r.total ? `/${r.total}` : ""}` : "—"}{r.grade ? ` · ${r.grade}` : ""}</span></li>
               ))}
             </ul>
           ) : <p className="text-xs text-dust">No results yet.</p>}
@@ -222,7 +222,7 @@ export function UserDetail({ id, isSuper, selfId }: { id: string; isSuper: boole
           {d.submissions.length ? (
             <ul className="space-y-1 text-xs">
               {d.submissions.slice(0, 8).map((s, i) => (
-                <li key={i} className="flex justify-between text-fog"><span className="truncate">{s.title}</span><span className="text-dust">{s.status}{s.marks != null ? ` · ${s.marks}` : ""}</span></li>
+                <li key={i} className="flex justify-between gap-2 text-fog"><span className="min-w-0 truncate">{s.title}</span><span className="shrink-0 text-dust">{s.status}{s.marks != null ? ` · ${s.marks}` : ""}</span></li>
               ))}
             </ul>
           ) : <p className="text-xs text-dust">No submissions yet.</p>}
