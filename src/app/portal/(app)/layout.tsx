@@ -45,6 +45,8 @@ function navFor(roles: EduRole[]): NavSection[] {
     adminItems.push({ href: "/portal/teach", label: "My Classes" });
   }
   if (staff) adminItems.push({ href: "/portal/studio", label: "Physics Studio" });
+  // Community space — available to everyone.
+  adminItems.push({ href: "/portal/library", label: "Resource Library" });
   sections.push({ title: staff ? "Administration" : undefined, items: adminItems });
 
   // --- Learning (students only) + parents ---

@@ -78,16 +78,20 @@ export function EinsteinCompanion() {
       if (rect && Math.hypot(nx - rect.left, ny - rect.top) < 3) return;
       dragMoved.current = true;
     }
+    // Allow placing him anywhere on screen (keep a sliver on-screen so he's
+    // always grabbable again). Works whether roaming or paused.
     setPos({
-      x: Math.min(Math.max(4, nx), window.innerWidth - 90),
-      y: Math.min(Math.max(4, ny), window.innerHeight - 90),
+      x: Math.min(Math.max(-24, nx), window.innerWidth - 56),
+      y: Math.min(Math.max(-8, ny), window.innerHeight - 56),
     });
   }
 
   function onRelease() {
     if (!dragging) return;
     setDragging(false);
-    if (dragMoved.current) setRoaming(false); // he stays where the visitor put him
+    // Once you carry him anywhere, he stays put (stops floating) until you press
+    // play — and you can pick him up again with a left-click-hold at any time.
+    if (dragMoved.current) setRoaming(false);
   }
 
   // Free-roaming position (top-left translate offsets).
