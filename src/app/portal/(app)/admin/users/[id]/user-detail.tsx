@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, KeyRound, Ban, RotateCcw, Trash2, Mail, GraduationCap, Activity, ShieldCheck, BookOpen, ClipboardList } from "lucide-react";
 import { ROLES } from "../users-console";
+import { ActivityTimeline } from "./activity-timeline";
 
 const LABEL = Object.fromEntries(ROLES);
 
@@ -170,6 +171,9 @@ export function UserDetail({ id, isSuper, selfId }: { id: string; isSuper: boole
           <button disabled={!enrolClass || !!busy} onClick={() => { act("enrol", { class_id: enrolClass }); setEnrolClass(""); }} className="btn-ghost !px-3 !py-1.5 text-xs">Enrol</button>
         </div>
       </Card>
+
+      {/* Past / Present / Future activity */}
+      <ActivityTimeline id={id} />
 
       {/* Progress */}
       {d.progress ? (

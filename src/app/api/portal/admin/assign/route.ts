@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin, audit } from "@/lib/portal/admin";
+import { questionSeconds, totalSeconds, minutesFromSeconds } from "@/lib/portal/timing";
 
 export const runtime = "nodejs";
 
-type Question = { prompt: string; marks?: number; kind?: string; options?: string[]; correct?: string };
+type Question = { prompt: string; marks?: number; kind?: string; options?: string[]; correct?: string; paper?: string; difficulty?: string; seconds?: number };
 
 /**
  * POST — post an assignment OR a test to any class (admin authoring).
@@ -36,15 +37,24 @@ export async function POST(req: Request) {
   }
 
   if (b.type === "test") {
+    const qs = (b.questions || []).filter((q) => (q.prompt || "").trim());
+    // Per-question timing from difficulty + paper (+ marks). Explicit seconds win.
+    const timing = qs.map((q, i) => ({
+      index: i,
+      seconds: q.seconds && q.seconds > 0 ? Math.round(q.seconds) : questionSeconds({ paper: q.paper, difficulty: q.difficulty, marks: q.marks, kind: q.kind }),
+      paper: q.paper || null, difficulty: q.difficulty || null, marks: q.marks ?? 1,
+    }));
+    const computedSecs = timing.reduce((s, t) => s + t.seconds, 0) || totalSeconds(qs);
+    const durationMinutes = b.duration_minutes || (timing.length ? minutesFromSeconds(computedSecs) : null);
+
     const { data: a, error } = await sb.from("edu_assessments").insert({
       class_id: b.class_id, title, kind: b.kind || "test",
       starts_at: b.starts_at ? new Date(b.starts_at).toISOString() : null,
-      duration_minutes: b.duration_minutes || null,
+      duration_minutes: durationMinutes,
       total_marks: b.total_marks ?? null, status: "published", created_by: admin.id,
     }).select("id").maybeSingle();
     if (error || !a?.id) return NextResponse.json({ error: error?.message || "Could not create the test." }, { status: 400 });
 
-    const qs = (b.questions || []).filter((q) => (q.prompt || "").trim());
     if (qs.length) {
       await sb.from("edu_questions").insert(qs.map((q, i) => ({
         assessment_id: a.id, kind: q.kind || "mcq", prompt: q.prompt.trim(),
@@ -52,10 +62,15 @@ export async function POST(req: Request) {
         correct: q.correct ? { value: q.correct } : null,
         marks: q.marks ?? 1, sort_order: i,
       })));
+      // Store the per-question timing map (Storage-as-DB; edu_questions has no time column).
+      try {
+        const body = new Blob([JSON.stringify({ total_seconds: computedSecs, duration_minutes: durationMinutes, questions: timing })], { type: "application/json" });
+        await sb.storage.from("portal-data").upload(`test-timing/${a.id}.json`, body, { upsert: true, contentType: "application/json" });
+      } catch { /* non-fatal */ }
     }
-    await audit(admin.id, "assessment.create", "edu_assessments", a.id as string, { class_id: b.class_id, questions: qs.length });
+    await audit(admin.id, "assessment.create", "edu_assessments", a.id as string, { class_id: b.class_id, questions: qs.length, duration_minutes: durationMinutes });
     await notify("test", "A new test has been posted to your class.", "/portal/exam-lab");
-    return NextResponse.json({ ok: true, id: a.id, type: "test", questions: qs.length, students: studentIds.length }, { status: 200 });
+    return NextResponse.json({ ok: true, id: a.id, type: "test", questions: qs.length, students: studentIds.length, durationMinutes, totalSeconds: computedSecs }, { status: 200 });
   }
 
   // Default: assignment.

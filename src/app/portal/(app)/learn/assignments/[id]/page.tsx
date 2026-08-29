@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { ClipboardList, Paperclip } from "lucide-react";
+import { ClipboardList, Paperclip, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getPortalUser } from "@/lib/edu/auth";
 import { getMyStudent } from "@/lib/edu/student";
+import { signedAttachments } from "@/lib/portal/attachments";
 
 export const metadata = { title: "Assignment" };
 
@@ -107,6 +108,8 @@ export default async function AssignmentPage({ params }: { params: Promise<{ id:
   const marked = submission?.status === "marked" || submission?.status === "returned";
   const canSubmit = !submission || submission.status === "assigned" || submission.status === "resubmit" || (!marked && true);
   const files = ((submission?.files as unknown) ?? []) as { path: string; name: string; size: number }[];
+  // Teacher-attached resources for this assignment (private bucket, signed 1h).
+  const attachments = await signedAttachments("assignment", id);
 
   return (
     <div className="space-y-6">
@@ -121,6 +124,22 @@ export default async function AssignmentPage({ params }: { params: Promise<{ id:
           {assignment.max_marks ? ` · ${Number(assignment.max_marks)} marks` : ""}
         </p>
       </div>
+
+      {attachments.length ? (
+        <div className="rounded-2xl border border-cyan/20 bg-space/60 p-5">
+          <h2 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-dust"><Paperclip size={13} className="text-cyan" /> Attached materials</h2>
+          <ul className="space-y-1.5">
+            {attachments.map((a) => (
+              <li key={a.path}>
+                <a href={a.url || "#"} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-fog hover:text-cyan">
+                  <Download size={14} className="shrink-0" /> <span className="truncate">{a.name}</span>
+                  <span className="text-xs text-dust">({Math.round(a.size / 1024)} KB)</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {assignment.instructions ? (
         <div className="rounded-2xl border border-white/10 bg-space/60 p-5 text-sm leading-relaxed text-fog">

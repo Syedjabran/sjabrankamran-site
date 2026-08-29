@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Loader2, CheckCircle2, Eye, RotateCcw, Printer, Clock, ArrowLeft, Sparkles,
-  ShieldAlert, Upload, FileText, ScanText, TimerReset,
+  ShieldAlert, Upload, FileText, ScanText, TimerReset, Timer,
 } from "lucide-react";
 import type { ImgQuestion } from "@/lib/exam-lab/image-bank";
+import { questionSeconds, formatDuration } from "@/lib/portal/timing";
 import { useExamGuard } from "./use-exam-guard";
 
 type UrlMap = Record<string, string>;
@@ -291,6 +292,7 @@ export function PaperRunner({
                 {q.topic && <span className="rounded-full border border-cyan/30 px-2.5 py-0.5 font-mono text-[10px] text-cyan">{q.topic}</span>}
                 <span className={"rounded-full border px-2.5 py-0.5 font-mono text-[10px] " + (q.level === "LOT" ? "border-emerald2/40 text-emerald2" : "border-magenta/40 text-magenta")}>{q.level}</span>
                 <span className="rounded-full border border-white/15 px-2.5 py-0.5 font-mono text-[10px] text-fog">{q.paperType}</span>
+                <span title="Suggested time for this question (by paper & difficulty)" className="inline-flex items-center gap-1 rounded-full border border-cyan/25 px-2.5 py-0.5 font-mono text-[10px] text-cyan"><Timer size={10} /> {formatDuration(questionSeconds({ paper: q.paperType, difficulty: q.level, marks: q.marks }))}</span>
                 {q.marks != null && <span className="ml-auto font-mono text-xs text-dust">[{q.marks}]</span>}
               </div>
 
