@@ -60,23 +60,14 @@ export function LoginForm() {
     }
     setResetting(true);
     try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.resetPasswordForEmail(target, {
-        redirectTo: `${window.location.origin}/portal/auth/callback?next=/portal/reset`,
+      // Route recovery through the portal's working mail relay (not Supabase SMTP).
+      const res = await fetch("/api/portal/forgot-password", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: target, origin: window.location.origin }),
       });
-      if (error) {
-        // A 4xx/5xx from GoTrue when SMTP isn't configured often serialises to an
-        // empty body → show something actionable instead of a raw "{}".
-        setError(
-          /sending|smtp|email|500|unexpected/i.test(error.message) || isEmptyError(error.message)
-            ? "We couldn't send the reset email — the portal's email delivery isn't set up yet. Please ask the admin to reset your password directly."
-            : cleanError(error.message)
-        );
-      } else {
-        setNotice(
-          "If an account exists for that email, a password-reset link is on its way. Check your inbox (and spam)."
-        );
-      }
+      const j = await res.json().catch(() => ({}));
+      setNotice(j.message || "If an account exists for that email, a password-reset link is on its way. Check your inbox (and spam).");
     } catch {
       setError("Could not send the reset email. Please try again shortly.");
     } finally {
@@ -92,9 +83,10 @@ export function LoginForm() {
         </label>
         <input
           id="portal-email"
+          name="email"
           type="email"
           required
-          autoComplete="email"
+          autoComplete="username email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           className="w-full rounded-xl border border-white/10 bg-abyss/60 px-3.5 py-2.5 text-sm text-ice placeholder:text-dust focus:border-cyan focus:outline-none"
@@ -108,6 +100,7 @@ export function LoginForm() {
         <div className="relative">
           <input
             id="portal-password"
+            name="password"
             type={showPassword ? "text" : "password"}
             required
             autoComplete="current-password"
@@ -145,6 +138,7 @@ export function LoginForm() {
       >
         {resetting ? "Sending reset link…" : "Forgot password?"}
       </button>
+      <p className="text-center text-[11px] text-dust">You&apos;ll stay signed in on this device. Your browser can save your login for next time.</p>
     </form>
   );
 }

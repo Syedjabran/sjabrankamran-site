@@ -22,10 +22,12 @@ async function upload(kind: string, qid: string, code: string, file: File | Blob
  * PDF/Word answer. Drawings + attachments are stored in the answer-scripts
  * bucket via /api/exam-lab/answer-upload.
  */
-export function AnswerPad({ value, onChange, imageUrl, qid, code, disabled }: {
+export function AnswerPad({ value, onChange, imageUrl, qid, code, disabled, onModeChange }: {
   value: string; onChange: (v: string) => void; imageUrl?: string; qid: string; code: string; disabled?: boolean;
+  onModeChange?: (m: Mode) => void;
 }) {
-  const [mode, setMode] = useState<Mode>("type");
+  const [mode, setModeState] = useState<Mode>("type");
+  const setMode = (m: Mode) => { setModeState(m); onModeChange?.(m); };
   const [uploads, setUploads] = useState<Upload[]>([]);
   const push = (u: Upload) => setUploads((p) => [...p, u]);
 

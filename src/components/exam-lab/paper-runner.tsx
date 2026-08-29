@@ -55,6 +55,7 @@ export function PaperRunner({
   const [activeId, setActiveId] = useState<string | null>(null);
   const activeIdRef = useRef<string | null>(null);
   const liRefs = useRef<Record<string, HTMLLIElement | null>>({});
+  const [answerMode, setAnswerMode] = useState<Record<string, string>>({});
 
   const isMcq = (q: ImgQuestion) => q.paperType === "P1";
   const totalMarks = useMemo(() => questions.reduce((s, q) => s + (q.marks || 0), 0), [questions]);
@@ -146,26 +147,34 @@ export function PaperRunner({
     if (timed && startedAt !== null && remaining <= 0 && !submitted && !voided) submit(true);
   }, [remaining, timed, startedAt, submitted, voided, submit]);
 
-  // Track which question is most visible → that's the one being worked on.
+  // Active question = the one at the viewport centre. This is robust even when a
+  // question is TALLER than the screen (e.g. the write-on-paper canvas is open) —
+  // an intersection-ratio approach would drop below threshold and wrongly pause
+  // the countdown; centre-containment does not.
   useEffect(() => {
     if (loading || submitted) return;
-    const ratios = new Map<string, number>();
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          const id = (e.target as HTMLElement).dataset.qid;
-          if (id) ratios.set(id, e.isIntersecting ? e.intersectionRatio : 0);
-        }
-        let best: string | null = null;
-        let bestR = 0.15; // must be at least ~15% on screen to count as "active"
-        for (const [id, r] of ratios) if (r > bestR) { bestR = r; best = id; }
-        activeIdRef.current = best;
-        setActiveId(best);
-      },
-      { threshold: [0, 0.15, 0.35, 0.6, 0.85, 1] }
-    );
-    questions.forEach((q) => { const el = liRefs.current[q.id]; if (el) io.observe(el); });
-    return () => io.disconnect();
+    const pick = () => {
+      const centerY = window.innerHeight / 2;
+      let best: string | null = null;
+      let bestDist = Infinity;
+      for (const q of questions) {
+        const el = liRefs.current[q.id];
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        if (r.bottom < 0 || r.top > window.innerHeight) continue; // fully off-screen
+        if (r.top <= centerY && r.bottom >= centerY) { best = q.id; break; } // spans centre
+        const dist = Math.min(Math.abs(r.top - centerY), Math.abs(r.bottom - centerY));
+        if (dist < bestDist) { bestDist = dist; best = q.id; }
+      }
+      if (best !== activeIdRef.current) { activeIdRef.current = best; setActiveId(best); }
+    };
+    pick();
+    let raf = 0;
+    const onScroll = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(pick); };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    const iv = setInterval(pick, 1000); // re-pick as content (canvas) grows
+    return () => { window.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); clearInterval(iv); cancelAnimationFrame(raf); };
   }, [loading, submitted, questions]);
 
   // Accumulate time on the active question (pauses when tab hidden / not running).
@@ -348,8 +357,11 @@ export function PaperRunner({
                 {q.marks != null && <span className="ml-auto font-mono text-xs text-dust">[{q.marks}]</span>}
               </div>
 
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={urls[q.img]} alt={`Question ${q.qnum}`} className="w-full rounded-lg border border-white/10 bg-white" loading="lazy" draggable={false} />
+              {/* Hide the top copy when "write on paper" is open (the canvas shows the same paper) to avoid a duplicate. */}
+              {isMcq(q) || answerMode[q.id] !== "write" ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={urls[q.img]} alt={`Question ${q.qnum}`} className="w-full rounded-lg border border-white/10 bg-white" loading="lazy" draggable={false} />
+              ) : null}
 
               {isMcq(q) ? (
                 <div className="mt-3 flex flex-wrap gap-2">
@@ -385,6 +397,7 @@ export function PaperRunner({
                     qid={q.id}
                     code={logMeta?.code || logMeta?.ref || "exam"}
                     disabled={submitted}
+                    onModeChange={(m) => setAnswerMode((s) => ({ ...s, [q.id]: m }))}
                   />
                   <div className="mt-2 flex flex-wrap gap-2 el-noprint">
                     <button onClick={() => markMaxwell(q.id)} disabled={maxwell[q.id]?.loading} className="btn-primary !px-3.5 !py-1.5 text-xs disabled:opacity-50">

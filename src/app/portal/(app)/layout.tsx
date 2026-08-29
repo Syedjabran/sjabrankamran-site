@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { LogOut, GraduationCap } from "lucide-react";
+import { LogOut, GraduationCap, Settings } from "lucide-react";
 import { getPortalUser, ROLE_LABELS, isAdmin, isStaff, type EduRole } from "@/lib/edu/auth";
 import { isOnboardingComplete } from "@/lib/portal/onboarding";
 import { effectiveRoles } from "@/lib/portal/view-as";
@@ -126,6 +126,9 @@ export default async function PortalLayout({ children }: { children: React.React
               Staff
             </span>
           ) : null}
+          <Link href="/portal/settings" className="inline-flex items-center gap-1.5 rounded-full border border-white/15 px-3 py-1.5 text-xs text-fog transition hover:border-cyan/40 hover:text-cyan" title="My profile & settings">
+            <Settings size={13} /> <span className="hidden sm:inline">Profile</span>
+          </Link>
           <form action="/portal/auth/signout" method="post">
             <button type="submit" className="btn-ghost !px-3.5 !py-1.5 text-xs">
               <LogOut size={13} /> Sign out
