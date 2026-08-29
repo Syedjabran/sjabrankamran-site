@@ -13,6 +13,8 @@ const qSchema = z.object({
   marks: z.number().int().min(0).max(30),
   earned: z.number().int().min(0).max(30).nullable(),
   correct: z.boolean().nullable(),
+  spentSec: z.number().int().min(0).max(20000).nullable().optional(),
+  expectedSec: z.number().int().min(0).max(20000).optional(),
 });
 
 const schema = z.object({

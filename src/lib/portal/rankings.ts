@@ -66,6 +66,15 @@ function assignRanks<T extends { score: number }>(sorted: T[]): (T & { _rank: nu
   });
 }
 
+// Shared 60s cache (the report reads every student's attempts; ~5s cold).
+let _cache: { at: number; data: RankingsData } | null = null;
+export async function getRankingsCached(ttlMs = 60_000): Promise<RankingsData> {
+  if (_cache && Date.now() - _cache.at < ttlMs) return _cache.data;
+  const data = await buildRankings();
+  _cache = { at: Date.now(), data };
+  return data;
+}
+
 export async function buildRankings(): Promise<RankingsData> {
   const schoolsReport = await getInstitutionReport();
 

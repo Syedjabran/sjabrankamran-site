@@ -58,10 +58,12 @@ export function EinsteinCompanion() {
 
   function onGrab(e: React.PointerEvent) {
     if (open) return; // don't drag while the ask panel is open
+    if (e.pointerType === "mouse" && e.button !== 0) return; // left button only
     const rect = wrapperRef.current?.getBoundingClientRect();
     if (!rect) return;
     grabOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     dragMoved.current = false;
+    setRoaming(false); // grabbing pauses auto-roam so he follows the cursor
     setDragging(true);
     (e.target as Element).setPointerCapture?.(e.pointerId);
   }
@@ -73,7 +75,7 @@ export function EinsteinCompanion() {
     if (!dragMoved.current) {
       // Ignore tiny jitters so a normal click still opens the panel.
       const rect = wrapperRef.current?.getBoundingClientRect();
-      if (rect && Math.hypot(nx - rect.left, ny - rect.top) < 6) return;
+      if (rect && Math.hypot(nx - rect.left, ny - rect.top) < 3) return;
       dragMoved.current = true;
     }
     setPos({
@@ -125,7 +127,7 @@ export function EinsteinCompanion() {
       setDismissed(true);
     } else {
       setPos(parkPosition(false));
-      const t = window.setTimeout(() => setVisible(true), 1200);
+      const t = window.setTimeout(() => setVisible(true), 250);
       timers.current.push(t);
     }
     return () => {
@@ -162,8 +164,8 @@ export function EinsteinCompanion() {
       return;
     }
     if (!roaming || dragging) return; // paused or being carried — stay put
-    const wander = window.setInterval(() => setPos(randomPosition()), 13000);
-    const first = window.setTimeout(() => setPos(randomPosition()), 2500);
+    const wander = window.setInterval(() => setPos(randomPosition()), 24000);
+    const first = window.setTimeout(() => setPos(randomPosition()), 4000);
     const onResize = () => setPos((p) => (p ? { x: Math.min(p.x, window.innerWidth - 120), y: Math.min(p.y, window.innerHeight - 120) } : p));
     window.addEventListener("resize", onResize);
     timers.current.push(first);
@@ -237,7 +239,7 @@ export function EinsteinCompanion() {
             ? undefined
             : open
               ? "transform 0.7s cubic-bezier(0.22, 1, 0.36, 1)"
-              : "transform 6.5s cubic-bezier(0.45, 0.05, 0.35, 1)",
+              : "transform 13s cubic-bezier(0.45, 0.05, 0.35, 1)",
         willChange: "transform",
       }}
       aria-live="polite"
@@ -384,7 +386,8 @@ export function EinsteinCompanion() {
           onPointerMove={onDragMove}
           onPointerUp={onRelease}
           onPointerCancel={onRelease}
-          aria-label={open ? "Close the ask panel" : "Ask Einstein a physics question (hold and drag to move him)"}
+          aria-label={open ? "Close the ask panel" : "Ask Einstein a physics question (left-click and drag to move him)"}
+          title="Click to ask · left-click and drag to move me"
           aria-expanded={open}
           className={`relative block h-20 w-20 rounded-full border border-cyan/20 bg-abyss/70 shadow-lg outline-none transition hover:scale-105 focus-visible:ring-2 focus-visible:ring-cyan sm:h-24 sm:w-24 ${
             dragging ? "cursor-grabbing scale-105" : "cursor-grab"
@@ -395,15 +398,17 @@ export function EinsteinCompanion() {
           <img
             src="/einstein/einstein-tongue.webp"
             alt=""
+            fetchPriority="high"
             className={`absolute inset-0 h-full w-full rounded-full object-cover object-top transition-opacity duration-500 ${tongueOut ? "opacity-100" : "opacity-0"}`}
-            loading="lazy"
+            loading="eager"
           />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/einstein/einstein-smile.webp"
             alt=""
+            fetchPriority="high"
             className={`absolute inset-0 h-full w-full rounded-full object-cover object-top transition-opacity duration-500 ${tongueOut ? "opacity-0" : "opacity-100"}`}
-            loading="lazy"
+            loading="eager"
           />
         </button>
         <button

@@ -49,6 +49,12 @@ export function PaperRunner({
   const [voided, setVoided] = useState<string | null>(null);
   const totalSec = duration * 60;
 
+  // ---- per-question time tracking (starts when a question is on screen) ----
+  const [perQ, setPerQ] = useState<Record<string, number>>({});
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const activeIdRef = useRef<string | null>(null);
+  const liRefs = useRef<Record<string, HTMLLIElement | null>>({});
+
   const isMcq = (q: ImgQuestion) => q.paperType === "P1";
   const totalMarks = useMemo(() => questions.reduce((s, q) => s + (q.marks || 0), 0), [questions]);
 
@@ -98,7 +104,7 @@ export function PaperRunner({
         const ai = q.answer ? "ABCD".indexOf(q.answer) : -1;
         const mcq = isMcq(q);
         const earned = mcq ? (answers[q.id] === ai ? q.marks || 1 : 0) : (maxwell[q.id]?.awarded ?? null);
-        return { id: q.id, topic: q.topic, level: q.level, paperType: q.paperType, marks: q.marks || 1, earned: earned as number | null, correct: mcq ? answers[q.id] === ai : null };
+        return { id: q.id, topic: q.topic, level: q.level, paperType: q.paperType, marks: q.marks || 1, earned: earned as number | null, correct: mcq ? answers[q.id] === ai : null, spentSec: perQ[q.id] ?? null, expectedSec: questionSeconds({ paper: q.paperType, difficulty: q.level, marks: q.marks }) };
       });
       const scored = qlog.filter((q) => q.earned !== null);
       const score = scored.reduce((s, q) => s + (q.earned || 0), 0);
@@ -114,7 +120,7 @@ export function PaperRunner({
       }).catch(() => {});
     }
     if (!timeUp) setTimeout(() => topRef.current?.querySelector(".pr-result")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
-  }, [answers, maxwell, questions, logMeta, startedAt]);
+  }, [answers, maxwell, questions, logMeta, startedAt, perQ]);
 
   // tick the countdown
   useEffect(() => {
@@ -138,6 +144,39 @@ export function PaperRunner({
   useEffect(() => {
     if (timed && startedAt !== null && remaining <= 0 && !submitted && !voided) submit(true);
   }, [remaining, timed, startedAt, submitted, voided, submit]);
+
+  // Track which question is most visible → that's the one being worked on.
+  useEffect(() => {
+    if (loading || submitted) return;
+    const ratios = new Map<string, number>();
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          const id = (e.target as HTMLElement).dataset.qid;
+          if (id) ratios.set(id, e.isIntersecting ? e.intersectionRatio : 0);
+        }
+        let best: string | null = null;
+        let bestR = 0.15; // must be at least ~15% on screen to count as "active"
+        for (const [id, r] of ratios) if (r > bestR) { bestR = r; best = id; }
+        activeIdRef.current = best;
+        setActiveId(best);
+      },
+      { threshold: [0, 0.15, 0.35, 0.6, 0.85, 1] }
+    );
+    questions.forEach((q) => { const el = liRefs.current[q.id]; if (el) io.observe(el); });
+    return () => io.disconnect();
+  }, [loading, submitted, questions]);
+
+  // Accumulate time on the active question (pauses when tab hidden / not running).
+  useEffect(() => {
+    if (!running) return;
+    const iv = setInterval(() => {
+      const id = activeIdRef.current;
+      if (!id || document.visibilityState === "hidden") return;
+      setPerQ((m) => ({ ...m, [id]: (m[id] || 0) + 1 }));
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [running]);
 
   const seize = useCallback((reason: string) => {
     setVoided(reason);
@@ -285,14 +324,26 @@ export function PaperRunner({
         {questions.map((q, i) => {
           const chosen = answers[q.id];
           const ai = q.answer ? "ABCD".indexOf(q.answer) : -1;
+          const expSec = questionSeconds({ paper: q.paperType, difficulty: q.level, marks: q.marks });
+          const spentSec = perQ[q.id] || 0;
+          const overTime = spentSec > expSec;
+          const isActive = !submitted && activeId === q.id;
           return (
-            <li key={q.id} className="pr-q rounded-2xl border border-white/[0.08] bg-white/[0.015] p-4 md:p-5">
+            <li key={q.id} ref={(el) => { liRefs.current[q.id] = el; }} data-qid={q.id} className={"pr-q rounded-2xl border p-4 md:p-5 transition-colors " + (isActive ? "border-cyan/45 bg-cyan/[0.04]" : "border-white/[0.08] bg-white/[0.015]")}>
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <span className="grid h-7 w-7 place-items-center rounded-lg border border-white/15 bg-slate2 font-display text-sm font-bold text-ice">{i + 1}</span>
                 {q.topic && <span className="rounded-full border border-cyan/30 px-2.5 py-0.5 font-mono text-[10px] text-cyan">{q.topic}</span>}
                 <span className={"rounded-full border px-2.5 py-0.5 font-mono text-[10px] " + (q.level === "LOT" ? "border-emerald2/40 text-emerald2" : "border-magenta/40 text-magenta")}>{q.level}</span>
                 <span className="rounded-full border border-white/15 px-2.5 py-0.5 font-mono text-[10px] text-fog">{q.paperType}</span>
-                <span title="Suggested time for this question (by paper & difficulty)" className="inline-flex items-center gap-1 rounded-full border border-cyan/25 px-2.5 py-0.5 font-mono text-[10px] text-cyan"><Timer size={10} /> {formatDuration(questionSeconds({ paper: q.paperType, difficulty: q.level, marks: q.marks }))}</span>
+                <span title="Expected time for this question (by paper & difficulty)" className="inline-flex items-center gap-1 rounded-full border border-white/15 px-2.5 py-0.5 font-mono text-[10px] text-dust"><Timer size={10} /> {formatDuration(expSec)}</span>
+                {!submitted ? (
+                  <span title={isActive ? "Timing this question now" : "Countdown starts when this question is on screen"} className={"inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-[10px] " + (overTime ? "border-signal/50 text-signal" : isActive ? "border-cyan/60 text-cyan" : "border-white/10 text-fog")}>
+                    {isActive ? <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" /> : null}
+                    {overTime ? `+${formatDuration(spentSec - expSec)}` : formatDuration(Math.max(0, expSec - spentSec))}
+                  </span>
+                ) : (
+                  <span title="Time you spent vs expected" className={"inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-[10px] " + (overTime ? "border-signal/40 text-signal" : "border-emerald2/40 text-emerald2")}>{formatDuration(spentSec)} / {formatDuration(expSec)}</span>
+                )}
                 {q.marks != null && <span className="ml-auto font-mono text-xs text-dust">[{q.marks}]</span>}
               </div>
 

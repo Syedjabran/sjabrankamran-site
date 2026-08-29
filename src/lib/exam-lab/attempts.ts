@@ -13,6 +13,8 @@ export type AttemptQuestion = {
   marks: number;
   earned: number | null; // null = attempted, not auto/AI-scored
   correct: boolean | null; // MCQ only
+  spentSec?: number | null; // actual time on this question (viewport-timed)
+  expectedSec?: number; // recommended time (paper + difficulty)
 };
 
 export type Attempt = {

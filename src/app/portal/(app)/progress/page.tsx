@@ -230,6 +230,24 @@ function AcademicsSection({ perf }: { perf: Awaited<ReturnType<typeof getMyPerfo
           </div>
         ) : <p className="text-sm text-dust">No class results recorded yet.</p>}
       </div>
+
+      {perf.attendanceLog.length ? (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 md:col-span-3">
+          <p className="mb-3 flex items-center gap-2 font-mono text-[11px] uppercase tracking-widest text-fog"><CalendarCheck size={13} className="text-cyan" /> Attendance log</p>
+          <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
+            {perf.attendanceLog.map((r, i) => {
+              const c = r.status === "present" ? "text-emerald2 border-emerald2/40" : r.status === "late" ? "text-signal border-signal/40" : "text-magenta border-magenta/40";
+              return (
+                <div key={i} className="flex items-center gap-3 rounded-lg border border-white/[0.05] px-3 py-1.5 text-xs">
+                  <span className="font-mono text-dust">{r.date ? new Date(r.date).toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }) : "—"}</span>
+                  {r.title ? <span className="min-w-0 flex-1 truncate text-fog">{r.title}</span> : <span className="flex-1" />}
+                  <span className={"shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase " + c}>{r.status}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

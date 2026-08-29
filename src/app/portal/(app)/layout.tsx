@@ -52,6 +52,7 @@ function navFor(roles: EduRole[]): NavSection[] {
     learnItems.push({ href: "/portal/exam-lab", label: "Exam Lab" });
     learnItems.push({ href: "/portal/learn", label: "My Learning" });
     learnItems.push({ href: "/portal/progress", label: "My Progress" });
+    learnItems.push({ href: "/portal/leaderboard", label: "Leaderboard" });
   }
   if (isParent) learnItems.push({ href: "/portal/family", label: "My Children" });
   if (learnItems.length) sections.push({ title: staff ? "Learning" : undefined, items: learnItems });
