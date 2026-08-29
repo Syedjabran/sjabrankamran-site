@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { TrendingUp, Target, FileText, ListChecks, Trophy, ArrowRight, Sparkles, CalendarCheck, GraduationCap } from "lucide-react";
 import { getPortalUser } from "@/lib/edu/auth";
 import { getAttempts } from "@/lib/exam-lab/attempts";
@@ -50,6 +51,10 @@ function Timeline({ points }: { points: { accuracy: number; label: string }[] })
 
 export default async function ProgressPage() {
   const user = await getPortalUser();
+  if (!user) redirect("/portal/login");
+  // "My Progress" is a student-only surface. Staff/owner are sent to the admin
+  // dashboard (they view any student's progress via Users → the 360/activity).
+  if (!user.roles.includes("student")) redirect("/portal");
   const [attempts, perf] = await Promise.all([getAttempts(user!.id), getMyPerformance()]);
   const a = analyse(attempts);
   const first = (user?.fullName || user?.email || "").split(" ")[0];

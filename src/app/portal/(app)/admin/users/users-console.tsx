@@ -42,6 +42,13 @@ export function UsersConsole() {
     } catch (e) { setErr((e as Error).message); } finally { setLoading(false); }
   }, [q, roleFilter]);
 
+  // Seed filters from the URL (dashboard quick-search deep-links here).
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const q0 = sp.get("q"); const r0 = sp.get("role");
+    if (q0) setQ(q0);
+    if (r0) setRoleFilter(r0);
+  }, []);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
   useEffect(() => { api("/api/portal/admin/classes").then((j) => setClasses(j.classes)).catch(() => {}); }, []);
 
@@ -63,8 +70,11 @@ export function UsersConsole() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <UserCog size={20} className="text-cyan" />
-          <h1 className="text-2xl font-semibold text-ice">User management</h1>
+          <span className="grid h-10 w-10 place-items-center rounded-xl border border-cyan/30 text-cyan"><UserCog size={18} /></span>
+          <div>
+            <h1 className="text-2xl font-semibold text-ice">Users &amp; activity</h1>
+            <p className="text-xs text-dust">Click any person to manage access and view their full activity.</p>
+          </div>
         </div>
         <button onClick={() => setShowCreate((s) => !s)} className="btn-ghost !px-3.5 !py-2 text-xs">
           <UserPlus size={14} /> New user

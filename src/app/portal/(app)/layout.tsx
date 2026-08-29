@@ -7,33 +7,51 @@ import { isOnboardingComplete } from "@/lib/portal/onboarding";
 
 export const metadata = { robots: { index: false } };
 
-function navFor(roles: EduRole[]) {
-  const items: { href: string; label: string }[] = [{ href: "/portal", label: "Dashboard" }];
-  if (isAdmin(roles)) {
-    items.push(
-      { href: "/portal/admin/users", label: "Users & Roles" },
-      { href: "/portal/admin/academics", label: "Academics" },
-      { href: "/portal/admin/finance", label: "Fees & Finance" }
-    );
+type NavItem = { href: string; label: string };
+type NavSection = { title?: string; items: NavItem[] };
+
+/**
+ * Role-aware navigation, grouped so the owner/staff see an Administration
+ * console and only actual students see the personal Learning surfaces
+ * (Exam Lab / My Learning / My Progress). This prevents the owner being shown
+ * their own quiz attempts as if they were a student.
+ */
+function navFor(roles: EduRole[]): NavSection[] {
+  const staff = isStaff(roles);
+  const admin = isAdmin(roles);
+  const isStudent = roles.includes("student");
+  const isParent = roles.includes("parent");
+  const sections: NavSection[] = [];
+
+  // --- Administration (staff / owner) ---
+  const adminItems: NavItem[] = [{ href: "/portal", label: "Dashboard" }];
+  if (staff) {
+    adminItems.push({ href: "/portal/admin/users", label: "Users & activity" });
+    adminItems.push({ href: "/portal/admin/institutions", label: "Institutions" });
+    adminItems.push({ href: "/portal/admin/assign", label: "Post / Tests" });
+    adminItems.push({ href: "/portal/admin/mail", label: "Email" });
   }
-  if (isAdmin(roles) || roles.includes("teacher") || roles.includes("teaching_assistant")) {
-    items.push({ href: "/portal/teach", label: "My Classes" });
+  if (admin) {
+    adminItems.push({ href: "/portal/admin/academics", label: "Academics" });
+    adminItems.push({ href: "/portal/admin/finance", label: "Fees & Finance" });
   }
-  if (isStaff(roles)) {
-    items.push({ href: "/portal/admin/assign", label: "Post / Tests" });
-    items.push({ href: "/portal/studio", label: "Physics Studio" });
-    items.push({ href: "/portal/admin/institutions", label: "Institutions" });
-    items.push({ href: "/portal/admin/mail", label: "Email" });
+  if (admin || roles.includes("teacher") || roles.includes("teaching_assistant")) {
+    adminItems.push({ href: "/portal/teach", label: "My Classes" });
   }
-  items.push({ href: "/portal/exam-lab", label: "Exam Lab" });
-  items.push({ href: "/portal/progress", label: "My Progress" });
-  if (roles.includes("student")) {
-    items.push({ href: "/portal/learn", label: "My Learning" });
+  if (staff) adminItems.push({ href: "/portal/studio", label: "Physics Studio" });
+  sections.push({ title: staff ? "Administration" : undefined, items: adminItems });
+
+  // --- Learning (students only) + parents ---
+  const learnItems: NavItem[] = [];
+  if (isStudent) {
+    learnItems.push({ href: "/portal/exam-lab", label: "Exam Lab" });
+    learnItems.push({ href: "/portal/learn", label: "My Learning" });
+    learnItems.push({ href: "/portal/progress", label: "My Progress" });
   }
-  if (roles.includes("parent")) {
-    items.push({ href: "/portal/family", label: "My Children" });
-  }
-  return items;
+  if (isParent) learnItems.push({ href: "/portal/family", label: "My Children" });
+  if (learnItems.length) sections.push({ title: staff ? "Learning" : undefined, items: learnItems });
+
+  return sections;
 }
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
@@ -64,7 +82,7 @@ export default async function PortalLayout({ children }: { children: React.React
     redirect("/portal/onboarding");
   }
 
-  const nav = navFor(user.roles);
+  const navSections = navFor(user.roles);
   const roleBadges = user.roles.length
     ? user.roles.map((r) => ROLE_LABELS[r]).join(" · ")
     : "Awaiting role assignment";
@@ -99,18 +117,27 @@ export default async function PortalLayout({ children }: { children: React.React
 
       <div className={mustOnboard ? "" : "grid gap-8 lg:grid-cols-[13rem_1fr]"}>
         <nav aria-label="Portal navigation" className={"lg:sticky lg:top-24 lg:self-start" + (mustOnboard ? " hidden" : "")}>
-          <ul className="flex flex-wrap gap-2 lg:flex-col">
-            {nav.map((item) => (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  className="block rounded-xl border border-white/10 bg-space/60 px-3.5 py-2 text-sm text-fog transition hover:border-cyan/40 hover:text-ice"
-                >
-                  {item.label}
-                </Link>
-              </li>
+          <div className="space-y-5">
+            {navSections.map((section, si) => (
+              <div key={si}>
+                {section.title ? (
+                  <p className="mb-2 px-1 font-mono text-[10px] uppercase tracking-widelabel text-dust/70">{section.title}</p>
+                ) : null}
+                <ul className="flex flex-wrap gap-2 lg:flex-col">
+                  {section.items.map((item) => (
+                    <li key={item.href}>
+                      <Link
+                        href={item.href}
+                        className="block rounded-xl border border-white/10 bg-space/60 px-3.5 py-2 text-sm text-fog transition hover:border-cyan/40 hover:text-ice"
+                      >
+                        {item.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ))}
-          </ul>
+          </div>
         </nav>
         <div className="min-w-0">{children}</div>
       </div>

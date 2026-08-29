@@ -1,14 +1,13 @@
 import Link from "next/link";
 import {
-  Users,
-  School,
-  BookOpen,
-  Receipt,
-  AlertTriangle,
-  Hourglass,
+  Users, School, BookOpen, Receipt, AlertTriangle, Hourglass, GraduationCap,
+  UserPlus, ClipboardList, Mail, BarChart3, Activity, ShieldCheck, KeyRound,
+  Ban, RotateCcw, Trash2, UserCog, FileText, Paperclip, ArrowRight, Building2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { getPortalUser, isAdmin } from "@/lib/edu/auth";
+import { getPortalUser, isAdmin, isStaff, ROLE_LABELS, type EduRole } from "@/lib/edu/auth";
+import { getRegistry } from "@/lib/portal/institutions";
+import { AdminUserSearch } from "./admin-user-search";
 
 export const metadata = { title: "Portal Dashboard" };
 
@@ -25,25 +24,97 @@ async function count(table: string, filter?: (q: unknown) => unknown): Promise<n
   }
 }
 
-function StatCard({ label, value, icon: Icon }: { label: string; value: number | null; icon: React.ComponentType<{ size?: number; className?: string }> }) {
-  return (
-    <div className="card-hover rounded-2xl border border-white/10 bg-space/60 p-5">
+const ACCENT: Record<string, string> = { cyan: "text-cyan", emerald: "text-emerald2", magenta: "text-magenta", amber: "text-amber-300" };
+
+function StatCard({ label, value, icon: Icon, accent = "cyan", href }: {
+  label: string; value: number | string | null; icon: React.ComponentType<{ size?: number; className?: string }>;
+  accent?: string; href?: string;
+}) {
+  const inner = (
+    <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-space/60 p-5 transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan/30 hover:bg-white/[0.03]">
       <div className="flex items-center justify-between">
-        <p className="text-xs uppercase tracking-widest text-dust">{label}</p>
-        <Icon size={16} className="text-cyan" />
+        <p className="text-[11px] uppercase tracking-widest text-dust">{label}</p>
+        <span className={"grid h-8 w-8 place-items-center rounded-lg border border-white/10 " + (ACCENT[accent] || "text-cyan")}><Icon size={15} /></span>
       </div>
-      <p className="mt-3 font-display text-3xl font-semibold text-ice">
-        {value === null ? "—" : value}
-      </p>
+      <p className="mt-3 font-display text-3xl font-semibold text-ice">{value === null ? "—" : value}</p>
+      {href ? <span className="mt-1 inline-flex items-center gap-1 text-[11px] text-dust opacity-0 transition group-hover:opacity-100">View <ArrowRight size={11} /></span> : null}
     </div>
   );
+  return href ? <Link href={href}>{inner}</Link> : inner;
+}
+
+// ---- Audit-log activity formatting ----
+const ACTION_META: Record<string, { icon: React.ComponentType<{ size?: number; className?: string }>; verb: string; color: string }> = {
+  "user.create": { icon: UserPlus, verb: "created account", color: "text-emerald2" },
+  "user.update": { icon: UserCog, verb: "edited", color: "text-cyan" },
+  "user.delete": { icon: Trash2, verb: "deleted account", color: "text-signal" },
+  "user.password_reset": { icon: KeyRound, verb: "reset password for", color: "text-cyan" },
+  "user.email_credentials": { icon: Mail, verb: "emailed credentials to", color: "text-cyan" },
+  "user.suspend": { icon: Ban, verb: "suspended", color: "text-signal" },
+  "user.reactivate": { icon: RotateCcw, verb: "reactivated", color: "text-emerald2" },
+  "role.grant": { icon: ShieldCheck, verb: "granted a role to", color: "text-cyan" },
+  "role.revoke": { icon: ShieldCheck, verb: "revoked a role from", color: "text-dust" },
+  "enrolment.add": { icon: GraduationCap, verb: "enrolled", color: "text-emerald2" },
+  "enrolment.remove": { icon: GraduationCap, verb: "unenrolled", color: "text-dust" },
+  "assignment.create": { icon: ClipboardList, verb: "posted an assignment", color: "text-amber-300" },
+  "assessment.create": { icon: FileText, verb: "posted a test", color: "text-magenta" },
+  "lesson.create": { icon: BookOpen, verb: "added a lesson", color: "text-cyan" },
+  "attachment.add": { icon: Paperclip, verb: "attached a file", color: "text-cyan" },
+  "attachment.remove": { icon: Paperclip, verb: "removed a file", color: "text-dust" },
+};
+
+function relTime(iso: string): string {
+  const s = Math.max(1, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24); if (d < 7) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function recentActivity(): Promise<{ id: string; actor: string; action: string; target: string; when: string; targetId: string | null }[]> {
+  try {
+    const supabase = await createClient();
+    const { data: logs } = await supabase
+      .from("edu_audit_logs")
+      .select("id, actor_id, action, entity, entity_id, details, created_at")
+      .order("created_at", { ascending: false })
+      .limit(14);
+    if (!logs?.length) return [];
+    const ids = new Set<string>();
+    for (const l of logs) {
+      if (l.actor_id) ids.add(l.actor_id as string);
+      if (l.entity_id && UUID_RE.test(String(l.entity_id))) ids.add(String(l.entity_id));
+    }
+    const names = new Map<string, string>();
+    if (ids.size) {
+      const { data: profs } = await supabase.from("edu_profiles").select("id, full_name, email").in("id", [...ids]);
+      for (const p of profs || []) names.set(p.id as string, (p.full_name as string) || (p.email as string) || "—");
+    }
+    return logs.map((l) => {
+      const det = (l.details as Record<string, unknown>) || {};
+      const entityId = l.entity_id && UUID_RE.test(String(l.entity_id)) ? String(l.entity_id) : null;
+      // Only treat the entity as a linkable user when it resolves to a real
+      // profile. Assignment/test/lesson/attachment ids are UUIDs too but are NOT
+      // users — for those we show the item title instead and never link to a
+      // (non-existent) user page.
+      const resolvedName = entityId ? names.get(entityId) : undefined;
+      const userTargetId = resolvedName ? entityId : null;
+      let target = resolvedName || (det.title ? String(det.title) : det.name ? String(det.name) : "");
+      if (det.role && resolvedName) target += ` (${det.role})`;
+      return { id: String(l.id), actor: names.get(l.actor_id as string) || "System", action: l.action as string, target, when: l.created_at as string, targetId: userTargetId };
+    });
+  } catch {
+    return [];
+  }
 }
 
 export default async function PortalDashboard() {
   const user = await getPortalUser();
   if (!user) return null;
 
-  // No roles yet → honest waiting state.
   if (user.roles.length === 0) {
     return (
       <div className="rounded-2xl border border-white/10 bg-space/60 p-8 text-center">
@@ -51,74 +122,146 @@ export default async function PortalDashboard() {
         <h1 className="mt-4 text-xl font-semibold text-ice">Account created — awaiting access</h1>
         <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-fog">
           Your account exists but no portal role has been assigned yet. An administrator will
-          link your account to a student, parent or staff profile. If this takes longer than
-          expected, please <Link href="/contact" className="text-cyan hover:underline">contact us</Link>.
+          link your account to a student, parent or staff profile.
         </p>
       </div>
     );
   }
 
-  if (isAdmin(user.roles)) {
-    const [students, activeStudents, classes, teachers, unpaid, enquiries] = await Promise.all([
+  if (isStaff(user.roles)) {
+    const admin = isAdmin(user.roles);
+    const [students, activeStudents, classes, teachers, unpaid, enquiries, reg, activity] = await Promise.all([
       count("edu_students"),
       count("edu_students", (q) => (q as { eq: (c: string, v: string) => unknown }).eq("admission_status", "active")),
       count("edu_classes"),
       count("edu_teachers"),
-      count("edu_invoices", (q) => (q as { in: (c: string, v: string[]) => unknown }).in("status", ["sent", "partially_paid", "overdue"])),
+      admin ? count("edu_invoices", (q) => (q as { in: (c: string, v: string[]) => unknown }).in("status", ["sent", "partially_paid", "overdue"])) : Promise.resolve(null),
       count("edu_students", (q) => (q as { eq: (c: string, v: string) => unknown }).eq("admission_status", "enquiry")),
+      getRegistry(),
+      admin ? recentActivity() : Promise.resolve([] as Awaited<ReturnType<typeof recentActivity>>),
     ]);
-
     const schemaMissing = students === null;
+    const schools = reg.schools || [];
+    const first = (user.fullName || user.email || "").split(" ")[0];
+    const roleBadge = user.roles.map((r) => ROLE_LABELS[r as EduRole]).join(" · ");
+    const today = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
 
     return (
       <div className="space-y-8">
-        <h1 className="text-2xl font-semibold text-ice">Admin dashboard</h1>
+        {/* Header */}
+        <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-space/80 via-space/50 to-abyss/40 p-6 md:p-8">
+          <div className="grid-bg pointer-events-none absolute inset-0 opacity-40" />
+          <div className="relative flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="eyebrow mb-2">Command Center</p>
+              <h1 className="font-display text-3xl font-semibold text-ice">Welcome back, {first}</h1>
+              <p className="mt-1 text-sm text-dust">{roleBadge} · {today}</p>
+            </div>
+            <div className="w-full max-w-sm">
+              <AdminUserSearch />
+            </div>
+          </div>
+        </div>
 
         {schemaMissing ? (
           <div className="flex items-start gap-3 rounded-2xl border border-signal/30 bg-signal/5 p-5">
             <AlertTriangle size={18} className="mt-0.5 shrink-0 text-signal" />
             <div>
               <p className="text-sm font-semibold text-ice">Database foundation not initialised</p>
-              <p className="mt-1 text-sm leading-relaxed text-fog">
-                The portal schema (migration <code className="font-mono text-xs">edu-001-foundation.sql</code>)
-                has not been applied to Supabase yet. Run it in the SQL Editor and refresh this page.
-              </p>
+              <p className="mt-1 text-sm leading-relaxed text-fog">The portal schema (edu-001) is not applied yet.</p>
             </div>
           </div>
         ) : null}
 
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-          <StatCard label="Students" value={students} icon={Users} />
-          <StatCard label="Active students" value={activeStudents} icon={Users} />
-          <StatCard label="Open enquiries" value={enquiries} icon={BookOpen} />
-          <StatCard label="Classes" value={classes} icon={School} />
-          <StatCard label="Teachers" value={teachers} icon={Users} />
-          <StatCard label="Unpaid invoices" value={unpaid} icon={Receipt} />
+        {/* KPIs */}
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+          <StatCard label="Students" value={students} icon={Users} href="/portal/admin/users?role=student" />
+          <StatCard label="Active" value={activeStudents} icon={GraduationCap} accent="emerald" />
+          <StatCard label="Classes" value={classes} icon={School} accent="cyan" href="/portal/admin/institutions" />
+          <StatCard label="Schools" value={schools.length || "—"} icon={Building2} accent="magenta" href="/portal/admin/institutions" />
+          <StatCard label="Open enquiries" value={enquiries} icon={BookOpen} accent="amber" />
+          {admin ? <StatCard label="Unpaid invoices" value={unpaid} icon={Receipt} accent="amber" href="/portal/admin/finance" /> : <StatCard label="Teachers" value={teachers} icon={UserCog} />}
         </div>
 
-        <div>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-widest text-dust">Quick actions</h2>
-          <div className="flex flex-wrap gap-2">
-            <Link href="/portal/admin/users" className="btn-ghost text-xs">Manage users &amp; roles</Link>
-            <Link href="/portal/admin/academics" className="btn-ghost text-xs">Programmes &amp; classes</Link>
-            <Link href="/portal/admin/finance" className="btn-ghost text-xs">Fees &amp; invoices</Link>
-          </div>
+        <div className={admin ? "grid gap-6 lg:grid-cols-[1.4fr_1fr]" : "space-y-6"}>
+          {/* Recent platform activity (admin-only; audit log is admin-readable) */}
+          {admin ? (
+          <section className="rounded-2xl border border-white/10 bg-space/60 p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-ice"><Activity size={16} className="text-cyan" /> Recent activity</h2>
+              <Link href="/portal/admin/users" className="text-[11px] text-cyan hover:underline">All users →</Link>
+            </div>
+            {activity.length ? (
+              <ul className="space-y-1">
+                {activity.map((a) => {
+                  const meta = ACTION_META[a.action] || { icon: Activity, verb: a.action, color: "text-dust" };
+                  const Icon = meta.icon;
+                  const row = (
+                    <div className="flex items-start gap-3 rounded-lg px-2 py-2 transition hover:bg-white/[0.03]">
+                      <span className={"mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-white/10 " + meta.color}><Icon size={13} /></span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs text-fog"><span className="text-ice">{a.actor}</span> {meta.verb}{a.target ? <span className="text-ice"> {a.target}</span> : ""}</p>
+                        <p className="text-[10px] text-dust">{relTime(a.when)}</p>
+                      </div>
+                    </div>
+                  );
+                  return <li key={a.id}>{a.targetId ? <Link href={`/portal/admin/users/${a.targetId}`}>{row}</Link> : row}</li>;
+                })}
+              </ul>
+            ) : (
+              <p className="rounded-lg border border-white/10 bg-abyss/40 p-4 text-xs text-dust">No recorded activity yet. Actions you take (creating users, posting tests, enrolments) appear here.</p>
+            )}
+            <p className="mt-3 border-t border-white/5 pt-3 text-[11px] text-dust">
+              Tip: open <span className="text-cyan">Users &amp; activity</span> and click any person to see their full <span className="text-ice">past · present · future</span> timeline.
+            </p>
+          </section>
+          ) : null}
+
+          {/* Quick actions */}
+          <section className="space-y-3">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-ice"><BarChart3 size={16} className="text-cyan" /> Quick actions</h2>
+            {[
+              { href: "/portal/admin/users", icon: Users, title: "Users & activity", desc: "Create, suspend, reset, view any user's activity" },
+              { href: "/portal/admin/assign", icon: ClipboardList, title: "Post assignment / test", desc: "With attachments & per-question timers" },
+              { href: "/portal/admin/institutions", icon: Building2, title: "Institutions", desc: "Per-school & per-class analytics" },
+              { href: "/portal/admin/mail", icon: Mail, title: "Email", desc: "Message students, parents & classes" },
+            ].map((a) => (
+              <Link key={a.href} href={a.href} className="group flex items-center gap-3 rounded-2xl border border-white/10 bg-space/60 p-4 transition-all hover:-translate-y-0.5 hover:border-cyan/30 hover:bg-white/[0.03]">
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-cyan/25 text-cyan"><a.icon size={18} /></span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-ice">{a.title}</p>
+                  <p className="truncate text-[11px] text-dust">{a.desc}</p>
+                </div>
+                <ArrowRight size={15} className="text-dust transition group-hover:translate-x-0.5 group-hover:text-cyan" />
+              </Link>
+            ))}
+            {schools.length ? (
+              <div className="rounded-2xl border border-white/10 bg-space/60 p-4">
+                <p className="mb-2 text-[11px] uppercase tracking-widest text-dust">Schools</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {schools.map((s) => (
+                    <Link key={s} href="/portal/admin/institutions" className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-fog hover:border-cyan/40 hover:text-cyan">{s}</Link>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </section>
         </div>
       </div>
     );
   }
 
-  // Teacher / student / parent home — scoped modules arrive in the next stages.
+  // Non-staff (student / parent) home.
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold text-ice">Welcome{user.fullName ? `, ${user.fullName.split(" ")[0]}` : ""}</h1>
       <div className="rounded-2xl border border-white/10 bg-space/60 p-6">
         <p className="text-sm leading-relaxed text-fog">
-          Your portal area is being prepared. Modules for your role
-          {user.roles.includes("teacher") ? " (class management, attendance, marking)" : ""}
-          {user.roles.includes("student") ? " (timetable, assignments, results, Physics Studio AI)" : ""}
-          {user.roles.includes("parent") ? " (attendance, progress, fees)" : ""}
-          {" "}are rolling out in the next update. Your account and access rights are already active.
+          {user.roles.includes("student")
+            ? "Head to Exam Lab to sit past papers and drills, check My Learning for assignments, and track My Progress."
+            : user.roles.includes("parent")
+            ? "Open My Children to follow attendance, results and progress."
+            : "Your account and access rights are active."}
         </p>
       </div>
     </div>

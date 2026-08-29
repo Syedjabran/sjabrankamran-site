@@ -68,7 +68,7 @@ export async function POST(req: Request) {
         await sb.storage.from("portal-data").upload(`test-timing/${a.id}.json`, body, { upsert: true, contentType: "application/json" });
       } catch { /* non-fatal */ }
     }
-    await audit(admin.id, "assessment.create", "edu_assessments", a.id as string, { class_id: b.class_id, questions: qs.length, duration_minutes: durationMinutes });
+    await audit(admin.id, "assessment.create", "edu_assessments", a.id as string, { class_id: b.class_id, questions: qs.length, duration_minutes: durationMinutes, title });
     await notify("test", "A new test has been posted to your class.", "/portal/exam-lab");
     return NextResponse.json({ ok: true, id: a.id, type: "test", questions: qs.length, students: studentIds.length, durationMinutes, totalSeconds: computedSecs }, { status: 200 });
   }
@@ -88,7 +88,7 @@ export async function POST(req: Request) {
       { onConflict: "assignment_id,student_id" }
     );
   }
-  await audit(admin.id, "assignment.create", "edu_assignments", a.id as string, { class_id: b.class_id, students: studentIds.length });
+  await audit(admin.id, "assignment.create", "edu_assignments", a.id as string, { class_id: b.class_id, students: studentIds.length, title });
   await notify("assignment", "A new assignment has been posted to your class.", "/portal/learn");
   return NextResponse.json({ ok: true, id: a.id, type: "assignment", students: studentIds.length }, { status: 200 });
 }
