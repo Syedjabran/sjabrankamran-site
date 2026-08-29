@@ -7,7 +7,9 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { getPortalUser, isAdmin, isStaff, ROLE_LABELS, type EduRole } from "@/lib/edu/auth";
 import { getRegistry } from "@/lib/portal/institutions";
+import { effectiveRoles } from "@/lib/portal/view-as";
 import { AdminUserSearch } from "./admin-user-search";
+import { OnlineNow } from "./online-now";
 
 export const metadata = { title: "Portal Dashboard" };
 
@@ -114,6 +116,7 @@ async function recentActivity(): Promise<{ id: string; actor: string; action: st
 export default async function PortalDashboard() {
   const user = await getPortalUser();
   if (!user) return null;
+  const { roles: effRoles } = await effectiveRoles(user);
 
   if (user.roles.length === 0) {
     return (
@@ -128,8 +131,8 @@ export default async function PortalDashboard() {
     );
   }
 
-  if (isStaff(user.roles)) {
-    const admin = isAdmin(user.roles);
+  if (isStaff(effRoles)) {
+    const admin = isAdmin(effRoles);
     const [students, activeStudents, classes, teachers, unpaid, enquiries, reg, activity] = await Promise.all([
       count("edu_students"),
       count("edu_students", (q) => (q as { eq: (c: string, v: string) => unknown }).eq("admission_status", "active")),
@@ -219,10 +222,12 @@ export default async function PortalDashboard() {
 
           {/* Quick actions */}
           <section className="space-y-3">
+            <OnlineNow />
             <h2 className="flex items-center gap-2 text-sm font-semibold text-ice"><BarChart3 size={16} className="text-cyan" /> Quick actions</h2>
             {[
               { href: "/portal/admin/users", icon: Users, title: "Users & activity", desc: "Create, suspend, reset, view any user's activity" },
               { href: "/portal/admin/assign", icon: ClipboardList, title: "Post assignment / test", desc: "With attachments & per-question timers" },
+              { href: "/portal/admin/analytics", icon: BarChart3, title: "Rankings & analytics", desc: "Leaderboards, levels & performance charts" },
               { href: "/portal/admin/institutions", icon: Building2, title: "Institutions", desc: "Per-school & per-class analytics" },
               { href: "/portal/admin/mail", icon: Mail, title: "Email", desc: "Message students, parents & classes" },
             ].map((a) => (
@@ -257,9 +262,9 @@ export default async function PortalDashboard() {
       <h1 className="text-2xl font-semibold text-ice">Welcome{user.fullName ? `, ${user.fullName.split(" ")[0]}` : ""}</h1>
       <div className="rounded-2xl border border-white/10 bg-space/60 p-6">
         <p className="text-sm leading-relaxed text-fog">
-          {user.roles.includes("student")
+          {effRoles.includes("student")
             ? "Head to Exam Lab to sit past papers and drills, check My Learning for assignments, and track My Progress."
-            : user.roles.includes("parent")
+            : effRoles.includes("parent")
             ? "Open My Children to follow attendance, results and progress."
             : "Your account and access rights are active."}
         </p>

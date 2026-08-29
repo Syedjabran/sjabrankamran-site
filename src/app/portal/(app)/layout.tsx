@@ -4,6 +4,10 @@ import { headers } from "next/headers";
 import { LogOut, GraduationCap } from "lucide-react";
 import { getPortalUser, ROLE_LABELS, isAdmin, isStaff, type EduRole } from "@/lib/edu/auth";
 import { isOnboardingComplete } from "@/lib/portal/onboarding";
+import { effectiveRoles } from "@/lib/portal/view-as";
+import { PresenceBeacon } from "./presence-beacon";
+import { RolePreviewSwitcher } from "./role-preview";
+import { Eye } from "lucide-react";
 
 export const metadata = { robots: { index: false } };
 
@@ -27,6 +31,7 @@ function navFor(roles: EduRole[]): NavSection[] {
   const adminItems: NavItem[] = [{ href: "/portal", label: "Dashboard" }];
   if (staff) {
     adminItems.push({ href: "/portal/admin/users", label: "Users & activity" });
+    adminItems.push({ href: "/portal/admin/analytics", label: "Rankings & analytics" });
     adminItems.push({ href: "/portal/admin/institutions", label: "Institutions" });
     adminItems.push({ href: "/portal/admin/assign", label: "Post / Tests" });
     adminItems.push({ href: "/portal/admin/mail", label: "Email" });
@@ -82,13 +87,24 @@ export default async function PortalLayout({ children }: { children: React.React
     redirect("/portal/onboarding");
   }
 
-  const navSections = navFor(user.roles);
+  const { roles: navRoles, previewing } = await effectiveRoles(user);
+  const navSections = navFor(navRoles);
+  const realAdmin = isAdmin(user.roles);
   const roleBadges = user.roles.length
     ? user.roles.map((r) => ROLE_LABELS[r]).join(" · ")
     : "Awaiting role assignment";
 
   return (
     <div className="container-x py-8">
+      <PresenceBeacon />
+      {previewing ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/30 bg-amber-300/[0.06] px-4 py-2.5">
+          <p className="flex items-center gap-2 text-xs text-amber-300">
+            <Eye size={14} /> Preview mode — viewing the portal as a <b>{ROLE_LABELS[previewing]}</b>. Data is limited to your own account.
+          </p>
+          <RolePreviewSwitcher previewing={previewing} />
+        </div>
+      ) : null}
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.06] pb-6">
         <div className="flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-xl border border-cyan/30 text-cyan">
@@ -102,7 +118,8 @@ export default async function PortalLayout({ children }: { children: React.React
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {isStaff(user.roles) ? (
+          {realAdmin && !previewing ? <RolePreviewSwitcher previewing={null} /> : null}
+          {isStaff(user.roles) && !previewing ? (
             <span className="rounded-full border border-emerald2/30 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-emerald2">
               Staff
             </span>

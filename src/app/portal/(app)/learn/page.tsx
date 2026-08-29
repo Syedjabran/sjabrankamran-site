@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { BookOpen, CalendarDays, CheckSquare, ClipboardList, Trophy } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getPortalUser } from "@/lib/edu/auth";
+import { effectiveRoles } from "@/lib/portal/view-as";
 import { getMyStudent } from "@/lib/edu/student";
 
 export const metadata = { title: "My Learning" };
@@ -10,7 +11,8 @@ export const metadata = { title: "My Learning" };
 export default async function LearnHome() {
   const user = await getPortalUser();
   if (!user) redirect("/portal/login");
-  if (!user.roles.includes("student")) redirect("/portal");
+  const { roles: effRoles } = await effectiveRoles(user);
+  if (!effRoles.includes("student")) redirect("/portal");
 
   const student = await getMyStudent();
   if (!student) {
