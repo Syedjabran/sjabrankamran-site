@@ -6,6 +6,7 @@ import { getRegistry } from "@/lib/portal/institutions";
 import { getOnboarding } from "@/lib/portal/onboarding";
 import { getAttempts } from "@/lib/exam-lab/attempts";
 import { analyse } from "@/lib/exam-lab/analytics";
+import { getRankingsCached } from "@/lib/portal/rankings";
 
 export const runtime = "nodejs";
 
@@ -48,6 +49,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   let attendance: { total: number; present: number; late: number; absent: number; pct: number } | null = null;
   let results: { title: string; kind: string; score: number | null; total: number | null; grade: string | null; date: string | null }[] = [];
   let submissions: { title: string; status: string; marks: number | null; submittedAt: string | null }[] = [];
+  let rank: { overall: number; school: number; class: number; score: number; totalStudents: number; schoolStudents: number; classStudents: number } | null = null;
 
   if (student?.id) {
     const { data: enr } = await sb
@@ -89,6 +91,26 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
     const attempts = await getAttempts(uid);
     progress = analyse(attempts);
+
+    // Multi-scope standing: within class, school, and the complete ecosystem.
+    // Rankings are cached because the underlying institutional report is costly.
+    try {
+      const ranking = await getRankingsCached(60_000);
+      const row = ranking.students.find((x) => x.uid === uid);
+      if (row) {
+        rank = {
+          overall: row.rankOverall,
+          school: row.rankInSchool,
+          class: row.rankInClass,
+          score: row.score,
+          totalStudents: row.outOfOverall,
+          schoolStudents: row.outOfSchool,
+          classStudents: row.outOfClass,
+        };
+      }
+    } catch {
+      // Visual report remains available even if the ranking cache is unavailable.
+    }
   }
 
   const onboarding = await getOnboarding(uid);
@@ -100,12 +122,61 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     enrolments,
     onboarding: onboarding ? { completed: !!onboarding.completed_at, whatsapp: onboarding.whatsapp || null, city: onboarding.city || null, dob: onboarding.date_of_birth || null, guardians: onboarding.guardians || [] } : null,
     progress: progress
-      ? { totalAttempts: progress.totalAttempts, papersSat: progress.papersSat, scoredQuestions: progress.scoredQuestions, overallAccuracy: progress.overallAccuracy, level: progress.level, levelLabel: progress.levelLabel, strengths: progress.strengths.slice(0, 3), weaknesses: progress.weaknesses.slice(0, 3), recentAttempts: progress.recentAttempts.slice(0, 8).map((a) => ({ ts: a.ts, mode: a.mode, score: a.score, total: a.total, qCount: a.qCount })) }
+      ? {
+          totalAttempts: progress.totalAttempts,
+          papersSat: progress.papersSat,
+          scoredQuestions: progress.scoredQuestions,
+          overallAccuracy: progress.overallAccuracy,
+          level: progress.level,
+          levelLabel: progress.levelLabel,
+          strengths: progress.strengths.slice(0, 5),
+          weaknesses: progress.weaknesses.slice(0, 5),
+          byTopic: progress.byTopic.slice(0, 12),
+          byPaper: progress.byPaper,
+          byLevel: progress.byLevel,
+          timeline: progress.timeline,
+          recommendations: progress.recommendations,
+          timeManagement: timeManagement(progress.recentAttempts),
+          rank,
+          recentAttempts: progress.recentAttempts.slice(0, 8).map((a) => ({ ts: a.ts, mode: a.mode, score: a.score, total: a.total, qCount: a.qCount })),
+        }
       : null,
     attendance,
     results,
     submissions,
   }, { status: 200 });
+}
+
+function timeManagement(attempts: ReturnType<typeof analyse>["recentAttempts"]) {
+  const byTopic = new Map<string, { spent: number; expected: number; tracked: number }>();
+  let spent = 0, expected = 0, tracked = 0, within = 0;
+  for (const attempt of attempts) {
+    for (const q of attempt.questions) {
+      if (q.spentSec == null || q.expectedSec == null || q.expectedSec <= 0) continue;
+      const actual = Math.max(0, Number(q.spentSec));
+      const target = Math.max(1, Number(q.expectedSec));
+      const topic = q.topic || "Unclassified";
+      const agg = byTopic.get(topic) || { spent: 0, expected: 0, tracked: 0 };
+      agg.spent += actual; agg.expected += target; agg.tracked++;
+      byTopic.set(topic, agg);
+      spent += actual; expected += target; tracked++;
+      if (actual <= target) within++;
+    }
+  }
+  return {
+    tracked,
+    spent,
+    expected,
+    withinTargetPct: tracked ? Math.round((within / tracked) * 100) : null,
+    efficiencyPct: expected ? Math.round((expected / Math.max(spent, 1)) * 100) : null,
+    byTopic: [...byTopic.entries()].map(([topic, v]) => ({
+      topic,
+      tracked: v.tracked,
+      spent: v.spent,
+      expected: v.expected,
+      ratio: v.expected ? Math.round((v.spent / v.expected) * 100) : 0,
+    })).sort((a, b) => b.tracked - a.tracked || b.ratio - a.ratio).slice(0, 10),
+  };
 }
 
 /** PATCH — edit identity (name / email / status). */

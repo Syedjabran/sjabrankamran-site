@@ -45,8 +45,12 @@ export function VoiceAttendance() {
   const [listening, setListening] = useState(false);
   const [heard, setHeard] = useState("");
   const [supported, setSupported] = useState(true);
-  const recRef = useRef<{ start: () => void; stop: () => void; abort?: () => void } | null>(null);
+  const [voiceError, setVoiceError] = useState("");
+  const [startingVoice, setStartingVoice] = useState(false);
+  const recRef = useRef<SpeechRecognitionLike | null>(null);
   const listeningRef = useRef(false);
+  const restartTimerRef = useRef<number | null>(null);
+  const voiceAttemptRef = useRef(0);
 
   useEffect(() => { api("/api/portal/admin/classes").then((j) => setClasses(j.classes ?? [])).catch(() => {}); }, []);
   useEffect(() => {
@@ -87,13 +91,109 @@ export function VoiceAttendance() {
     return null;
   }, [roster]);
 
-  function toggleMic() {
+  const clearRestartTimer = useCallback(() => {
+    if (restartTimerRef.current !== null) {
+      window.clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
+    }
+  }, []);
+
+  const stopVoice = useCallback(() => {
+    voiceAttemptRef.current += 1; // cancel an in-flight permission/start attempt
+    listeningRef.current = false;
+    clearRestartTimer();
+    const rec = recRef.current;
+    recRef.current = null;
+    if (rec) {
+      rec.onstart = null;
+      rec.onresult = null;
+      rec.onerror = null;
+      rec.onend = null;
+      try { rec.stop(); } catch { try { rec.abort?.(); } catch { /* already stopped */ } }
+    }
+    setStartingVoice(false);
+    setListening(false);
+    setHeard("");
+  }, [clearRestartTimer]);
+
+  function voiceErrorMessage(code: string) {
+    switch (code) {
+      case "not-allowed":
+      case "service-not-allowed":
+        return "Microphone access was blocked. Allow microphone access for sjabrankamran.com in your browser's site settings, then try again.";
+      case "audio-capture":
+        return "No working microphone was found. Connect or enable a microphone, then try again.";
+      case "no-speech":
+        return "No speech was detected. Speak clearly near the microphone; voice marking will keep listening.";
+      case "network":
+        return "Voice recognition could not reach the speech service. Check your internet connection and try again.";
+      case "aborted":
+        return "Voice recognition stopped before it could hear a command. Tap Start voice to resume.";
+      case "language-not-supported":
+        return "English voice recognition is not supported by this browser. Use Chrome or Edge, or mark attendance by tapping.";
+      default:
+        return "Voice recognition could not start. You can still mark every student by tapping Present, Late or Absent below.";
+    }
+  }
+
+  async function toggleMic() {
     const w = window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
     const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
-    if (!Ctor) { setSupported(false); return; }
-    if (listening) { listeningRef.current = false; recRef.current?.stop(); setListening(false); return; }
+    if (listeningRef.current || startingVoice) { stopVoice(); return; }
+    setVoiceError("");
+    setHeard("");
+    if (!Ctor) {
+      setSupported(false);
+      setVoiceError("Voice marking is not supported in this browser. Open the portal in current Chrome or Edge, or use the tap controls below.");
+      return;
+    }
+    if (!window.isSecureContext) {
+      setVoiceError("Microphone access requires a secure HTTPS connection. Open https://sjabrankamran.com and try again; tap marking remains available below.");
+      return;
+    }
+    if (!roster.length) {
+      setVoiceError("Load a class register before starting voice attendance.");
+      return;
+    }
+
+    const attempt = ++voiceAttemptRef.current;
+    setStartingVoice(true);
+    // Ask for microphone permission from this direct button click. This gives
+    // browsers a reliable user gesture and lets us report a useful error before
+    // the less-descriptive Web Speech API failure fires. Release the probe
+    // stream immediately; SpeechRecognition opens its own capture stream.
+    if (navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+        if (voiceAttemptRef.current !== attempt) return;
+      } catch (error) {
+        if (voiceAttemptRef.current !== attempt) return;
+        const name = error instanceof DOMException ? error.name : "";
+        setStartingVoice(false);
+        setListening(false);
+        listeningRef.current = false;
+        setVoiceError(
+          name === "NotAllowedError" || name === "SecurityError"
+            ? voiceErrorMessage("not-allowed")
+            : name === "NotFoundError" || name === "NotReadableError"
+              ? voiceErrorMessage("audio-capture")
+              : "The microphone could not be opened. Check browser/site microphone settings, or use the tap controls below."
+        );
+        return;
+      }
+    }
+
+    if (voiceAttemptRef.current !== attempt) return;
+
     const rec = new Ctor();
     rec.lang = "en-US"; rec.continuous = true; rec.interimResults = true;
+    rec.onstart = () => {
+      if (recRef.current !== rec || !listeningRef.current) return;
+      setStartingVoice(false);
+      setListening(true);
+      setVoiceError("");
+    };
     rec.onresult = (ev: SpeechResultEvent) => {
       let finalText = "";
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
@@ -110,12 +210,62 @@ export function VoiceAttendance() {
         });
       }
     };
-    rec.onerror = () => { listeningRef.current = false; setListening(false); };
-    rec.onend = () => { if (recRef.current === rec && listeningRef.current) { try { rec.start(); } catch { /* */ } } };
-    recRef.current = rec as unknown as { start: () => void; stop: () => void };
-    try { rec.start(); listeningRef.current = true; setListening(true); } catch { listeningRef.current = false; setListening(false); }
+    rec.onerror = (ev: SpeechRecognitionErrorEvent) => {
+      const code = ev.error || "unknown";
+      setVoiceError(voiceErrorMessage(code));
+      // `no-speech` is recoverable: onend will restart while the user still
+      // wants to listen. All other errors stop the restart loop.
+      if (code !== "no-speech") {
+        listeningRef.current = false;
+        clearRestartTimer();
+        setStartingVoice(false);
+        setListening(false);
+      }
+    };
+    rec.onend = () => {
+      if (recRef.current !== rec || !listeningRef.current) {
+        setStartingVoice(false);
+        setListening(false);
+        return;
+      }
+      clearRestartTimer();
+      restartTimerRef.current = window.setTimeout(() => {
+        if (recRef.current !== rec || !listeningRef.current) return;
+        try { rec.start(); }
+        catch {
+          listeningRef.current = false;
+          setStartingVoice(false);
+          setListening(false);
+          setVoiceError("Voice recognition could not restart. Tap Start voice to try again, or use the tap controls below.");
+        }
+      }, 250);
+    };
+    recRef.current = rec;
+    listeningRef.current = true;
+    try { rec.start(); }
+    catch (error) {
+      recRef.current = null;
+      listeningRef.current = false;
+      setStartingVoice(false);
+      setListening(false);
+      setVoiceError(
+        error instanceof DOMException && error.name === "NotAllowedError"
+          ? voiceErrorMessage("not-allowed")
+          : "Voice recognition could not start. Reload once and try again, or use the tap controls below."
+      );
+    }
   }
-  useEffect(() => () => { listeningRef.current = false; try { recRef.current?.stop(); } catch { /* */ } }, []);
+  useEffect(() => () => {
+    voiceAttemptRef.current += 1;
+    listeningRef.current = false;
+    clearRestartTimer();
+    const rec = recRef.current;
+    recRef.current = null;
+    if (rec) {
+      rec.onstart = null; rec.onresult = null; rec.onerror = null; rec.onend = null;
+      try { rec.stop(); } catch { try { rec.abort?.(); } catch { /* */ } }
+    }
+  }, [clearRestartTimer]);
 
   async function save() {
     if (!lessonId) return;
@@ -163,9 +313,9 @@ export function VoiceAttendance() {
       {roster.length ? (
         <>
           <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-space/60 p-3">
-            <button onClick={toggleMic} disabled={!supported} title={supported ? "Toggle voice marking" : "Voice not supported in this browser"}
+            <button onClick={toggleMic} title={supported ? "Toggle voice marking" : "Check voice support and show setup help"}
               className={"inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm " + (listening ? "border-signal/60 bg-signal/15 text-signal" : "border-cyan/40 text-cyan hover:bg-cyan/10")}>
-              {listening ? <MicOff size={15} /> : <Mic size={15} />} {listening ? "Stop voice" : "Start voice"}
+              {listening ? <MicOff size={15} /> : <Mic size={15} />} {listening ? "Stop voice" : startingVoice ? "Opening microphone…" : "Start voice"}
             </button>
             {listening ? <span className="inline-flex items-center gap-1.5 text-xs text-dust"><span className="h-2 w-2 animate-pulse rounded-full bg-signal" /> listening… <span className="italic text-fog">{heard}</span></span> : null}
             <div className="ml-auto flex flex-wrap gap-1.5 text-[11px]">
@@ -174,6 +324,18 @@ export function VoiceAttendance() {
               <button onClick={() => markAll("")} className="rounded-full border border-white/15 px-2.5 py-1 text-dust hover:text-ice"><RotateCcw size={11} className="inline" /> Reset</button>
             </div>
           </div>
+
+          {voiceError ? (
+            <div role="alert" className="rounded-xl border border-signal/35 bg-signal/[0.06] px-4 py-3 text-xs leading-relaxed text-fog">
+              <p className="font-semibold text-signal">Voice attendance needs attention</p>
+              <p className="mt-1">{voiceError}</p>
+              <p className="mt-1 text-dust">Manual fallback: tap a student name to cycle status, or use the green/amber/pink status buttons. Saving works exactly the same.</p>
+            </div>
+          ) : !listening ? (
+            <p className="text-[11px] leading-relaxed text-dust">
+              Voice works best in current Chrome or Edge over HTTPS. Your browser may ask for microphone permission. If voice is unavailable, use the tap controls below—no attendance functionality is lost.
+            </p>
+          ) : null}
 
           <div className="flex flex-wrap gap-2 text-xs text-dust">
             <span className="text-emerald2">{counts.present} present</span> ·
@@ -207,7 +369,7 @@ export function VoiceAttendance() {
             <button onClick={save} disabled={saving} className="btn-primary !px-5 !py-2.5 text-sm">{saving ? "Saving…" : <><Save size={15} /> Save attendance</>}</button>
             {msg ? <span className="text-xs text-cyan">{msg}</span> : null}
           </div>
-          {!supported ? <p className="text-[11px] text-dust">Voice marking needs Chrome/Edge/Safari. You can still tap to mark. Unmarked students save as absent.</p> : null}
+          {!supported ? <p className="text-[11px] text-dust">This browser does not expose speech recognition. Open the portal in current Chrome or Edge, or use tap marking. Unmarked students save as absent.</p> : null}
         </>
       ) : msg ? <p className="rounded-xl border border-signal/30 bg-signal/5 p-4 text-sm text-fog">{msg}</p> : null}
     </div>
@@ -221,6 +383,10 @@ interface SpeechResultList { length: number; [i: number]: SpeechResult }
 interface SpeechResultEvent { resultIndex: number; results: SpeechResultList }
 interface SpeechRecognitionLike {
   lang: string; continuous: boolean; interimResults: boolean;
-  start: () => void; stop: () => void;
-  onresult: (e: SpeechResultEvent) => void; onerror: () => void; onend: () => void;
+  start: () => void; stop: () => void; abort?: () => void;
+  onstart: (() => void) | null;
+  onresult: ((e: SpeechResultEvent) => void) | null;
+  onerror: ((e: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
 }
+interface SpeechRecognitionErrorEvent { error: string; message?: string }

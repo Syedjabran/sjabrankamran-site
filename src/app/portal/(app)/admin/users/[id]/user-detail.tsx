@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, KeyRound, Ban, RotateCcw, Trash2, Mail, GraduationCap, Activity, ShieldCheck, BookOpen, ClipboardList } from "lucide-react";
 import { ROLES } from "../users-console";
 import { ActivityTimeline } from "./activity-timeline";
+import { StudentVisualReport, type StudentVisualData } from "./student-visual-report";
 
 const LABEL = Object.fromEntries(ROLES);
 
@@ -15,7 +16,7 @@ type Detail = {
   student: { id: string; student_no: string | null; school: string | null; admission_status: string; date_of_birth: string | null } | null;
   enrolments: { id: string; classId: string; status: string; className: string; school: string; section: string | null }[];
   onboarding: { completed: boolean; whatsapp: string | null; city: string | null; dob: string | null; guardians: { name: string; email: string; phone: string; relationship: string }[] } | null;
-  progress: { totalAttempts: number; papersSat: number; scoredQuestions: number; overallAccuracy: number; level: number; levelLabel: string; strengths: { topic: string; accuracy: number }[]; weaknesses: { topic: string; accuracy: number }[]; recentAttempts: { ts: number; mode: string; score: number; total: number; qCount: number }[] } | null;
+  progress: (StudentVisualData & { strengths: { topic: string; accuracy: number }[]; weaknesses: { topic: string; accuracy: number }[]; recentAttempts: { ts: number; mode: string; score: number; total: number; qCount: number }[] }) | null;
   attendance: { total: number; present: number; late: number; absent: number; pct: number } | null;
   results: { title: string; kind: string; score: number | null; total: number | null; grade: string | null; date: string | null }[];
   submissions: { title: string; status: string; marks: number | null; submittedAt: string | null }[];
@@ -174,6 +175,9 @@ export function UserDetail({ id, isSuper, selfId }: { id: string; isSuper: boole
 
       {/* Past / Present / Future activity */}
       <ActivityTimeline id={id} />
+
+      {/* Graphical intelligence report — individual student evidence, ranks and strategy. */}
+      {d.progress ? <StudentVisualReport progress={d.progress} attendance={d.attendance} /> : null}
 
       {/* Progress */}
       {d.progress ? (

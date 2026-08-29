@@ -73,7 +73,7 @@ export function UsersConsole() {
           <span className="grid h-10 w-10 place-items-center rounded-xl border border-cyan/30 text-cyan"><UserCog size={18} /></span>
           <div>
             <h1 className="text-2xl font-semibold text-ice">Users &amp; activity</h1>
-            <p className="text-xs text-dust">Click any person to manage access and view their full activity.</p>
+            <p className="text-xs text-dust">Open any person for visual charts, rankings, time analytics, full activity and access controls.</p>
           </div>
         </div>
         <button onClick={() => setShowCreate((s) => !s)} className="btn-ghost !px-3.5 !py-2 text-xs">
@@ -138,7 +138,7 @@ export function UsersConsole() {
                     <button disabled={!!busy} onClick={() => quick(u.id, "suspend")} title="Suspend access"
                       className="grid h-8 w-8 place-items-center rounded-lg border border-white/10 text-fog hover:border-signal/50 hover:text-signal"><Ban size={14} /></button>
                   )}
-                  <Link href={`/portal/admin/users/${u.id}`} className="rounded-lg border border-white/10 px-2.5 py-1.5 text-[11px] text-fog hover:border-cyan/40 hover:text-cyan">Manage →</Link>
+                  <Link href={`/portal/admin/users/${u.id}`} className="rounded-lg border border-cyan/25 px-2.5 py-1.5 text-[11px] text-cyan hover:border-cyan/60 hover:bg-cyan/[0.06]">Charts &amp; manage →</Link>
                 </div>
               </div>
             </li>
