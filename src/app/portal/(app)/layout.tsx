@@ -34,6 +34,7 @@ function navFor(roles: EduRole[]): NavSection[] {
     adminItems.push({ href: "/portal/admin/analytics", label: "Rankings & analytics" });
     adminItems.push({ href: "/portal/admin/institutions", label: "Institutions" });
     adminItems.push({ href: "/portal/admin/assign", label: "Post / Tests" });
+    adminItems.push({ href: "/portal/admin/attendance", label: "Attendance" });
     adminItems.push({ href: "/portal/admin/mail", label: "Email" });
   }
   if (admin) {

@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import type { ImgQuestion } from "@/lib/exam-lab/image-bank";
 import { questionSeconds, formatDuration } from "@/lib/portal/timing";
+import { AnswerPad } from "./answer-pad";
 import { useExamGuard } from "./use-exam-guard";
 
 type UrlMap = Record<string, string>;
@@ -377,11 +378,13 @@ export function PaperRunner({
                 </div>
               ) : (
                 <div className="mt-3">
-                  <textarea
+                  <AnswerPad
                     value={structAnswers[q.id] || ""}
-                    onChange={(e) => setStructAnswers((s) => ({ ...s, [q.id]: e.target.value }))}
-                    placeholder="Write your answer / working here…"
-                    className="min-h-28 w-full resize-y rounded-xl border border-white/15 bg-void px-3.5 py-3 text-sm text-ice el-noprint"
+                    onChange={(v) => setStructAnswers((s) => ({ ...s, [q.id]: v }))}
+                    imageUrl={urls[q.img]}
+                    qid={q.id}
+                    code={logMeta?.code || logMeta?.ref || "exam"}
+                    disabled={submitted}
                   />
                   <div className="mt-2 flex flex-wrap gap-2 el-noprint">
                     <button onClick={() => markMaxwell(q.id)} disabled={maxwell[q.id]?.loading} className="btn-primary !px-3.5 !py-1.5 text-xs disabled:opacity-50">
