@@ -20,6 +20,7 @@ function navFor(roles: EduRole[]) {
     items.push({ href: "/portal/teach", label: "My Classes" });
   }
   if (isStaff(roles)) {
+    items.push({ href: "/portal/admin/assign", label: "Post / Tests" });
     items.push({ href: "/portal/studio", label: "Physics Studio" });
     items.push({ href: "/portal/admin/institutions", label: "Institutions" });
     items.push({ href: "/portal/admin/mail", label: "Email" });
@@ -38,6 +39,22 @@ function navFor(roles: EduRole[]) {
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const user = await getPortalUser();
   if (!user) redirect("/portal/login");
+
+  // Suspended accounts: block all portal activity immediately (in addition to
+  // the GoTrue ban that stops new sign-ins / token refresh).
+  if (user.status === "archived") {
+    return (
+      <div className="container-x py-16">
+        <div className="mx-auto max-w-md rounded-2xl border border-signal/30 bg-signal/5 p-8 text-center">
+          <h1 className="text-xl font-semibold text-ice">Access suspended</h1>
+          <p className="mt-2 text-sm text-fog">Your portal access has been paused. Please contact your teacher at physics@sjabrankamran.com if you believe this is a mistake.</p>
+          <form action="/portal/auth/signout" method="post" className="mt-5">
+            <button type="submit" className="btn-ghost !px-4 !py-2 text-xs">Sign out</button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   // Mandatory onboarding gate: a student cannot use ANY activity until their
   // required profile (incl. a valid parent email) is complete.

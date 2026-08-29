@@ -16,6 +16,7 @@ export type PortalUser = {
   email: string;
   fullName: string;
   roles: EduRole[];
+  status: string;
 };
 
 export const ROLE_LABELS: Record<EduRole, string> = {
@@ -50,15 +51,17 @@ export async function getPortalUser(): Promise<PortalUser | null> {
 
   let fullName = "";
   let roles: EduRole[] = [];
+  let status = "active";
   try {
     const [{ data: profile }, { data: roleRows }] = await Promise.all([
-      supabase.from("edu_profiles").select("full_name").eq("id", user.id).maybeSingle(),
+      supabase.from("edu_profiles").select("full_name, status").eq("id", user.id).maybeSingle(),
       supabase.from("edu_user_roles").select("role").eq("user_id", user.id),
     ]);
     fullName = profile?.full_name ?? "";
+    status = profile?.status ?? "active";
     roles = (roleRows ?? []).map((r) => r.role as EduRole);
   } catch {
     // Schema not yet migrated — treat as role-less user.
   }
-  return { id: user.id, email: user.email ?? "", fullName, roles };
+  return { id: user.id, email: user.email ?? "", fullName, roles, status };
 }
