@@ -43,7 +43,7 @@ export function ResourcesClient({ isSuper }: { isSuper: boolean }) {
   const [q, setQ] = useState("");
   const [kind, setKind] = useState<"" | Kind>("");
   const [cat, setCat] = useState("");
-  const [publish, setPublish] = useState(false);
+  const [panel, setPanel] = useState<null | "upload" | "link" | "google">(null);
   const [preview, setPreview] = useState<Resource | null>(null);
 
   const load = useCallback(async () => {
@@ -75,10 +75,23 @@ export function ResourcesClient({ isSuper }: { isSuper: boolean }) {
             <p className="text-xs text-dust">Notes, past papers, videos, animations & simulations — curated for you.</p>
           </div>
         </div>
-        {isSuper ? <button onClick={() => setPublish((s) => !s)} className="btn-ghost !px-3.5 !py-2 text-xs">{publish ? <X size={14} /> : <Plus size={14} />} {publish ? "Close" : "Publish resource"}</button> : null}
+        {isSuper ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={() => setPanel((p) => (p === "google" ? null : "google"))} className={"inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs " + (panel === "google" ? "border-cyan/60 bg-cyan/10 text-cyan" : "border-cyan/40 text-cyan hover:bg-cyan/10")}>
+              <FolderOpen size={14} /> Google Drive &amp; Classroom
+            </button>
+            <button onClick={() => setPanel((p) => (p && p !== "google" ? null : "upload"))} className="btn-ghost !px-3.5 !py-2 text-xs">{panel && panel !== "google" ? <X size={14} /> : <Plus size={14} />} {panel && panel !== "google" ? "Close" : "Publish resource"}</button>
+          </div>
+        ) : null}
       </div>
 
-      {isSuper && publish ? <PublishPanel onPublished={() => { load(); }} /> : null}
+      {isSuper ? (
+        <div className="rounded-xl border border-white/10 bg-abyss/40 px-4 py-2.5 text-[11px] text-dust">
+          <b className="text-fog">You&apos;re the super admin.</b> Publish files/links or pull straight from Google Drive &amp; Classroom — every published item appears in the grid below for <b className="text-fog">all users</b>. Students only ever see the published grid, never your Google account or these controls.
+        </div>
+      ) : null}
+
+      {isSuper && panel ? <PublishPanel initialTab={panel} onClose={() => setPanel(null)} onPublished={() => { load(); }} /> : null}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
@@ -185,17 +198,18 @@ function PreviewBody({ r, embed, href }: { r: Resource; embed: string | null; hr
 }
 
 /* ---------------- Publish (super-admin) ---------------- */
-function PublishPanel({ onPublished }: { onPublished: () => void }) {
-  const [tab, setTab] = useState<"upload" | "link" | "google">("upload");
+function PublishPanel({ initialTab = "upload", onPublished, onClose }: { initialTab?: "upload" | "link" | "google"; onPublished: () => void; onClose?: () => void }) {
+  const [tab, setTab] = useState<"upload" | "link" | "google">(initialTab);
   const input = "w-full rounded-lg border border-white/10 bg-abyss/60 px-3 py-2 text-sm text-ice placeholder:text-dust focus:border-cyan focus:outline-none";
   return (
     <div className="space-y-4 rounded-2xl border border-cyan/20 bg-space/60 p-5">
-      <div className="flex flex-wrap gap-2 border-b border-white/10 pb-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-white/10 pb-2">
         {(["upload", "link", "google"] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)} className={"inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs " + (tab === t ? "bg-cyan/10 text-cyan" : "text-dust hover:text-ice")}>
             {t === "upload" ? <Upload size={13} /> : t === "link" ? <Link2 size={13} /> : <GraduationCap size={13} />} {t === "upload" ? "Upload file" : t === "link" ? "Add link" : "Import from Google"}
           </button>
         ))}
+        {onClose ? <button onClick={onClose} className="ml-auto text-dust hover:text-ice" title="Close"><X size={16} /></button> : null}
       </div>
       {tab === "upload" ? <UploadForm input={input} onDone={onPublished} /> : tab === "link" ? <LinkForm input={input} onDone={onPublished} /> : <GooglePanel input={input} onDone={onPublished} />}
     </div>
