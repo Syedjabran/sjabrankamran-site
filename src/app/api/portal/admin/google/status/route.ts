@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, isSuperAdmin } from "@/lib/portal/admin";
-import { googleConfigured, connectedEmail } from "@/lib/google/auth";
+import { googleReady, connectedEmail } from "@/lib/google/auth";
 
 export const runtime = "nodejs";
 
@@ -9,5 +9,5 @@ export async function GET() {
   const admin = await requireAdmin();
   if (!admin) return NextResponse.json({ error: "Admins only." }, { status: 403 });
   if (!isSuperAdmin(admin)) return NextResponse.json({ connected: false, allowed: false }, { status: 200 });
-  return NextResponse.json({ connected: googleConfigured(), allowed: true, email: connectedEmail() }, { status: 200 });
+  return NextResponse.json({ connected: await googleReady(), allowed: true, email: await connectedEmail() }, { status: 200 });
 }

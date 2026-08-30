@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, isSuperAdmin } from "@/lib/portal/admin";
-import { googleConfigured } from "@/lib/google/auth";
+import { googleReady } from "@/lib/google/auth";
 import { listDrive } from "@/lib/google/drive";
 
 export const runtime = "nodejs";
@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export async function GET(req: Request) {
   const admin = await requireAdmin();
   if (!admin || !isSuperAdmin(admin)) return NextResponse.json({ error: "Super-admins only." }, { status: 403 });
-  if (!googleConfigured()) return NextResponse.json({ connected: false, error: "Google is not connected yet." }, { status: 200 });
+  if (!(await googleReady())) return NextResponse.json({ connected: false, error: "Google is not connected yet." }, { status: 200 });
   const url = new URL(req.url);
   try {
     const r = await listDrive({
