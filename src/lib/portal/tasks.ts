@@ -47,7 +47,7 @@ async function readStore(uid: string): Promise<Store> {
 async function writeStore(uid: string, store: Store): Promise<boolean> {
   try {
     const body = new Blob([JSON.stringify(store)], { type: "application/json" });
-    const { error } = await createAdminClient().storage.from(DATA).upload(tpath(uid), body, { upsert: true, contentType: "application/json" });
+    const { error } = await createAdminClient().storage.from(DATA).upload(tpath(uid), body, { upsert: true, contentType: "application/json", cacheControl: "0" });
     return !error;
   } catch { return false; }
 }

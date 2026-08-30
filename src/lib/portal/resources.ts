@@ -51,7 +51,7 @@ async function readIndex(): Promise<ResourceItem[]> {
 async function writeIndex(items: ResourceItem[]): Promise<boolean> {
   try {
     const body = new Blob([JSON.stringify({ items })], { type: "application/json" });
-    const { error } = await createAdminClient().storage.from(DATA).upload(INDEX, body, { upsert: true, contentType: "application/json" });
+    const { error } = await createAdminClient().storage.from(DATA).upload(INDEX, body, { upsert: true, contentType: "application/json", cacheControl: "0" });
     return !error;
   } catch { return false; }
 }
@@ -103,6 +103,12 @@ function drivePreview(url: string): string | null {
   return url.replace(/\/edit.*$/, "/preview");
 }
 
+/** Fetch one resource's raw record by id (server-only). */
+export async function getResourceById(id: string): Promise<ResourceItem | null> {
+  const items = await readIndex();
+  return items.find((i) => i.id === id) || null;
+}
+
 /** List all resources (any signed-in user) with fresh signed URLs. */
 export async function listResources(): Promise<ResourceView[]> {
   const items = (await readIndex()).sort((a, b) => b.createdAt - a.createdAt);
@@ -114,10 +120,17 @@ export async function listResources(): Promise<ResourceView[]> {
     for (const d of data || []) if (d.path && d.signedUrl) signed.set(d.path, d.signedUrl);
   }
   return items.map((i) => {
-    const href = i.source === "upload" && i.path ? (signed.get(i.path) ?? null) : (i.url ?? null);
+    let href = i.source === "upload" && i.path ? (signed.get(i.path) ?? null) : (i.url ?? null);
     let embedUrl: string | null = null;
     if (i.source === "youtube" || i.source === "drive") embedUrl = classifyUrl(i.url || "").embedUrl;
-    else if (i.source === "upload" && (i.kind === "video" || i.kind === "audio" || i.kind === "image" || i.kind === "pdf" || i.kind === "animation")) embedUrl = href;
+    else if (i.source === "upload" && i.kind === "animation") {
+      // HTML applets: Supabase serves uploaded HTML as text/plain (anti-XSS), so
+      // render them through our own route which returns proper text/html.
+      const view = `/api/portal/resources/view/${i.id}`;
+      embedUrl = view; href = view;
+    } else if (i.source === "upload" && (i.kind === "video" || i.kind === "audio" || i.kind === "image" || i.kind === "pdf")) {
+      embedUrl = href;
+    }
     return { ...i, href, embedUrl };
   });
 }

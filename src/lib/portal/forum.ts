@@ -34,7 +34,7 @@ async function readJson<T>(bucket: string, path: string, fallback: T): Promise<T
 async function writeJson(bucket: string, path: string, obj: unknown): Promise<boolean> {
   try {
     const body = new Blob([JSON.stringify(obj)], { type: "application/json" });
-    const { error } = await createAdminClient().storage.from(bucket).upload(path, body, { upsert: true, contentType: "application/json" });
+    const { error } = await createAdminClient().storage.from(bucket).upload(path, body, { upsert: true, contentType: "application/json", cacheControl: "0" });
     return !error;
   } catch { return false; }
 }
