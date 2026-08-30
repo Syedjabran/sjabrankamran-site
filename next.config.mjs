@@ -43,7 +43,10 @@ const nextConfig = {
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
           { key: "X-DNS-Prefetch-Control", value: "on" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), browsing-topics=()" },
+          // Voice attendance uses getUserMedia + the Web Speech API on the
+          // first-party portal. Browser/OS permission is still required; this
+          // policy only stops the server from overriding an explicit grant.
+          { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=(), browsing-topics=()" },
         ],
       },
     ];
