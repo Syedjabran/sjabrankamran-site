@@ -7,6 +7,7 @@ import { ArrowLeft, KeyRound, Ban, RotateCcw, Trash2, Mail, GraduationCap, Activ
 import { ROLES } from "../users-console";
 import { ActivityTimeline } from "./activity-timeline";
 import { StudentVisualReport, type StudentVisualData } from "./student-visual-report";
+import { IndividualTasks } from "./individual-tasks";
 
 const LABEL = Object.fromEntries(ROLES);
 
@@ -172,6 +173,9 @@ export function UserDetail({ id, isSuper, selfId }: { id: string; isSuper: boole
           <button disabled={!enrolClass || !!busy} onClick={() => { act("enrol", { class_id: enrolClass }); setEnrolClass(""); }} className="btn-ghost !px-3 !py-1.5 text-xs">Enrol</button>
         </div>
       </Card>
+
+      {/* Individualised tasks & challenges — one-to-one work for this student. */}
+      <IndividualTasks id={id} studentName={p.full_name || p.email || "student"} />
 
       {/* Past / Present / Future activity */}
       <ActivityTimeline id={id} />

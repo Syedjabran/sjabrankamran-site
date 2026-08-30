@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getPortalUser } from "@/lib/edu/auth";
 import { effectiveRoles } from "@/lib/portal/view-as";
 import { getMyStudent } from "@/lib/edu/student";
+import { MyTasks } from "./my-tasks";
 
 export const metadata = { title: "My Learning" };
 
@@ -82,6 +83,9 @@ export default async function LearnHome() {
           {attPct !== null ? ` · Attendance ${attPct}%` : ""}
         </p>
       </div>
+
+      {/* Individualised tasks & challenges (hidden when none assigned). */}
+      <MyTasks />
 
       {/* Classes */}
       <section>
