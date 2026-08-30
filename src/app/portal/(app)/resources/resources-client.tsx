@@ -43,7 +43,7 @@ export function ResourcesClient({ isSuper }: { isSuper: boolean }) {
   const [q, setQ] = useState("");
   const [kind, setKind] = useState<"" | Kind>("");
   const [cat, setCat] = useState("");
-  const [panel, setPanel] = useState<null | "upload" | "link" | "google">(null);
+  const [panel, setPanel] = useState<null | "upload" | "link" | "google" | "classdrive">(null);
   const [preview, setPreview] = useState<Resource | null>(null);
 
   const load = useCallback(async () => {
@@ -75,14 +75,19 @@ export function ResourcesClient({ isSuper }: { isSuper: boolean }) {
             <p className="text-xs text-dust">Notes, past papers, videos, animations & simulations — curated for you.</p>
           </div>
         </div>
-        {isSuper ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <button onClick={() => setPanel((p) => (p === "google" ? null : "google"))} className={"inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs " + (panel === "google" ? "border-cyan/60 bg-cyan/10 text-cyan" : "border-cyan/40 text-cyan hover:bg-cyan/10")}>
-              <FolderOpen size={14} /> Google Drive &amp; Classroom
-            </button>
-            <button onClick={() => setPanel((p) => (p && p !== "google" ? null : "upload"))} className="btn-ghost !px-3.5 !py-2 text-xs">{panel && panel !== "google" ? <X size={14} /> : <Plus size={14} />} {panel && panel !== "google" ? "Close" : "Publish resource"}</button>
-          </div>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => setPanel((p) => (p === "classdrive" ? null : "classdrive"))} className={"inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs " + (panel === "classdrive" ? "border-amber-300/60 bg-amber-300/10 text-amber-200" : "border-amber-300/40 text-amber-200 hover:bg-amber-300/10")}>
+            <FolderOpen size={14} /> Class Drive
+          </button>
+          {isSuper ? (
+            <>
+              <button onClick={() => setPanel((p) => (p === "google" ? null : "google"))} className={"inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs " + (panel === "google" ? "border-cyan/60 bg-cyan/10 text-cyan" : "border-cyan/40 text-cyan hover:bg-cyan/10")}>
+                <FolderOpen size={14} /> Google Drive &amp; Classroom
+              </button>
+              <button onClick={() => setPanel((p) => (p === "upload" || p === "link" ? null : "upload"))} className="btn-ghost !px-3.5 !py-2 text-xs">{panel === "upload" || panel === "link" ? <X size={14} /> : <Plus size={14} />} {panel === "upload" || panel === "link" ? "Close" : "Publish resource"}</button>
+            </>
+          ) : null}
+        </div>
       </div>
 
       {isSuper ? (
@@ -91,7 +96,8 @@ export function ResourcesClient({ isSuper }: { isSuper: boolean }) {
         </div>
       ) : null}
 
-      {isSuper && panel ? <PublishPanel initialTab={panel} onClose={() => setPanel(null)} onPublished={() => { load(); }} /> : null}
+      {panel === "classdrive" ? <ClassDrive isSuper={isSuper} /> : null}
+      {isSuper && (panel === "upload" || panel === "link" || panel === "google") ? <PublishPanel initialTab={panel} onClose={() => setPanel(null)} onPublished={() => { load(); }} /> : null}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
@@ -361,6 +367,18 @@ function DriveBrowser({ onImport }: { onImport: (t: string, u: string | null) =>
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [stack, setStack] = useState<{ id: string; name: string }[]>([{ id: "root", name: "My Drive" }]);
   const [q, setQ] = useState(""); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const [shared, setShared] = useState<Record<string, string>>({});
+
+  const loadShared = useCallback(async () => {
+    try { const j = await api("/api/portal/admin/google/shared"); setShared(Object.fromEntries((j.folders || []).map((f: { id: string; name: string }) => [f.id, f.name]))); } catch { /* */ }
+  }, []);
+  async function toggleShare(f: DriveFile) {
+    try {
+      if (shared[f.id]) await api(`/api/portal/admin/google/shared?id=${encodeURIComponent(f.id)}`, { method: "DELETE" });
+      else await api("/api/portal/admin/google/shared", { method: "POST", body: JSON.stringify({ id: f.id, name: f.name }) });
+      await loadShared();
+    } catch (e) { setErr((e as Error).message); }
+  }
 
   const load = useCallback(async (folderId: string, search: string) => {
     setBusy(true); setErr("");
@@ -370,7 +388,7 @@ function DriveBrowser({ onImport }: { onImport: (t: string, u: string | null) =>
       if (j.error) setErr(j.error); setFiles(j.files || []);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }, []);
-  useEffect(() => { load(stack[stack.length - 1].id, ""); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { load(stack[stack.length - 1].id, ""); loadShared(); /* eslint-disable-next-line */ }, []);
 
   const cur = stack[stack.length - 1];
   return (
@@ -404,7 +422,11 @@ function DriveBrowser({ onImport }: { onImport: (t: string, u: string | null) =>
                   <span className="truncate">{f.name}</span>
                 </a>
               )}
-              {f.kind !== "folder" ? <button onClick={() => onImport(f.name, f.webViewLink)} className="shrink-0 rounded-lg border border-cyan/40 px-2 py-0.5 text-[10px] text-cyan hover:bg-cyan/10">Add</button> : null}
+              {f.kind === "folder" ? (
+                <button onClick={() => toggleShare(f)} title={shared[f.id] ? "Shared with students — click to stop" : "Share this folder with all users"} className={"shrink-0 rounded-lg border px-2 py-0.5 text-[10px] " + (shared[f.id] ? "border-emerald2/50 bg-emerald2/10 text-emerald2" : "border-white/15 text-dust hover:border-amber-300/50 hover:text-amber-200")}>{shared[f.id] ? "✓ Shared" : "Share"}</button>
+              ) : (
+                <button onClick={() => onImport(f.name, f.webViewLink)} className="shrink-0 rounded-lg border border-cyan/40 px-2 py-0.5 text-[10px] text-cyan hover:bg-cyan/10">Add</button>
+              )}
             </li>
           ))}
           {!files.length ? <li className="py-4 text-center text-xs text-dust">Empty.</li> : null}
@@ -460,6 +482,74 @@ function ClassroomBrowser({ onImport }: { onImport: (t: string, u: string | null
           ))}
           {!work.length ? <li className="py-4 text-center text-xs text-dust">No posts in this course.</li> : null}
         </ul>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Class Drive (read-only, ALL users) ---------------- */
+function ClassDrive({ isSuper }: { isSuper: boolean }) {
+  const [files, setFiles] = useState<DriveFile[]>([]);
+  const [stack, setStack] = useState<{ id: string; name: string }[]>([{ id: "", name: "Shared with you" }]);
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const [connected, setConnected] = useState(true); const [root, setRoot] = useState(true);
+
+  const load = useCallback(async (folderId: string) => {
+    setBusy(true); setErr("");
+    try {
+      const j = await api(`/api/portal/google/drive${folderId ? `?folderId=${encodeURIComponent(folderId)}` : ""}`);
+      setConnected(j.connected !== false); setRoot(!!j.root); if (j.error) setErr(j.error); setFiles(j.files || []);
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }, []);
+  useEffect(() => { load(""); /* eslint-disable-next-line */ }, []);
+
+  const cur = stack[stack.length - 1];
+  const iconFor = (k: string) => k === "image" ? <ImageIcon size={14} className="shrink-0 text-emerald2" /> : k === "video" ? <Video size={14} className="shrink-0 text-cyan" /> : k === "pdf" ? <FileText size={14} className="shrink-0 text-rose-300" /> : <FileType2 size={14} className="shrink-0 text-amber-300" />;
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-amber-300/25 bg-space/60 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-ice"><FolderOpen size={16} className="text-amber-300" /> Class Drive</h2>
+        <p className="text-[11px] text-dust">Folders shared by your teacher — open to read.</p>
+      </div>
+      {/* breadcrumb */}
+      <div className="flex flex-wrap items-center gap-1 text-xs text-dust">
+        {stack.map((s, i) => (
+          <span key={s.id || "root"} className="inline-flex items-center gap-1">
+            {i > 0 ? <ChevronRight size={11} /> : null}
+            <button onClick={() => { const ns = stack.slice(0, i + 1); setStack(ns); load(s.id); }} className={i === stack.length - 1 ? "text-ice" : "hover:text-amber-200"}>{s.name}</button>
+          </span>
+        ))}
+      </div>
+      {err ? <p className="text-xs text-signal">{err}</p> : null}
+      {!connected ? (
+        <p className="rounded-lg border border-white/10 bg-abyss/40 px-3 py-6 text-center text-xs text-dust">The class drive isn&apos;t connected yet. Please check back soon.</p>
+      ) : busy ? (
+        <p className="flex items-center gap-2 py-6 text-xs text-dust"><Loader2 size={14} className="animate-spin" /> Loading…</p>
+      ) : files.length ? (
+        <ul className="max-h-96 space-y-1 overflow-auto">
+          {files.map((f) => (
+            <li key={f.id} className="flex items-center gap-2 rounded-lg px-2 py-2 hover:bg-white/[0.03]">
+              {f.kind === "folder" ? (
+                <button onClick={() => { setStack((s) => [...s, { id: f.id, name: f.name }]); load(f.id); }} className="flex min-w-0 flex-1 items-center gap-2 text-left text-xs text-fog hover:text-amber-200">
+                  <FolderOpen size={15} className="shrink-0 text-amber-300" /> <span className="truncate">{f.name}</span>
+                  <ChevronRight size={12} className="ml-auto shrink-0 text-dust" />
+                </button>
+              ) : (
+                <a href={`/api/portal/google/file/${f.id}`} target="_blank" rel="noreferrer" className="flex min-w-0 flex-1 items-center gap-2 text-xs text-fog hover:text-cyan">
+                  {f.thumbnailLink ? <img src={f.thumbnailLink} alt="" className="h-6 w-6 shrink-0 rounded object-cover" /> : iconFor(f.kind)}
+                  <span className="truncate">{f.name}</span>
+                  <ExternalLink size={11} className="ml-auto shrink-0 text-dust" />
+                </a>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="rounded-lg border border-white/10 bg-abyss/40 px-3 py-6 text-center text-xs text-dust">
+          {root ? "No folders have been shared yet." : "This folder is empty."}
+          {isSuper && root ? <span className="mt-1 block text-[11px] text-amber-200/80">Tip: open “Google Drive &amp; Classroom”, browse to a folder and press <b>Share</b> to make it visible here for everyone.</span> : null}
+        </p>
       )}
     </div>
   );
