@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, audit, isSuperAdmin } from "@/lib/portal/admin";
-import { addLinkResource, registerUpload, removeResource, type ResourceKind } from "@/lib/portal/resources";
+import { addLinkResource, registerUpload, removeResource, RES_BUCKET, type ResourceKind } from "@/lib/portal/resources";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { mirrorToDrive } from "@/lib/google/drive-write";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 /**
  * POST — publish a resource (super-admin only). Two shapes:
@@ -26,6 +29,11 @@ export async function POST(req: Request) {
       title: b.title.trim(), description: b.description, category: b.category,
       path: b.path, name: b.name, mime: b.mime, size: b.size, createdBy: admin.id, createdByName: byName,
     });
+    // Best-effort mirror into Google Drive → sjabrankamran.com/Physics Resource
+    try {
+      const { data: blob } = await createAdminClient().storage.from(RES_BUCKET).download(b.path);
+      if (blob) await mirrorToDrive("physicsResource", b.name, b.mime || blob.type || "application/octet-stream", blob);
+    } catch { /* Drive mirror is optional */ }
     await audit(admin.id, "resource.publish", "physics-resources", item.id, { kind: item.kind, title: item.title, source: "upload" });
     return NextResponse.json({ ok: true, resource: item }, { status: 200 });
   }

@@ -7,6 +7,7 @@ import { isOnboardingComplete } from "@/lib/portal/onboarding";
 import { effectiveRoles } from "@/lib/portal/view-as";
 import { PresenceBeacon } from "./presence-beacon";
 import { RolePreviewSwitcher } from "./role-preview";
+import { NotificationBell } from "./notification-bell";
 import { Eye } from "lucide-react";
 
 export const metadata = { robots: { index: false } };
@@ -129,6 +130,7 @@ export default async function PortalLayout({ children }: { children: React.React
               Staff
             </span>
           ) : null}
+          <NotificationBell />
           <Link href="/portal/settings" className="inline-flex items-center gap-1.5 rounded-full border border-white/15 px-3 py-1.5 text-xs text-fog transition hover:border-cyan/40 hover:text-cyan" title="My profile & settings">
             <Settings size={13} /> <span className="hidden sm:inline">Profile</span>
           </Link>

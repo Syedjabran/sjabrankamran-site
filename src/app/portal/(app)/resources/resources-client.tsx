@@ -289,8 +289,18 @@ function GooglePanel({ input, onDone }: { input: string; onDone: () => void }) {
   const [mode, setMode] = useState<"drive" | "classroom">("drive");
   const [category, setCategory] = useState("");
   const [msg, setMsg] = useState("");
+  const [folders, setFolders] = useState<Record<string, string> | null>(null);
+  const [needsWrite, setNeedsWrite] = useState(false);
+  const [prov, setProv] = useState(false);
 
   useEffect(() => { api("/api/portal/admin/google/status").then(setStatus).catch(() => setStatus({ connected: false })); }, []);
+  useEffect(() => { api("/api/portal/admin/google/provision").then((j) => { if (j.folders) setFolders(j.folders); if (j.needsWrite) setNeedsWrite(true); }).catch(() => {}); }, []);
+
+  async function provision() {
+    setProv(true); setMsg("");
+    try { const j = await api("/api/portal/admin/google/provision", { method: "POST" }); if (j.needsWrite) setNeedsWrite(true); else { setFolders(j.folders); setNeedsWrite(false); } }
+    catch (e) { setMsg((e as Error).message); } finally { setProv(false); }
+  }
 
   async function importItem(title: string, url: string | null) {
     if (!url) return;
@@ -314,6 +324,23 @@ function GooglePanel({ input, onDone }: { input: string; onDone: () => void }) {
 
   return (
     <div className="space-y-3">
+      {/* Connected Drive folders (auto-created; uploads are mirrored here). */}
+      <div className="rounded-xl border border-white/10 bg-abyss/40 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="flex items-center gap-1.5 text-xs font-medium text-fog"><FolderOpen size={13} className="text-amber-300" /> Connected Drive folders</p>
+          <button onClick={provision} disabled={prov} className="rounded-lg border border-cyan/40 px-2.5 py-1 text-[11px] text-cyan hover:bg-cyan/10">{prov ? "Setting up…" : (folders ? "Refresh" : "Set up folders")}</button>
+        </div>
+        {needsWrite ? (
+          <p className="mt-2 rounded-lg border border-amber-300/25 bg-amber-300/[0.04] px-2.5 py-1.5 text-[11px] text-amber-200">Drive is connected <b>read-only</b>. To auto-create folders and mirror uploads, re-authorize with write access (ask Pablo / re-run the connect step).</p>
+        ) : folders ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {Object.entries(folders).filter(([, v]) => v).map(([k, v]) => (
+              <a key={k} href={v} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2.5 py-0.5 text-[10px] text-fog hover:border-cyan/40 hover:text-cyan"><FolderOpen size={10} /> {k} <ExternalLink size={9} /></a>
+            ))}
+          </div>
+        ) : <p className="mt-2 text-[11px] text-dust">Tap “Set up folders” to create the sjabrankamran.com folder tree in your Drive.</p>}
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex gap-1.5">
           {(["drive", "classroom"] as const).map((m) => (

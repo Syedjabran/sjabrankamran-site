@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPortalUser } from "@/lib/edu/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { mirrorUserUpload } from "@/lib/google/drive-write";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -44,5 +45,10 @@ export async function POST(req: Request) {
   const { error } = await sb.storage.from(BUCKET).upload(path, file, { contentType: safeCt, upsert: kind === "drawing" });
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   const { data: signed } = await sb.storage.from(BUCKET).createSignedUrl(path, 3600);
+  // Best-effort mirror into Google Drive → sjabrankamran.com/Tests/<student>
+  try {
+    const label = user.fullName ? `${user.fullName} (${user.email})` : user.email;
+    await mirrorUserUpload("tests", user.id, label, `${code}-${qid}-${Date.now()}.${ext}`, safeCt, file);
+  } catch { /* optional */ }
   return NextResponse.json({ ok: true, path, url: signed?.signedUrl ?? null, name: file.name }, { status: 200 });
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getPortalUser } from "@/lib/edu/auth";
 import { uploadAttachment, appendAttachment } from "@/lib/portal/forum";
 import { award } from "@/lib/portal/contribution";
+import { mirrorToDrive } from "@/lib/google/drive-write";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -21,6 +22,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!up.ok || !up.attachment) return NextResponse.json({ error: up.error || "Upload failed." }, { status: 400 });
   const ok = await appendAttachment(id, up.attachment, postId);
   if (!ok) return NextResponse.json({ error: "Thread not found." }, { status: 404 });
+  // Best-effort mirror into Google Drive → sjabrankamran.com/Resource Library
+  try { await mirrorToDrive("resourceLibrary", file.name, file.type || "application/octet-stream", file); } catch { /* optional */ }
   await award(user.id, user.fullName || user.email || "Member", "resource");
   return NextResponse.json({ ok: true, attachment: { ...up.attachment, url: up.url } }, { status: 200 });
 }

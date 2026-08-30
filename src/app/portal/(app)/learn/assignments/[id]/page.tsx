@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getPortalUser } from "@/lib/edu/auth";
 import { getMyStudent } from "@/lib/edu/student";
 import { signedAttachments } from "@/lib/portal/attachments";
+import { mirrorUserUpload } from "@/lib/google/drive-write";
 
 export const metadata = { title: "Assignment" };
 
@@ -41,7 +42,15 @@ async function submitWork(formData: FormData) {
     const { error: upErr } = await supabase.storage
       .from("edu-submissions")
       .upload(path, file, { contentType: file.type || "application/octet-stream" });
-    if (!upErr) files.push({ path, name: file.name, size: file.size });
+    if (!upErr) {
+      files.push({ path, name: file.name, size: file.size });
+      // Best-effort mirror into Google Drive → sjabrankamran.com/Assignments/<student>
+      try {
+        const pu = await getPortalUser();
+        const label = pu?.fullName ? `${pu.fullName} (${pu.email})` : (pu?.email || user.id);
+        await mirrorUserUpload("assignments", user.id, label, `${assignmentId}-${Date.now()}-${file.name}`, file.type || "application/octet-stream", file);
+      } catch { /* optional */ }
+    }
   }
 
   const { data: assignment } = await supabase
