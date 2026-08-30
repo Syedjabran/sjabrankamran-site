@@ -38,7 +38,7 @@ export function EinsteinCompanion() {
   const [tongueOut, setTongueOut] = useState(true);
   const [open, setOpen] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
-  const [roaming, setRoaming] = useState(true);
+  const [roaming, setRoaming] = useState(false); // default: parked, no auto-roam
 
   const [question, setQuestion] = useState("");
   const [curriculum, setCurriculum] = useState<(typeof CURRICULA)[number]>("A-Level");
@@ -55,6 +55,7 @@ export function EinsteinCompanion() {
   const [dragging, setDragging] = useState(false);
   const dragMoved = useRef(false);
   const grabOffset = useRef({ x: 0, y: 0 });
+  const homePos = useRef<{ x: number; y: number } | null>(null);
 
   function onGrab(e: React.PointerEvent) {
     if (open) return; // don't drag while the ask panel is open
@@ -89,9 +90,19 @@ export function EinsteinCompanion() {
   function onRelease() {
     if (!dragging) return;
     setDragging(false);
-    // Once you carry him anywhere, he stays put (stops floating) until you press
-    // play — and you can pick him up again with a left-click-hold at any time.
-    if (dragMoved.current) setRoaming(false);
+    // Manual placement wins: he stays exactly where you drop him, and the spot is
+    // remembered across pages/reloads (per browser).
+    if (dragMoved.current) {
+      setRoaming(false);
+      setPos((p) => {
+        if (p) { homePos.current = p; try { localStorage.setItem("einstein-pos", JSON.stringify(p)); } catch { /* */ } }
+        return p;
+      });
+    }
+  }
+
+  function clampToView(p: { x: number; y: number }) {
+    return { x: Math.min(Math.max(8, p.x), window.innerWidth - 72), y: Math.min(Math.max(8, p.y), window.innerHeight - 72) };
   }
 
   // Free-roaming position (top-left translate offsets).
@@ -130,7 +141,13 @@ export function EinsteinCompanion() {
     if (sessionStorage.getItem("einstein-dismissed") === "1") {
       setDismissed(true);
     } else {
-      setPos(parkPosition(false));
+      let start = parkPosition(false);
+      try {
+        const s = localStorage.getItem("einstein-pos");
+        if (s) { const j = JSON.parse(s); if (typeof j?.x === "number" && typeof j?.y === "number") start = clampToView(j); }
+      } catch { /* ignore */ }
+      homePos.current = start;
+      setPos(start);
       const t = window.setTimeout(() => setVisible(true), 250);
       timers.current.push(t);
     }
@@ -163,21 +180,23 @@ export function EinsteinCompanion() {
   // Free roaming: glide to a new random spot every so often (panel closed only).
   useEffect(() => {
     if (dismissed || !visible) return;
-    if (open || reducedMotion) {
-      setPos(parkPosition(open));
-      return;
+    // Opening the ask panel docks him to a corner so the panel always fits;
+    // closing it returns him to the spot you last placed him.
+    if (open) { setPos(parkPosition(true)); return; }
+    if (dragging) return; // being carried
+    if (!roaming || reducedMotion) {
+      if (homePos.current) setPos(homePos.current);
+      const onResize = () => setPos((p) => (p ? clampToView(p) : p));
+      window.addEventListener("resize", onResize);
+      return () => window.removeEventListener("resize", onResize);
     }
-    if (!roaming || dragging) return; // paused or being carried — stay put
+    // Optional playful roam — only when the user presses ▶ (play).
     const wander = window.setInterval(() => setPos(randomPosition()), 24000);
     const first = window.setTimeout(() => setPos(randomPosition()), 4000);
-    const onResize = () => setPos((p) => (p ? { x: Math.min(p.x, window.innerWidth - 120), y: Math.min(p.y, window.innerHeight - 120) } : p));
+    const onResize = () => setPos((p) => (p ? clampToView(p) : p));
     window.addEventListener("resize", onResize);
     timers.current.push(first);
-    return () => {
-      clearInterval(wander);
-      clearTimeout(first);
-      window.removeEventListener("resize", onResize);
-    };
+    return () => { clearInterval(wander); clearTimeout(first); window.removeEventListener("resize", onResize); };
   }, [dismissed, visible, open, reducedMotion, roaming, dragging]);
 
   async function ask(e?: React.FormEvent) {

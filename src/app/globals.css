@@ -167,6 +167,13 @@
   animation: wave-flow 9s linear infinite;
 }
 
+/* Portal sidebar: quiet, self-contained scroll so it never fights the content column */
+.nav-scroll { scrollbar-width: thin; scrollbar-color: rgba(174,184,216,.25) transparent; scroll-behavior: smooth; overscroll-behavior: contain; }
+.nav-scroll::-webkit-scrollbar { width: 6px; }
+.nav-scroll::-webkit-scrollbar-thumb { background: rgba(174,184,216,.25); border-radius: 999px; }
+.nav-scroll::-webkit-scrollbar-track { background: transparent; }
+html { scroll-behavior: smooth; }
+
 /* Einstein companion */
 @keyframes einstein-float {
   0%, 100% { transform: translateY(0); }

@@ -143,7 +143,7 @@ export default async function PortalLayout({ children }: { children: React.React
       </div>
 
       <div className={mustOnboard ? "" : "grid gap-8 lg:grid-cols-[13rem_1fr]"}>
-        <nav aria-label="Portal navigation" className={"lg:sticky lg:top-24 lg:self-start" + (mustOnboard ? " hidden" : "")}>
+        <nav aria-label="Portal navigation" className={"lg:sticky lg:top-24 lg:self-start lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto nav-scroll" + (mustOnboard ? " hidden" : "")}>
           <div className="space-y-5">
             {navSections.map((section, si) => (
               <div key={si}>
