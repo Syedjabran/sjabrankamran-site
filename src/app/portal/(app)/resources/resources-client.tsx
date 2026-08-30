@@ -164,6 +164,11 @@ export function ResourcesClient({ isSuper }: { isSuper: boolean }) {
 function PreviewModal({ r, onClose }: { r: Resource; onClose: () => void }) {
   const href = r.href;
   const embed = r.embedUrl;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
       <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-2xl border border-white/10 bg-space" onClick={(e) => e.stopPropagation()}>
