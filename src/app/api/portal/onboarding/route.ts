@@ -102,5 +102,13 @@ export async function POST(req: Request) {
     /* non-fatal */
   }
 
-  return NextResponse.json({ ok: true }, { status: 200 });
+  // Immediately clear the middleware onboarding gate for this browser. The
+  // cookie value is the student's own id (middleware only trusts a match), so a
+  // different account on a shared device is still re-checked. This also avoids a
+  // brief re-gate if storage read-after-write lags right after completion.
+  const res = NextResponse.json({ ok: true }, { status: 200 });
+  res.cookies.set("pb_onb", user.id, {
+    path: "/portal", httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 12,
+  });
+  return res;
 }
