@@ -14,6 +14,8 @@ const LABEL = Object.fromEntries(ROLES);
 type Detail = {
   profile: { id: string; full_name: string; email: string; phone: string; status: string; created_at: string; roles: string[] };
   access: { banned: boolean; bannedUntil: string | null; lastSignIn: string | null; emailConfirmed: boolean };
+  staffSchool?: string | null;
+  schools?: string[];
   student: { id: string; student_no: string | null; school: string | null; admission_status: string; date_of_birth: string | null } | null;
   enrolments: { id: string; classId: string; status: string; className: string; school: string; section: string | null }[];
   onboarding: { completed: boolean; whatsapp: string | null; city: string | null; dob: string | null; guardians: { name: string; email: string; phone: string; relationship: string }[] } | null;
@@ -151,6 +153,20 @@ export function UserDetail({ id, isSuper, selfId }: { id: string; isSuper: boole
             );
           })}
         </div>
+        {(p.roles.includes("coordinator") || p.roles.includes("facilitator")) && (
+          <div className="mt-3 rounded-lg border border-cyan/20 bg-cyan/[0.04] p-3">
+            <label className="mb-1 block text-[11px] uppercase tracking-widest text-dust">School (for Coordinator / Facilitator)</label>
+            <div className="flex flex-wrap items-center gap-2">
+              <select defaultValue={d.staffSchool || ""} disabled={!!busy}
+                onChange={(e) => act("set_school", { school: e.target.value })}
+                className="min-w-[14rem] flex-1 rounded-lg border border-white/10 bg-abyss/60 px-2.5 py-1.5 text-sm text-ice focus:border-cyan focus:outline-none">
+                <option value="">— Select a school —</option>
+                {(d.schools || []).map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+              {d.staffSchool ? <span className="rounded-full border border-emerald2/30 px-2 py-0.5 text-[10px] text-emerald2">{d.staffSchool}</span> : <span className="text-[10px] text-dust">no school set</span>}
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* Enrolments */}

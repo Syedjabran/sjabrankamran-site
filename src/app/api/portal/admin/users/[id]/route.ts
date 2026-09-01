@@ -4,6 +4,7 @@ import { requireAdmin, audit, isSuperAdmin, isEmail } from "@/lib/portal/admin";
 import type { EduRole } from "@/lib/edu/auth";
 import { getRegistry } from "@/lib/portal/institutions";
 import { getOnboarding } from "@/lib/portal/onboarding";
+import { getStaffSchool } from "@/lib/portal/staff-school";
 import { getAttempts } from "@/lib/exam-lab/attempts";
 import { analyse } from "@/lib/exam-lab/analytics";
 import { getRankingsCached } from "@/lib/portal/rankings";
@@ -114,10 +115,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   }
 
   const onboarding = await getOnboarding(uid);
+  const staffSchool = await getStaffSchool(uid);
 
   return NextResponse.json({
     profile: { id: profile.id, full_name: profile.full_name || "", email: profile.email || "", phone: profile.phone || "", status: profile.status, created_at: profile.created_at, roles },
     access,
+    staffSchool,
+    schools: reg.schools,
     student: student ? { id: student.id, student_no: student.student_no, school: student.school, admission_status: student.admission_status, date_of_birth: student.date_of_birth } : null,
     enrolments,
     onboarding: onboarding ? { completed: !!onboarding.completed_at, whatsapp: onboarding.whatsapp || null, city: onboarding.city || null, dob: onboarding.date_of_birth || null, guardians: onboarding.guardians || [] } : null,

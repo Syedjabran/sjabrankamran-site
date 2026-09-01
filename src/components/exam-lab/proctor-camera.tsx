@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, ScanFace, ShieldAlert, Loader2, UserX, Users, CheckCircle2, Smartphone } from "lucide-react";
+import { Camera, ScanFace, ShieldAlert, Loader2, UserX, Users, CheckCircle2, Smartphone, GripHorizontal } from "lucide-react";
 import type { GuardEvent } from "./use-exam-guard";
 
 /**
@@ -85,6 +85,40 @@ export function ProctorCamera({
 
   const [status, setStatus] = useState<Status>({ ready: false, faceOk: false, faces: 0, message: "Starting camera…", degraded: false, calibrated: false });
   const [warnBanner, setWarnBanner] = useState<{ n: number; msg: string } | null>(null);
+
+  // ---- draggable window position (stays on-screen, remembered per browser) ----
+  const CAM_W = 176, CAM_H = 150;
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const dragRef = useRef<{ dx: number; dy: number } | null>(null);
+  const clampPos = (x: number, y: number) => ({
+    x: Math.min(Math.max(8, x), (typeof window !== "undefined" ? window.innerWidth : 1024) - CAM_W - 8),
+    y: Math.min(Math.max(8, y), (typeof window !== "undefined" ? window.innerHeight : 768) - CAM_H - 8),
+  });
+  useEffect(() => {
+    if (phase === "off") return;
+    let start = { x: window.innerWidth - CAM_W - 16, y: 92 }; // default: upper-right, NOT bottom
+    try { const s = localStorage.getItem("proctor-cam-pos"); if (s) { const j = JSON.parse(s); if (typeof j?.x === "number") start = j; } } catch { /* */ }
+    setPos(clampPos(start.x, start.y));
+    const onResize = () => setPos((p) => (p ? clampPos(p.x, p.y) : p));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [phase]);
+  function onCamGrab(e: React.PointerEvent) {
+    if (e.pointerType === "mouse" && e.button !== 0) return; // left button only
+    const p = pos || clampPos(window.innerWidth - CAM_W - 16, 92);
+    dragRef.current = { dx: e.clientX - p.x, dy: e.clientY - p.y };
+    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+  }
+  function onCamMove(e: React.PointerEvent) {
+    if (!dragRef.current) return;
+    setPos(clampPos(e.clientX - dragRef.current.dx, e.clientY - dragRef.current.dy));
+  }
+  function onCamRelease() {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    setPos((p) => { if (p) { try { localStorage.setItem("proctor-cam-pos", JSON.stringify(p)); } catch { /* */ } } return p; });
+  }
   const warningsRef = useRef(0);
   const statusCb = useRef(onStatus); statusCb.current = onStatus;
   const eventCb = useRef(onEvent); eventCb.current = onEvent;
@@ -424,7 +458,17 @@ export function ProctorCamera({
         </div>
       )}
 
-      <div className={"el-proctor-cam fixed bottom-4 right-4 z-[60] w-[176px] overflow-hidden rounded-xl border-2 bg-black/80 shadow-2xl backdrop-blur " + border}>
+      <div
+        className={"el-proctor-cam fixed z-[60] w-[176px] touch-none select-none overflow-hidden rounded-xl border-2 bg-black/80 shadow-2xl backdrop-blur " + border}
+        style={pos ? { left: pos.x, top: pos.y } : { right: 16, top: 92 }}
+        onPointerDown={onCamGrab}
+        onPointerMove={onCamMove}
+        onPointerUp={onCamRelease}
+        onPointerCancel={onCamRelease}
+      >
+        <div className="flex cursor-grab items-center justify-center gap-1 bg-white/10 py-0.5 text-[9px] text-white/70 active:cursor-grabbing" title="Drag me anywhere">
+          <GripHorizontal size={11} /> drag to move
+        </div>
         <div className="relative aspect-[4/3] w-full">
           {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
           <video ref={videoRef} muted playsInline className="absolute inset-0 h-full w-full -scale-x-100 object-cover" />

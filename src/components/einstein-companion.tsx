@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Pause, Play, Send, Sparkles, X } from "lucide-react";
+import { Loader2, Send, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { MarkdownRenderer } from "./markdown-renderer";
 
@@ -38,7 +38,6 @@ export function EinsteinCompanion() {
   const [tongueOut, setTongueOut] = useState(true);
   const [open, setOpen] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
-  const [roaming, setRoaming] = useState(false); // default: parked, no auto-roam
 
   const [question, setQuestion] = useState("");
   const [curriculum, setCurriculum] = useState<(typeof CURRICULA)[number]>("A-Level");
@@ -64,7 +63,6 @@ export function EinsteinCompanion() {
     if (!rect) return;
     grabOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     dragMoved.current = false;
-    setRoaming(false); // grabbing pauses auto-roam so he follows the cursor
     setDragging(true);
     (e.target as Element).setPointerCapture?.(e.pointerId);
   }
@@ -93,7 +91,6 @@ export function EinsteinCompanion() {
     // Manual placement wins: he stays exactly where you drop him, and the spot is
     // remembered across pages/reloads (per browser).
     if (dragMoved.current) {
-      setRoaming(false);
       setPos((p) => {
         if (p) { homePos.current = p; try { localStorage.setItem("einstein-pos", JSON.stringify(p)); } catch { /* */ } }
         return p;
@@ -115,21 +112,6 @@ export function EinsteinCompanion() {
     const width = panel ? Math.min(400, w - 16) : 250;
     const height = panel ? Math.min(h * 0.75, 620) : 210;
     return { x: Math.max(8, w - width - 16), y: Math.max(8, h - height - 12) };
-  }
-
-  function randomPosition() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    const bw = 250; // approx wrapper width incl. speech bubble
-    const bh = 220; // approx wrapper height
-    const minX = 8;
-    const maxX = Math.max(minX, w - bw - 8);
-    const minY = 76; // keep clear of the sticky header
-    const maxY = Math.max(minY, h - bh - 8);
-    return {
-      x: minX + Math.random() * (maxX - minX),
-      y: minY + Math.random() * (maxY - minY),
-    };
   }
 
   useEffect(() => {
@@ -177,27 +159,18 @@ export function EinsteinCompanion() {
     };
   }, [dismissed, visible, reducedMotion, open]);
 
-  // Free roaming: glide to a new random spot every so often (panel closed only).
+  // Position management: NO auto-roaming. He stays exactly where you drop him.
+  // Opening the ask panel docks him to a corner so the panel always fits;
+  // closing it returns him to the spot you last placed him.
   useEffect(() => {
     if (dismissed || !visible) return;
-    // Opening the ask panel docks him to a corner so the panel always fits;
-    // closing it returns him to the spot you last placed him.
     if (open) { setPos(parkPosition(true)); return; }
     if (dragging) return; // being carried
-    if (!roaming || reducedMotion) {
-      if (homePos.current) setPos(homePos.current);
-      const onResize = () => setPos((p) => (p ? clampToView(p) : p));
-      window.addEventListener("resize", onResize);
-      return () => window.removeEventListener("resize", onResize);
-    }
-    // Optional playful roam — only when the user presses ▶ (play).
-    const wander = window.setInterval(() => setPos(randomPosition()), 24000);
-    const first = window.setTimeout(() => setPos(randomPosition()), 4000);
+    if (homePos.current) setPos(homePos.current);
     const onResize = () => setPos((p) => (p ? clampToView(p) : p));
     window.addEventListener("resize", onResize);
-    timers.current.push(first);
-    return () => { clearInterval(wander); clearTimeout(first); window.removeEventListener("resize", onResize); };
-  }, [dismissed, visible, open, reducedMotion, roaming, dragging]);
+    return () => window.removeEventListener("resize", onResize);
+  }, [dismissed, visible, open, dragging]);
 
   async function ask(e?: React.FormEvent) {
     e?.preventDefault();
@@ -414,7 +387,7 @@ export function EinsteinCompanion() {
           aria-expanded={open}
           className={`relative block h-20 w-20 rounded-full border border-cyan/20 bg-abyss/70 shadow-lg outline-none transition hover:scale-105 focus-visible:ring-2 focus-visible:ring-cyan sm:h-24 sm:w-24 ${
             dragging ? "cursor-grabbing scale-105" : "cursor-grab"
-          } ${reducedMotion || open || !roaming || dragging ? "" : "animate-einstein-float"}`}
+          }`}
           style={{ touchAction: "none" }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -441,15 +414,6 @@ export function EinsteinCompanion() {
           className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-white/15 bg-abyss text-dust transition hover:text-ice"
         >
           <X size={11} />
-        </button>
-        <button
-          type="button"
-          onClick={() => setRoaming((r) => !r)}
-          aria-label={roaming ? "Stop the helper from moving around" : "Let the helper move around again"}
-          title={roaming ? "Stop him here" : "Let him roam"}
-          className="absolute -left-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-white/15 bg-abyss text-dust transition hover:text-cyan"
-        >
-          {roaming ? <Pause size={10} /> : <Play size={10} />}
         </button>
       </div>
     </div>

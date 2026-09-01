@@ -8,6 +8,7 @@ export const ROLES: [string, string][] = [
   ["super_admin", "Super Admin"], ["admin", "Admin"], ["teacher", "Teacher"],
   ["teaching_assistant", "Teaching Assistant"], ["student", "Student"], ["parent", "Parent / Guardian"],
   ["counsellor", "Counsellor"], ["content_manager", "Content Manager"], ["finance_manager", "Finance Manager"],
+  ["coordinator", "Coordinator"], ["facilitator", "Facilitator"],
 ];
 const LABEL = Object.fromEntries(ROLES);
 

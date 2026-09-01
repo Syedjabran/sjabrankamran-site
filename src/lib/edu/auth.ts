@@ -9,7 +9,9 @@ export type EduRole =
   | "parent"
   | "counsellor"
   | "content_manager"
-  | "finance_manager";
+  | "finance_manager"
+  | "coordinator"
+  | "facilitator";
 
 export type PortalUser = {
   id: string;
@@ -29,11 +31,16 @@ export const ROLE_LABELS: Record<EduRole, string> = {
   counsellor: "Counsellor",
   content_manager: "Content Manager",
   finance_manager: "Finance Manager",
+  coordinator: "Coordinator",
+  facilitator: "Facilitator",
 };
+
+/** Roles that belong to a specific school (a school dropdown is shown for them). */
+export const SCHOOL_SCOPED_ROLES: EduRole[] = ["coordinator", "facilitator"];
 
 export function isStaff(roles: EduRole[]) {
   return roles.some((r) =>
-    ["super_admin", "admin", "teacher", "teaching_assistant", "counsellor", "content_manager", "finance_manager"].includes(r)
+    ["super_admin", "admin", "teacher", "teaching_assistant", "counsellor", "content_manager", "finance_manager", "coordinator", "facilitator"].includes(r)
   );
 }
 

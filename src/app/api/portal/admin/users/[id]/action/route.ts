@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin, audit, genPassword, emailCredentials, ALL_ROLES, SUSPEND_DURATION } from "@/lib/portal/admin";
 import type { EduRole } from "@/lib/edu/auth";
+import { setStaffSchool } from "@/lib/portal/staff-school";
 
 export const runtime = "nodejs";
 
@@ -17,7 +18,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!admin) return NextResponse.json({ error: "Admins only." }, { status: 403 });
   const { id: uid } = await params;
   const b = (await req.json().catch(() => null)) as {
-    op?: string; password?: string; role?: string; class_id?: string; enrolment_id?: string; send_email?: boolean;
+    op?: string; password?: string; role?: string; class_id?: string; enrolment_id?: string; send_email?: boolean; school?: string;
   } | null;
   if (!b?.op) return NextResponse.json({ error: "Missing op." }, { status: 400 });
   const sb = createAdminClient();
@@ -49,10 +50,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       await audit(admin.id, "user.reactivate", "auth.users", uid, {});
       return NextResponse.json({ ok: true }, { status: 200 });
     }
+    case "set_school": {
+      // School assignment for coordinator / facilitator (Storage-as-DB).
+      const ok = await setStaffSchool(uid, b.school || "", admin.id);
+      if (!ok) return NextResponse.json({ error: "Could not save the school." }, { status: 400 });
+      await audit(admin.id, "user.set_school", "edu_profiles", uid, { school: b.school || "" });
+      break;
+    }
     case "grant_role": {
       const role = b.role as EduRole;
       if (!ALL_ROLES.includes(role)) return NextResponse.json({ error: "Invalid role." }, { status: 400 });
-      await sb.from("edu_user_roles").upsert({ user_id: uid, role, granted_by: admin.id }, { onConflict: "user_id,role" });
+      const { error: grantErr } = await sb.from("edu_user_roles").upsert({ user_id: uid, role, granted_by: admin.id }, { onConflict: "user_id,role" });
+      if (grantErr) {
+        // 'coordinator'/'facilitator' need a one-time enum migration first.
+        if (/invalid input value for enum|enum edu_role/i.test(grantErr.message)) {
+          return NextResponse.json({ error: `The “${role}” role needs a one-time DB migration first (ALTER TYPE edu_role ADD VALUE '${role}'). Ask the developer to run it, then try again.` }, { status: 400 });
+        }
+        return NextResponse.json({ error: grantErr.message }, { status: 400 });
+      }
       if (role === "student") await ensureStudentId(sb, uid, admin.id);
       await audit(admin.id, "role.grant", "edu_user_roles", uid, { role });
       return NextResponse.json({ ok: true }, { status: 200 });
