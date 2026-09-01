@@ -325,13 +325,13 @@ export function PaperRunner({
             <ol className="list-decimal space-y-1 pl-5 text-[13px]">
               <li>Sit centred, face the screen in good light, only <b>you</b> in frame.</li>
               <li>Put away phones and notes — the proctor scans for them.</li>
-              <li>Tap <b>“Calibrate my position”</b> on the camera window until it shows <b className="text-emerald2">Position approved ✓</b>.</li>
+              <li>Your position is approved <b>automatically</b> — wait for <b className="text-emerald2">Position approved ✓</b> on the camera window.</li>
               <li>Looking <b>down at your desk to write</b> your answer script is fine — that won’t be flagged. Turning left/right/up will warn you.</li>
             </ol>
           </div>
           <div className={"mt-3 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs " + (camStatus?.calibrated ? "border-emerald2/40 text-emerald2" : "border-amber-400/40 text-amber-200")}>
             {camStatus?.calibrated ? <ScanText size={14} /> : <Loader2 size={14} className="animate-spin" />}
-            {camStatus?.calibrated ? "Position approved — you're ready to begin." : camStatus?.ready ? "Camera on — centre your face and tap Calibrate on the camera window." : "Waiting for camera… allow access in your browser."}
+            {camStatus?.calibrated ? "Position approved — you're ready to begin." : camStatus?.ready ? "Camera on — hold still, approving your position…" : "Waiting for camera… allow access in your browser."}
           </div>
           <label className="mt-4 flex cursor-pointer items-start gap-2.5 text-sm text-fog">
             <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5 h-4 w-4 accent-cyan" />

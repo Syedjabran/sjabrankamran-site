@@ -25,7 +25,7 @@ const TOPICS_A2 = ["Circular motion","Gravitational fields","Thermal physics","I
 type ActiveMeta = { mode: "paper" | "drill"; code?: string; ref?: string; paperType: "P1" | "P2" | "P4" | "mixed" };
 type Active = { questions: ImgQuestion[]; title: string; subtitle?: string; duration: number; timed: boolean; logMeta: ActiveMeta; integrity: GuardMode; kind: AttemptKind; help: boolean; attemptId?: string; allocationId?: string | null };
 
-type AllocContent = { type: "paper"; code: string } | { type: "drill"; paperType: "P1" | "P2" | "P4"; topics: string[]; levels: ("LOT" | "HOT")[]; count: number } | { type: "daily" };
+type AllocContent = { type: "paper"; code: string } | { type: "drill"; paperType: "P1" | "P2" | "P4"; topics: string[]; levels: ("LOT" | "HOT")[]; count: number } | { type: "custom"; ids: string[] } | { type: "daily" };
 type Allocation = { id: string; attemptId: string; mode: "assignment_help" | "assignment_nohelp" | "test"; content: AllocContent; title: string; instructions: string | null; durationMin: number | null; dueAt: string | null; startsAt: string | null; className: string | null; status: string };
 function allocCfg(mode: Allocation["mode"]): { integrity: GuardMode; kind: AttemptKind; help: boolean } {
   if (mode === "test") return { integrity: "strict", kind: "test", help: false };
@@ -164,6 +164,14 @@ export function PapersHub({ canTest = false }: { canTest?: boolean }) {
       if (!qs.length) return;
       const mins = al.durationMin || Math.max(5, Math.round(qs.length * (paperType === "P1" ? 1.5 : 9)));
       enter({ questions: qs, title: al.title || `Topic drill · ${PAPER_NAME[paperType].split(" · ")[0]}`, subtitle: `${qs.length} questions · ${mins} min`, duration: mins, logMeta: { mode: "drill", paperType }, ...common });
+    } else if (al.content.type === "custom") {
+      const idset = new Set(al.content.ids);
+      const qs = IMAGE_BANK.filter((q) => idset.has(q.id));
+      if (!qs.length) return;
+      const pts = new Set(qs.map((q) => q.paperType));
+      const pt: "P1" | "P2" | "P4" | "mixed" = pts.size === 1 ? qs[0].paperType : "mixed";
+      const mins = al.durationMin || Math.max(5, Math.round(qs.reduce((s, q) => s + (q.paperType === "P1" ? 1.5 : 9), 0)));
+      enter({ questions: qs, title: al.title || "Selected questions", subtitle: `${qs.length} hand-picked questions · ${mins} min`, duration: mins, logMeta: { mode: "drill", paperType: pt }, ...common });
     } else {
       const p1 = shuffle(IMAGE_BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
       enter({ questions: p1, title: al.title || "Daily Challenge", subtitle: "10 mixed Paper-1 questions", duration: al.durationMin || 15, logMeta: { mode: "drill", paperType: "P1" }, ...common });

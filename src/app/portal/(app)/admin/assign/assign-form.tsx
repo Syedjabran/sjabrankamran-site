@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ClipboardList, FlaskConical, Plus, Trash2, Paperclip, Timer, Upload, X, FileText, Video, Layers } from "lucide-react";
+import { ClipboardList, FlaskConical, Plus, Trash2, Paperclip, Timer, Upload, X, FileText, Video, Layers, Sparkles, Loader2, Wand2 } from "lucide-react";
 import { questionSeconds, formatDuration, minutesFromSeconds } from "@/lib/portal/timing";
-import { IMAGE_PAPERS } from "@/lib/exam-lab/image-bank";
+import { IMAGE_PAPERS, IMAGE_BANK } from "@/lib/exam-lab/image-bank";
 
 const EX_TOPICS_AS = ["Physical quantities & units", "Kinematics", "Dynamics", "Forces, density & pressure", "Work, energy & power", "Deformation of solids", "Waves", "Superposition", "Electricity", "D.C. circuits", "Particle physics"];
 const EX_TOPICS_A2 = ["Circular motion", "Gravitational fields", "Thermal physics", "Ideal gases", "Oscillations", "Electric fields", "Capacitance", "Magnetic fields", "Alternating currents", "Quantum physics", "Nuclear physics", "Astronomy & cosmology"];
@@ -32,7 +32,32 @@ export function AssignForm({ canTest = false }: { canTest?: boolean }) {
   const [type, setType] = useState<"assignment" | "test" | "examlab">("assignment");
   // Exam Lab allocation state
   const [exMode, setExMode] = useState<"assignment_help" | "assignment_nohelp" | "test">("assignment_help");
-  const [exContentType, setExContentType] = useState<"paper" | "drill" | "daily">("paper");
+  const [exContentType, setExContentType] = useState<"paper" | "drill" | "custom" | "daily">("paper");
+  const [pickIds, setPickIds] = useState<Set<string>>(new Set());
+  const [pickPaper, setPickPaper] = useState<"P1" | "P2" | "P4">("P1");
+  const [pickTopic, setPickTopic] = useState("");
+  const [pickYear, setPickYear] = useState("");
+  // AI designer
+  const [aiBrief, setAiBrief] = useState("");
+  const [aiCount, setAiCount] = useState(10);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiMsg, setAiMsg] = useState("");
+  const [aiDraft, setAiDraft] = useState<{ title: string; instructions: string; rationale: string; summary: { count: number; marks: number; topics: string[]; questions: { id: string; ref: string; topic: string | null; level: string; marks: number | null }[] } } | null>(null);
+
+  async function aiDesign() {
+    if (!aiBrief.trim()) { setAiMsg("Describe what to set — e.g. “12 HOT-leaning P1 questions on Waves & Superposition for a weak class”."); return; }
+    setAiBusy(true); setAiMsg(""); setAiDraft(null);
+    try {
+      const j = await api("/api/portal/admin/ai-designer", { method: "POST", body: JSON.stringify({ brief: aiBrief, count: aiCount }) });
+      setAiDraft(j);
+      // Feed the draft straight into the allocation flow.
+      setExContentType("custom");
+      setPickIds(new Set<string>(j.summary.questions.map((q: { id: string }) => q.id)));
+      if (!title.trim()) setTitle(j.title);
+      if (!exInstructions.trim()) setExInstructions(j.instructions);
+      setAiMsg(`Designed ${j.summary.count} questions · ${j.summary.marks} marks. Review below, adjust if needed, then Allocate.`);
+    } catch (e) { setAiMsg((e as Error).message); } finally { setAiBusy(false); }
+  }
   const [exPaperCode, setExPaperCode] = useState("");
   const [exDPaper, setExDPaper] = useState<"P1" | "P2" | "P4">("P1");
   const [exTopics, setExTopics] = useState<Set<string>>(new Set());
@@ -81,6 +106,7 @@ export function AssignForm({ canTest = false }: { canTest?: boolean }) {
         else { student_email = exStudentEmail.trim(); scope_label = exStudentEmail.trim(); }
         const content = exContentType === "paper" ? { type: "paper", code: exPaperCode }
           : exContentType === "drill" ? { type: "drill", paperType: exDPaper, topics: [...exTopics], levels: [...exLevels], count: exCount }
+          : exContentType === "custom" ? { type: "custom", ids: [...pickIds] }
           : { type: "daily" };
         const j = await api("/api/portal/admin/exam-allocate", { method: "POST", body: JSON.stringify({ target_type: exTarget, class_ids, student_email, scope_label, mode: exMode, content, title, instructions: exInstructions || undefined, duration_min: exDuration ? Number(exDuration) : undefined, due_at: exDue || undefined, starts_at: exStarts || undefined, notify }) });
         setMsg(`Allocated to ${j.students} student${j.students === 1 ? "" : "s"} · ${exMode.replace(/_/g, " ")} · ${scope_label}.`);
@@ -193,11 +219,30 @@ export function AssignForm({ canTest = false }: { canTest?: boolean }) {
               <p className="mt-1 text-[11px] text-dust">{exMode === "test" ? "Strict: student must switch on camera; violations lock the test (super-admin unlock)." : exMode === "assignment_nohelp" ? "Guarded like a mini-exam; mark-scheme reveals are logged." : "Open practice; students may use the mark scheme freely (logged)."}</p>
             </div>
 
+            {/* AI designer */}
+            <div className="space-y-2 rounded-xl border border-violet2/25 bg-violet2/[0.05] p-3">
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-ice"><Wand2 size={13} className="text-violet2" /> AI designer <span className="font-normal text-dust">— describe it; the agent picks real CAIE questions for you</span></p>
+              <textarea value={aiBrief} onChange={(e) => setAiBrief(e.target.value)} rows={2} placeholder="e.g. Challenging P4 set on Gravitational + Electric fields, mostly HOT, for my A2 class before their mock…" className={input + " resize-none"} />
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="text-[11px] text-dust">Questions</label>
+                <input type="number" min={1} max={40} value={aiCount} onChange={(e) => setAiCount(Math.max(1, Math.min(40, +e.target.value || 10)))} className={input + " w-20"} />
+                <button onClick={aiDesign} disabled={aiBusy} className="btn-primary !px-3.5 !py-1.5 text-xs disabled:opacity-50">{aiBusy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} Design it</button>
+                {aiMsg ? <span className="text-[11px] text-violet2">{aiMsg}</span> : null}
+              </div>
+              {aiDraft ? (
+                <div className="rounded-lg border border-white/10 bg-abyss/40 p-2.5 text-xs text-fog">
+                  <p><b className="text-ice">{aiDraft.title}</b> · {aiDraft.summary.count} Q · {aiDraft.summary.marks} marks · {aiDraft.summary.topics.join(", ")}</p>
+                  {aiDraft.rationale ? <p className="mt-1 text-dust">{aiDraft.rationale}</p> : null}
+                  <p className="mt-1 text-[10px] text-dust">The selection is loaded into “Pick questions” below — fine-tune it there if you like.</p>
+                </div>
+              ) : null}
+            </div>
+
             <div>
               <label className="mb-1 block text-[11px] uppercase tracking-widest text-dust">Content</label>
-              <div className="flex gap-2">
-                {(["paper", "drill", "daily"] as const).map((ct) => (
-                  <button key={ct} onClick={() => setExContentType(ct)} className={"rounded-full border px-3 py-1.5 text-xs " + (exContentType === ct ? "border-cyan bg-cyan text-space font-semibold" : "border-white/15 text-fog hover:border-cyan")}>{ct === "paper" ? "Real past paper" : ct === "drill" ? "Topic drill" : "Daily (10 mixed P1)"}</button>
+              <div className="flex flex-wrap gap-2">
+                {(["paper", "drill", "custom", "daily"] as const).map((ct) => (
+                  <button key={ct} onClick={() => setExContentType(ct)} className={"rounded-full border px-3 py-1.5 text-xs " + (exContentType === ct ? "border-cyan bg-cyan text-space font-semibold" : "border-white/15 text-fog hover:border-cyan")}>{ct === "paper" ? "Real past paper" : ct === "drill" ? "Topic drill" : ct === "custom" ? "Pick questions" : "Daily (10 mixed P1)"}</button>
                 ))}
               </div>
             </div>
@@ -229,6 +274,8 @@ export function AssignForm({ canTest = false }: { canTest?: boolean }) {
                   <span className="w-8 text-center font-display text-lg text-cyan">{exCount}</span>
                 </div>
               </div>
+            ) : exContentType === "custom" ? (
+              <QuestionPicker pickIds={pickIds} setPickIds={setPickIds} paper={pickPaper} setPaper={setPickPaper} topic={pickTopic} setTopic={setPickTopic} year={pickYear} setYear={setPickYear} />
             ) : (
               <p className="rounded-lg border border-white/10 bg-abyss/40 px-3 py-2 text-xs text-dust">10 mixed Paper-1 questions, 15 minutes.</p>
             )}
@@ -304,11 +351,57 @@ export function AssignForm({ canTest = false }: { canTest?: boolean }) {
 
         <label className="flex items-center gap-2 text-xs text-fog"><input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} /> Notify students in-portal</label>
         {msg ? <p className="rounded-lg border border-cyan/30 bg-cyan/5 px-3 py-2 text-xs text-ice">{msg}</p> : null}
-        <button onClick={submit} disabled={busy || !title.trim() || (type === "examlab" ? (exTarget === "class" ? !exClassId : exTarget === "school" ? !exSchool : exTarget === "individual" ? !exStudentEmail.trim() : false) : !classId)} className="btn-ghost !px-4 !py-2 text-sm">{busy ? "Working…" : type === "examlab" ? "Allocate" : `Post ${type}`}</button>
+        <button onClick={submit} disabled={busy || !title.trim() || (type === "examlab" ? ((exTarget === "class" ? !exClassId : exTarget === "school" ? !exSchool : exTarget === "individual" ? !exStudentEmail.trim() : false) || (exContentType === "custom" && pickIds.size === 0) || (exContentType === "paper" && !exPaperCode)) : !classId)} className="btn-ghost !px-4 !py-2 text-sm">{busy ? "Working…" : type === "examlab" ? "Allocate" : `Post ${type}`}</button>
         {posted ? <p className="text-[11px] text-dust">Posted. Switch to the <b className="text-cyan">Attachments</b> tab to add files, or start a new one.</p> : null}
       </div>
       </>
       )}
+    </div>
+  );
+}
+
+function QuestionPicker({ pickIds, setPickIds, paper, setPaper, topic, setTopic, year, setYear }: {
+  pickIds: Set<string>; setPickIds: (f: (s: Set<string>) => Set<string>) => void;
+  paper: "P1" | "P2" | "P4"; setPaper: (p: "P1" | "P2" | "P4") => void;
+  topic: string; setTopic: (t: string) => void; year: string; setYear: (y: string) => void;
+}) {
+  const input = "rounded-lg border border-white/10 bg-abyss/60 px-3 py-2 text-sm text-ice focus:border-cyan focus:outline-none";
+  const yearOf = (code: string) => { const m = code.match(/9702_[smw](\d\d)_/); return m ? "20" + m[1] : ""; };
+  const topics = useMemo(() => [...new Set(IMAGE_BANK.filter((q) => q.paperType === paper).map((q) => q.topic).filter(Boolean) as string[])].sort(), [paper]);
+  const years = useMemo(() => [...new Set(IMAGE_BANK.filter((q) => q.paperType === paper).map((q) => yearOf(q.code)))].filter(Boolean).sort().reverse(), [paper]);
+  const pool = useMemo(() => IMAGE_BANK.filter((q) => q.paperType === paper && (!topic || q.topic === topic) && (!year || yearOf(q.code) === year)).slice(0, 400), [paper, topic, year]);
+  const marks = [...pickIds].reduce((s, id) => { const q = IMAGE_BANK.find((x) => x.id === id); return s + (q?.marks || 1); }, 0);
+
+  return (
+    <div className="space-y-2 rounded-xl border border-white/10 bg-abyss/40 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        {(["P1", "P2", "P4"] as const).map((pt) => <button key={pt} onClick={() => { setPaper(pt); setTopic(""); setYear(""); }} className={"rounded-full border px-3 py-1 text-xs " + (paper === pt ? "border-cyan bg-cyan text-space font-semibold" : "border-white/15 text-fog")}>{pt}</button>)}
+        <select value={topic} onChange={(e) => setTopic(e.target.value)} className={input + " text-xs"}>
+          <option value="">All topics</option>
+          {topics.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select value={year} onChange={(e) => setYear(e.target.value)} className={input + " text-xs"}>
+          <option value="">All years</option>
+          {years.map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <span className="ml-auto rounded-full border border-cyan/30 px-2.5 py-1 font-mono text-[11px] text-cyan">{pickIds.size} picked · {marks} marks</span>
+      </div>
+      <div className="max-h-64 space-y-1 overflow-auto pr-1">
+        {pool.map((q) => {
+          const on = pickIds.has(q.id);
+          return (
+            <label key={q.id} className={"flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs " + (on ? "border-cyan/50 bg-cyan/[0.07] text-ice" : "border-white/[0.07] text-fog hover:border-cyan/30")}>
+              <input type="checkbox" checked={on} onChange={() => setPickIds((s) => { const n = new Set(s); if (n.has(q.id)) n.delete(q.id); else if (n.size < 60) n.add(q.id); return n; })} className="h-3.5 w-3.5 accent-cyan" />
+              <span className="font-mono text-[10px] text-dust">{q.ref}</span>
+              <span className="truncate">{q.topic || "—"}</span>
+              <span className={"rounded-full border px-1.5 py-0.5 font-mono text-[9px] " + (q.level === "LOT" ? "border-emerald2/40 text-emerald2" : "border-magenta/40 text-magenta")}>{q.level}</span>
+              <span className="ml-auto shrink-0 font-mono text-[10px] text-dust">[{q.marks ?? 1}]</span>
+            </label>
+          );
+        })}
+        {!pool.length ? <p className="px-2 py-3 text-xs text-dust">No questions match those filters.</p> : null}
+      </div>
+      {pickIds.size ? <button onClick={() => setPickIds(() => new Set())} className="text-[11px] text-dust underline-offset-2 hover:text-ice hover:underline">Clear selection</button> : null}
     </div>
   );
 }

@@ -26,6 +26,7 @@ export type AllocMode = "assignment_help" | "assignment_nohelp" | "test";
 export type AllocContent =
   | { type: "paper"; code: string }
   | { type: "drill"; paperType: "P1" | "P2" | "P4"; topics: string[]; levels: ("LOT" | "HOT")[]; count: number }
+  | { type: "custom"; ids: string[] } // hand-picked question ids from the bank
   | { type: "daily" };
 
 export type AllocStatus = "assigned" | "submitted" | "locked" | "unlocked" | "cancelled";

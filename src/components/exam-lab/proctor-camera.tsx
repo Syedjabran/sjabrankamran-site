@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, ScanFace, ShieldAlert, Loader2, UserX, Users, Crosshair, CheckCircle2, Smartphone } from "lucide-react";
+import { Camera, ScanFace, ShieldAlert, Loader2, UserX, Users, CheckCircle2, Smartphone } from "lucide-react";
 import type { GuardEvent } from "./use-exam-guard";
 
 /**
@@ -84,7 +84,6 @@ export function ProctorCamera({
   const audioRef = useRef<any>(null);
 
   const [status, setStatus] = useState<Status>({ ready: false, faceOk: false, faces: 0, message: "Starting camera…", degraded: false, calibrated: false });
-  const [calibrating, setCalibrating] = useState(false);
   const [warnBanner, setWarnBanner] = useState<{ n: number; msg: string } | null>(null);
   const warningsRef = useRef(0);
   const statusCb = useRef(onStatus); statusCb.current = onStatus;
@@ -165,48 +164,37 @@ export function ProctorCamera({
     baselineRef.current = { nx: (nose.x - cx) / fw, ny: (nose.y - cy) / fh };
   }, []);
 
-  // Robust, fast calibration. Gives immediate feedback, briefly retries so it
-  // still catches a face while the model is finishing loading, and — if the
-  // on-device model can't run at all (older tablet / blocked CDN) — still lets
-  // the student proceed under basic monitoring (window/tab/screenshot guard).
-  const calibrate = useCallback(async () => {
-    if (calibrating) return;
-    setCalibrating(true);
-    push({ message: "Hold still — calibrating…" });
-    const start = Date.now();
-    // Wait up to ~9s: enough to let the model download AND, if the GPU delegate
-    // is silently broken, rebuild on CPU and produce its first detections.
-    while (Date.now() - start < 9000) {
+  // AUTOMATIC calibration — no button, no manual step. As soon as the camera is
+  // on we watch for a stable face: first good detection locks the baseline and
+  // approves the position. If the on-device model can't produce detections
+  // within ~8s (older device / broken GPU / blocked CDN), we approve under
+  // BASIC monitoring so nobody is ever stuck at the gate.
+  useEffect(() => {
+    if (phase !== "preview") return;
+    let done = false;
+    const startedAt = Date.now();
+    const iv = setInterval(() => {
+      if (done) return;
       const pts = lastPointsRef.current;
       const fresh = Date.now() - lastFaceAtRef.current < 800;
       if (modelReadyRef.current && pts.length >= 100 && fresh) {
+        done = true; clearInterval(iv);
         setBaselineFrom(pts);
         warningsRef.current = 0;
-        setCalibrating(false);
         push({ calibrated: true, degraded: false, message: "Position approved ✓" });
         return;
       }
-      // Model finished loading but failed → proceed with basic monitoring.
-      if (modelDoneRef.current && !modelReadyRef.current) {
+      const waited = Date.now() - startedAt;
+      // Model finished but failed, or nothing detected after a fair wait → basic.
+      if ((modelDoneRef.current && !modelReadyRef.current && waited > 1500) || waited > 8000) {
+        done = true; clearInterval(iv);
         baselineRef.current = null;
         warningsRef.current = 0;
-        setCalibrating(false);
-        push({ calibrated: true, degraded: true, message: "Approved · basic monitoring" });
-        return;
+        push({ calibrated: true, degraded: !modelReadyRef.current, message: modelReadyRef.current ? "Camera approved ✓" : "Approved · basic monitoring" });
       }
-      await new Promise((r) => setTimeout(r, 150));
-    }
-    // Timed out with the model ready but no stable face in view.
-    setCalibrating(false);
-    if (modelReadyRef.current) {
-      push({ message: "No face detected — centre yourself in good light, then tap Calibrate again." });
-    } else {
-      // Model never came up in time → allow basic monitoring so nobody is stuck.
-      baselineRef.current = null;
-      warningsRef.current = 0;
-      push({ calibrated: true, degraded: true, message: "Approved · basic monitoring" });
-    }
-  }, [calibrating, push, setBaselineFrom]);
+    }, 250);
+    return () => clearInterval(iv);
+  }, [phase, push, setBaselineFrom]);
 
   // Create a FaceLandmarker on the given delegate (GPU fast / CPU reliable).
   const makeFace = useCallback(async (delegate: "GPU" | "CPU") => {
@@ -304,6 +292,10 @@ export function ProctorCamera({
     const latch = { turn: false, absent: false, multi: false, material: false };
 
     const loop = () => {
+      // Re-arm FIRST and guard the body: a single throw must never kill the
+      // scan loop (that exact failure made detection permanently dead before).
+      rafRef.current = requestAnimationFrame(loop);
+      try {
       const v = videoRef.current, cv = overlayRef.current, now = performance.now();
       if (v && cv && v.videoWidth) {
         const W = cv.width = cv.clientWidth, H = cv.height = cv.clientHeight, ctx = cv.getContext("2d");
@@ -356,7 +348,7 @@ export function ProctorCamera({
           }
         }
       }
-      rafRef.current = requestAnimationFrame(loop);
+      } catch { /* keep scanning next frame */ }
     };
 
     const evaluate = (faces: number, points: { x: number; y: number }[]) => {
@@ -387,6 +379,14 @@ export function ProctorCamera({
         return;
       }
       absentSince = 0; latch.absent = false;
+
+      // No landmark data yet (model warming up, or basic-monitoring mode):
+      // nothing to measure — never fall through to head-pose math with an
+      // empty array (nose would be undefined → crash → dead loop).
+      if (points.length < 3) {
+        push({ faces: 1, faceOk: true, message: modelReadyRef.current ? "Scanning…" : "Camera live — preparing AI…" });
+        return;
+      }
 
       // head pose vs calibrated baseline (down = writing = allowed)
       let mnX = 1, mxX = 0, mnY = 1, mxY = 0;
@@ -445,9 +445,9 @@ export function ProctorCamera({
           </span>
         </div>
         {phase === "preview" && status.ready && (
-          <button onClick={calibrate} disabled={calibrating || status.calibrated} className={"flex w-full items-center justify-center gap-1.5 border-t border-white/10 px-2 py-1.5 text-[11px] font-semibold disabled:opacity-90 " + (status.calibrated ? "bg-emerald-500/15 text-emerald-300" : "bg-cyan-500/15 text-cyan-300")}>
-            {status.calibrated ? <><CheckCircle2 size={12} /> Position approved</> : calibrating ? <><Loader2 size={12} className="animate-spin" /> Calibrating…</> : <><Crosshair size={12} /> Calibrate my position</>}
-          </button>
+          <div className={"flex w-full items-center justify-center gap-1.5 border-t border-white/10 px-2 py-1.5 text-[11px] font-semibold " + (status.calibrated ? "bg-emerald-500/15 text-emerald-300" : "bg-cyan-500/15 text-cyan-300")}>
+            {status.calibrated ? <><CheckCircle2 size={12} /> Position approved</> : <><Loader2 size={12} className="animate-spin" /> Detecting your position…</>}
+          </div>
         )}
         <div className="flex items-center gap-1 border-t border-white/10 bg-emerald-500/5 px-2 py-0.5 text-[9px] text-emerald-300/80">
           <ShieldAlert size={9} /> AI proctor · on-device{objRef.current ? <> · <Smartphone size={8} /> object scan</> : null}

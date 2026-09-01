@@ -41,6 +41,10 @@ export async function POST(req: Request) {
   const c = b.content;
   if (c.type === "paper") { if (!c.code) return NextResponse.json({ error: "Choose a past paper." }, { status: 400 }); }
   else if (c.type === "drill") { if (!c.paperType || !Array.isArray(c.topics) || !c.count) return NextResponse.json({ error: "Incomplete drill spec." }, { status: 400 }); }
+  else if (c.type === "custom") {
+    if (!Array.isArray(c.ids) || c.ids.length < 1) return NextResponse.json({ error: "Pick at least one question." }, { status: 400 });
+    c.ids = c.ids.slice(0, 60).map((x) => String(x).slice(0, 80));
+  }
   else if (c.type !== "daily") return NextResponse.json({ error: "Invalid content type." }, { status: 400 });
 
   const sb = createAdminClient();
