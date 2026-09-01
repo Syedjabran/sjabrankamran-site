@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { FlaskConical, ShieldCheck } from "lucide-react";
-import { getPortalUser } from "@/lib/edu/auth";
+import { getPortalUser, isStaff } from "@/lib/edu/auth";
 import { PapersHub } from "@/components/exam-lab/papers-hub";
 
 export const metadata = { title: "Exam Lab — Real CAIE 9702 Past Papers", robots: { index: false } };
@@ -8,6 +8,7 @@ export const metadata = { title: "Exam Lab — Real CAIE 9702 Past Papers", robo
 export default async function PortalExamLabPage() {
   const user = await getPortalUser();
   const first = (user?.fullName || user?.email || "").split(" ")[0];
+  const canTest = !!user && isStaff(user.roles);
 
   return (
     <div>
@@ -27,7 +28,7 @@ export default async function PortalExamLabPage() {
       </div>
 
       <Suspense fallback={<div className="text-sm text-dust">Loading Exam Lab…</div>}>
-        <PapersHub />
+        <PapersHub canTest={canTest} />
       </Suspense>
     </div>
   );

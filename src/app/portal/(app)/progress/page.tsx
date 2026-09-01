@@ -176,11 +176,21 @@ export default async function ProgressPage() {
         <div className="space-y-1.5">
           {a.recentAttempts.map((at, i) => {
             const pct = at.total ? Math.round((at.score / at.total) * 100) : null;
+            const ctx = at.context;
             return (
               <div key={i} className="flex flex-wrap items-center gap-3 rounded-lg border border-white/[0.05] px-3 py-2 text-sm">
                 <span className="font-mono text-xs text-dust">{new Date(at.ts).toLocaleDateString("en-GB")}</span>
                 <span className="rounded-full border border-white/15 px-2 py-0.5 font-mono text-[10px] text-fog">{at.paperType}</span>
                 <span className="text-fog">{at.ref || (at.mode === "drill" ? "Topic drill" : "Paper")}</span>
+                {ctx ? (
+                  <span className="flex flex-wrap items-center gap-1">
+                    {ctx.kind !== "practice" ? <span className="rounded-full border border-cyan/25 px-1.5 py-0.5 font-mono text-[9px] uppercase text-cyan">{ctx.kind}</span> : null}
+                    {ctx.proctored ? <span className="rounded-full border border-emerald2/30 px-1.5 py-0.5 font-mono text-[9px] uppercase text-emerald2">proctored</span> : null}
+                    {ctx.help && ctx.kind !== "practice" ? <span className="rounded-full border border-amber-400/30 px-1.5 py-0.5 font-mono text-[9px] uppercase text-amber-300">with help</span> : null}
+                    {ctx.revealsUsed > 0 ? <span className="rounded-full border border-white/15 px-1.5 py-0.5 font-mono text-[9px] uppercase text-dust">MS×{ctx.revealsUsed}</span> : null}
+                    {ctx.cancelled ? <span className="rounded-full border border-red-400/40 px-1.5 py-0.5 font-mono text-[9px] uppercase text-red-300">{ctx.lockedReason && ctx.proctored ? "locked" : "cancelled"}</span> : null}
+                  </span>
+                ) : null}
                 <span className="ml-auto font-mono text-xs" style={{ color: pct == null ? "#AEB8D8" : accColor(pct) }}>
                   {pct == null ? `${at.qCount} Q` : `${at.score}/${at.total} · ${pct}%`}
                 </span>

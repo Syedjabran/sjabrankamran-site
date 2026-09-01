@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { FileText, Layers, Play, Zap, Library } from "lucide-react";
+import { FileText, Layers, Play, Zap, Library, Coffee, ShieldAlert, Video } from "lucide-react";
 import { IMAGE_BANK, IMAGE_PAPERS, type ImgQuestion } from "@/lib/exam-lab/image-bank";
-import { PaperRunner } from "./paper-runner";
+import { PaperRunner, type AttemptKind } from "./paper-runner";
+import type { GuardMode } from "./use-exam-guard";
 
 const SESS: Record<string, string> = { s: "May/June", w: "Oct/Nov", m: "Feb/March" };
 const PAPER_NAME: Record<string, string> = { P1: "Paper 1 · Multiple Choice", P2: "Paper 2 · AS Structured", P4: "Paper 4 · A2 Structured" };
@@ -22,15 +23,26 @@ const TOPICS_AS = ["Physical quantities & units","Kinematics","Dynamics","Forces
 const TOPICS_A2 = ["Circular motion","Gravitational fields","Thermal physics","Ideal gases","Oscillations","Electric fields","Capacitance","Magnetic fields","Alternating currents","Quantum physics","Nuclear physics","Astronomy & cosmology"];
 
 type ActiveMeta = { mode: "paper" | "drill"; code?: string; ref?: string; paperType: "P1" | "P2" | "P4" | "mixed" };
-type Active = { questions: ImgQuestion[]; title: string; subtitle?: string; duration: number; timed: boolean; logMeta: ActiveMeta };
+type Active = { questions: ImgQuestion[]; title: string; subtitle?: string; duration: number; timed: boolean; logMeta: ActiveMeta; integrity: GuardMode; kind: AttemptKind; help: boolean };
 
-export function PapersHub() {
+// Self-serve sit modes. "test" (strict camera proctor that LOCKS on violation)
+// is staff-only here so a student can never lock themselves out; real tests
+// reach students via a staff allocation.
+type SitMode = "practice" | "exam" | "test";
+function modeCfg(m: SitMode): { integrity: GuardMode; kind: AttemptKind; help: boolean } {
+  if (m === "test") return { integrity: "strict", kind: "test", help: false };
+  if (m === "exam") return { integrity: "standard", kind: "practice", help: true };
+  return { integrity: "off", kind: "practice", help: true };
+}
+
+export function PapersHub({ canTest = false }: { canTest?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const runParam = searchParams.get("run") === "1";
 
   const [tab, setTab] = useState<"papers" | "drill">("papers");
+  const [sitMode, setSitMode] = useState<SitMode>("practice");
   const [active, setActive] = useState<Active | null>(null);
   // Have we actually observed ?run=1 for the current open paper yet? Guards the
   // transient first render (active set, but the pushed ?run=1 hasn't landed) so
@@ -81,7 +93,7 @@ export function PapersHub() {
   function startPaper(code: string) {
     const qs = IMAGE_BANK.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
     const meta = IMAGE_PAPERS.find((p) => p.code === code)!;
-    enter({ questions: qs, title: PAPER_NAME[meta.paperType], subtitle: `${meta.ref} · ${label(code)}`, duration: meta.duration, timed: true, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType } });
+    enter({ questions: qs, title: PAPER_NAME[meta.paperType], subtitle: `${meta.ref} · ${label(code)}`, duration: meta.duration, timed: true, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType }, ...modeCfg(sitMode) });
   }
 
   const drillPool = useMemo(() => IMAGE_BANK.filter((q) => q.paperType === pType && (!topics.size || (q.topic && topics.has(q.topic))) && levels.has(q.level)), [pType, topics, levels]);
@@ -90,20 +102,40 @@ export function PapersHub() {
     const qs = shuffle([...drillPool]).slice(0, count);
     // Timed drill: P1 ~1.5 min/Q, structured ~1.8 min/mark-weighted question.
     const mins = Math.max(5, Math.round(qs.length * (pType === "P1" ? 1.5 : 9)));
-    enter({ questions: qs, title: `Topic drill · ${PAPER_NAME[pType].split(" · ")[0]}`, subtitle: `${qs.length} questions · ${mins} min`, duration: mins, timed: true, logMeta: { mode: "drill", paperType: pType } });
+    enter({ questions: qs, title: `Topic drill · ${PAPER_NAME[pType].split(" · ")[0]}`, subtitle: `${qs.length} questions · ${mins} min`, duration: mins, timed: true, logMeta: { mode: "drill", paperType: pType }, ...modeCfg(sitMode) });
   }
 
   function dailyChallenge() {
     const p1 = shuffle(IMAGE_BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
-    enter({ questions: p1, title: "Daily Challenge", subtitle: "10 mixed Paper-1 questions · 15 min", duration: 15, timed: true, logMeta: { mode: "drill", paperType: "P1" } });
+    enter({ questions: p1, title: "Daily Challenge", subtitle: "10 mixed Paper-1 questions · 15 min", duration: 15, timed: true, logMeta: { mode: "drill", paperType: "P1" }, ...modeCfg(sitMode) });
   }
 
   if (active) return <PaperRunner {...active} onExit={exit} />;
 
   const availTopics = pType === "P4" ? TOPICS_A2 : TOPICS_AS;
 
+  const modeOpts: { id: SitMode; label: string; icon: typeof Coffee; hint: string }[] = [
+    { id: "practice", label: "Practice", icon: Coffee, hint: "Relaxed — no timer lock, switch tabs freely. Nothing is cancelled." },
+    { id: "exam", label: "Exam self-test", icon: ShieldAlert, hint: "Timed & proctored — leaving the window cancels the drill (no camera)." },
+    ...(canTest ? [{ id: "test" as SitMode, label: "Proctored test", icon: Video, hint: "Strict: camera on + AI proctor. Violations lock the test (super-admin unlock). Staff preview." }] : []),
+  ];
+  const activeHint = modeOpts.find((o) => o.id === sitMode)?.hint || "";
+
   return (
     <div>
+      {/* sit-mode selector */}
+      <div className="mb-5 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+        <p className="mb-2 font-mono text-[11px] uppercase tracking-widest text-fog">How do you want to sit this?</p>
+        <div className="flex flex-wrap gap-2">
+          {modeOpts.map((o) => (
+            <button key={o.id} onClick={() => setSitMode(o.id)} className={"inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition " + (sitMode === o.id ? (o.id === "test" ? "border-red-400 bg-red-400/15 text-red-200 font-semibold" : o.id === "exam" ? "border-amber-400 bg-amber-400/15 text-amber-200 font-semibold" : "border-emerald2 bg-emerald2/15 text-emerald2 font-semibold") : "border-white/15 text-fog hover:border-cyan")}>
+              <o.icon size={15} /> {o.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-dust">{activeHint}</p>
+      </div>
+
       {/* coverage summary + daily challenge */}
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-4 py-2">

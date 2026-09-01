@@ -3,76 +3,123 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Exam integrity guard. While `active` (the drill/paper timer is running and the
- * script is not yet submitted), it treats any of the following as malpractice and
- * fires `onViolation` exactly once:
- *   - the tab/window is hidden or minimised (visibilitychange => hidden)
- *   - focus leaves the exam window (blur => alt-tab / split-screen interaction)
- *   - the window is shrunk into a split-screen / snapped layout (resize below baseline)
- * It also deters screenshots/printing (PrintScreen, OS snip shortcuts, Ctrl/Cmd+P,
- * right-click, drag & text selection) with a brief black-out — a best-effort
- * deterrent, since browsers cannot fully block OS-level screen capture.
+ * Exam integrity guard — mode-aware.
+ *
+ *   "off"      Practice. No monitoring at all. The student may switch tabs,
+ *              minimise, use notes — nothing is captured or cancelled.
+ *   "standard" No-help assignment. The classic guard: leaving the exam window
+ *              (hidden / blur / split-screen) cancels the drill. Screenshots are
+ *              deterred with a black-out. Every trip is reported via onEvent.
+ *   "strict"   Formal test. Everything in "standard" PLUS screenshot / print /
+ *              copy / full-screen-exit are treated as TERMINAL violations (they
+ *              cancel + lock the test), and a wider net of events is reported to
+ *              the forensic log (contextmenu, copy, paste, blur, focus, PiP).
+ *
+ * The hook reports two channels:
+ *   - onEvent(ev)      every integrity-relevant signal (for the forensic log),
+ *                      whether or not it cancels the attempt.
+ *   - onViolation(ev)  fired at most once, only for a TERMINAL event, so the
+ *                      caller can void/lock the attempt.
+ *
+ * NOTE (honest limits): browsers cannot fully block OS-level screenshots or
+ * third-party screen recorders. Screenshot/print key-combos and the black-out
+ * are a strong deterrent; genuine assurance in "strict" mode comes from the
+ * combination of these signals with the on-device camera proctor.
  */
+
+export type GuardMode = "off" | "standard" | "strict";
+
+export type GuardEvent = {
+  type:
+    | "hidden"
+    | "blur"
+    | "focus"
+    | "resize_split"
+    | "screenshot"
+    | "print"
+    | "contextmenu"
+    | "copy"
+    | "paste"
+    | "cut"
+    | "fullscreen_exit"
+    | "pip"
+    | "devtools";
+  reason: string;
+  terminal: boolean;
+  at: number;
+};
+
 export function useExamGuard({
   active,
+  mode = "standard",
   onViolation,
+  onEvent,
 }: {
   active: boolean;
+  mode?: GuardMode;
   onViolation: (reason: string) => void;
+  onEvent?: (ev: GuardEvent) => void;
 }) {
   const armed = useRef(false);
+  const fired = useRef(false);
   const base = useRef({ w: 0, h: 0 });
   const cb = useRef(onViolation);
+  const evb = useRef(onEvent);
   cb.current = onViolation;
+  evb.current = onEvent;
 
   useEffect(() => {
-    if (!active) {
+    // Practice mode: zero monitoring.
+    if (!active || mode === "off") {
       armed.current = false;
       return;
     }
-    // Arm after a short grace so the initial focus/layout settling (and any
-    // fullscreen request) doesn't trip a false violation.
+    const strict = mode === "strict";
+
     const armTimer = setTimeout(() => {
       armed.current = true;
       base.current = { w: window.innerWidth, h: window.innerHeight };
     }, 1400);
 
-    const fire = (reason: string) => {
-      if (!armed.current) return;
-      armed.current = false;
-      cb.current(reason);
+    const report = (type: GuardEvent["type"], reason: string, terminal: boolean) => {
+      const ev: GuardEvent = { type, reason, terminal, at: Date.now() };
+      try { evb.current?.(ev); } catch { /* ignore */ }
+      if (terminal && armed.current && !fired.current) {
+        fired.current = true;
+        armed.current = false;
+        cb.current(reason);
+      }
     };
 
-    // A focused form field (answer box) means the on-screen keyboard is up on
-    // touch devices — that legitimately shrinks the viewport height and can blur
-    // the window, so we must not treat it as cheating.
+    // A focused answer field means the on-screen keyboard is up on touch
+    // devices — that legitimately shrinks the viewport height and can blur the
+    // window, so we must not treat it as cheating.
     const fieldFocused = () => {
       const el = document.activeElement as HTMLElement | null;
       return !!el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName || "");
     };
 
     const onVis = () => {
-      if (document.hidden) fire("You minimised or switched away from the exam screen.");
+      if (document.hidden) report("hidden", "You minimised or switched away from the exam screen.", true);
     };
     const onBlur = () => {
-      // Ignore blur that comes from opening the soft keyboard on a field.
       if (fieldFocused()) return;
-      fire("You left the exam window (alt-tab / split-screen / another app).");
+      report("blur", "You left the exam window (alt-tab / split-screen / another app).", true);
+    };
+    const onFocus = () => {
+      // Non-terminal: useful in the forensic timeline to see how long they were away.
+      if (strict) report("focus", "Returned to the exam window.", false);
     };
     const onResize = () => {
       let b = base.current;
       if (!b.w) return;
-      // Grow the baseline to the largest keyboard-closed size we've seen, so a
-      // drill that started with the keyboard already up still has a true baseline.
       if (!fieldFocused() && (window.innerWidth > b.w || window.innerHeight > b.h)) {
         base.current = { w: Math.max(b.w, window.innerWidth), h: Math.max(b.h, window.innerHeight) };
         b = base.current;
       }
-      // Width shrink => side-by-side split-screen. Height shrink => top/bottom
-      // split, but only if NOT caused by the keyboard (no field focused).
       const widthDrop = window.innerWidth < b.w * 0.8;
       const heightDrop = window.innerHeight < b.h * 0.72 && !fieldFocused();
-      if (widthDrop || heightDrop) fire("You resized the window into split-screen.");
+      if (widthDrop || heightDrop) report("resize_split", "You resized the window into split-screen.", true);
     };
 
     const blackout = () => {
@@ -83,39 +130,63 @@ export function useExamGuard({
       const k = e.key;
       const snip =
         k === "PrintScreen" ||
-        (e.metaKey && e.shiftKey && ["3", "4", "5", "S", "s"].includes(k)) || // mac / win snip
-        (e.ctrlKey && (k === "p" || k === "P")); // print
+        (e.metaKey && e.shiftKey && ["3", "4", "5", "S", "s"].includes(k)) ||
+        (e.ctrlKey && (k === "p" || k === "P"));
       if (snip) {
-        try {
-          navigator.clipboard?.writeText?.("Screenshots are disabled during an Exam Lab drill.");
-        } catch {
-          /* ignore */
-        }
+        try { navigator.clipboard?.writeText?.("Screenshots are disabled during an Exam Lab drill."); } catch { /* ignore */ }
         blackout();
         e.preventDefault();
+        const isPrint = e.ctrlKey && (k === "p" || k === "P");
+        // Strict tests cancel on a capture attempt; standard drills only deter + log.
+        report(isPrint ? "print" : "screenshot", isPrint ? "You tried to print the test." : "You tried to screenshot the test.", strict);
       }
     };
-    const prevent = (e: Event) => e.preventDefault();
+    const onCopy = () => report("copy", "You tried to copy the test content.", strict);
+    const onCut = () => report("cut", "You tried to cut the test content.", strict);
+    const onPaste = () => report("paste", "You tried to paste into the test.", false);
+    const preventCtx = (e: Event) => { e.preventDefault(); report("contextmenu", "You opened the right-click menu.", false); };
+    const preventDrag = (e: Event) => e.preventDefault();
+    const onFsChange = () => {
+      if (strict && !document.fullscreenElement) {
+        report("fullscreen_exit", "You left full-screen exam mode.", true);
+      }
+    };
+    const onPip = () => report("pip", "Picture-in-Picture opened during the test.", strict);
 
     document.addEventListener("visibilitychange", onVis);
     window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
     window.addEventListener("resize", onResize);
     window.addEventListener("keydown", onKey, true);
     window.addEventListener("keyup", onKey, true);
-    document.addEventListener("contextmenu", prevent);
-    document.addEventListener("dragstart", prevent);
+    document.addEventListener("contextmenu", preventCtx);
+    document.addEventListener("dragstart", preventDrag);
+    document.addEventListener("copy", onCopy);
+    document.addEventListener("cut", onCut);
+    document.addEventListener("paste", onPaste);
+    if (strict) {
+      document.addEventListener("fullscreenchange", onFsChange);
+      document.addEventListener("enterpictureinpicture", onPip as EventListener);
+    }
 
     return () => {
       clearTimeout(armTimer);
       armed.current = false;
+      fired.current = false;
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
       window.removeEventListener("resize", onResize);
       window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("keyup", onKey, true);
-      document.removeEventListener("contextmenu", prevent);
-      document.removeEventListener("dragstart", prevent);
+      document.removeEventListener("contextmenu", preventCtx);
+      document.removeEventListener("dragstart", preventDrag);
+      document.removeEventListener("copy", onCopy);
+      document.removeEventListener("cut", onCut);
+      document.removeEventListener("paste", onPaste);
+      document.removeEventListener("fullscreenchange", onFsChange);
+      document.removeEventListener("enterpictureinpicture", onPip as EventListener);
       document.documentElement.classList.remove("el-blackout");
     };
-  }, [active]);
+  }, [active, mode]);
 }

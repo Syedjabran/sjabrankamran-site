@@ -3,15 +3,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Loader2, CheckCircle2, Eye, RotateCcw, Printer, Clock, ArrowLeft, Sparkles,
-  ShieldAlert, Upload, FileText, ScanText, TimerReset, Timer,
+  ShieldAlert, Upload, FileText, ScanText, TimerReset, Timer, Lock, Video, ShieldCheck, Send,
 } from "lucide-react";
 import type { ImgQuestion } from "@/lib/exam-lab/image-bank";
 import { questionSeconds, formatDuration } from "@/lib/portal/timing";
 import { AnswerPad } from "./answer-pad";
-import { useExamGuard } from "./use-exam-guard";
+import { useExamGuard, type GuardEvent, type GuardMode } from "./use-exam-guard";
+import { ProctorCamera } from "./proctor-camera";
 
 type UrlMap = Record<string, string>;
 type LogMeta = { mode: "paper" | "drill"; code?: string; ref?: string; paperType: "P1" | "P2" | "P4" | "mixed" };
+
+export type AttemptKind = "practice" | "assignment" | "test";
+
+function newId() { return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }
 
 export function PaperRunner({
   questions,
@@ -21,6 +26,10 @@ export function PaperRunner({
   duration = 60,
   onExit,
   logMeta,
+  integrity = "standard",
+  kind = "practice",
+  help = true,
+  allocationId = null,
 }: {
   questions: ImgQuestion[];
   title: string;
@@ -29,7 +38,14 @@ export function PaperRunner({
   duration?: number; // minutes
   onExit?: () => void;
   logMeta?: LogMeta;
+  integrity?: GuardMode;            // "off" | "standard" | "strict"
+  kind?: AttemptKind;               // practice | assignment | test
+  help?: boolean;                   // help (mark scheme / Maxwell) permitted
+  allocationId?: string | null;     // staff allocation this attempt belongs to
 }) {
+  const strict = integrity === "strict";
+  const attemptIdRef = useRef<string>(newId());
+
   const [urls, setUrls] = useState<UrlMap>({});
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -44,13 +60,22 @@ export function PaperRunner({
 
   // ---- exam clock / integrity ----
   const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [begun, setBegun] = useState(!strict); // strict tests wait behind the camera gate
   const [remaining, setRemaining] = useState(duration * 60);
   const [paceAlert, setPaceAlert] = useState(false);
   const paceFired = useRef(false);
   const [voided, setVoided] = useState<string | null>(null);
+  const voidedRef = useRef(false);
   const totalSec = duration * 60;
 
-  // ---- per-question time tracking (starts when a question is on screen) ----
+  // ---- integrity / forensic state ----
+  const revealsRef = useRef(0);
+  const flagsRef = useRef(0);
+  const [camStatus, setCamStatus] = useState<{ ready: boolean; faceOk: boolean } | null>(null);
+  const [consent, setConsent] = useState(false);
+  const attemptPostedRef = useRef(false);
+
+  // ---- per-question time tracking ----
   const [perQ, setPerQ] = useState<Record<string, number>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
   const activeIdRef = useRef<string | null>(null);
@@ -82,47 +107,79 @@ export function PaperRunner({
         if (alive) setLoading(false);
       }
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, [questions]);
 
-  // start the clock once the paper is on screen
+  // start the clock once the paper is on screen (non-strict) or once begun (strict)
   useEffect(() => {
-    if (!loading && !err && startedAt === null) setStartedAt(Date.now());
-  }, [loading, err, startedAt]);
+    if (!loading && !err && begun && startedAt === null) setStartedAt(Date.now());
+  }, [loading, err, begun, startedAt]);
 
-  const running = timed && startedAt !== null && !submitted && !voided && remaining > 0;
+  const running = timed && begun && startedAt !== null && !submitted && !voided && remaining > 0;
+
+  // ---- forensic event pipeline (strict tests stream to the proctor log) ----
+  const postProctor = useCallback((body: Record<string, unknown>) => {
+    fetch("/api/exam-lab/proctor", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ attemptId: attemptIdRef.current, ...body }) }).catch(() => {});
+  }, []);
+
+  const buildQLog = useCallback(() => questions.map((q) => {
+    const ai = q.answer ? "ABCD".indexOf(q.answer) : -1;
+    const mcq = isMcq(q);
+    const earned = mcq ? (answers[q.id] === ai ? q.marks || 1 : 0) : (maxwell[q.id]?.awarded ?? null);
+    return { id: q.id, topic: q.topic, level: q.level, paperType: q.paperType, marks: q.marks || 1, earned: earned as number | null, correct: mcq ? answers[q.id] === ai : null, spentSec: perQ[q.id] ?? null, expectedSec: questionSeconds({ paper: q.paperType, difficulty: q.level, marks: q.marks }) };
+  }), [questions, answers, maxwell, perQ]);
+
+  const postAttempt = useCallback((cancelled: boolean, lockedReason: string | null) => {
+    if (!logMeta || attemptPostedRef.current) return;
+    attemptPostedRef.current = true;
+    const qlog = buildQLog();
+    const scored = qlog.filter((q) => q.earned !== null);
+    const score = scored.reduce((s, q) => s + (q.earned || 0), 0);
+    const totalScored = scored.reduce((s, q) => s + q.marks, 0);
+    fetch("/api/exam-lab/attempt", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        mode: logMeta.mode, paperType: logMeta.paperType, code: logMeta.code, ref: logMeta.ref,
+        score, total: totalScored, qCount: questions.length, scoredCount: scored.length,
+        durationSec: startedAt ? Math.round((Date.now() - startedAt) / 1000) : undefined, questions: qlog,
+        context: { integrity, kind, help, revealsUsed: revealsRef.current, proctored: strict, cancelled, lockedReason, flags: flagsRef.current, allocationId, attemptId: attemptIdRef.current },
+      }),
+    }).catch(() => {});
+  }, [logMeta, buildQLog, questions.length, startedAt, integrity, kind, help, strict, allocationId]);
+
+  const seize = useCallback((reason: string) => {
+    if (voidedRef.current) return;
+    voidedRef.current = true;
+    setVoided(reason);
+    postAttempt(true, reason);
+    if (strict) postProctor({ action: "end", status: "submitted" }); // server keeps the locked state; this just closes the clock
+  }, [postAttempt, postProctor, strict]);
+
+  // A single funnel for guard + camera integrity signals.
+  const handleEvent = useCallback((ev: GuardEvent, source: "guard" | "camera") => {
+    if (strict && startedAt !== null) {
+      postProctor({ action: "event", events: [{ type: ev.type, reason: ev.reason, terminal: ev.terminal, source }] });
+    }
+    if (!ev.terminal) flagsRef.current += 1;
+    if (ev.terminal) seize(ev.reason);
+  }, [strict, startedAt, postProctor, seize]);
+
+  useExamGuard({
+    active: running,
+    mode: integrity,
+    onViolation: () => { /* handled via onEvent funnel */ },
+    onEvent: (ev) => handleEvent(ev, "guard"),
+  });
 
   const submit = useCallback((timeUp = false) => {
     setSubmitted(true);
     const rev: Record<string, boolean> = {};
-    questions.forEach((q) => {
-      if (!isMcq(q)) rev[q.id] = true;
-    });
+    questions.forEach((q) => { if (!isMcq(q) && !strict) rev[q.id] = true; });
     setRevealed((r) => ({ ...r, ...rev }));
-    if (logMeta) {
-      const qlog = questions.map((q) => {
-        const ai = q.answer ? "ABCD".indexOf(q.answer) : -1;
-        const mcq = isMcq(q);
-        const earned = mcq ? (answers[q.id] === ai ? q.marks || 1 : 0) : (maxwell[q.id]?.awarded ?? null);
-        return { id: q.id, topic: q.topic, level: q.level, paperType: q.paperType, marks: q.marks || 1, earned: earned as number | null, correct: mcq ? answers[q.id] === ai : null, spentSec: perQ[q.id] ?? null, expectedSec: questionSeconds({ paper: q.paperType, difficulty: q.level, marks: q.marks }) };
-      });
-      const scored = qlog.filter((q) => q.earned !== null);
-      const score = scored.reduce((s, q) => s + (q.earned || 0), 0);
-      const totalScored = scored.reduce((s, q) => s + q.marks, 0);
-      fetch("/api/exam-lab/attempt", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          mode: logMeta.mode, paperType: logMeta.paperType, code: logMeta.code, ref: logMeta.ref,
-          score, total: totalScored, qCount: questions.length, scoredCount: scored.length,
-          durationSec: startedAt ? Math.round((Date.now() - startedAt) / 1000) : undefined, questions: qlog,
-        }),
-      }).catch(() => {});
-    }
+    postAttempt(false, null);
+    if (strict) postProctor({ action: "end", status: "submitted" });
     if (!timeUp) setTimeout(() => topRef.current?.querySelector(".pr-result")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
-  }, [answers, maxwell, questions, logMeta, startedAt, perQ]);
+  }, [questions, strict, postAttempt, postProctor]);
 
   // tick the countdown
   useEffect(() => {
@@ -144,15 +201,12 @@ export function PaperRunner({
 
   // auto-submit when time is up
   useEffect(() => {
-    if (timed && startedAt !== null && remaining <= 0 && !submitted && !voided) submit(true);
-  }, [remaining, timed, startedAt, submitted, voided, submit]);
+    if (timed && begun && startedAt !== null && remaining <= 0 && !submitted && !voided) submit(true);
+  }, [remaining, timed, begun, startedAt, submitted, voided, submit]);
 
-  // Active question = the one at the viewport centre. This is robust even when a
-  // question is TALLER than the screen (e.g. the write-on-paper canvas is open) —
-  // an intersection-ratio approach would drop below threshold and wrongly pause
-  // the countdown; centre-containment does not.
+  // Active question = the one at the viewport centre.
   useEffect(() => {
-    if (loading || submitted) return;
+    if (loading || submitted || !begun) return;
     const pick = () => {
       const centerY = window.innerHeight / 2;
       let best: string | null = null;
@@ -161,8 +215,8 @@ export function PaperRunner({
         const el = liRefs.current[q.id];
         if (!el) continue;
         const r = el.getBoundingClientRect();
-        if (r.bottom < 0 || r.top > window.innerHeight) continue; // fully off-screen
-        if (r.top <= centerY && r.bottom >= centerY) { best = q.id; break; } // spans centre
+        if (r.bottom < 0 || r.top > window.innerHeight) continue;
+        if (r.top <= centerY && r.bottom >= centerY) { best = q.id; break; }
         const dist = Math.min(Math.abs(r.top - centerY), Math.abs(r.bottom - centerY));
         if (dist < bestDist) { bestDist = dist; best = q.id; }
       }
@@ -173,11 +227,11 @@ export function PaperRunner({
     const onScroll = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(pick); };
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
-    const iv = setInterval(pick, 1000); // re-pick as content (canvas) grows
+    const iv = setInterval(pick, 1000);
     return () => { window.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); clearInterval(iv); cancelAnimationFrame(raf); };
-  }, [loading, submitted, questions]);
+  }, [loading, submitted, begun, questions]);
 
-  // Accumulate time on the active question (pauses when tab hidden / not running).
+  // Accumulate time on the active question.
   useEffect(() => {
     if (!running) return;
     const iv = setInterval(() => {
@@ -188,30 +242,40 @@ export function PaperRunner({
     return () => clearInterval(iv);
   }, [running]);
 
-  const seize = useCallback((reason: string) => {
-    setVoided(reason);
-  }, []);
-  useExamGuard({ active: running, onViolation: seize });
+  async function beginStrict() {
+    if (!consent || !camStatus?.ready) return;
+    // Open the forensic session, then start the clock.
+    postProctor({ action: "start", kind, integrity, cameraConsent: true, meta: { title, subtitle, code: logMeta?.code, ref: logMeta?.ref, paperType: logMeta?.paperType } });
+    try { await document.documentElement.requestFullscreen?.(); } catch { /* optional */ }
+    setBegun(true);
+  }
 
   async function markMaxwell(id: string) {
+    if (strict) return; // help is locked in a proctored test
     const answer = (structAnswers[id] || "").trim();
-    if (answer.length < 3) {
-      setMaxwell((m) => ({ ...m, [id]: { error: "Write your answer first." } }));
-      return;
-    }
+    if (answer.length < 3) { setMaxwell((m) => ({ ...m, [id]: { error: "Write your answer first." } })); return; }
     setMaxwell((m) => ({ ...m, [id]: { loading: true } }));
     try {
-      const res = await fetch("/api/exam-lab/mark", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id, answer }),
-      });
+      const res = await fetch("/api/exam-lab/mark", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, answer }) });
       const j = await res.json();
       if (!res.ok) setMaxwell((m) => ({ ...m, [id]: { error: j.error || "Marking failed." } }));
       else setMaxwell((m) => ({ ...m, [id]: { awarded: j.awarded, outOf: j.outOf, feedback: j.feedback, points: j.points } }));
-    } catch {
-      setMaxwell((m) => ({ ...m, [id]: { error: "Network error." } }));
-    }
+    } catch { setMaxwell((m) => ({ ...m, [id]: { error: "Network error." } })); }
+  }
+
+  function toggleReveal(id: string) {
+    if (strict) return; // mark-scheme reveal is locked in a proctored test
+    setRevealed((r) => {
+      const turningOn = !r[id];
+      if (turningOn) {
+        revealsRef.current += 1;
+        if (!help) flagsRef.current += 1; // used help in a no-help assignment
+        if (startedAt !== null && (strict || kind !== "practice")) {
+          postProctor({ action: "event", events: [{ type: "reveal_ms", reason: "Revealed the mark scheme.", terminal: false, source: "system" }] });
+        }
+      }
+      return { ...r, [id]: !r[id] };
+    });
   }
 
   const mcqs = questions.filter(isMcq);
@@ -221,11 +285,12 @@ export function PaperRunner({
   const pct = mcqs.length ? Math.round((got / mcqs.length) * 100) : 0;
 
   const watermark = useMemo(() => {
-    // Ownership/branding watermark tiled across the live exam.
     const txt = `physics@sjabrankamran.com`;
     const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='360' height='200'><text x='10' y='120' transform='rotate(-22 180 100)' font-family='monospace' font-size='15' fill='%23ffffff'>${encodeURIComponent(txt).replace(/'/g, "%27")}</text></svg>`;
     return `url("data:image/svg+xml,${svg}")`;
   }, []);
+
+  const camPhase: "preview" | "live" | "off" = !strict ? "off" : voided || submitted ? "off" : begun ? "live" : "preview";
 
   if (loading) {
     return (
@@ -238,31 +303,69 @@ export function PaperRunner({
     return <div className="rounded-2xl border border-signal/40 bg-signal/[0.06] p-6 text-signal">Couldn’t load images: {err}. Try again.</div>;
   }
 
-  // ---- SEIZED: malpractice ----
-  if (voided) {
+  // ---- STRICT camera gate (before the test begins) ----
+  if (strict && !begun && !voided) {
+    return (
+      <div ref={topRef}>
+        {camPhase !== "off" && <ProctorCamera phase="preview" onStatus={(s) => setCamStatus({ ready: s.ready, faceOk: s.faceOk })} />}
+        <div className="mx-auto max-w-lg rounded-3xl border border-cyan/30 bg-gradient-to-b from-space/80 to-abyss p-7">
+          <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl border border-cyan/40 bg-cyan/10 text-cyan"><Video size={26} /></div>
+          <h3 className="text-center font-display text-xl font-bold text-ice">Proctored test — camera required</h3>
+          <p className="mx-auto mt-2 max-w-md text-center text-sm text-fog">{title}{subtitle ? ` · ${subtitle}` : ""}</p>
+          <div className="mt-5 space-y-2 rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-sm text-fog">
+            <p className="flex items-start gap-2"><ShieldCheck size={16} className="mt-0.5 shrink-0 text-emerald2" /> This is a formal, invigilated test. Your camera stays on and an AI proctor watches for integrity — all analysis runs <b>on your device</b>; no video is stored or uploaded.</p>
+            <p className="flex items-start gap-2"><ShieldAlert size={16} className="mt-0.5 shrink-0 text-amber-300" /> The test <b>cancels and locks</b> if you leave full-screen, switch tabs, minimise, split-screen, screenshot, or if another person appears / you leave the frame. A locked test can only be re-opened by a super-admin after review.</p>
+            <p className="flex items-start gap-2"><Lock size={16} className="mt-0.5 shrink-0 text-cyan" /> Mark schemes are locked during the test.</p>
+          </div>
+          <div className={"mt-4 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs " + (camStatus?.ready ? "border-emerald2/40 text-emerald2" : "border-amber-400/40 text-amber-200")}>
+            {camStatus?.ready ? <ScanText size={14} /> : <Loader2 size={14} className="animate-spin" />}
+            {camStatus?.ready ? "Camera on — you're in frame." : "Waiting for camera… allow access in your browser."}
+          </div>
+          <label className="mt-4 flex cursor-pointer items-start gap-2.5 text-sm text-fog">
+            <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5 h-4 w-4 accent-cyan" />
+            <span>I consent to on-device camera monitoring and facial-attention scanning for the duration of this test, and I understand the integrity rules above.</span>
+          </label>
+          <div className="mt-5 flex items-center justify-center gap-3">
+            {onExit && <button onClick={onExit} className="btn-ghost !px-4 !py-2 text-sm"><ArrowLeft size={14} /> Not now</button>}
+            <button onClick={beginStrict} disabled={!consent || !camStatus?.ready} className="btn-primary disabled:opacity-40"><Video size={15} /> Begin test</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- SEIZED: standard drill cancelled ----
+  if (voided && !strict) {
     return (
       <div ref={topRef}>
         <div className="rounded-3xl border border-red-500/40 bg-gradient-to-b from-red-950/60 to-abyss p-8 text-center">
-          <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full border border-red-500/50 bg-red-500/10">
-            <ShieldAlert className="text-red-400" size={30} />
-          </div>
+          <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full border border-red-500/50 bg-red-500/10"><ShieldAlert className="text-red-400" size={30} /></div>
           <h3 className="font-display text-2xl font-black text-red-400">Drill cancelled</h3>
-          <p className="mx-auto mt-3 max-w-md text-sm text-fog">
-            Your attempt was terminated due to <b className="text-red-300">unethical means of attempting the paper</b>.
-          </p>
+          <p className="mx-auto mt-3 max-w-md text-sm text-fog">Your attempt was terminated due to <b className="text-red-300">unethical means of attempting the paper</b>.</p>
           <p className="mx-auto mt-1 max-w-md font-mono text-xs text-dust">{voided}</p>
-          <p className="mx-auto mt-4 max-w-md text-xs text-dust">
-            Exam Lab drills must be sat in a single, full-screen window — no minimising, tab-switching, split-screen or screenshots once the timer begins.
-          </p>
+          <p className="mx-auto mt-4 max-w-md text-xs text-dust">No-help drills must be sat in a single, full-screen window — no minimising, tab-switching, split-screen or screenshots once the timer begins.</p>
           <button onClick={onExit} className="btn-primary mx-auto mt-6"><ArrowLeft size={15} /> Back to Exam Lab</button>
         </div>
       </div>
     );
   }
 
+  // ---- SEIZED: strict test LOCKED (needs super-admin review) ----
+  if (voided && strict) {
+    return <TestLocked reason={voided} attemptId={attemptIdRef.current} onExit={onExit} />;
+  }
+
   return (
     <div ref={topRef} className={running ? "el-exam-live relative" : "relative"}>
-      {/* 15-minutes-left pace alert */}
+      {camPhase === "live" && (
+        <ProctorCamera
+          phase="live"
+          onStatus={(s) => setCamStatus({ ready: s.ready, faceOk: s.faceOk })}
+          onEvent={(ev) => handleEvent(ev, "camera")}
+          onSnapshot={(dataUrl, reason) => postProctor({ action: "snapshot", dataUrl, reason })}
+        />
+      )}
+
       {paceAlert && (
         <div className="el-pace-alert">
           <div>
@@ -272,14 +375,11 @@ export function PaperRunner({
         </div>
       )}
 
-      {/* forensic identity watermark while the drill is live */}
       {running && <div className="el-watermark" style={{ backgroundImage: watermark }} aria-hidden />}
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          {onExit && (
-            <button onClick={onExit} className="btn-ghost !px-3 !py-1.5 text-xs"><ArrowLeft size={13} /> Back</button>
-          )}
+          {onExit && <button onClick={onExit} className="btn-ghost !px-3 !py-1.5 text-xs"><ArrowLeft size={13} /> Back</button>}
           <div>
             <h3 className="font-display text-lg text-ice">{title}</h3>
             {subtitle && <p className="font-mono text-xs text-dust">{subtitle}</p>}
@@ -287,16 +387,16 @@ export function PaperRunner({
         </div>
         <div className="flex items-center gap-2">
           {timed && startedAt !== null && !submitted && <ClockPill left={remaining} warn={remaining <= 15 * 60} />}
-          {submitted && (
-            <button onClick={() => window.print()} className="btn-ghost !px-3 !py-1.5 text-xs el-noprint"><Printer size={13} /> PDF</button>
-          )}
+          {submitted && <button onClick={() => window.print()} className="btn-ghost !px-3 !py-1.5 text-xs el-noprint"><Printer size={13} /> PDF</button>}
         </div>
       </div>
 
-      {running && (
-        <div className="el-noprint mb-4 flex items-center gap-2 rounded-xl border border-amber-400/25 bg-amber-400/[0.05] px-3.5 py-2 text-xs text-amber-200/90">
-          <ShieldAlert size={14} className="text-amber-300" />
-          Proctored drill in progress — do not minimise, switch tabs, split-screen or screenshot, or the drill is cancelled.
+      {running && integrity !== "off" && (
+        <div className={"el-noprint mb-4 flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs " + (strict ? "border-red-400/30 bg-red-400/[0.05] text-red-200/90" : "border-amber-400/25 bg-amber-400/[0.05] text-amber-200/90")}>
+          <ShieldAlert size={14} className={strict ? "text-red-300" : "text-amber-300"} />
+          {strict
+            ? "Proctored TEST in progress — camera on. Leaving full-screen, tab-switching, split-screen, screenshots, or another face in frame will cancel & lock the test."
+            : "Proctored drill in progress — do not minimise, switch tabs, split-screen or screenshot, or the drill is cancelled."}
         </div>
       )}
 
@@ -304,6 +404,7 @@ export function PaperRunner({
         <span className="rounded-full border border-white/10 px-2.5 py-0.5">{questions.length} questions</span>
         <span className="rounded-full border border-white/10 px-2.5 py-0.5">{totalMarks} marks</span>
         <span className="rounded-full border border-white/10 px-2.5 py-0.5">exact CAIE images · diagrams included</span>
+        {kind !== "practice" && <span className="rounded-full border border-cyan/25 px-2.5 py-0.5 text-cyan">{kind === "test" ? "Test" : help ? "Assignment · help allowed" : "Assignment · no help"}</span>}
       </div>
 
       {submitted && (
@@ -319,13 +420,12 @@ export function PaperRunner({
             <h4 className="flex items-center gap-2 font-display text-lg"><CheckCircle2 size={18} className="text-emerald2" /> Submitted</h4>
             <p className="mt-1 text-sm text-fog">
               {mcqs.length > 0 && <>Multiple choice: <b className="text-ice">{got} / {mcqs.length}</b>.</>}
-              {structCount > 0 && <> &nbsp;{structCount} structured ({structMarks} marks) — mark yourself against the official mark schemes shown under each.</>}
+              {structCount > 0 && <> &nbsp;{structCount} structured ({structMarks} marks){strict ? " — your teacher will mark these." : " — mark yourself against the official mark schemes shown under each."}</>}
             </p>
           </div>
         </div>
       )}
 
-      {/* answer-script upload (after submit / time up) */}
       {submitted && logMeta && startedAt !== null && (
         <ScriptUpload logMeta={logMeta} startedAt={startedAt} durationSec={totalSec} />
       )}
@@ -357,7 +457,6 @@ export function PaperRunner({
                 {q.marks != null && <span className="ml-auto font-mono text-xs text-dust">[{q.marks}]</span>}
               </div>
 
-              {/* Hide the top copy when "write on paper" is open (the canvas shows the same paper) to avoid a duplicate. */}
               {isMcq(q) || answerMode[q.id] !== "write" ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={urls[q.img]} alt={`Question ${q.qnum}`} className="w-full rounded-lg border border-white/10 bg-white" loading="lazy" draggable={false} />
@@ -366,8 +465,8 @@ export function PaperRunner({
               {isMcq(q) ? (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {["A", "B", "C", "D"].map((L, k) => {
-                    const isCorrect = submitted && k === ai;
-                    const isWrong = submitted && chosen === k && k !== ai;
+                    const isCorrect = submitted && !strict && k === ai;
+                    const isWrong = submitted && !strict && chosen === k && k !== ai;
                     return (
                       <button
                         key={L}
@@ -384,7 +483,7 @@ export function PaperRunner({
                       </button>
                     );
                   })}
-                  {submitted && q.answer && (
+                  {submitted && !strict && q.answer && (
                     <span className="ml-2 self-center font-mono text-xs text-lime2">Answer: {q.answer}</span>
                   )}
                 </div>
@@ -399,16 +498,20 @@ export function PaperRunner({
                     disabled={submitted}
                     onModeChange={(m) => setAnswerMode((s) => ({ ...s, [q.id]: m }))}
                   />
-                  <div className="mt-2 flex flex-wrap gap-2 el-noprint">
-                    <button onClick={() => markMaxwell(q.id)} disabled={maxwell[q.id]?.loading} className="btn-primary !px-3.5 !py-1.5 text-xs disabled:opacity-50">
-                      {maxwell[q.id]?.loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} Mark with Maxwell
-                    </button>
-                    <button onClick={() => setRevealed((r) => ({ ...r, [q.id]: !r[q.id] }))} className="btn-ghost !px-3 !py-1.5 text-xs">
-                      <Eye size={13} /> {revealed[q.id] ? "Hide" : "Reveal"} mark scheme
-                    </button>
-                  </div>
-                  {maxwell[q.id]?.error && <p className="mt-2 text-xs text-signal">{maxwell[q.id]?.error}</p>}
-                  {maxwell[q.id]?.awarded != null && (
+                  {strict ? (
+                    <p className="mt-2 flex items-center gap-1.5 text-xs text-dust el-noprint"><Lock size={12} className="text-cyan" /> Marking &amp; mark schemes are locked during a proctored test.</p>
+                  ) : (
+                    <div className="mt-2 flex flex-wrap gap-2 el-noprint">
+                      <button onClick={() => markMaxwell(q.id)} disabled={maxwell[q.id]?.loading} className="btn-primary !px-3.5 !py-1.5 text-xs disabled:opacity-50">
+                        {maxwell[q.id]?.loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} Mark with Maxwell
+                      </button>
+                      <button onClick={() => toggleReveal(q.id)} className="btn-ghost !px-3 !py-1.5 text-xs">
+                        <Eye size={13} /> {revealed[q.id] ? "Hide" : "Reveal"} mark scheme
+                      </button>
+                    </div>
+                  )}
+                  {!strict && maxwell[q.id]?.error && <p className="mt-2 text-xs text-signal">{maxwell[q.id]?.error}</p>}
+                  {!strict && maxwell[q.id]?.awarded != null && (
                     <div className="mt-3 rounded-xl border border-violet2/30 bg-violet2/[0.06] p-3">
                       <p className="flex items-center gap-2 font-display text-sm text-ice">
                         <Sparkles size={14} className="text-violet2" /> Maxwell: <b className="text-violet2">{maxwell[q.id]?.awarded}/{maxwell[q.id]?.outOf}</b>
@@ -426,7 +529,7 @@ export function PaperRunner({
                       )}
                     </div>
                   )}
-                  {revealed[q.id] && q.ms_img && urls[q.ms_img] && (
+                  {!strict && revealed[q.id] && q.ms_img && urls[q.ms_img] && (
                     <div className="mt-3">
                       <p className="mb-1 font-mono text-[11px] uppercase tracking-widest text-cyan">Official mark scheme</p>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -442,10 +545,54 @@ export function PaperRunner({
 
       <div className="mt-6 flex flex-wrap justify-center gap-3 el-noprint">
         {!submitted ? (
-          <button onClick={() => submit(false)} className="btn-primary"><CheckCircle2 size={16} /> Submit &amp; mark</button>
+          <button onClick={() => submit(false)} className="btn-primary"><CheckCircle2 size={16} /> {strict ? "Submit test" : "Submit & mark"}</button>
         ) : onExit ? (
           <button onClick={onExit} className="btn-ghost"><RotateCcw size={16} /> Choose another</button>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+function TestLocked({ reason, attemptId, onExit }: { reason: string; attemptId: string; onExit?: () => void }) {
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function requestReview() {
+    setBusy(true); setErr("");
+    try {
+      const r = await fetch("/api/exam-lab/proctor", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "unlock-request", attemptId, note }) });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.error || "Could not send your request.");
+      setSent(true);
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
+
+  return (
+    <div>
+      <div className="mx-auto max-w-lg rounded-3xl border border-red-500/40 bg-gradient-to-b from-red-950/60 to-abyss p-8 text-center">
+        <div className="mx-auto mb-4 grid h-16 w-16 place-items-center rounded-full border border-red-500/50 bg-red-500/10"><Lock className="text-red-400" size={28} /></div>
+        <h3 className="font-display text-2xl font-black text-red-400">Test locked</h3>
+        <p className="mx-auto mt-3 max-w-md text-sm text-fog">Your test was cancelled and <b className="text-red-300">locked</b> by the AI proctor. It can only be re-opened by a super-admin after reviewing the forensic record.</p>
+        <p className="mx-auto mt-1 max-w-md font-mono text-xs text-dust">{reason}</p>
+
+        {sent ? (
+          <div className="mx-auto mt-5 max-w-md rounded-2xl border border-emerald2/30 bg-emerald2/[0.06] p-4 text-sm text-emerald2">
+            <CheckCircle2 size={16} className="mx-auto mb-1" /> Review request sent. Your teacher / super-admin will look into it and can re-open the test for you.
+          </div>
+        ) : (
+          <div className="mx-auto mt-5 max-w-md text-left">
+            <label className="mb-1 block text-[11px] uppercase tracking-widest text-dust">Request a review (optional note)</label>
+            <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} placeholder="Explain what happened (e.g. the page went full-screen off, a sibling walked in)…" className="w-full resize-none rounded-xl border border-white/10 bg-abyss/60 px-3 py-2 text-sm text-ice placeholder:text-dust focus:border-cyan focus:outline-none" />
+            {err ? <p className="mt-1 text-xs text-signal">{err}</p> : null}
+            <div className="mt-3 flex items-center justify-center gap-3">
+              {onExit && <button onClick={onExit} className="btn-ghost !px-4 !py-2 text-sm"><ArrowLeft size={14} /> Back</button>}
+              <button onClick={requestReview} disabled={busy} className="btn-primary disabled:opacity-50">{busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Request review</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

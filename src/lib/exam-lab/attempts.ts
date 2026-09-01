@@ -17,6 +17,29 @@ export type AttemptQuestion = {
   expectedSec?: number; // recommended time (paper + difficulty)
 };
 
+/**
+ * Integrity context for an attempt (optional; absent on legacy/practice rows).
+ *  - integrity: which guard mode the attempt ran under.
+ *  - kind:      practice (self-chosen) | assignment | test.
+ *  - help:      whether help (mark scheme / Maxwell) was permitted.
+ *  - revealsUsed: how many times the student revealed a mark scheme.
+ *  - proctored: camera proctor was active.
+ *  - cancelled / lockedReason: terminal integrity failure.
+ *  - flags:     count of non-terminal integrity events logged.
+ */
+export type AttemptContext = {
+  integrity: "off" | "standard" | "strict";
+  kind: "practice" | "assignment" | "test";
+  help: boolean;
+  revealsUsed: number;
+  proctored: boolean;
+  cancelled: boolean;
+  lockedReason?: string | null;
+  flags: number;
+  allocationId?: string | null;
+  attemptId?: string | null;
+};
+
 export type Attempt = {
   ts: number;
   mode: "paper" | "drill";
@@ -29,6 +52,7 @@ export type Attempt = {
   scoredCount: number;
   durationSec?: number;
   questions: AttemptQuestion[];
+  context?: AttemptContext; // integrity / mode metadata (optional)
 };
 
 const BUCKET = "exam-data";

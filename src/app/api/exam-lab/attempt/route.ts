@@ -17,6 +17,19 @@ const qSchema = z.object({
   expectedSec: z.number().int().min(0).max(20000).optional(),
 });
 
+const contextSchema = z.object({
+  integrity: z.enum(["off", "standard", "strict"]),
+  kind: z.enum(["practice", "assignment", "test"]),
+  help: z.boolean(),
+  revealsUsed: z.number().int().min(0).max(500),
+  proctored: z.boolean(),
+  cancelled: z.boolean(),
+  lockedReason: z.string().max(300).nullable().optional(),
+  flags: z.number().int().min(0).max(1000),
+  allocationId: z.string().max(80).nullable().optional(),
+  attemptId: z.string().max(80).nullable().optional(),
+}).optional();
+
 const schema = z.object({
   mode: z.enum(["paper", "drill"]),
   paperType: z.enum(["P1", "P2", "P4", "mixed"]),
@@ -28,6 +41,7 @@ const schema = z.object({
   scoredCount: z.number().int().min(0).max(60),
   durationSec: z.number().int().min(0).max(20000).optional(),
   questions: z.array(qSchema).min(1).max(60),
+  context: contextSchema,
 });
 
 export async function POST(request: Request) {

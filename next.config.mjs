@@ -23,12 +23,15 @@ const nextConfig = {
       "object-src 'none'",
       "frame-ancestors 'self'",
       "form-action 'self'",
-      "script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com",
+      // 'wasm-unsafe-eval' + the MediaPipe CDN power the on-device exam proctor
+      // (FaceLandmarker). All face analysis runs locally in the browser; only the
+      // model/wasm are fetched from these hosts.
+      "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://va.vercel-scripts.com https://cdn.jsdelivr.net",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.supabase.co",
-      "media-src 'self'",
+      "media-src 'self' blob:",
       "font-src 'self' data:",
-      "connect-src 'self' https://*.supabase.co https://va.vercel-scripts.com",
+      "connect-src 'self' blob: https://*.supabase.co https://va.vercel-scripts.com https://cdn.jsdelivr.net https://storage.googleapis.com",
       "manifest-src 'self'",
       "worker-src 'self' blob:",
       "upgrade-insecure-requests",
@@ -46,7 +49,7 @@ const nextConfig = {
           // Voice attendance uses getUserMedia + the Web Speech API on the
           // first-party portal. Browser/OS permission is still required; this
           // policy only stops the server from overriding an explicit grant.
-          { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=(), browsing-topics=()" },
+          { key: "Permissions-Policy", value: "camera=(self), microphone=(self), geolocation=(), browsing-topics=()" },
         ],
       },
     ];
