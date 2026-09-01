@@ -36,9 +36,14 @@ const MP_OBJECT = "https://storage.googleapis.com/mediapipe-models/object_detect
 const MATERIAL = new Set(["cell phone", "laptop", "tv", "remote"]);
 const MAX_WARNINGS = 2;
 
-// Import a remote ES module without the bundler trying to resolve it at build.
+// Load a remote ES module at runtime. Native dynamic import() is CSP-safe (it
+// needs the CDN origin in script-src, NOT 'unsafe-eval' like new Function/eval),
+// so this must never use new Function. The ignore hints keep the bundler from
+// trying to resolve the runtime URL at build.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const dynImport: (u: string) => Promise<any> = new Function("u", "return import(u)") as never;
+function dynImport(u: string): Promise<any> {
+  return import(/* webpackIgnore: true */ /* turbopackIgnore: true */ u);
+}
 
 export function ProctorCamera({
   phase,
