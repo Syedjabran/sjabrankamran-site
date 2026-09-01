@@ -40,7 +40,12 @@ export function AssignForm({ canTest = false }: { canTest?: boolean }) {
   const [exCount, setExCount] = useState(10);
   const [exDuration, setExDuration] = useState("");
   const [exDue, setExDue] = useState("");
+  const [exStarts, setExStarts] = useState("");
   const [exInstructions, setExInstructions] = useState("");
+  const [exTarget, setExTarget] = useState<"class" | "school" | "network" | "individual">("class");
+  const [exClassId, setExClassId] = useState("");
+  const [exSchool, setExSchool] = useState("");
+  const [exStudentEmail, setExStudentEmail] = useState("");
   const [classId, setClassId] = useState("");
   const [title, setTitle] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -69,11 +74,16 @@ export function AssignForm({ canTest = false }: { canTest?: boolean }) {
     setBusy(true); setMsg("");
     try {
       if (type === "examlab") {
+        let class_ids: string[] = []; let student_email: string | undefined; let scope_label = "";
+        if (exTarget === "class") { class_ids = exClassId ? [exClassId] : []; scope_label = classes.find((c) => c.id === exClassId)?.name || "Class"; }
+        else if (exTarget === "school") { class_ids = classes.filter((c) => c.school === exSchool).map((c) => c.id); scope_label = exSchool; }
+        else if (exTarget === "network") { class_ids = classes.map((c) => c.id); scope_label = "Whole network"; }
+        else { student_email = exStudentEmail.trim(); scope_label = exStudentEmail.trim(); }
         const content = exContentType === "paper" ? { type: "paper", code: exPaperCode }
           : exContentType === "drill" ? { type: "drill", paperType: exDPaper, topics: [...exTopics], levels: [...exLevels], count: exCount }
           : { type: "daily" };
-        const j = await api("/api/portal/admin/exam-allocate", { method: "POST", body: JSON.stringify({ class_id: classId, mode: exMode, content, title, instructions: exInstructions || undefined, duration_min: exDuration ? Number(exDuration) : undefined, due_at: exDue || undefined, notify }) });
-        setMsg(`Allocated to ${j.students} student${j.students === 1 ? "" : "s"} · ${exMode.replace(/_/g, " ")}.`);
+        const j = await api("/api/portal/admin/exam-allocate", { method: "POST", body: JSON.stringify({ target_type: exTarget, class_ids, student_email, scope_label, mode: exMode, content, title, instructions: exInstructions || undefined, duration_min: exDuration ? Number(exDuration) : undefined, due_at: exDue || undefined, starts_at: exStarts || undefined, notify }) });
+        setMsg(`Allocated to ${j.students} student${j.students === 1 ? "" : "s"} · ${exMode.replace(/_/g, " ")} · ${scope_label}.`);
         return;
       }
       const payload: Record<string, unknown> = { type: type === "test" ? "test" : "assignment", class_id: classId, title, notify };
@@ -130,17 +140,45 @@ export function AssignForm({ canTest = false }: { canTest?: boolean }) {
       </div>
 
       <div className="space-y-3 rounded-2xl border border-white/10 bg-space/60 p-5">
-        <div>
-          <label className="mb-1 block text-[11px] uppercase tracking-widest text-dust">Class</label>
-          <select value={classId} onChange={(e) => setClassId(e.target.value)} className={input}>
-            <option value="">Choose a class…</option>
-            {classes.map((c) => <option key={c.id} value={c.id}>{c.school} — {c.name}{c.section ? ` (${c.section})` : ""} · {c.students} students</option>)}
-          </select>
-        </div>
+        {type !== "examlab" ? (
+          <div>
+            <label className="mb-1 block text-[11px] uppercase tracking-widest text-dust">Class</label>
+            <select value={classId} onChange={(e) => setClassId(e.target.value)} className={input}>
+              <option value="">Choose a class…</option>
+              {classes.map((c) => <option key={c.id} value={c.id}>{c.school} — {c.name}{c.section ? ` (${c.section})` : ""} · {c.students} students</option>)}
+            </select>
+          </div>
+        ) : null}
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" className={input} />
 
         {type === "examlab" ? (
           <>
+            <div>
+              <label className="mb-1 block text-[11px] uppercase tracking-widest text-dust">Assign to</label>
+              <div className="flex flex-wrap gap-2">
+                {(["class", "school", "network", "individual"] as const).map((tt) => (
+                  <button key={tt} onClick={() => setExTarget(tt)} className={"rounded-full border px-3 py-1.5 text-xs " + (exTarget === tt ? "border-cyan bg-cyan text-space font-semibold" : "border-white/15 text-fog hover:border-cyan")}>{tt === "class" ? "A class" : tt === "school" ? "Whole school" : tt === "network" ? "Whole network" : "Individual"}</button>
+                ))}
+              </div>
+              <div className="mt-2">
+                {exTarget === "class" ? (
+                  <select value={exClassId} onChange={(e) => setExClassId(e.target.value)} className={input}>
+                    <option value="">Choose a class…</option>
+                    {classes.map((c) => <option key={c.id} value={c.id}>{c.school} — {c.name}{c.section ? ` (${c.section})` : ""} · {c.students}</option>)}
+                  </select>
+                ) : exTarget === "school" ? (
+                  <select value={exSchool} onChange={(e) => setExSchool(e.target.value)} className={input}>
+                    <option value="">Choose a school…</option>
+                    {[...new Set(classes.map((c) => c.school))].filter((s) => s && s !== "—").map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                ) : exTarget === "individual" ? (
+                  <input value={exStudentEmail} onChange={(e) => setExStudentEmail(e.target.value)} placeholder="student@email.com" className={input} />
+                ) : (
+                  <p className="rounded-lg border border-white/10 bg-abyss/40 px-3 py-2 text-xs text-dust">Every active student across all classes.</p>
+                )}
+              </div>
+            </div>
+
             <div>
               <label className="mb-1 block text-[11px] uppercase tracking-widest text-dust">Mode</label>
               <div className="flex flex-wrap gap-2">
@@ -197,8 +235,9 @@ export function AssignForm({ canTest = false }: { canTest?: boolean }) {
 
             <textarea value={exInstructions} onChange={(e) => setExInstructions(e.target.value)} rows={2} placeholder="Instructions (optional)" className={input + " resize-none"} />
             <div className="flex flex-wrap gap-2">
+              <div><label className="mb-1 block text-[11px] text-dust">Opens (schedule)</label><input type="datetime-local" value={exStarts} onChange={(e) => setExStarts(e.target.value)} className={input} /></div>
               <div><label className="mb-1 block text-[11px] text-dust">Due</label><input type="datetime-local" value={exDue} onChange={(e) => setExDue(e.target.value)} className={input} /></div>
-              <div className="w-32"><label className="mb-1 block text-[11px] text-dust">Duration (min)</label><input type="number" value={exDuration} onChange={(e) => setExDuration(e.target.value)} placeholder="auto" className={input} /></div>
+              <div className="w-28"><label className="mb-1 block text-[11px] text-dust">Duration (min)</label><input type="number" value={exDuration} onChange={(e) => setExDuration(e.target.value)} placeholder="auto" className={input} /></div>
             </div>
           </>
         ) : type === "assignment" ? (
@@ -265,7 +304,7 @@ export function AssignForm({ canTest = false }: { canTest?: boolean }) {
 
         <label className="flex items-center gap-2 text-xs text-fog"><input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} /> Notify students in-portal</label>
         {msg ? <p className="rounded-lg border border-cyan/30 bg-cyan/5 px-3 py-2 text-xs text-ice">{msg}</p> : null}
-        <button onClick={submit} disabled={busy || !classId || !title.trim()} className="btn-ghost !px-4 !py-2 text-sm">{busy ? "Working…" : type === "examlab" ? "Allocate to class" : `Post ${type}`}</button>
+        <button onClick={submit} disabled={busy || !title.trim() || (type === "examlab" ? (exTarget === "class" ? !exClassId : exTarget === "school" ? !exSchool : exTarget === "individual" ? !exStudentEmail.trim() : false) : !classId)} className="btn-ghost !px-4 !py-2 text-sm">{busy ? "Working…" : type === "examlab" ? "Allocate" : `Post ${type}`}</button>
         {posted ? <p className="text-[11px] text-dust">Posted. Switch to the <b className="text-cyan">Attachments</b> tab to add files, or start a new one.</p> : null}
       </div>
       </>

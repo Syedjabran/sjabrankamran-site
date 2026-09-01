@@ -7,58 +7,75 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 /**
- * POST — allocate an Exam Lab drill to a class.
- * body: { class_id, mode, content, title, instructions?, duration_min?, due_at?, starts_at?, notify? }
- *   mode: assignment_help | assignment_nohelp | test  (test = super-admin only)
+ * POST — allocate an Exam Lab drill to a target.
+ * body: {
+ *   target_type: "class"|"school"|"network"|"individual",
+ *   class_ids?: string[],        // for class/school/network (resolved by the client)
+ *   student_email?: string,      // for individual
+ *   scope_label?: string,        // human label shown to the student
+ *   mode, content, title, instructions?, duration_min?, due_at?, starts_at?, notify?
+ * }
+ *   mode: assignment_help | assignment_nohelp | test  (test = super_admin/admin/TA)
  */
 export async function POST(req: Request) {
   const staff = await requireStaff();
   if (!staff) return NextResponse.json({ error: "Staff only." }, { status: 403 });
 
   const b = (await req.json().catch(() => null)) as {
-    class_id?: string; mode?: string; content?: AllocContent; title?: string;
+    target_type?: string; class_ids?: string[]; student_email?: string; scope_label?: string;
+    mode?: string; content?: AllocContent; title?: string;
     instructions?: string; duration_min?: number; due_at?: string; starts_at?: string; notify?: boolean;
   } | null;
-  if (!b?.class_id || !b.title?.trim() || !b.mode || !b.content) {
-    return NextResponse.json({ error: "class_id, title, mode and content are required." }, { status: 400 });
+  if (!b?.title?.trim() || !b.mode || !b.content) {
+    return NextResponse.json({ error: "title, mode and content are required." }, { status: 400 });
   }
   const mode = b.mode as AllocMode;
   if (!["assignment_help", "assignment_nohelp", "test"].includes(mode)) {
     return NextResponse.json({ error: "Invalid mode." }, { status: 400 });
   }
-  // Proctored tests may be set by super-admin, admin or teaching-assistant.
   const canSetTest = staff.roles.some((r) => ["super_admin", "admin", "teaching_assistant"].includes(r));
   if (mode === "test" && !canSetTest) {
     return NextResponse.json({ error: "You are not allowed to allocate a proctored test." }, { status: 403 });
   }
 
-  // Validate content shape.
   const c = b.content;
   if (c.type === "paper") { if (!c.code) return NextResponse.json({ error: "Choose a past paper." }, { status: 400 }); }
   else if (c.type === "drill") { if (!c.paperType || !Array.isArray(c.topics) || !c.count) return NextResponse.json({ error: "Incomplete drill spec." }, { status: 400 }); }
   else if (c.type !== "daily") return NextResponse.json({ error: "Invalid content type." }, { status: 400 });
 
   const sb = createAdminClient();
-  const [{ data: enr }, { data: cls }] = await Promise.all([
-    sb.from("edu_enrolments").select("student_id, edu_students(profile_id)").eq("class_id", b.class_id).eq("status", "active"),
-    sb.from("edu_classes").select("name").eq("id", b.class_id).maybeSingle(),
-  ]);
-  const rows = (enr || []) as unknown as { edu_students?: { profile_id?: string } }[];
-  const uids = rows.map((r) => r.edu_students?.profile_id).filter((x): x is string => !!x);
-  if (!uids.length) return NextResponse.json({ error: "No active students in that class." }, { status: 400 });
+  const tt = b.target_type || "class";
+  let uids: string[] = [];
+
+  if (tt === "individual") {
+    const email = (b.student_email || "").trim().toLowerCase();
+    if (!email) return NextResponse.json({ error: "Enter the student's email." }, { status: 400 });
+    const { data: prof } = await sb.from("edu_profiles").select("id").ilike("email", email).maybeSingle();
+    if (!prof?.id) return NextResponse.json({ error: "No student found with that email." }, { status: 400 });
+    uids = [prof.id as string];
+  } else {
+    const ids = (b.class_ids || []).filter(Boolean);
+    if (!ids.length) return NextResponse.json({ error: "No classes in the selected target." }, { status: 400 });
+    const { data: enr } = await sb
+      .from("edu_enrolments")
+      .select("edu_students(profile_id)")
+      .in("class_id", ids)
+      .eq("status", "active");
+    const rows = (enr || []) as unknown as { edu_students?: { profile_id?: string } }[];
+    uids = [...new Set(rows.map((r) => r.edu_students?.profile_id).filter((x): x is string => !!x))];
+  }
+  if (!uids.length) return NextResponse.json({ error: "No active students in the selected target." }, { status: 400 });
 
   const id = newAllocId();
   await allocateToStudents(uids, {
-    id,
-    mode,
-    content: c,
+    id, mode, content: c,
     title: b.title.trim().slice(0, 160),
     instructions: (b.instructions || "").trim().slice(0, 2000) || null,
     durationMin: b.duration_min && b.duration_min > 0 ? Math.round(b.duration_min) : null,
     dueAt: b.due_at ? new Date(b.due_at).toISOString() : null,
     startsAt: b.starts_at ? new Date(b.starts_at).toISOString() : null,
-    classId: b.class_id,
-    className: (cls as { name?: string } | null)?.name || null,
+    classId: tt === "class" ? (b.class_ids?.[0] || null) : null,
+    className: (b.scope_label || "").slice(0, 120) || null,
     createdBy: staff.id,
     createdByName: staff.fullName || staff.email,
   });
@@ -74,6 +91,6 @@ export async function POST(req: Request) {
     } catch { /* best-effort */ }
   }
 
-  await audit(staff.id, "exam.allocate", "exam_allocation", id, { class_id: b.class_id, mode, students: uids.length, title: b.title.trim() });
-  return NextResponse.json({ ok: true, id, students: uids.length, mode }, { status: 200 });
+  await audit(staff.id, "exam.allocate", "exam_allocation", id, { target: tt, mode, students: uids.length, title: b.title.trim() });
+  return NextResponse.json({ ok: true, id, students: uids.length, mode, target: tt }, { status: 200 });
 }

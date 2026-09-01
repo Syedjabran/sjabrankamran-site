@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { FileText, Layers, Play, Zap, Library, Coffee, ShieldAlert, Video, ClipboardList, Lock, CheckCircle2, Send, Loader2 } from "lucide-react";
+import { FileText, Layers, Play, Zap, Library, Coffee, ShieldAlert, Video, ClipboardList, Lock, CheckCircle2, Send, Loader2, Clock } from "lucide-react";
 import { IMAGE_BANK, IMAGE_PAPERS, type ImgQuestion } from "@/lib/exam-lab/image-bank";
 import { PaperRunner, type AttemptKind } from "./paper-runner";
 import type { GuardMode } from "./use-exam-guard";
@@ -26,7 +26,7 @@ type ActiveMeta = { mode: "paper" | "drill"; code?: string; ref?: string; paperT
 type Active = { questions: ImgQuestion[]; title: string; subtitle?: string; duration: number; timed: boolean; logMeta: ActiveMeta; integrity: GuardMode; kind: AttemptKind; help: boolean; attemptId?: string; allocationId?: string | null };
 
 type AllocContent = { type: "paper"; code: string } | { type: "drill"; paperType: "P1" | "P2" | "P4"; topics: string[]; levels: ("LOT" | "HOT")[]; count: number } | { type: "daily" };
-type Allocation = { id: string; attemptId: string; mode: "assignment_help" | "assignment_nohelp" | "test"; content: AllocContent; title: string; instructions: string | null; durationMin: number | null; dueAt: string | null; className: string | null; status: string };
+type Allocation = { id: string; attemptId: string; mode: "assignment_help" | "assignment_nohelp" | "test"; content: AllocContent; title: string; instructions: string | null; durationMin: number | null; dueAt: string | null; startsAt: string | null; className: string | null; status: string };
 function allocCfg(mode: Allocation["mode"]): { integrity: GuardMode; kind: AttemptKind; help: boolean } {
   if (mode === "test") return { integrity: "strict", kind: "test", help: false };
   if (mode === "assignment_nohelp") return { integrity: "standard", kind: "assignment", help: false };
@@ -65,6 +65,8 @@ function AssignedBoard({ allocations, onStart }: { allocations: Allocation[]; on
         {allocations.map((al) => {
           const launchable = ["assigned", "unlocked", "cancelled"].includes(al.status);
           const due = al.dueAt ? new Date(al.dueAt) : null;
+          const opens = al.startsAt ? new Date(al.startsAt) : null;
+          const scheduled = !!opens && opens.getTime() > Date.now();
           return (
             <li key={al.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-space/60 px-3.5 py-2.5">
               <div className="min-w-0 flex-1">
@@ -72,6 +74,7 @@ function AssignedBoard({ allocations, onStart }: { allocations: Allocation[]; on
                 <div className="mt-0.5 flex flex-wrap items-center gap-2 font-mono text-[10px] text-dust">
                   <span className={"rounded-full border px-2 py-0.5 uppercase " + accent[al.mode]}>{ALLOC_LABEL[al.mode]}</span>
                   {al.className ? <span>{al.className}</span> : null}
+                  {opens ? <span>opens {opens.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span> : null}
                   {due ? <span>due {due.toLocaleDateString("en-GB")}</span> : null}
                 </div>
               </div>
@@ -80,6 +83,8 @@ function AssignedBoard({ allocations, onStart }: { allocations: Allocation[]; on
               ) : al.status === "locked" ? (
                 sent[al.id] ? <span className="inline-flex items-center gap-1 text-xs text-amber-300"><Lock size={13} /> Review requested</span>
                 : <button onClick={() => requestReview(al.id)} disabled={busy === al.id} className="btn-ghost !px-3 !py-1.5 text-xs">{busy === al.id ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Locked — request review</button>
+              ) : scheduled ? (
+                <span className="inline-flex items-center gap-1 text-xs text-dust"><Clock size={13} /> Opens {opens!.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
               ) : (
                 <button onClick={() => onStart(al)} disabled={!launchable} className={"!px-3.5 !py-1.5 text-xs " + (al.mode === "test" ? "btn-primary" : "btn-primary")}>
                   {al.mode === "test" ? <Video size={13} /> : <Play size={13} />} {al.status === "unlocked" ? "Re-sit" : al.mode === "test" ? "Begin test" : "Start"}
