@@ -217,6 +217,7 @@ function AcademicsSection({ perf }: { perf: Awaited<ReturnType<typeof getMyPerfo
             <div className="font-mono text-xs text-fog">
               <p><span className="text-emerald2">{att.present}</span> present</p>
               <p><span className="text-signal">{att.late}</span> late</p>
+              <p><span className="text-cyan">{att.online}</span> online</p>
               <p><span className="text-magenta">{att.absent}</span> absent</p>
               <p className="mt-1 text-dust">of {att.total} lessons</p>
             </div>
@@ -246,7 +247,7 @@ function AcademicsSection({ perf }: { perf: Awaited<ReturnType<typeof getMyPerfo
           <p className="mb-3 flex items-center gap-2 font-mono text-[11px] uppercase tracking-widest text-fog"><CalendarCheck size={13} className="text-cyan" /> Attendance log</p>
           <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
             {perf.attendanceLog.map((r, i) => {
-              const c = r.status === "present" ? "text-emerald2 border-emerald2/40" : r.status === "late" ? "text-signal border-signal/40" : "text-magenta border-magenta/40";
+              const c = r.status === "present" ? "text-emerald2 border-emerald2/40" : r.status === "late" ? "text-signal border-signal/40" : r.status === "online" ? "text-cyan border-cyan/40" : "text-magenta border-magenta/40";
               return (
                 <div key={i} className="flex items-center gap-3 rounded-lg border border-white/[0.05] px-3 py-1.5 text-xs">
                   <span className="font-mono text-dust">{r.date ? new Date(r.date).toLocaleDateString("en-GB", { weekday: "short", day: "2-digit", month: "short" }) : "—"}</span>

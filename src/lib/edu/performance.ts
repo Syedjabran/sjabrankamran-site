@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 
-export type AttendanceSummary = { total: number; present: number; late: number; absent: number; pct: number };
+export type AttendanceSummary = { total: number; present: number; late: number; online: number; absent: number; pct: number };
 export type AttendanceLogRow = { date: string | null; status: string; title: string | null };
 export type ResultRow = { title: string; kind: string; score: number | null; total: number | null; grade: string | null; pct: number | null; date: string | null };
 export type EduPerformance = {
@@ -46,9 +46,10 @@ export async function getMyPerformance(): Promise<EduPerformance> {
     if (att && att.length) {
       const present = att.filter((r) => r.status === "present").length;
       const late = att.filter((r) => r.status === "late").length;
+      const online = att.filter((r) => r.status === "online").length;
       const absent = att.filter((r) => r.status === "absent" || r.status === "excused").length;
       const total = att.length;
-      attendance = { total, present, late, absent, pct: total ? Math.round(((present + late) / total) * 100) : 0 };
+      attendance = { total, present, late, online, absent, pct: total ? Math.round(((present + late + online) / total) * 100) : 0 };
       attendanceLog = att.map((r) => {
         const l = (r as { edu_lessons?: { lesson_date?: string; title?: string } }).edu_lessons || {};
         return { date: l.lesson_date || (r as { recorded_at?: string }).recorded_at || null, status: r.status as string, title: l.title || null };

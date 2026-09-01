@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireStaff, isSuperAdmin, audit } from "@/lib/portal/admin";
+import { requireStaff, audit } from "@/lib/portal/admin";
 import { allocateToStudents, newAllocId, type AllocMode, type AllocContent } from "@/lib/exam-lab/allocations";
 
 export const runtime = "nodejs";
@@ -26,8 +26,10 @@ export async function POST(req: Request) {
   if (!["assignment_help", "assignment_nohelp", "test"].includes(mode)) {
     return NextResponse.json({ error: "Invalid mode." }, { status: 400 });
   }
-  if (mode === "test" && !isSuperAdmin(staff)) {
-    return NextResponse.json({ error: "Only a super-admin can allocate a proctored test." }, { status: 403 });
+  // Proctored tests may be set by super-admin, admin or teaching-assistant.
+  const canSetTest = staff.roles.some((r) => ["super_admin", "admin", "teaching_assistant"].includes(r));
+  if (mode === "test" && !canSetTest) {
+    return NextResponse.json({ error: "You are not allowed to allocate a proctored test." }, { status: 403 });
   }
 
   // Validate content shape.

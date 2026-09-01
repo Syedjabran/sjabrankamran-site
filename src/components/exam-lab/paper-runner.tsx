@@ -73,7 +73,7 @@ export function PaperRunner({
   // ---- integrity / forensic state ----
   const revealsRef = useRef(0);
   const flagsRef = useRef(0);
-  const [camStatus, setCamStatus] = useState<{ ready: boolean; faceOk: boolean } | null>(null);
+  const [camStatus, setCamStatus] = useState<{ ready: boolean; faceOk: boolean; calibrated?: boolean } | null>(null);
   const [consent, setConsent] = useState(false);
   const attemptPostedRef = useRef(false);
 
@@ -246,7 +246,7 @@ export function PaperRunner({
   }, [running]);
 
   async function beginStrict() {
-    if (!consent || !camStatus?.ready) return;
+    if (!consent || !camStatus?.calibrated) return;
     // Open the forensic session, then start the clock.
     postProctor({ action: "start", kind, integrity, cameraConsent: true, meta: { title, subtitle, code: logMeta?.code, ref: logMeta?.ref, paperType: logMeta?.paperType } });
     try { await document.documentElement.requestFullscreen?.(); } catch { /* optional */ }
@@ -310,7 +310,7 @@ export function PaperRunner({
   if (strict && !begun && !voided) {
     return (
       <div ref={topRef}>
-        {camPhase !== "off" && <ProctorCamera phase="preview" onStatus={(s) => setCamStatus({ ready: s.ready, faceOk: s.faceOk })} />}
+        {camPhase !== "off" && <ProctorCamera phase="preview" onStatus={(s) => setCamStatus({ ready: s.ready, faceOk: s.faceOk, calibrated: s.calibrated })} />}
         <div className="mx-auto max-w-lg rounded-3xl border border-cyan/30 bg-gradient-to-b from-space/80 to-abyss p-7">
           <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl border border-cyan/40 bg-cyan/10 text-cyan"><Video size={26} /></div>
           <h3 className="text-center font-display text-xl font-bold text-ice">Proctored test — camera required</h3>
@@ -320,9 +320,18 @@ export function PaperRunner({
             <p className="flex items-start gap-2"><ShieldAlert size={16} className="mt-0.5 shrink-0 text-amber-300" /> The test <b>cancels and locks</b> if you leave full-screen, switch tabs, minimise, split-screen, screenshot, or if another person appears / you leave the frame. A locked test can only be re-opened by a super-admin after review.</p>
             <p className="flex items-start gap-2"><Lock size={16} className="mt-0.5 shrink-0 text-cyan" /> Mark schemes are locked during the test.</p>
           </div>
-          <div className={"mt-4 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs " + (camStatus?.ready ? "border-emerald2/40 text-emerald2" : "border-amber-400/40 text-amber-200")}>
-            {camStatus?.ready ? <ScanText size={14} /> : <Loader2 size={14} className="animate-spin" />}
-            {camStatus?.ready ? "Camera on — you're in frame." : "Waiting for camera… allow access in your browser."}
+          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-sm text-fog">
+            <p className="mb-1 font-semibold text-ice">Get in position before you start</p>
+            <ol className="list-decimal space-y-1 pl-5 text-[13px]">
+              <li>Sit centred, face the screen in good light, only <b>you</b> in frame.</li>
+              <li>Put away phones and notes — the proctor scans for them.</li>
+              <li>Tap <b>“Calibrate my position”</b> on the camera window until it shows <b className="text-emerald2">Position approved ✓</b>.</li>
+              <li>Looking <b>down at your desk to write</b> your answer script is fine — that won’t be flagged. Turning left/right/up will warn you.</li>
+            </ol>
+          </div>
+          <div className={"mt-3 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs " + (camStatus?.calibrated ? "border-emerald2/40 text-emerald2" : "border-amber-400/40 text-amber-200")}>
+            {camStatus?.calibrated ? <ScanText size={14} /> : <Loader2 size={14} className="animate-spin" />}
+            {camStatus?.calibrated ? "Position approved — you're ready to begin." : camStatus?.ready ? "Camera on — centre your face and tap Calibrate on the camera window." : "Waiting for camera… allow access in your browser."}
           </div>
           <label className="mt-4 flex cursor-pointer items-start gap-2.5 text-sm text-fog">
             <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5 h-4 w-4 accent-cyan" />
@@ -330,7 +339,7 @@ export function PaperRunner({
           </label>
           <div className="mt-5 flex items-center justify-center gap-3">
             {onExit && <button onClick={onExit} className="btn-ghost !px-4 !py-2 text-sm"><ArrowLeft size={14} /> Not now</button>}
-            <button onClick={beginStrict} disabled={!consent || !camStatus?.ready} className="btn-primary disabled:opacity-40"><Video size={15} /> Begin test</button>
+            <button onClick={beginStrict} disabled={!consent || !camStatus?.calibrated} className="btn-primary disabled:opacity-40"><Video size={15} /> Begin test</button>
           </div>
         </div>
       </div>
@@ -363,7 +372,7 @@ export function PaperRunner({
       {camPhase === "live" && (
         <ProctorCamera
           phase="live"
-          onStatus={(s) => setCamStatus({ ready: s.ready, faceOk: s.faceOk })}
+          onStatus={(s) => setCamStatus({ ready: s.ready, faceOk: s.faceOk, calibrated: s.calibrated })}
           onEvent={(ev) => handleEvent(ev, "camera")}
           onSnapshot={(dataUrl, reason) => postProctor({ action: "snapshot", dataUrl, reason })}
         />

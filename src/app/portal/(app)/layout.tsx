@@ -46,6 +46,7 @@ function navFor(roles: EduRole[]): NavSection[] {
   if (admin || roles.includes("teacher") || roles.includes("teaching_assistant")) {
     adminItems.push({ href: "/portal/teach", label: "My Classes" });
   }
+  if (admin || roles.includes("teaching_assistant")) adminItems.push({ href: "/portal/exam-lab", label: "Exam Lab" });
   if (staff) adminItems.push({ href: "/portal/studio", label: "Physics Studio" });
   // Available to everyone.
   adminItems.push({ href: "/portal/resources", label: "Physics Resources" });

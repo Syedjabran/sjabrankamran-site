@@ -1,19 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, MicOff, Check, Save, CalendarDays, Users, CircleCheck, CircleX, Clock3, RotateCcw } from "lucide-react";
+import { Mic, MicOff, Check, Save, CalendarDays, Users, CircleCheck, CircleX, Clock3, RotateCcw, Wifi } from "lucide-react";
 
 type ClassItem = { id: string; name: string; school: string; section: string | null; students: number };
 type RosterRow = { studentId: string; name: string; firstName: string };
-type Status = "present" | "absent" | "late" | "excused" | "";
+type Status = "present" | "absent" | "late" | "excused" | "online" | "";
 
 const STATUS_META: Record<string, { label: string; cls: string; icon: React.ReactNode }> = {
   present: { label: "Present", cls: "border-emerald2/50 text-emerald2 bg-emerald2/10", icon: <CircleCheck size={13} /> },
   late: { label: "Late", cls: "border-signal/50 text-signal bg-signal/10", icon: <Clock3 size={13} /> },
+  online: { label: "Online", cls: "border-cyan/50 text-cyan bg-cyan/10", icon: <Wifi size={13} /> },
   absent: { label: "Absent", cls: "border-magenta/50 text-magenta bg-magenta/10", icon: <CircleX size={13} /> },
   excused: { label: "Excused", cls: "border-white/20 text-dust bg-white/[0.04]", icon: <Check size={13} /> },
 };
-const CYCLE: Status[] = ["present", "late", "absent", "excused", ""];
+const CYCLE: Status[] = ["present", "late", "online", "absent", "excused", ""];
 
 async function api(url: string, opts?: RequestInit) {
   const r = await fetch(url, { ...opts, headers: { "content-type": "application/json", ...(opts?.headers || {}) } });
@@ -27,6 +28,7 @@ function statusFromWords(text: string): Status | null {
   const t = " " + text.toLowerCase() + " ";
   if (/\b(absent|away|missing|not here|nope|no)\b/.test(t)) return "absent";
   if (/\b(late|tardy)\b/.test(t)) return "late";
+  if (/\b(online|remote|zoom|virtual)\b/.test(t)) return "online";
   if (/\b(excused|leave|sick)\b/.test(t)) return "excused";
   if (/\b(present|here|yes|yep|in|hazir)\b/.test(t)) return "present";
   return null;
@@ -278,7 +280,7 @@ export function VoiceAttendance() {
   }
 
   const counts = useMemo(() => {
-    const c = { present: 0, late: 0, absent: 0, excused: 0, unset: 0 };
+    const c = { present: 0, late: 0, online: 0, absent: 0, excused: 0, unset: 0 };
     for (const r of roster) { const s = marks[r.studentId] || ""; if (s) c[s as keyof typeof c]++; else c.unset++; }
     return c;
   }, [roster, marks]);
@@ -340,6 +342,7 @@ export function VoiceAttendance() {
           <div className="flex flex-wrap gap-2 text-xs text-dust">
             <span className="text-emerald2">{counts.present} present</span> ·
             <span className="text-signal">{counts.late} late</span> ·
+            <span className="text-cyan">{counts.online} online</span> ·
             <span className="text-magenta">{counts.absent} absent</span> ·
             <span className="text-dust">{counts.excused} excused</span> ·
             <span>{counts.unset} unmarked</span>
@@ -353,7 +356,7 @@ export function VoiceAttendance() {
                 <li key={r.studentId} className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-space/60 px-3 py-2">
                   <button onClick={() => cycle(r.studentId)} className="min-w-0 flex-1 truncate text-left text-sm text-fog hover:text-ice" title="Tap to cycle status">{r.name}</button>
                   <div className="flex shrink-0 gap-1">
-                    {(["present", "late", "absent"] as Status[]).map((st) => (
+                    {(["present", "late", "online", "absent"] as Status[]).map((st) => (
                       <button key={st} onClick={() => setStatus(r.studentId, st)} title={STATUS_META[st].label}
                         className={"grid h-7 w-7 place-items-center rounded-lg border " + (s === st ? STATUS_META[st].cls : "border-white/10 text-dust hover:text-ice")}>
                         {STATUS_META[st].icon}

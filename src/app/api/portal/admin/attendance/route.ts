@@ -4,7 +4,7 @@ import { requireStaff, audit } from "@/lib/portal/admin";
 
 export const runtime = "nodejs";
 
-const STATUSES = ["present", "absent", "late", "excused"] as const;
+const STATUSES = ["present", "absent", "late", "excused", "online"] as const;
 
 /** Ensure a lesson exists for (class, date) so attendance rows have a parent. */
 async function ensureLesson(sb: ReturnType<typeof createAdminClient>, classId: string, date: string): Promise<string | null> {
@@ -59,7 +59,24 @@ export async function POST(req: Request) {
   if (!rows.length) return NextResponse.json({ error: "No valid marks." }, { status: 400 });
   const sb = createAdminClient();
   const { error } = await sb.from("edu_attendance").upsert(rows, { onConflict: "lesson_id,student_id" });
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error) {
+    // 'online' is a new enum value that needs a one-time DB migration
+    // (ALTER TYPE edu_attendance_status ADD VALUE 'online'). Until it's run,
+    // still save the present/late/absent/excused marks rather than lose them.
+    const hasOnline = rows.some((r) => r.status === "online");
+    if (hasOnline) {
+      const safe = rows.filter((r) => r.status !== "online");
+      if (safe.length) {
+        const retry = await sb.from("edu_attendance").upsert(safe, { onConflict: "lesson_id,student_id" });
+        if (!retry.error) {
+          await audit(staff.id, "attendance.save", "edu_lessons", b.lessonId, { count: safe.length, online_skipped: rows.length - safe.length });
+          return NextResponse.json({ ok: true, saved: safe.length, warning: "‘Online’ needs a one-time DB migration before it can be saved — other marks were saved." }, { status: 200 });
+        }
+      }
+      return NextResponse.json({ error: "‘Online’ attendance needs a one-time DB migration (ALTER TYPE edu_attendance_status ADD VALUE 'online')." }, { status: 400 });
+    }
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
   await audit(staff.id, "attendance.save", "edu_lessons", b.lessonId, { count: rows.length });
   return NextResponse.json({ ok: true, saved: rows.length }, { status: 200 });
 }

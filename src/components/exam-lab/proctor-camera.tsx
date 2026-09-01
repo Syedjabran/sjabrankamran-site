@@ -1,30 +1,40 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Camera, ScanFace, ShieldAlert, Loader2, UserX, Users } from "lucide-react";
+import { Camera, ScanFace, ShieldAlert, Loader2, UserX, Users, Crosshair, CheckCircle2, Smartphone } from "lucide-react";
 import type { GuardEvent } from "./use-exam-guard";
 
 /**
  * On-device exam proctor. PRIVACY-FIRST: the webcam stream never leaves the
- * browser and no video is stored. Face/attention analysis runs locally via
- * MediaPipe FaceLandmarker (loaded from CDN at runtime; if it can't load the
- * camera still shows a live "scanning" preview and the window/tab guard keeps
- * protecting the test). A single still JPEG snapshot is emitted to the parent
- * ONLY on a violation, for the super-admin forensic record.
+ * browser and no video is stored. Face/attention + object analysis run locally
+ * via MediaPipe (FaceLandmarker + ObjectDetector, loaded from CDN at runtime;
+ * graceful fallback keeps the window/tab guard protecting the test if a model
+ * can't load). A single still JPEG snapshot is emitted to the parent on each
+ * warning / violation for the super-admin forensic record.
  *
- * Signals emitted via onEvent (source:"camera"):
- *   absence (no face)      → warn, then TERMINAL if it persists
- *   multiface (2+ faces)   → TERMINAL (someone else in frame)
- *   lookaway               → non-terminal flag (eyes/face off-screen)
- *   camera_off / degraded  → non-terminal system note
+ * Escalation (per the brief): a sustained malpractice signal raises an on-screen
+ * WARNING with a soft beep + snapshot. TWO warnings → a SIREN + terminal event
+ * that cancels & LOCKS the test (student must justify to a super-admin).
+ *
+ * Legitimate writing posture (head down at the desk to solve a hard-copy answer
+ * script) is WHITELISTED after calibration and never counts as a violation.
+ * Turning LEFT / RIGHT / UP for a sustained span does.
+ *
+ * Signals: absence (no face) · multiface (2+ people) · headturn (left/right/up)
+ * · material (phone / laptop / TV in frame).
  */
 
-type Status = { ready: boolean; faceOk: boolean; faces: number; message: string; degraded: boolean };
+type Status = { ready: boolean; faceOk: boolean; faces: number; message: string; degraded: boolean; calibrated: boolean };
 
 const MP_VERSION = "0.10.20";
 const MP_MODULE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}/vision_bundle.mjs`;
 const MP_WASM = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}/wasm`;
-const MP_MODEL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+const MP_FACE = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+const MP_OBJECT = "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite";
+
+// COCO classes we treat as "helping material" / second screens.
+const MATERIAL = new Set(["cell phone", "laptop", "tv", "remote"]);
+const MAX_WARNINGS = 2;
 
 // Import a remote ES module without the bundler trying to resolve it at build.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -45,42 +55,32 @@ export function ProctorCamera({
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const landmarkerRef = useRef<any>(null);
+  const faceRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const objRef = useRef<any>(null);
   const rafRef = useRef<number>(0);
   const lastPointsRef = useRef<{ x: number; y: number }[]>([]);
+  const baselineRef = useRef<{ nx: number; ny: number } | null>(null);
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const audioRef = useRef<any>(null);
 
-  const [status, setStatus] = useState<Status>({ ready: false, faceOk: false, faces: 0, message: "Starting camera…", degraded: false });
+  const [status, setStatus] = useState<Status>({ ready: false, faceOk: false, faces: 0, message: "Starting camera…", degraded: false, calibrated: false });
+  const [warnBanner, setWarnBanner] = useState<{ n: number; msg: string } | null>(null);
+  const warningsRef = useRef(0);
   const statusCb = useRef(onStatus); statusCb.current = onStatus;
   const eventCb = useRef(onEvent); eventCb.current = onEvent;
   const snapCb = useRef(onSnapshot); snapCb.current = onSnapshot;
 
   const push = useCallback((s: Partial<Status>) => {
-    setStatus((prev) => {
-      const next = { ...prev, ...s };
-      try { statusCb.current?.(next); } catch { /* ignore */ }
-      return next;
-    });
-  }, []);
-
-  // Cooldown so we don't spam identical events / snapshots.
-  const lastEmit = useRef<Record<string, number>>({});
-  const emit = useCallback((type: GuardEvent["type"] | string, reason: string, terminal: boolean, snapshot = false) => {
-    const now = Date.now();
-    if (!terminal && now - (lastEmit.current[type] || 0) < 8000) return; // throttle warnings
-    lastEmit.current[type] = now;
-    try { eventCb.current?.({ type: type as GuardEvent["type"], reason, terminal, at: now }); } catch { /* ignore */ }
-    if (snapshot) {
-      const url = grabFrame();
-      if (url) { try { snapCb.current?.(url, reason); } catch { /* ignore */ } }
-    }
+    setStatus((prev) => { const next = { ...prev, ...s }; try { statusCb.current?.(next); } catch { /* ignore */ } return next; });
   }, []);
 
   const grabFrame = useCallback((): string | null => {
     const v = videoRef.current;
     if (!v || !v.videoWidth) return null;
-    const w = 320, h = Math.round((v.videoHeight / v.videoWidth) * 320) || 240;
+    const w = 360, h = Math.round((v.videoHeight / v.videoWidth) * 360) || 270;
     const c = document.createElement("canvas");
     c.width = w; c.height = h;
     const ctx = c.getContext("2d");
@@ -89,49 +89,108 @@ export function ProctorCamera({
     try { return c.toDataURL("image/jpeg", 0.6); } catch { return null; }
   }, []);
 
-  // ---- camera + model lifecycle ----
+  // ---- WebAudio beep / siren (no external asset) ----
+  const tone = useCallback((kind: "beep" | "siren") => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const AC = (window.AudioContext || (window as any).webkitAudioContext);
+      if (!AC) return;
+      if (!audioRef.current) audioRef.current = new AC();
+      const ctx = audioRef.current; if (ctx.state === "suspended") ctx.resume().catch(() => {});
+      const now = ctx.currentTime;
+      if (kind === "beep") {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = "sine"; o.frequency.setValueAtTime(880, now);
+        g.gain.setValueAtTime(0.0001, now); g.gain.exponentialRampToValueAtTime(0.25, now + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+        o.connect(g); g.connect(ctx.destination); o.start(now); o.stop(now + 0.36);
+      } else {
+        // rising/falling siren for ~2.2s
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = "sawtooth";
+        for (let i = 0; i < 5; i++) { const t = now + i * 0.44; o.frequency.setValueAtTime(650, t); o.frequency.linearRampToValueAtTime(1180, t + 0.22); o.frequency.linearRampToValueAtTime(650, t + 0.44); }
+        g.gain.setValueAtTime(0.0001, now); g.gain.exponentialRampToValueAtTime(0.3, now + 0.05); g.gain.setValueAtTime(0.3, now + 2.0); g.gain.exponentialRampToValueAtTime(0.0001, now + 2.2);
+        o.connect(g); g.connect(ctx.destination); o.start(now); o.stop(now + 2.25);
+      }
+    } catch { /* audio optional */ }
+  }, []);
+
+  const emit = useCallback((type: string, reason: string, terminal: boolean) => {
+    try { eventCb.current?.({ type: type as GuardEvent["type"], reason, terminal, at: Date.now() }); } catch { /* ignore */ }
+  }, []);
+  const snap = useCallback((reason: string) => {
+    const url = grabFrame();
+    if (url) { try { snapCb.current?.(url, reason); } catch { /* ignore */ } }
+  }, [grabFrame]);
+
+  // A sustained malpractice episode → escalate.
+  const escalate = useCallback((type: string, reason: string) => {
+    warningsRef.current += 1;
+    const n = warningsRef.current;
+    snap(reason);
+    if (n >= MAX_WARNINGS) {
+      tone("siren");
+      setWarnBanner({ n, msg: reason });
+      emit(type, `${reason} (final warning — test locked after ${n} warnings).`, true);
+    } else {
+      tone("beep");
+      setWarnBanner({ n, msg: reason });
+      emit(type, `${reason} (warning ${n} of ${MAX_WARNINGS}).`, false);
+      setTimeout(() => setWarnBanner((b) => (b && b.n === n ? null : b)), 4500);
+    }
+  }, [emit, snap, tone]);
+
+  const calibrate = useCallback(() => {
+    const pts = lastPointsRef.current;
+    if (pts.length < 100) return;
+    let mnX = 1, mxX = 0, mnY = 1, mxY = 0;
+    for (const p of pts) { if (p.x < mnX) mnX = p.x; if (p.x > mxX) mxX = p.x; if (p.y < mnY) mnY = p.y; if (p.y > mxY) mxY = p.y; }
+    const nose = pts[1] || pts[0];
+    const cx = (mnX + mxX) / 2, cy = (mnY + mxY) / 2, fw = Math.max(0.001, mxX - mnX), fh = Math.max(0.001, mxY - mnY);
+    baselineRef.current = { nx: (nose.x - cx) / fw, ny: (nose.y - cy) / fh };
+    warningsRef.current = 0;
+    push({ calibrated: true, message: "Position approved ✓" });
+  }, [push]);
+
+  // ---- camera + models lifecycle ----
   useEffect(() => {
     if (phase === "off") return;
     let alive = true;
-
     (async () => {
-      // 1) camera
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false,
-        });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
         if (!alive) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
         const v = videoRef.current;
         if (v) { v.srcObject = stream; await v.play().catch(() => {}); }
-        push({ ready: true, message: "Camera on — scanning…" });
+        push({ ready: true, message: "Camera on — centre your face, then calibrate." });
       } catch {
         push({ ready: false, degraded: true, message: "Camera blocked. Allow camera access to sit the test." });
         emit("camera_off", "Camera access was denied or unavailable.", false);
         return;
       }
-
-      // 2) on-device landmarker (best-effort; degrade gracefully)
       try {
         const vision = await dynImport(MP_MODULE);
         const fileset = await vision.FilesetResolver.forVisionTasks(MP_WASM);
-        landmarkerRef.current = await vision.FaceLandmarker.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: MP_MODEL, delegate: "GPU" },
-          runningMode: "VIDEO", numFaces: 2,
-          outputFaceBlendshapes: false, outputFacialTransformationMatrixes: false,
+        faceRef.current = await vision.FaceLandmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: MP_FACE, delegate: "GPU" }, runningMode: "VIDEO", numFaces: 2,
         });
+        try {
+          objRef.current = await vision.ObjectDetector.createFromOptions(fileset, {
+            baseOptions: { modelAssetPath: MP_OBJECT, delegate: "GPU" }, runningMode: "VIDEO", scoreThreshold: 0.45, maxResults: 6,
+          });
+        } catch { objRef.current = null; }
       } catch {
-        landmarkerRef.current = null;
+        faceRef.current = null; objRef.current = null;
         push({ degraded: true, message: "Live camera on (basic monitoring)." });
-        emit("camera_degraded", "Advanced face model unavailable — basic monitoring active.", false);
+        emit("camera_degraded", "Advanced models unavailable — basic monitoring active.", false);
       }
     })();
-
     return () => {
       alive = false;
       cancelAnimationFrame(rafRef.current);
-      try { landmarkerRef.current?.close?.(); } catch { /* ignore */ }
-      landmarkerRef.current = null;
+      try { faceRef.current?.close?.(); } catch { /* ignore */ }
+      try { objRef.current?.close?.(); } catch { /* ignore */ }
+      faceRef.current = null; objRef.current = null;
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
@@ -140,71 +199,57 @@ export function ProctorCamera({
   // ---- analysis + green scan overlay ----
   useEffect(() => {
     if (phase === "off") return;
-
-    let absentSince = 0;
-    let multiSince = 0;
-    let awaySince = 0;
-    let scanY = 0;
-    let lastDetect = 0;
+    let absentSince = 0, multiSince = 0, turnSince = 0, matSince = 0, scanY = 0, lastFace = 0, lastObj = 0;
+    let matPresent = false, matLabel = "";
+    // episode latches so ONE sustained event = ONE warning until it clears
+    const latch = { turn: false, absent: false, multi: false, material: false };
 
     const loop = () => {
-      const v = videoRef.current;
-      const cv = overlayRef.current;
-      const now = performance.now();
+      const v = videoRef.current, cv = overlayRef.current, now = performance.now();
       if (v && cv && v.videoWidth) {
-        const W = cv.width = cv.clientWidth;
-        const H = cv.height = cv.clientHeight;
-        const ctx = cv.getContext("2d");
+        const W = cv.width = cv.clientWidth, H = cv.height = cv.clientHeight, ctx = cv.getContext("2d");
         if (ctx) {
           ctx.clearRect(0, 0, W, H);
-
-          // run detection ~6fps
-          let points: { x: number; y: number }[] = lastPointsRef.current;
+          let points = lastPointsRef.current;
           let faces = points.length ? 1 : 0;
-          if (landmarkerRef.current && now - lastDetect > 160) {
-            lastDetect = now;
+          if (faceRef.current && now - lastFace > 150) {
+            lastFace = now;
             try {
-              const res = landmarkerRef.current.detectForVideo(v, now);
+              const res = faceRef.current.detectForVideo(v, now);
               const list = (res?.faceLandmarks || []) as { x: number; y: number }[][];
-              faces = list.length;
-              points = (list[0] || []).map((p) => ({ x: p.x, y: p.y }));
-              lastPointsRef.current = points;
-              evaluate(faces, points);
+              faces = list.length; points = (list[0] || []).map((p) => ({ x: p.x, y: p.y })); lastPointsRef.current = points;
             } catch { /* transient */ }
-          } else if (!landmarkerRef.current) {
-            faces = 1; // cannot verify without model; presence assumed, guard still protects
+          } else if (!faceRef.current) { faces = 1; }
+          if (objRef.current && now - lastObj > 550) {
+            lastObj = now;
+            try {
+              const od = objRef.current.detectForVideo(v, now);
+              const dets = (od?.detections || []) as { categories: { categoryName: string; score: number }[] }[];
+              const hit = dets.find((d) => d.categories?.[0] && MATERIAL.has(d.categories[0].categoryName));
+              matPresent = !!hit; matLabel = hit?.categories?.[0]?.categoryName || "";
+            } catch { /* transient */ }
           }
+          evaluate(faces, points);
 
           // ---- green scan overlay ----
           scanY = (scanY + 2.2) % H;
-          // grid
-          ctx.strokeStyle = "rgba(45,226,150,0.10)";
-          ctx.lineWidth = 1;
+          ctx.strokeStyle = "rgba(45,226,150,0.10)"; ctx.lineWidth = 1;
           for (let x = 0; x < W; x += 22) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
           for (let y = 0; y < H; y += 22) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-          // moving scan line
           const grad = ctx.createLinearGradient(0, scanY - 18, 0, scanY + 18);
-          grad.addColorStop(0, "rgba(45,226,150,0)");
-          grad.addColorStop(0.5, "rgba(45,226,150,0.55)");
-          grad.addColorStop(1, "rgba(45,226,150,0)");
-          ctx.fillStyle = grad;
-          ctx.fillRect(0, scanY - 18, W, 36);
-          ctx.strokeStyle = "rgba(45,226,150,0.9)";
-          ctx.beginPath(); ctx.moveTo(0, scanY); ctx.lineTo(W, scanY); ctx.stroke();
-
-          // face mesh dots + bbox
+          grad.addColorStop(0, "rgba(45,226,150,0)"); grad.addColorStop(0.5, "rgba(45,226,150,0.55)"); grad.addColorStop(1, "rgba(45,226,150,0)");
+          ctx.fillStyle = grad; ctx.fillRect(0, scanY - 18, W, 36);
+          ctx.strokeStyle = "rgba(45,226,150,0.9)"; ctx.beginPath(); ctx.moveTo(0, scanY); ctx.lineTo(W, scanY); ctx.stroke();
           if (points.length) {
-            let minX = 1, minY = 1, maxX = 0, maxY = 0;
+            let mnX = 1, mnY = 1, mxX = 0, mxY = 0;
             ctx.fillStyle = "rgba(45,226,150,0.85)";
             for (let i = 0; i < points.length; i += 3) {
-              const px = points[i].x * W, py = points[i].y * H;
-              ctx.fillRect(px, py, 1.4, 1.4);
-              if (points[i].x < minX) minX = points[i].x; if (points[i].y < minY) minY = points[i].y;
-              if (points[i].x > maxX) maxX = points[i].x; if (points[i].y > maxY) maxY = points[i].y;
+              const px = points[i].x * W, py = points[i].y * H; ctx.fillRect(px, py, 1.4, 1.4);
+              if (points[i].x < mnX) mnX = points[i].x; if (points[i].y < mnY) mnY = points[i].y;
+              if (points[i].x > mxX) mxX = points[i].x; if (points[i].y > mxY) mxY = points[i].y;
             }
-            ctx.strokeStyle = faces > 1 ? "rgba(240,61,110,0.9)" : "rgba(45,226,150,0.9)";
-            ctx.lineWidth = 2;
-            ctx.strokeRect(minX * W, minY * H, (maxX - minX) * W, (maxY - minY) * H);
+            ctx.strokeStyle = faces > 1 || matPresent ? "rgba(240,61,110,0.9)" : "rgba(45,226,150,0.9)"; ctx.lineWidth = 2;
+            ctx.strokeRect(mnX * W, mnY * H, (mxX - mnX) * W, (mxY - mnY) * H);
           }
         }
       }
@@ -215,83 +260,96 @@ export function ProctorCamera({
       const live = phaseRef.current === "live";
       const t = Date.now();
 
+      // helping material (phone / laptop / TV)
+      if (matPresent) {
+        if (!matSince) matSince = t;
+        if (live && t - matSince > 1500 && !latch.material) { latch.material = true; escalate("material", `Possible helping material detected in frame (${matLabel}).`); }
+        push({ message: `Put away any ${matLabel || "devices/notes"}.` });
+      } else { matSince = 0; latch.material = false; }
+
       // multiple faces
       if (faces > 1) {
         if (!multiSince) multiSince = t;
-        if (live && t - multiSince > 1800) {
-          emit("multiface", "Another person appeared in the camera during the test.", true, true);
-        }
+        if (live && t - multiSince > 1600 && !latch.multi) { latch.multi = true; escalate("multiface", "Another person appeared in the camera."); }
         push({ faces, faceOk: false, message: "More than one face detected." });
-        absentSince = 0; awaySince = 0;
-        return;
+        absentSince = 0; turnSince = 0; return;
       }
-      multiSince = 0;
+      multiSince = 0; latch.multi = false;
 
       // absence
       if (faces === 0) {
         if (!absentSince) absentSince = t;
-        const gone = t - absentSince;
         push({ faces: 0, faceOk: false, message: "No face detected — stay in view." });
-        if (live && gone > 2500) emit("absence_warn", "Your face left the camera view.", false, false);
-        if (live && gone > 5000) emit("absence", "Your face was out of the camera view for too long.", true, true);
+        if (live && t - absentSince > 4500 && !latch.absent) { latch.absent = true; escalate("absence", "Your face left the camera view."); }
         return;
       }
-      absentSince = 0;
+      absentSince = 0; latch.absent = false;
 
-      // look-away (nose offset from face-centre)
-      let minX = 1, maxX = 0, minY = 1, maxY = 0;
-      for (const p of points) { if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x; if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y; }
+      // head pose vs calibrated baseline (down = writing = allowed)
+      let mnX = 1, mxX = 0, mnY = 1, mxY = 0;
+      for (const p of points) { if (p.x < mnX) mnX = p.x; if (p.x > mxX) mxX = p.x; if (p.y < mnY) mnY = p.y; if (p.y > mxY) mxY = p.y; }
       const nose = points[1] || points[0];
-      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-      const fw = Math.max(0.001, maxX - minX), fh = Math.max(0.001, maxY - minY);
-      const offX = Math.abs(nose.x - cx) / fw;
-      const offY = Math.abs(nose.y - cy) / fh;
-      const away = offX > 0.22 || offY > 0.30;
-      if (away) {
-        if (!awaySince) awaySince = t;
-        if (live && t - awaySince > 3500) { emit("lookaway", "You looked away from the screen for a while.", false, true); awaySince = t; }
-        push({ faces: 1, faceOk: false, message: "Keep your eyes on the screen." });
+      const cx = (mnX + mxX) / 2, cy = (mnY + mxY) / 2, fw = Math.max(0.001, mxX - mnX), fh = Math.max(0.001, mxY - mnY);
+      const nx = (nose.x - cx) / fw, ny = (nose.y - cy) / fh;
+      const base = baselineRef.current || { nx, ny };
+      const sideways = Math.abs(nx - base.nx) > 0.20;   // turned left / right
+      const up = (ny - base.ny) < -0.22;                // looking up / away (down is allowed)
+      const off = sideways || up;
+      if (off) {
+        if (!turnSince) turnSince = t;
+        push({ faces: 1, faceOk: false, message: sideways ? "Face forward — don't turn away." : "Eyes on the screen." });
+        if (live && t - turnSince > 3500 && !latch.turn) { latch.turn = true; escalate("headturn", sideways ? "You turned your head away from the screen." : "You looked up/away from the screen."); }
       } else {
-        awaySince = 0;
-        push({ faces: 1, faceOk: true, message: "Face in view — good." });
+        turnSince = 0; latch.turn = false;
+        push({ faces: 1, faceOk: true, message: baselineRef.current ? "Face in view — good." : "Centre your face, then calibrate." });
       }
     };
 
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [phase, emit, push]);
+  }, [phase, escalate, push]);
 
   if (phase === "off") return null;
 
-  const border =
-    status.faces > 1 ? "border-red-500/70" :
-    !status.ready ? "border-amber-400/60" :
-    status.faceOk ? "border-emerald-400/70" : "border-amber-400/70";
+  const border = status.faces > 1 ? "border-red-500/70" : !status.ready ? "border-amber-400/60" : status.faceOk ? "border-emerald-400/70" : "border-amber-400/70";
 
   return (
-    <div className={"el-proctor-cam fixed bottom-4 right-4 z-[60] w-[168px] overflow-hidden rounded-xl border-2 bg-black/80 shadow-2xl backdrop-blur " + border}>
-      <div className="relative aspect-[4/3] w-full">
-        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-        <video ref={videoRef} muted playsInline className="absolute inset-0 h-full w-full -scale-x-100 object-cover" />
-        <canvas ref={overlayRef} className="absolute inset-0 h-full w-full -scale-x-100" />
-        {!status.ready && (
-          <div className="absolute inset-0 grid place-items-center bg-black/60 text-center text-[10px] text-amber-200">
-            <span><Loader2 size={16} className="mx-auto mb-1 animate-spin" />{status.message}</span>
-          </div>
+    <>
+      {warnBanner && (
+        <div className={"fixed inset-x-0 top-0 z-[70] flex items-center justify-center gap-2 px-4 py-2.5 text-center text-sm font-semibold " + (warnBanner.n >= MAX_WARNINGS ? "bg-red-600 text-white" : "bg-amber-500 text-black")}>
+          <ShieldAlert size={16} /> {warnBanner.n >= MAX_WARNINGS ? "TEST LOCKED — " : `WARNING ${warnBanner.n}/${MAX_WARNINGS} — `}{warnBanner.msg}
+        </div>
+      )}
+
+      <div className={"el-proctor-cam fixed bottom-4 right-4 z-[60] w-[176px] overflow-hidden rounded-xl border-2 bg-black/80 shadow-2xl backdrop-blur " + border}>
+        <div className="relative aspect-[4/3] w-full">
+          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+          <video ref={videoRef} muted playsInline className="absolute inset-0 h-full w-full -scale-x-100 object-cover" />
+          <canvas ref={overlayRef} className="absolute inset-0 h-full w-full -scale-x-100" />
+          {!status.ready && (
+            <div className="absolute inset-0 grid place-items-center bg-black/60 text-center text-[10px] text-amber-200">
+              <span><Loader2 size={16} className="mx-auto mb-1 animate-spin" />{status.message}</span>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 px-2 py-1 text-[10px]">
+          {status.faces > 1 ? <Users size={11} className="text-red-400" /> :
+           status.faces === 0 && status.ready ? <UserX size={11} className="text-amber-300" /> :
+           status.faceOk ? <ScanFace size={11} className="text-emerald-400" /> :
+           <Camera size={11} className="text-amber-300" />}
+          <span className={"truncate " + (status.faces > 1 ? "text-red-300" : status.faceOk ? "text-emerald-300" : "text-amber-200")}>
+            {status.degraded && status.ready ? "Live · basic scan" : status.message}
+          </span>
+        </div>
+        {phase === "preview" && status.ready && (
+          <button onClick={calibrate} className={"flex w-full items-center justify-center gap-1.5 border-t border-white/10 px-2 py-1.5 text-[11px] font-semibold " + (status.calibrated ? "bg-emerald-500/15 text-emerald-300" : "bg-cyan-500/15 text-cyan-300")}>
+            {status.calibrated ? <><CheckCircle2 size={12} /> Position approved</> : <><Crosshair size={12} /> Calibrate my position</>}
+          </button>
         )}
+        <div className="flex items-center gap-1 border-t border-white/10 bg-emerald-500/5 px-2 py-0.5 text-[9px] text-emerald-300/80">
+          <ShieldAlert size={9} /> AI proctor · on-device{objRef.current ? <> · <Smartphone size={8} /> object scan</> : null}
+        </div>
       </div>
-      <div className="flex items-center gap-1.5 px-2 py-1 text-[10px]">
-        {status.faces > 1 ? <Users size={11} className="text-red-400" /> :
-         status.faces === 0 && status.ready ? <UserX size={11} className="text-amber-300" /> :
-         status.faceOk ? <ScanFace size={11} className="text-emerald-400" /> :
-         <Camera size={11} className="text-amber-300" />}
-        <span className={"truncate " + (status.faces > 1 ? "text-red-300" : status.faceOk ? "text-emerald-300" : "text-amber-200")}>
-          {status.degraded && status.ready ? "Live · basic scan" : status.message}
-        </span>
-      </div>
-      <div className="flex items-center gap-1 border-t border-white/10 bg-emerald-500/5 px-2 py-0.5 text-[9px] text-emerald-300/80">
-        <ShieldAlert size={9} /> AI proctor · on-device
-      </div>
-    </div>
+    </>
   );
 }
