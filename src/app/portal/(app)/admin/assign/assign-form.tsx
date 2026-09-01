@@ -1,8 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ClipboardList, FlaskConical, Plus, Trash2, Paperclip, Timer, Upload, X, FileText } from "lucide-react";
+import { ClipboardList, FlaskConical, Plus, Trash2, Paperclip, Timer, Upload, X, FileText, Video, Layers } from "lucide-react";
 import { questionSeconds, formatDuration, minutesFromSeconds } from "@/lib/portal/timing";
+import { IMAGE_PAPERS } from "@/lib/exam-lab/image-bank";
+
+const EX_TOPICS_AS = ["Physical quantities & units", "Kinematics", "Dynamics", "Forces, density & pressure", "Work, energy & power", "Deformation of solids", "Waves", "Superposition", "Electricity", "D.C. circuits", "Particle physics"];
+const EX_TOPICS_A2 = ["Circular motion", "Gravitational fields", "Thermal physics", "Ideal gases", "Oscillations", "Electric fields", "Capacitance", "Magnetic fields", "Alternating currents", "Quantum physics", "Nuclear physics", "Astronomy & cosmology"];
+const EX_PAPER_LABEL: Record<string, string> = { P1: "Paper 1", P2: "Paper 2", P4: "Paper 4" };
+function exPaperName(code: string) {
+  const m = code.match(/9702_([smw])(\d\d)_(\d\d)/);
+  const S: Record<string, string> = { s: "May/Jun", w: "Oct/Nov", m: "Feb/Mar" };
+  return m ? `${S[m[1]] || m[1]} 20${m[2]} · v${m[3][1]}` : code;
+}
 
 type ClassItem = { id: string; name: string; school: string; section: string | null; students: number };
 type Q = { prompt: string; marks: number; kind: string; options: string; correct: string; paper: string; difficulty: string; seconds?: number };
@@ -16,10 +26,21 @@ async function api(url: string, opts?: RequestInit) {
   return j;
 }
 
-export function AssignForm() {
+export function AssignForm({ canTest = false }: { canTest?: boolean }) {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [tab, setTab] = useState<"compose" | "attachments">("compose");
-  const [type, setType] = useState<"assignment" | "test">("assignment");
+  const [type, setType] = useState<"assignment" | "test" | "examlab">("assignment");
+  // Exam Lab allocation state
+  const [exMode, setExMode] = useState<"assignment_help" | "assignment_nohelp" | "test">("assignment_help");
+  const [exContentType, setExContentType] = useState<"paper" | "drill" | "daily">("paper");
+  const [exPaperCode, setExPaperCode] = useState("");
+  const [exDPaper, setExDPaper] = useState<"P1" | "P2" | "P4">("P1");
+  const [exTopics, setExTopics] = useState<Set<string>>(new Set());
+  const [exLevels, setExLevels] = useState<Set<string>>(new Set(["LOT", "HOT"]));
+  const [exCount, setExCount] = useState(10);
+  const [exDuration, setExDuration] = useState("");
+  const [exDue, setExDue] = useState("");
+  const [exInstructions, setExInstructions] = useState("");
   const [classId, setClassId] = useState("");
   const [title, setTitle] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -47,6 +68,14 @@ export function AssignForm() {
   async function submit() {
     setBusy(true); setMsg("");
     try {
+      if (type === "examlab") {
+        const content = exContentType === "paper" ? { type: "paper", code: exPaperCode }
+          : exContentType === "drill" ? { type: "drill", paperType: exDPaper, topics: [...exTopics], levels: [...exLevels], count: exCount }
+          : { type: "daily" };
+        const j = await api("/api/portal/admin/exam-allocate", { method: "POST", body: JSON.stringify({ class_id: classId, mode: exMode, content, title, instructions: exInstructions || undefined, duration_min: exDuration ? Number(exDuration) : undefined, due_at: exDue || undefined, notify }) });
+        setMsg(`Allocated to ${j.students} student${j.students === 1 ? "" : "s"} · ${exMode.replace(/_/g, " ")}.`);
+        return;
+      }
       const payload: Record<string, unknown> = { type: type === "test" ? "test" : "assignment", class_id: classId, title, notify };
       if (type === "assignment") {
         payload.instructions = instructions;
@@ -94,12 +123,10 @@ export function AssignForm() {
         posted ? <Attachments posted={posted} /> : <p className="text-sm text-dust">Post an assignment or test first, then add files here.</p>
       ) : (
       <>
-      <div className="flex gap-2">
-        {(["assignment", "test"] as const).map((t) => (
-          <button key={t} onClick={() => setType(t)} className={"inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm " + (type === t ? "border-cyan/60 bg-cyan/10 text-cyan" : "border-white/10 text-dust hover:text-ice")}>
-            {t === "assignment" ? <ClipboardList size={14} /> : <FlaskConical size={14} />} {t === "assignment" ? "Assignment" : "Test"}
-          </button>
-        ))}
+      <div className="flex flex-wrap gap-2">
+        <button onClick={() => setType("assignment")} className={"inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm " + (type === "assignment" ? "border-cyan/60 bg-cyan/10 text-cyan" : "border-white/10 text-dust hover:text-ice")}><ClipboardList size={14} /> Assignment</button>
+        <button onClick={() => setType("examlab")} className={"inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm " + (type === "examlab" ? "border-cyan/60 bg-cyan/10 text-cyan" : "border-white/10 text-dust hover:text-ice")}><Layers size={14} /> Exam Lab</button>
+        <button onClick={() => setType("test")} className={"inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm " + (type === "test" ? "border-cyan/60 bg-cyan/10 text-cyan" : "border-white/10 text-dust hover:text-ice")}><FlaskConical size={14} /> Test (authored)</button>
       </div>
 
       <div className="space-y-3 rounded-2xl border border-white/10 bg-space/60 p-5">
@@ -112,7 +139,69 @@ export function AssignForm() {
         </div>
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" className={input} />
 
-        {type === "assignment" ? (
+        {type === "examlab" ? (
+          <>
+            <div>
+              <label className="mb-1 block text-[11px] uppercase tracking-widest text-dust">Mode</label>
+              <div className="flex flex-wrap gap-2">
+                {([
+                  { id: "assignment_help", label: "Assignment · help allowed", hint: "relaxed, no cancellation" },
+                  { id: "assignment_nohelp", label: "Assignment · no help", hint: "cancels on tab/split/screenshot" },
+                  ...(canTest ? [{ id: "test", label: "Proctored test", hint: "camera + AI proctor + lock" }] : []),
+                ] as const).map((m) => (
+                  <button key={m.id} onClick={() => setExMode(m.id as typeof exMode)} className={"rounded-xl border px-3 py-1.5 text-xs " + (exMode === m.id ? (m.id === "test" ? "border-red-400/60 bg-red-400/10 text-red-200" : m.id === "assignment_nohelp" ? "border-amber-400/60 bg-amber-400/10 text-amber-200" : "border-emerald2/60 bg-emerald2/10 text-emerald2") : "border-white/10 text-dust hover:text-ice")}>{m.label}</button>
+                ))}
+              </div>
+              <p className="mt-1 text-[11px] text-dust">{exMode === "test" ? "Strict: student must switch on camera; violations lock the test (super-admin unlock)." : exMode === "assignment_nohelp" ? "Guarded like a mini-exam; mark-scheme reveals are logged." : "Open practice; students may use the mark scheme freely (logged)."}</p>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-[11px] uppercase tracking-widest text-dust">Content</label>
+              <div className="flex gap-2">
+                {(["paper", "drill", "daily"] as const).map((ct) => (
+                  <button key={ct} onClick={() => setExContentType(ct)} className={"rounded-full border px-3 py-1.5 text-xs " + (exContentType === ct ? "border-cyan bg-cyan text-space font-semibold" : "border-white/15 text-fog hover:border-cyan")}>{ct === "paper" ? "Real past paper" : ct === "drill" ? "Topic drill" : "Daily (10 mixed P1)"}</button>
+                ))}
+              </div>
+            </div>
+
+            {exContentType === "paper" ? (
+              <select value={exPaperCode} onChange={(e) => setExPaperCode(e.target.value)} className={input}>
+                <option value="">Choose a past paper…</option>
+                {(["P1", "P2", "P4"] as const).map((pt) => (
+                  <optgroup key={pt} label={EX_PAPER_LABEL[pt]}>
+                    {IMAGE_PAPERS.filter((p) => p.paperType === pt).map((p) => <option key={p.code} value={p.code}>{EX_PAPER_LABEL[pt]} · {exPaperName(p.code)} · {p.count} Q</option>)}
+                  </optgroup>
+                ))}
+              </select>
+            ) : exContentType === "drill" ? (
+              <div className="space-y-2 rounded-xl border border-white/10 bg-abyss/40 p-3">
+                <div className="flex gap-2">
+                  {(["P1", "P2", "P4"] as const).map((pt) => <button key={pt} onClick={() => { setExDPaper(pt); setExTopics(new Set()); }} className={"rounded-full border px-3 py-1 text-xs " + (exDPaper === pt ? "border-cyan bg-cyan text-space font-semibold" : "border-white/15 text-fog")}>{pt}</button>)}
+                </div>
+                <div className="flex max-h-32 flex-wrap gap-1.5 overflow-auto">
+                  {(exDPaper === "P4" ? EX_TOPICS_A2 : EX_TOPICS_AS).map((t) => {
+                    const on = exTopics.has(t);
+                    return <button key={t} onClick={() => setExTopics((s) => { const n = new Set(s); if (n.has(t)) n.delete(t); else n.add(t); return n; })} className={"rounded-full border px-2 py-0.5 text-[11px] " + (on ? "border-cyan bg-cyan text-space" : "border-white/15 text-fog")}>{t}</button>;
+                  })}
+                </div>
+                <p className="text-[11px] text-dust">No topic selected = all topics.</p>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-dust">Questions</span>
+                  <input type="range" min={1} max={40} value={exCount} onChange={(e) => setExCount(+e.target.value)} className="flex-1 accent-cyan" />
+                  <span className="w-8 text-center font-display text-lg text-cyan">{exCount}</span>
+                </div>
+              </div>
+            ) : (
+              <p className="rounded-lg border border-white/10 bg-abyss/40 px-3 py-2 text-xs text-dust">10 mixed Paper-1 questions, 15 minutes.</p>
+            )}
+
+            <textarea value={exInstructions} onChange={(e) => setExInstructions(e.target.value)} rows={2} placeholder="Instructions (optional)" className={input + " resize-none"} />
+            <div className="flex flex-wrap gap-2">
+              <div><label className="mb-1 block text-[11px] text-dust">Due</label><input type="datetime-local" value={exDue} onChange={(e) => setExDue(e.target.value)} className={input} /></div>
+              <div className="w-32"><label className="mb-1 block text-[11px] text-dust">Duration (min)</label><input type="number" value={exDuration} onChange={(e) => setExDuration(e.target.value)} placeholder="auto" className={input} /></div>
+            </div>
+          </>
+        ) : type === "assignment" ? (
           <>
             <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={3} placeholder="Instructions (optional)" className={input + " resize-none"} />
             <div className="flex flex-wrap gap-2">
@@ -176,7 +265,7 @@ export function AssignForm() {
 
         <label className="flex items-center gap-2 text-xs text-fog"><input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} /> Notify students in-portal</label>
         {msg ? <p className="rounded-lg border border-cyan/30 bg-cyan/5 px-3 py-2 text-xs text-ice">{msg}</p> : null}
-        <button onClick={submit} disabled={busy || !classId || !title.trim()} className="btn-ghost !px-4 !py-2 text-sm">{busy ? "Posting…" : `Post ${type}`}</button>
+        <button onClick={submit} disabled={busy || !classId || !title.trim()} className="btn-ghost !px-4 !py-2 text-sm">{busy ? "Working…" : type === "examlab" ? "Allocate to class" : `Post ${type}`}</button>
         {posted ? <p className="text-[11px] text-dust">Posted. Switch to the <b className="text-cyan">Attachments</b> tab to add files, or start a new one.</p> : null}
       </div>
       </>

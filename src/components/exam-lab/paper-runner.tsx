@@ -30,6 +30,7 @@ export function PaperRunner({
   kind = "practice",
   help = true,
   allocationId = null,
+  attemptId,
 }: {
   questions: ImgQuestion[];
   title: string;
@@ -42,9 +43,10 @@ export function PaperRunner({
   kind?: AttemptKind;               // practice | assignment | test
   help?: boolean;                   // help (mark scheme / Maxwell) permitted
   allocationId?: string | null;     // staff allocation this attempt belongs to
+  attemptId?: string;               // stable forensic id (allocations use alloc-<id>)
 }) {
   const strict = integrity === "strict";
-  const attemptIdRef = useRef<string>(newId());
+  const attemptIdRef = useRef<string>(attemptId || newId());
 
   const [urls, setUrls] = useState<UrlMap>({});
   const [loading, setLoading] = useState(true);
@@ -178,8 +180,9 @@ export function PaperRunner({
     setRevealed((r) => ({ ...r, ...rev }));
     postAttempt(false, null);
     if (strict) postProctor({ action: "end", status: "submitted" });
+    if (allocationId) fetch("/api/exam-lab/allocations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: allocationId, action: "submitted" }) }).catch(() => {});
     if (!timeUp) setTimeout(() => topRef.current?.querySelector(".pr-result")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
-  }, [questions, strict, postAttempt, postProctor]);
+  }, [questions, strict, postAttempt, postProctor, allocationId]);
 
   // tick the countdown
   useEffect(() => {

@@ -9,5 +9,5 @@ export default async function AssignPage() {
   const user = await getPortalUser();
   if (!user) redirect("/portal/login");
   if (!isStaff(user.roles)) redirect("/portal");
-  return <AssignForm />;
+  return <AssignForm canTest={user.roles.includes("super_admin")} />;
 }

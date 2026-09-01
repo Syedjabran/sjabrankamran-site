@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { FileText, Layers, Play, Zap, Library, Coffee, ShieldAlert, Video } from "lucide-react";
+import { FileText, Layers, Play, Zap, Library, Coffee, ShieldAlert, Video, ClipboardList, Lock, CheckCircle2, Send, Loader2 } from "lucide-react";
 import { IMAGE_BANK, IMAGE_PAPERS, type ImgQuestion } from "@/lib/exam-lab/image-bank";
 import { PaperRunner, type AttemptKind } from "./paper-runner";
 import type { GuardMode } from "./use-exam-guard";
@@ -23,7 +23,16 @@ const TOPICS_AS = ["Physical quantities & units","Kinematics","Dynamics","Forces
 const TOPICS_A2 = ["Circular motion","Gravitational fields","Thermal physics","Ideal gases","Oscillations","Electric fields","Capacitance","Magnetic fields","Alternating currents","Quantum physics","Nuclear physics","Astronomy & cosmology"];
 
 type ActiveMeta = { mode: "paper" | "drill"; code?: string; ref?: string; paperType: "P1" | "P2" | "P4" | "mixed" };
-type Active = { questions: ImgQuestion[]; title: string; subtitle?: string; duration: number; timed: boolean; logMeta: ActiveMeta; integrity: GuardMode; kind: AttemptKind; help: boolean };
+type Active = { questions: ImgQuestion[]; title: string; subtitle?: string; duration: number; timed: boolean; logMeta: ActiveMeta; integrity: GuardMode; kind: AttemptKind; help: boolean; attemptId?: string; allocationId?: string | null };
+
+type AllocContent = { type: "paper"; code: string } | { type: "drill"; paperType: "P1" | "P2" | "P4"; topics: string[]; levels: ("LOT" | "HOT")[]; count: number } | { type: "daily" };
+type Allocation = { id: string; attemptId: string; mode: "assignment_help" | "assignment_nohelp" | "test"; content: AllocContent; title: string; instructions: string | null; durationMin: number | null; dueAt: string | null; className: string | null; status: string };
+function allocCfg(mode: Allocation["mode"]): { integrity: GuardMode; kind: AttemptKind; help: boolean } {
+  if (mode === "test") return { integrity: "strict", kind: "test", help: false };
+  if (mode === "assignment_nohelp") return { integrity: "standard", kind: "assignment", help: false };
+  return { integrity: "off", kind: "assignment", help: true };
+}
+const ALLOC_LABEL: Record<Allocation["mode"], string> = { assignment_help: "Assignment · help allowed", assignment_nohelp: "Assignment · no help", test: "Proctored test" };
 
 // Self-serve sit modes. "test" (strict camera proctor that LOCKS on violation)
 // is staff-only here so a student can never lock themselves out; real tests
@@ -35,6 +44,55 @@ function modeCfg(m: SitMode): { integrity: GuardMode; kind: AttemptKind; help: b
   return { integrity: "off", kind: "practice", help: true };
 }
 
+function AssignedBoard({ allocations, onStart }: { allocations: Allocation[]; onStart: (a: Allocation) => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [sent, setSent] = useState<Record<string, boolean>>({});
+
+  async function requestReview(id: string) {
+    setBusy(id);
+    try {
+      const r = await fetch("/api/exam-lab/allocations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, action: "unlock-request" }) });
+      if (r.ok) setSent((s) => ({ ...s, [id]: true }));
+    } catch { /* ignore */ } finally { setBusy(null); }
+  }
+
+  const accent: Record<Allocation["mode"], string> = { test: "border-red-400/30 text-red-200", assignment_nohelp: "border-amber-400/30 text-amber-200", assignment_help: "border-emerald2/30 text-emerald2" };
+
+  return (
+    <div className="mb-6 rounded-2xl border border-cyan/25 bg-cyan/[0.04] p-4">
+      <p className="mb-3 flex items-center gap-2 font-display text-sm text-ice"><ClipboardList size={16} className="text-cyan" /> Assigned to you</p>
+      <ul className="space-y-2">
+        {allocations.map((al) => {
+          const launchable = ["assigned", "unlocked", "cancelled"].includes(al.status);
+          const due = al.dueAt ? new Date(al.dueAt) : null;
+          return (
+            <li key={al.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-space/60 px-3.5 py-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-ice">{al.title}</p>
+                <div className="mt-0.5 flex flex-wrap items-center gap-2 font-mono text-[10px] text-dust">
+                  <span className={"rounded-full border px-2 py-0.5 uppercase " + accent[al.mode]}>{ALLOC_LABEL[al.mode]}</span>
+                  {al.className ? <span>{al.className}</span> : null}
+                  {due ? <span>due {due.toLocaleDateString("en-GB")}</span> : null}
+                </div>
+              </div>
+              {al.status === "submitted" ? (
+                <span className="inline-flex items-center gap-1 text-xs text-emerald2"><CheckCircle2 size={14} /> Submitted</span>
+              ) : al.status === "locked" ? (
+                sent[al.id] ? <span className="inline-flex items-center gap-1 text-xs text-amber-300"><Lock size={13} /> Review requested</span>
+                : <button onClick={() => requestReview(al.id)} disabled={busy === al.id} className="btn-ghost !px-3 !py-1.5 text-xs">{busy === al.id ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Locked — request review</button>
+              ) : (
+                <button onClick={() => onStart(al)} disabled={!launchable} className={"!px-3.5 !py-1.5 text-xs " + (al.mode === "test" ? "btn-primary" : "btn-primary")}>
+                  {al.mode === "test" ? <Video size={13} /> : <Play size={13} />} {al.status === "unlocked" ? "Re-sit" : al.mode === "test" ? "Begin test" : "Start"}
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 export function PapersHub({ canTest = false }: { canTest?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -44,6 +102,7 @@ export function PapersHub({ canTest = false }: { canTest?: boolean }) {
   const [tab, setTab] = useState<"papers" | "drill">("papers");
   const [sitMode, setSitMode] = useState<SitMode>("practice");
   const [active, setActive] = useState<Active | null>(null);
+  const [allocations, setAllocations] = useState<Allocation[]>([]);
   // Have we actually observed ?run=1 for the current open paper yet? Guards the
   // transient first render (active set, but the pushed ?run=1 hasn't landed) so
   // we never clear `active` before it has even shown.
@@ -75,6 +134,36 @@ export function PapersHub({ canTest = false }: { canTest?: boolean }) {
   const [topics, setTopics] = useState<Set<string>>(new Set());
   const [levels, setLevels] = useState<Set<"LOT" | "HOT">>(new Set(["LOT", "HOT"]));
   const [count, setCount] = useState(8);
+
+  // Load the student's staff-set allocations (assignments / tests).
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/exam-lab/allocations").then((r) => r.ok ? r.json() : { items: [] }).then((j) => { if (alive) setAllocations(j.items || []); }).catch(() => {});
+    return () => { alive = false; };
+  }, [active]);
+
+  function startAllocation(al: Allocation) {
+    const cfg = allocCfg(al.mode);
+    const common = { ...cfg, timed: true, attemptId: al.attemptId, allocationId: al.id };
+    if (al.content.type === "paper") {
+      const code = al.content.code;
+      const qs = IMAGE_BANK.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
+      const meta = IMAGE_PAPERS.find((p) => p.code === code);
+      if (!qs.length || !meta) return;
+      enter({ questions: qs, title: al.title || PAPER_NAME[meta.paperType], subtitle: `${meta.ref} · ${label(code)}`, duration: al.durationMin || meta.duration, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType }, ...common });
+    } else if (al.content.type === "drill") {
+      const { paperType, topics, levels, count } = al.content;
+      const tset = new Set(topics); const lset = new Set(levels);
+      const pool = IMAGE_BANK.filter((q) => q.paperType === paperType && (!tset.size || (q.topic && tset.has(q.topic))) && lset.has(q.level));
+      const qs = shuffle([...pool]).slice(0, count);
+      if (!qs.length) return;
+      const mins = al.durationMin || Math.max(5, Math.round(qs.length * (paperType === "P1" ? 1.5 : 9)));
+      enter({ questions: qs, title: al.title || `Topic drill · ${PAPER_NAME[paperType].split(" · ")[0]}`, subtitle: `${qs.length} questions · ${mins} min`, duration: mins, logMeta: { mode: "drill", paperType }, ...common });
+    } else {
+      const p1 = shuffle(IMAGE_BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
+      enter({ questions: p1, title: al.title || "Daily Challenge", subtitle: "10 mixed Paper-1 questions", duration: al.durationMin || 15, logMeta: { mode: "drill", paperType: "P1" }, ...common });
+    }
+  }
 
   const grouped = useMemo(() => {
     const g: Record<string, typeof IMAGE_PAPERS> = { P1: [], P2: [], P4: [] };
@@ -123,6 +212,8 @@ export function PapersHub({ canTest = false }: { canTest?: boolean }) {
 
   return (
     <div>
+      {allocations.length ? <AssignedBoard allocations={allocations} onStart={startAllocation} /> : null}
+
       {/* sit-mode selector */}
       <div className="mb-5 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
         <p className="mb-2 font-mono text-[11px] uppercase tracking-widest text-fog">How do you want to sit this?</p>
@@ -134,6 +225,7 @@ export function PapersHub({ canTest = false }: { canTest?: boolean }) {
           ))}
         </div>
         <p className="mt-2 text-xs text-dust">{activeHint}</p>
+        <p className="mt-1 text-[11px] text-dust/80">Tests and assignments set by your teacher appear above and always run in their required mode.</p>
       </div>
 
       {/* coverage summary + daily challenge */}

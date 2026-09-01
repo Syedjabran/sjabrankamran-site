@@ -102,7 +102,23 @@ export async function startSession(
   }
 ): Promise<ProctorSession> {
   const existing = await getSession(uid, attemptId);
-  if (existing) return existing; // idempotent — never resurrect a locked attempt
+  if (existing) {
+    // A super-admin unlock grants ONE fresh sit: reset to active, keeping the
+    // same id. Locked/cancelled/submitted sessions are frozen (never resurrected
+    // by a client 'start'); an active one is returned as-is (idempotent).
+    if (existing.status === "unlocked") {
+      const reset: ProctorSession = {
+        ...existing,
+        meta: init.meta, integrity: init.integrity, kind: init.kind,
+        cameraConsent: init.cameraConsent,
+        startedAt: Date.now(), endedAt: null, status: "active",
+        lockedReason: null, events: [], snapshots: [], unlockRequest: null, unlock: null,
+      };
+      await writeJson(sessKey(uid, attemptId), reset);
+      return reset;
+    }
+    return existing;
+  }
   const s: ProctorSession = {
     attemptId, uid,
     studentName: init.studentName, studentEmail: init.studentEmail,
