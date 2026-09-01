@@ -69,6 +69,15 @@ export function ProctorCamera({
   const baselineRef = useRef<{ nx: number; ny: number } | null>(null);
   const modelReadyRef = useRef(false);   // face landmarker is live
   const modelDoneRef = useRef(false);    // model load finished (ready OR failed)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const visionRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const filesetRef = useRef<any>(null);
+  const faceDelegateRef = useRef<"GPU" | "CPU">("GPU");
+  const detectCountRef = useRef(0);      // successful face detections so far
+  const camOnAtRef = useRef(0);
+  const recreatedRef = useRef(false);    // one-time GPU→CPU recreate done
+  const tsRef = useRef(0);               // strictly-increasing detect timestamp
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -165,8 +174,9 @@ export function ProctorCamera({
     setCalibrating(true);
     push({ message: "Hold still — calibrating…" });
     const start = Date.now();
-    // Wait up to ~6s: enough to let the model finish downloading on first use.
-    while (Date.now() - start < 6000) {
+    // Wait up to ~9s: enough to let the model download AND, if the GPU delegate
+    // is silently broken, rebuild on CPU and produce its first detections.
+    while (Date.now() - start < 9000) {
       const pts = lastPointsRef.current;
       const fresh = Date.now() - lastFaceAtRef.current < 800;
       if (modelReadyRef.current && pts.length >= 100 && fresh) {
@@ -198,6 +208,31 @@ export function ProctorCamera({
     }
   }, [calibrating, push, setBaselineFrom]);
 
+  // Create a FaceLandmarker on the given delegate (GPU fast / CPU reliable).
+  const makeFace = useCallback(async (delegate: "GPU" | "CPU") => {
+    return visionRef.current.FaceLandmarker.createFromOptions(filesetRef.current, {
+      baseOptions: { modelAssetPath: MP_FACE, delegate }, runningMode: "VIDEO", numFaces: 2,
+    });
+  }, []);
+
+  // If GPU created OK but produced zero detections shortly after the camera is
+  // on, transparently rebuild on CPU (the classic broken-GPU-delegate case).
+  const healthCheckFace = useCallback(() => {
+    if (recreatedRef.current) return;
+    if (faceDelegateRef.current !== "GPU" || !modelReadyRef.current) return;
+    if (!camOnAtRef.current || Date.now() - camOnAtRef.current < 2600) return;
+    if (detectCountRef.current > 0) return;
+    recreatedRef.current = true;
+    (async () => {
+      try {
+        const next = await makeFace("CPU");
+        const old = faceRef.current;
+        faceRef.current = next; faceDelegateRef.current = "CPU";
+        try { old?.close?.(); } catch { /* ignore */ }
+      } catch { /* keep GPU instance */ }
+    })();
+  }, [makeFace]);
+
   // ---- camera + models lifecycle ----
   useEffect(() => {
     if (phase === "off") return;
@@ -218,29 +253,29 @@ export function ProctorCamera({
       try {
         const vision = await dynImport(MP_MODULE);
         const fileset = await vision.FilesetResolver.forVisionTasks(MP_WASM);
-        // GPU (WebGL) is fastest but fails on some tablets/browsers — fall back to CPU.
+        visionRef.current = vision; filesetRef.current = fileset;
+        // GPU (WebGL) is fastest but on many tablets/browsers it CREATES fine yet
+        // never produces results — fall back to CPU on throw, and a runtime
+        // health-check below recreates on CPU if GPU yields no detections.
         try {
-          faceRef.current = await vision.FaceLandmarker.createFromOptions(fileset, {
-            baseOptions: { modelAssetPath: MP_FACE, delegate: "GPU" }, runningMode: "VIDEO", numFaces: 2,
-          });
+          faceRef.current = await makeFace("GPU");
+          faceDelegateRef.current = "GPU";
         } catch {
-          faceRef.current = await vision.FaceLandmarker.createFromOptions(fileset, {
-            baseOptions: { modelAssetPath: MP_FACE, delegate: "CPU" }, runningMode: "VIDEO", numFaces: 2,
-          });
+          faceRef.current = await makeFace("CPU");
+          faceDelegateRef.current = "CPU";
         }
         if (!alive) return;
         modelReadyRef.current = true; modelDoneRef.current = true;
+        camOnAtRef.current = Date.now();
         push({ degraded: false, message: "AI proctor ready — centre your face and tap Calibrate." });
-        // Object detector is optional; load in the background, never block.
+        // Object detector is optional. Load on CPU (running two GPU tasks at once
+        // can break FaceLandmarker inference), in the background, never blocking.
         (async () => {
-          for (const delegate of ["GPU", "CPU"] as const) {
-            try {
-              objRef.current = await vision.ObjectDetector.createFromOptions(fileset, {
-                baseOptions: { modelAssetPath: MP_OBJECT, delegate }, runningMode: "VIDEO", scoreThreshold: 0.45, maxResults: 6,
-              });
-              break;
-            } catch { objRef.current = null; }
-          }
+          try {
+            objRef.current = await vision.ObjectDetector.createFromOptions(fileset, {
+              baseOptions: { modelAssetPath: MP_OBJECT, delegate: "CPU" }, runningMode: "VIDEO", scoreThreshold: 0.45, maxResults: 6,
+            });
+          } catch { objRef.current = null; }
         })();
       } catch {
         faceRef.current = null; objRef.current = null;
@@ -278,11 +313,14 @@ export function ProctorCamera({
           let faces = points.length ? 1 : 0;
           if (faceRef.current && now - lastFace > 150) {
             lastFace = now;
+            healthCheckFace();
             try {
-              const res = faceRef.current.detectForVideo(v, now);
+              // detectForVideo needs strictly-increasing ms timestamps or it throws.
+              const ts = tsRef.current = Math.max(tsRef.current + 1, Math.round(now));
+              const res = faceRef.current.detectForVideo(v, ts);
               const list = (res?.faceLandmarks || []) as { x: number; y: number }[][];
               faces = list.length; points = (list[0] || []).map((p) => ({ x: p.x, y: p.y })); lastPointsRef.current = points;
-              if (points.length) lastFaceAtRef.current = Date.now();
+              if (points.length) { lastFaceAtRef.current = Date.now(); detectCountRef.current++; }
             } catch { /* transient */ }
           } else if (!faceRef.current) { faces = 1; }
           if (objRef.current && now - lastObj > 550) {
@@ -372,7 +410,7 @@ export function ProctorCamera({
 
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [phase, escalate, push]);
+  }, [phase, escalate, push, healthCheckFace]);
 
   if (phase === "off") return null;
 

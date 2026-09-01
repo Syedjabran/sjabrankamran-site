@@ -316,9 +316,9 @@ export function PaperRunner({
           <h3 className="text-center font-display text-xl font-bold text-ice">Proctored test — camera required</h3>
           <p className="mx-auto mt-2 max-w-md text-center text-sm text-fog">{title}{subtitle ? ` · ${subtitle}` : ""}</p>
           <div className="mt-5 space-y-2 rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-sm text-fog">
-            <p className="flex items-start gap-2"><ShieldCheck size={16} className="mt-0.5 shrink-0 text-emerald2" /> This is a formal, invigilated test. Your camera stays on and an AI proctor watches for integrity — all analysis runs <b>on your device</b>; no video is stored or uploaded.</p>
-            <p className="flex items-start gap-2"><ShieldAlert size={16} className="mt-0.5 shrink-0 text-amber-300" /> The test <b>cancels and locks</b> if you leave full-screen, switch tabs, minimise, split-screen, screenshot, or if another person appears / you leave the frame. A locked test can only be re-opened by a super-admin after review.</p>
-            <p className="flex items-start gap-2"><Lock size={16} className="mt-0.5 shrink-0 text-cyan" /> Mark schemes are locked during the test.</p>
+            <p className="flex items-start gap-2"><ShieldCheck size={16} className="mt-0.5 shrink-0 text-emerald2" /> <span>This is a formal, invigilated test. Your camera stays on and an AI proctor watches for integrity — all analysis runs <b>on your device</b>; no video is stored or uploaded.</span></p>
+            <p className="flex items-start gap-2"><ShieldAlert size={16} className="mt-0.5 shrink-0 text-amber-300" /> <span>The test <b>cancels and locks</b> if you leave full-screen, switch tabs, minimise, split-screen, screenshot, or if another person appears / you leave the frame. A locked test can only be re-opened by a super-admin after review.</span></p>
+            <p className="flex items-start gap-2"><Lock size={16} className="mt-0.5 shrink-0 text-cyan" /> <span>Mark schemes are locked during the test.</span></p>
           </div>
           <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-sm text-fog">
             <p className="mb-1 font-semibold text-ice">Get in position before you start</p>
