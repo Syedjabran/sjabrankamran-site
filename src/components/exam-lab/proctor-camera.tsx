@@ -65,13 +65,17 @@ export function ProctorCamera({
   const objRef = useRef<any>(null);
   const rafRef = useRef<number>(0);
   const lastPointsRef = useRef<{ x: number; y: number }[]>([]);
+  const lastFaceAtRef = useRef<number>(0);
   const baselineRef = useRef<{ nx: number; ny: number } | null>(null);
+  const modelReadyRef = useRef(false);   // face landmarker is live
+  const modelDoneRef = useRef(false);    // model load finished (ready OR failed)
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const audioRef = useRef<any>(null);
 
   const [status, setStatus] = useState<Status>({ ready: false, faceOk: false, faces: 0, message: "Starting camera…", degraded: false, calibrated: false });
+  const [calibrating, setCalibrating] = useState(false);
   const [warnBanner, setWarnBanner] = useState<{ n: number; msg: string } | null>(null);
   const warningsRef = useRef(0);
   const statusCb = useRef(onStatus); statusCb.current = onStatus;
@@ -144,17 +148,55 @@ export function ProctorCamera({
     }
   }, [emit, snap, tone]);
 
-  const calibrate = useCallback(() => {
-    const pts = lastPointsRef.current;
-    if (pts.length < 100) return;
+  const setBaselineFrom = useCallback((pts: { x: number; y: number }[]) => {
     let mnX = 1, mxX = 0, mnY = 1, mxY = 0;
     for (const p of pts) { if (p.x < mnX) mnX = p.x; if (p.x > mxX) mxX = p.x; if (p.y < mnY) mnY = p.y; if (p.y > mxY) mxY = p.y; }
     const nose = pts[1] || pts[0];
     const cx = (mnX + mxX) / 2, cy = (mnY + mxY) / 2, fw = Math.max(0.001, mxX - mnX), fh = Math.max(0.001, mxY - mnY);
     baselineRef.current = { nx: (nose.x - cx) / fw, ny: (nose.y - cy) / fh };
-    warningsRef.current = 0;
-    push({ calibrated: true, message: "Position approved ✓" });
-  }, [push]);
+  }, []);
+
+  // Robust, fast calibration. Gives immediate feedback, briefly retries so it
+  // still catches a face while the model is finishing loading, and — if the
+  // on-device model can't run at all (older tablet / blocked CDN) — still lets
+  // the student proceed under basic monitoring (window/tab/screenshot guard).
+  const calibrate = useCallback(async () => {
+    if (calibrating) return;
+    setCalibrating(true);
+    push({ message: "Hold still — calibrating…" });
+    const start = Date.now();
+    // Wait up to ~6s: enough to let the model finish downloading on first use.
+    while (Date.now() - start < 6000) {
+      const pts = lastPointsRef.current;
+      const fresh = Date.now() - lastFaceAtRef.current < 800;
+      if (modelReadyRef.current && pts.length >= 100 && fresh) {
+        setBaselineFrom(pts);
+        warningsRef.current = 0;
+        setCalibrating(false);
+        push({ calibrated: true, degraded: false, message: "Position approved ✓" });
+        return;
+      }
+      // Model finished loading but failed → proceed with basic monitoring.
+      if (modelDoneRef.current && !modelReadyRef.current) {
+        baselineRef.current = null;
+        warningsRef.current = 0;
+        setCalibrating(false);
+        push({ calibrated: true, degraded: true, message: "Approved · basic monitoring" });
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    // Timed out with the model ready but no stable face in view.
+    setCalibrating(false);
+    if (modelReadyRef.current) {
+      push({ message: "No face detected — centre yourself in good light, then tap Calibrate again." });
+    } else {
+      // Model never came up in time → allow basic monitoring so nobody is stuck.
+      baselineRef.current = null;
+      warningsRef.current = 0;
+      push({ calibrated: true, degraded: true, message: "Approved · basic monitoring" });
+    }
+  }, [calibrating, push, setBaselineFrom]);
 
   // ---- camera + models lifecycle ----
   useEffect(() => {
@@ -176,16 +218,33 @@ export function ProctorCamera({
       try {
         const vision = await dynImport(MP_MODULE);
         const fileset = await vision.FilesetResolver.forVisionTasks(MP_WASM);
-        faceRef.current = await vision.FaceLandmarker.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: MP_FACE, delegate: "GPU" }, runningMode: "VIDEO", numFaces: 2,
-        });
+        // GPU (WebGL) is fastest but fails on some tablets/browsers — fall back to CPU.
         try {
-          objRef.current = await vision.ObjectDetector.createFromOptions(fileset, {
-            baseOptions: { modelAssetPath: MP_OBJECT, delegate: "GPU" }, runningMode: "VIDEO", scoreThreshold: 0.45, maxResults: 6,
+          faceRef.current = await vision.FaceLandmarker.createFromOptions(fileset, {
+            baseOptions: { modelAssetPath: MP_FACE, delegate: "GPU" }, runningMode: "VIDEO", numFaces: 2,
           });
-        } catch { objRef.current = null; }
+        } catch {
+          faceRef.current = await vision.FaceLandmarker.createFromOptions(fileset, {
+            baseOptions: { modelAssetPath: MP_FACE, delegate: "CPU" }, runningMode: "VIDEO", numFaces: 2,
+          });
+        }
+        if (!alive) return;
+        modelReadyRef.current = true; modelDoneRef.current = true;
+        push({ degraded: false, message: "AI proctor ready — centre your face and tap Calibrate." });
+        // Object detector is optional; load in the background, never block.
+        (async () => {
+          for (const delegate of ["GPU", "CPU"] as const) {
+            try {
+              objRef.current = await vision.ObjectDetector.createFromOptions(fileset, {
+                baseOptions: { modelAssetPath: MP_OBJECT, delegate }, runningMode: "VIDEO", scoreThreshold: 0.45, maxResults: 6,
+              });
+              break;
+            } catch { objRef.current = null; }
+          }
+        })();
       } catch {
         faceRef.current = null; objRef.current = null;
+        modelReadyRef.current = false; modelDoneRef.current = true;
         push({ degraded: true, message: "Live camera on (basic monitoring)." });
         emit("camera_degraded", "Advanced models unavailable — basic monitoring active.", false);
       }
@@ -223,6 +282,7 @@ export function ProctorCamera({
               const res = faceRef.current.detectForVideo(v, now);
               const list = (res?.faceLandmarks || []) as { x: number; y: number }[][];
               faces = list.length; points = (list[0] || []).map((p) => ({ x: p.x, y: p.y })); lastPointsRef.current = points;
+              if (points.length) lastFaceAtRef.current = Date.now();
             } catch { /* transient */ }
           } else if (!faceRef.current) { faces = 1; }
           if (objRef.current && now - lastObj > 550) {
@@ -347,8 +407,8 @@ export function ProctorCamera({
           </span>
         </div>
         {phase === "preview" && status.ready && (
-          <button onClick={calibrate} className={"flex w-full items-center justify-center gap-1.5 border-t border-white/10 px-2 py-1.5 text-[11px] font-semibold " + (status.calibrated ? "bg-emerald-500/15 text-emerald-300" : "bg-cyan-500/15 text-cyan-300")}>
-            {status.calibrated ? <><CheckCircle2 size={12} /> Position approved</> : <><Crosshair size={12} /> Calibrate my position</>}
+          <button onClick={calibrate} disabled={calibrating || status.calibrated} className={"flex w-full items-center justify-center gap-1.5 border-t border-white/10 px-2 py-1.5 text-[11px] font-semibold disabled:opacity-90 " + (status.calibrated ? "bg-emerald-500/15 text-emerald-300" : "bg-cyan-500/15 text-cyan-300")}>
+            {status.calibrated ? <><CheckCircle2 size={12} /> Position approved</> : calibrating ? <><Loader2 size={12} className="animate-spin" /> Calibrating…</> : <><Crosshair size={12} /> Calibrate my position</>}
           </button>
         )}
         <div className="flex items-center gap-1 border-t border-white/10 bg-emerald-500/5 px-2 py-0.5 text-[9px] text-emerald-300/80">
