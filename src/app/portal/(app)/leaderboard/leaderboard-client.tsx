@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Trophy, Medal, School, Users, Globe, Crown, Flame } from "lucide-react";
+import { Trophy, Medal, School, Users, Globe, Crown, Flame, VenetianMask } from "lucide-react";
 
-type Row = { name: string; isMe: boolean; score: number; accuracy: number | null; level: number; attempts: number; rankInClass: number; rankInSchool: number; rankOverall: number; hasData: boolean };
+type Row = { name: string; isMe: boolean; anon?: boolean; score: number; accuracy: number | null; level: number; attempts: number; rankInClass: number; rankInSchool: number; rankOverall: number; hasData: boolean };
 type Me = { name: string; school: string; className: string; section: string | null; score: number; accuracy: number | null; level: number; attempts: number; rankInClass: number; outOfClass: number; rankInSchool: number; outOfSchool: number; rankOverall: number; outOfOverall: number };
 type Data = { hasData: boolean; message?: string; me?: Me; classBoard?: Row[]; schoolBoard?: Row[]; overallBoard?: Row[] };
 
@@ -37,7 +37,10 @@ function Board({ title, icon, rows, rankKey }: { title: string; icon: React.Reac
             return (
               <li key={i} className={"flex items-center gap-3 rounded-lg px-2.5 py-2 " + (r.isMe ? "border border-cyan/40 bg-cyan/[0.06]" : "hover:bg-white/[0.03]")}>
                 <span className={"w-8 shrink-0 text-center font-mono text-xs " + m.cls} style={rank === 3 ? { color: "#C6A55A" } : undefined}>{m.icon}</span>
-                <span className={"min-w-0 flex-1 truncate text-sm " + (r.isMe ? "font-semibold text-cyan" : "text-fog")}>{r.name}</span>
+                <span className={"flex min-w-0 flex-1 items-center gap-1.5 truncate text-sm " + (r.isMe ? "font-semibold text-cyan" : "text-fog")}>
+                  {r.anon ? <VenetianMask size={12} className="shrink-0 text-dust" aria-label="Anonymous code" /> : null}
+                  <span className={"truncate " + (r.anon ? "font-mono text-[13px] text-fog/90" : "")}>{r.name}</span>
+                </span>
                 <div className="hidden h-1.5 w-24 overflow-hidden rounded-full bg-white/[0.06] sm:block">
                   <div className="h-full rounded-full bg-cyan/70" style={{ width: `${Math.round((r.score / max) * 100)}%` }} />
                 </div>
@@ -73,6 +76,7 @@ export function LeaderboardClient() {
         <div>
           <h1 className="text-2xl font-semibold text-ice">Leaderboard</h1>
           <p className="text-xs text-dust">Climb your class, your school, and the whole network. Practise in Exam Lab to rise.</p>
+          <p className="mt-1 flex items-center gap-1.5 text-[11px] text-dust/80"><VenetianMask size={12} className="text-dust" /> Everyone competes under a private code, so identities stay hidden. Your code is in your <a href="/portal/settings" className="text-cyan underline decoration-cyan/40 underline-offset-2 hover:text-ice">Profile</a> — flip a switch there to show your real name instead.</p>
         </div>
       </div>
 

@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { UserCircle, Save, KeyRound, Loader2, Check, Mail, Phone } from "lucide-react";
+import { UserCircle, Save, KeyRound, Loader2, Check, Mail, Phone, VenetianMask, Copy } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 
-type Me = { id: string; full_name: string; email: string; phone: string; roles: string[] };
+type Me = { id: string; full_name: string; email: string; phone: string; roles: string[]; alias?: string; reveal_name?: boolean };
 
 export function SettingsClient() {
   const [me, setMe] = useState<Me | null>(null);
@@ -12,6 +12,11 @@ export function SettingsClient() {
   const [phone, setPhone] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMsg, setProfileMsg] = useState("");
+
+  const [revealName, setRevealName] = useState(false);
+  const [savingReveal, setSavingReveal] = useState(false);
+  const [revealMsg, setRevealMsg] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const [pw1, setPw1] = useState("");
   const [pw2, setPw2] = useState("");
@@ -21,9 +26,25 @@ export function SettingsClient() {
   useEffect(() => {
     fetch("/api/portal/me").then(async (r) => {
       const j = await r.json();
-      if (r.ok) { setMe(j); setFullName(j.full_name || ""); setPhone(j.phone || ""); }
+      if (r.ok) { setMe(j); setFullName(j.full_name || ""); setPhone(j.phone || ""); setRevealName(!!j.reveal_name); }
     }).catch(() => {});
   }, []);
+
+  async function toggleReveal(next: boolean) {
+    const prev = revealName;
+    setRevealName(next); setSavingReveal(true); setRevealMsg("");
+    try {
+      const r = await fetch("/api/portal/me", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ reveal_name: next }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Could not save");
+      setRevealMsg(next ? "Saved. Your real name now shows on the leaderboard." : "Saved. You're back to your private code on the leaderboard.");
+    } catch (e) { setRevealName(prev); setRevealMsg((e as Error).message); } finally { setSavingReveal(false); }
+  }
+
+  async function copyCode() {
+    if (!me?.alias) return;
+    try { await navigator.clipboard.writeText(me.alias); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* clipboard blocked */ }
+  }
 
   async function saveProfile() {
     setSavingProfile(true); setProfileMsg("");
@@ -82,6 +103,26 @@ export function SettingsClient() {
           {profileMsg ? <span className="inline-flex items-center gap-1 text-xs text-cyan"><Check size={12} /> {profileMsg}</span> : null}
         </div>
       </section>
+
+      {me?.roles?.includes("student") ? (
+        <section className="space-y-3 rounded-2xl border border-white/10 bg-space/60 p-5">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-ice"><VenetianMask size={15} className="text-cyan" /> Leaderboard identity</h2>
+          <p className="text-xs text-dust">On the leaderboard, everyone competes under a private code — not their real name — so your identity stays hidden unless you choose otherwise. This is your code:</p>
+          <div className="flex items-center gap-2">
+            <span className="flex-1 rounded-xl border border-cyan/25 bg-abyss/60 px-3.5 py-2.5 font-mono text-base tracking-wide text-cyan">{me?.alias || "—"}</span>
+            <button onClick={copyCode} className="btn-ghost !px-3 !py-2.5 text-xs" title="Copy your code">{copied ? <Check size={14} /> : <Copy size={14} />}</button>
+          </div>
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-abyss/40 px-3.5 py-3">
+            <input type="checkbox" checked={revealName} disabled={savingReveal} onChange={(e) => toggleReveal(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-cyan" />
+            <span className="text-sm text-fog">
+              Show my <b>real name</b> on the leaderboard instead of my code.
+              <span className="mt-0.5 block text-[11px] text-dust">Leave this off to stay anonymous. You can switch back any time.</span>
+            </span>
+          </label>
+          {savingReveal ? <span className="inline-flex items-center gap-1 text-xs text-dust"><Loader2 size={12} className="animate-spin" /> Saving…</span>
+            : revealMsg ? <span className="inline-flex items-center gap-1 text-xs text-cyan"><Check size={12} /> {revealMsg}</span> : null}
+        </section>
+      ) : null}
 
       <section className="space-y-3 rounded-2xl border border-white/10 bg-space/60 p-5">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-ice"><KeyRound size={15} className="text-cyan" /> Change password</h2>
