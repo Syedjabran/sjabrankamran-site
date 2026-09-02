@@ -153,9 +153,9 @@ export function UserDetail({ id, isSuper, selfId }: { id: string; isSuper: boole
             );
           })}
         </div>
-        {(p.roles.includes("coordinator") || p.roles.includes("facilitator")) && (
+        {(p.roles.includes("coordinator") || p.roles.includes("facilitator") || p.roles.includes("attendance_registrar")) && (
           <div className="mt-3 rounded-lg border border-cyan/20 bg-cyan/[0.04] p-3">
-            <label className="mb-1 block text-[11px] uppercase tracking-widest text-dust">School (for Coordinator / Facilitator)</label>
+            <label className="mb-1 block text-[11px] uppercase tracking-widest text-dust">School (for Coordinator / Facilitator / Attendance Registrar)</label>
             <div className="flex flex-wrap items-center gap-2">
               <select defaultValue={d.staffSchool || ""} disabled={!!busy}
                 onChange={(e) => act("set_school", { school: e.target.value })}

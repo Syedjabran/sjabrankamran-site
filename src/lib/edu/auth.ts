@@ -11,7 +11,8 @@ export type EduRole =
   | "content_manager"
   | "finance_manager"
   | "coordinator"
-  | "facilitator";
+  | "facilitator"
+  | "attendance_registrar";
 
 export type PortalUser = {
   id: string;
@@ -33,15 +34,32 @@ export const ROLE_LABELS: Record<EduRole, string> = {
   finance_manager: "Finance Manager",
   coordinator: "Coordinator",
   facilitator: "Facilitator",
+  attendance_registrar: "Attendance Registrar",
 };
 
 /** Roles that belong to a specific school (a school dropdown is shown for them). */
-export const SCHOOL_SCOPED_ROLES: EduRole[] = ["coordinator", "facilitator"];
+export const SCHOOL_SCOPED_ROLES: EduRole[] = ["coordinator", "facilitator", "attendance_registrar"];
 
 export function isStaff(roles: EduRole[]) {
   return roles.some((r) =>
-    ["super_admin", "admin", "teacher", "teaching_assistant", "counsellor", "content_manager", "finance_manager", "coordinator", "facilitator"].includes(r)
+    ["super_admin", "admin", "teacher", "teaching_assistant", "counsellor", "content_manager", "finance_manager", "coordinator", "facilitator", "attendance_registrar"].includes(r)
   );
+}
+
+/**
+ * Attendance Registrar: a restricted, school-scoped role that may ONLY view
+ * daily attendance for its assigned school — nothing else. When a user has this
+ * role and is NOT also a fuller staff/admin role, the portal shows them a
+ * cut-down navigation (Dashboard + Attendance view only).
+ */
+export function isAttendanceRegistrar(roles: EduRole[]) {
+  return roles.includes("attendance_registrar");
+}
+
+/** True when the user's ONLY staff-granting role is attendance_registrar. */
+export function isRegistrarOnly(roles: EduRole[]) {
+  const fullerStaff = ["super_admin", "admin", "teacher", "teaching_assistant", "counsellor", "content_manager", "finance_manager", "coordinator", "facilitator"];
+  return roles.includes("attendance_registrar") && !roles.some((r) => fullerStaff.includes(r));
 }
 
 export function isAdmin(roles: EduRole[]) {

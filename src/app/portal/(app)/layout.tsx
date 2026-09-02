@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { LogOut, GraduationCap, Settings } from "lucide-react";
-import { getPortalUser, ROLE_LABELS, isAdmin, isStaff, type EduRole } from "@/lib/edu/auth";
+import { getPortalUser, ROLE_LABELS, isAdmin, isStaff, isRegistrarOnly, type EduRole } from "@/lib/edu/auth";
 import { isOnboardingComplete } from "@/lib/portal/onboarding";
 import { effectiveRoles } from "@/lib/portal/view-as";
 import { PresenceBeacon } from "./presence-beacon";
@@ -28,6 +28,21 @@ function navFor(roles: EduRole[]): NavSection[] {
   const isParent = roles.includes("parent");
   const sections: NavSection[] = [];
 
+  // --- Attendance Registrar (school-scoped, view-only) ---
+  // A registrar with no fuller staff role gets a deliberately minimal nav:
+  // just the Dashboard and the read-only daily attendance view for their school.
+  if (isRegistrarOnly(roles)) {
+    return [
+      {
+        title: "Attendance",
+        items: [
+          { href: "/portal", label: "Dashboard" },
+          { href: "/portal/admin/attendance-view", label: "Daily attendance" },
+        ],
+      },
+    ];
+  }
+
   // --- Administration (staff / owner) ---
   const adminItems: NavItem[] = [{ href: "/portal", label: "Dashboard" }];
   if (staff) {
@@ -36,6 +51,7 @@ function navFor(roles: EduRole[]): NavSection[] {
     adminItems.push({ href: "/portal/admin/institutions", label: "Institutions" });
     adminItems.push({ href: "/portal/admin/assign", label: "Post / Tests" });
     adminItems.push({ href: "/portal/admin/attendance", label: "Attendance" });
+    adminItems.push({ href: "/portal/admin/attendance-view", label: "Daily attendance" });
     adminItems.push({ href: "/portal/admin/proctoring", label: "Proctoring & Locks" });
     adminItems.push({ href: "/portal/admin/mail", label: "Email" });
   }
@@ -93,6 +109,22 @@ export default async function PortalLayout({ children }: { children: React.React
   const mustOnboard = user.roles.includes("student") && !(await isOnboardingComplete(user.id));
   if (mustOnboard && !pathname.startsWith("/portal/onboarding")) {
     redirect("/portal/onboarding");
+  }
+
+  // Attendance Registrar hard-scope: this restricted role may ONLY reach the
+  // dashboard and the read-only daily attendance view. Since the role passes
+  // isStaff() (so it can read attendance), we must fence it out of every other
+  // staff surface here rather than page-by-page.
+  if (isRegistrarOnly(user.roles) && pathname) {
+    const allowed = [
+      "/portal",
+      "/portal/admin/attendance-view",
+      "/portal/settings",
+      "/portal/auth",
+      "/portal/onboarding",
+    ];
+    const ok = allowed.some((a) => pathname === a || pathname.startsWith(a + "/"));
+    if (!ok) redirect("/portal/admin/attendance-view");
   }
 
   const { roles: navRoles, previewing } = await effectiveRoles(user);
