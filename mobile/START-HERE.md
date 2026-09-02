@@ -176,21 +176,56 @@ the genuine page keeps them pixel-identical and fully working.
 ## Troubleshooting
 
 **"Something went wrong" / the QR scans but nothing loads**
-Almost always the phone and computer are on different networks — for example the
-phone on mobile data, or the laptop on a guest/VPN network. Put both on the same
-Wi-Fi. If that is impossible, or a corporate firewall blocks port 8081, use a
-tunnel instead:
+
+This is the most common failure, and there are two separate causes.
+
+*Cause 1 — different networks.* The phone is on mobile data, or the computer is
+on a guest/VPN network. Put both on the same Wi-Fi.
+
+*Cause 2 — a firewall is blocking Metro.* Diagnose it like this:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8081/status
+curl -s -o /dev/null -w "%{http_code}\n" http://<YOUR-LAN-IP>:8081/status
+```
+
+If the first prints `200` and the second prints `000`, the server is healthy but
+the firewall is blocking it — the phone will never reach it either. This
+happened on the machine this app was built on, so expect it.
+
+**The fix for both causes is tunnel mode:**
 
 ```bash
 npx expo start --tunnel
 ```
 
-It is slower but works across any network. Accept the `@expo/ngrok` install
-prompt if it appears.
+It routes through a public relay instead of your network, so it works on any
+Wi-Fi, on mobile data, and through firewalls. `@expo/ngrok` is already a
+dependency, so there is no install prompt.
 
-**Windows: phone still cannot connect on the same Wi-Fi**
-Windows Firewall is likely blocking port 8081 — allow Node.js on private
-networks when prompted, or just use `--tunnel`.
+Tunnel mode prints a different URL, like
+`exp://xxxxxxx-anonymous-8081.exp.direct`. **That URL changes every time you
+restart the server**, so re-scan the new QR after each restart.
+
+If the terminal is not showing the tunnel URL (for example the assistant started
+the server in the background), read it from the local ngrok API:
+
+```bash
+curl -s http://localhost:4040/api/tunnels
+```
+
+Take `public_url`, swap `http://` for `exp://`, and that is what Expo Go wants.
+
+**Windows: allowing Metro through the firewall instead**
+If you would rather fix the firewall than use a tunnel, allow Node.js on
+**private** networks. Note that a previously dismissed prompt leaves a Block
+rule behind that silently wins over later Allow rules, so check for one:
+
+```bash
+netsh advfirewall firewall show rule name=all | grep -iB2 -A6 node.exe
+```
+
+Tunnel mode is less trouble.
 
 **`ERESOLVE could not resolve` during `npm install`**
 `.npmrc` is missing or was deleted. Restore it (`git checkout .npmrc`) and
