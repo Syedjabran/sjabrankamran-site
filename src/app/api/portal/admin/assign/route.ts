@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin, audit } from "@/lib/portal/admin";
 import { questionSeconds, totalSeconds, minutesFromSeconds } from "@/lib/portal/timing";
+import { notify as notifyUsers, type NotifKind } from "@/lib/portal/notifications";
 
 export const runtime = "nodejs";
 
@@ -31,9 +32,11 @@ export async function POST(req: Request) {
   const studentIds = rows.map((r) => r.student_id).filter(Boolean);
   const uids = rows.map((r) => r.edu_students?.profile_id).filter((x): x is string => !!x);
 
-  async function notify(kind: string, bodyText: string, link: string) {
+  const fmtDue = (iso?: string) =>
+    iso ? new Date(iso).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : null;
+  async function notify(kind: NotifKind, bodyText: string, link: string) {
     if (!b?.notify || uids.length === 0) return;
-    await sb.from("edu_notifications").insert(uids.map((u) => ({ user_id: u, kind, title, body: bodyText, link })));
+    await notifyUsers({ uids }, { type: kind, title, body: bodyText, href: link });
   }
 
   if (b.type === "test") {
@@ -69,7 +72,8 @@ export async function POST(req: Request) {
       } catch { /* non-fatal */ }
     }
     await audit(admin.id, "assessment.create", "edu_assessments", a.id as string, { class_id: b.class_id, questions: qs.length, duration_minutes: durationMinutes, title });
-    await notify("test", "A new test has been posted to your class.", "/portal/exam-lab");
+    const startsTxt = b.starts_at ? ` It starts ${fmtDue(b.starts_at)}.` : "";
+    await notify("test", `New test: ${title}.${startsTxt}`, "/portal/exam-lab");
     return NextResponse.json({ ok: true, id: a.id, type: "test", questions: qs.length, students: studentIds.length, durationMinutes, totalSeconds: computedSecs }, { status: 200 });
   }
 
@@ -89,6 +93,7 @@ export async function POST(req: Request) {
     );
   }
   await audit(admin.id, "assignment.create", "edu_assignments", a.id as string, { class_id: b.class_id, students: studentIds.length, title });
-  await notify("assignment", "A new assignment has been posted to your class.", "/portal/learn");
+  const dueTxt = b.due_at ? `, due ${fmtDue(b.due_at)}` : "";
+  await notify("assignment", `New assignment: ${title}${dueTxt}.`, `/portal/learn/assignments/${a.id}`);
   return NextResponse.json({ ok: true, id: a.id, type: "assignment", students: studentIds.length }, { status: 200 });
 }

@@ -1,10 +1,42 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireStaff, audit } from "@/lib/portal/admin";
+import { notify } from "@/lib/portal/notifications";
 
 export const runtime = "nodejs";
 
 const STATUSES = ["present", "absent", "late", "excused", "online"] as const;
+
+/** Tell each newly-absent student — only for marks that actually changed to
+ * 'absent' in this save, so re-saving a register doesn't re-notify. */
+async function notifyAbsent(
+  sb: ReturnType<typeof createAdminClient>,
+  lessonId: string,
+  savedRows: { student_id: string; status: string }[],
+  prev: Record<string, string>,
+) {
+  try {
+    const absentIds = savedRows
+      .filter((r) => r.status === "absent" && prev[r.student_id] !== "absent")
+      .map((r) => r.student_id);
+    if (!absentIds.length) return;
+    const [{ data: lesson }, { data: stus }] = await Promise.all([
+      sb.from("edu_lessons").select("lesson_date").eq("id", lessonId).maybeSingle(),
+      sb.from("edu_students").select("id, profile_id").in("id", absentIds),
+    ]);
+    const dateTxt = lesson?.lesson_date
+      ? new Date(lesson.lesson_date as string).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" })
+      : "today";
+    const uids = (stus || []).map((s) => s.profile_id as string).filter(Boolean);
+    if (!uids.length) return;
+    await notify({ uids }, {
+      type: "attendance",
+      title: `You were marked absent on ${dateTxt}`,
+      body: "If you believe this is wrong, contact your teacher.",
+      href: "/portal/learn",
+    });
+  } catch { /* best effort */ }
+}
 
 /** Ensure a lesson exists for (class, date) so attendance rows have a parent. */
 async function ensureLesson(sb: ReturnType<typeof createAdminClient>, classId: string, date: string): Promise<string | null> {
@@ -58,6 +90,12 @@ export async function POST(req: Request) {
     .map((m) => ({ lesson_id: b.lessonId, student_id: m.studentId, status: m.status, recorded_by: staff.id, recorded_at: new Date().toISOString() }));
   if (!rows.length) return NextResponse.json({ error: "No valid marks." }, { status: 400 });
   const sb = createAdminClient();
+  // Snapshot existing marks first so we only notify NEWLY-absent students.
+  const prevMarks: Record<string, string> = {};
+  try {
+    const { data: prevRows } = await sb.from("edu_attendance").select("student_id, status").eq("lesson_id", b.lessonId);
+    for (const p of prevRows || []) prevMarks[p.student_id as string] = p.status as string;
+  } catch { /* best effort */ }
   const { error } = await sb.from("edu_attendance").upsert(rows, { onConflict: "lesson_id,student_id" });
   if (error) {
     // 'online' is a new enum value that needs a one-time DB migration
@@ -70,6 +108,7 @@ export async function POST(req: Request) {
         const retry = await sb.from("edu_attendance").upsert(safe, { onConflict: "lesson_id,student_id" });
         if (!retry.error) {
           await audit(staff.id, "attendance.save", "edu_lessons", b.lessonId, { count: safe.length, online_skipped: rows.length - safe.length });
+          await notifyAbsent(sb, b.lessonId, safe, prevMarks);
           return NextResponse.json({ ok: true, saved: safe.length, warning: "‘Online’ needs a one-time DB migration before it can be saved — other marks were saved." }, { status: 200 });
         }
       }
@@ -78,5 +117,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
   await audit(staff.id, "attendance.save", "edu_lessons", b.lessonId, { count: rows.length });
+  await notifyAbsent(sb, b.lessonId, rows, prevMarks);
   return NextResponse.json({ ok: true, saved: rows.length }, { status: 200 });
 }

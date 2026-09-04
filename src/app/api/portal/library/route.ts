@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getPortalUser } from "@/lib/edu/auth";
 import { listThreads, createThread, type ForumTag } from "@/lib/portal/forum";
 import { award } from "@/lib/portal/contribution";
+import { notify } from "@/lib/portal/notifications";
 
 export const runtime = "nodejs";
 
@@ -27,5 +28,14 @@ export async function POST(req: Request) {
   const name = user.fullName || user.email || "Member";
   const thread = await createThread({ title, body, tag, authorId: user.id, authorName: name, attachments: [] });
   await award(user.id, name, tag === "topic" ? "topic" : "thread");
+  // A shared resource is worth surfacing to every student's bell.
+  if (tag === "resource") {
+    await notify({ audience: "students" }, {
+      type: "resource",
+      title: `New resource: ${title}`,
+      body: `${name} shared a resource in the Resource Library.`,
+      href: "/portal/library",
+    });
+  }
   return NextResponse.json({ ok: true, id: thread.id }, { status: 200 });
 }

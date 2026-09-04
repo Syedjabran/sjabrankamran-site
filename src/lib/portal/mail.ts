@@ -132,6 +132,14 @@ export async function sendMail(input: {
   const { html: _h, text: _t, ...idx } = rec;
   void _h; void _t;
   await appendIndex(idx);
+  // In-portal "You've got mail" for recipients who are portal users (best-effort;
+  // dynamic import keeps this module free of a static notifications dependency).
+  if (rec.status !== "failed") {
+    try {
+      const { notifyMailReceived } = await import("@/lib/portal/notifications");
+      await notifyMailReceived(to, rec.subject);
+    } catch { /* best effort */ }
+  }
   return { id: rec.id, status: rec.status, error: rec.error };
 }
 
