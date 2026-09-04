@@ -1,27 +1,20 @@
 import ReactMarkdown from "react-markdown";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
+import { latexToUnicode } from "@/lib/ai/format";
 
 /**
- * Gemini and other models often emit LaTeX with \(...\) and \[...\].
- * remark-math intentionally parses dollar delimiters, so normalise the
- * alternate LaTeX delimiters before rendering. This also repairs answers
- * already stored in Supabase without changing their source text.
+ * AI answers must reach students as normal readable text with real symbols
+ * (g = F / m, 6.67 × 10⁻¹¹ N m² kg⁻²) — never raw LaTeX source. New answers
+ * are generated LaTeX-free at the prompt + sanitised server-side; this
+ * render-time pass repairs OLDER answers already stored with $...$ / \frac
+ * markup without changing their source text in the database.
  */
 export function normalizePhysicsMath(content: string) {
-  return content
-    .replace(/\\\[/g, "\n$$\n")
-    .replace(/\\\]/g, "\n$$\n")
-    .replace(/\\\(/g, "$")
-    .replace(/\\\)/g, "$")
-    .replace(/\n{3,}/g, "\n\n");
+  return latexToUnicode(content).replace(/\n{3,}/g, "\n\n");
 }
 
 export function MarkdownRenderer({ content }: { content: string }) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkMath]}
-      rehypePlugins={[rehypeKatex]}
       components={{
         h1: ({ children }) => <h2 className="mb-3 mt-5 text-xl font-semibold text-ice">{children}</h2>,
         h2: ({ children }) => <h3 className="mb-3 mt-5 text-lg font-semibold text-ice">{children}</h3>,
