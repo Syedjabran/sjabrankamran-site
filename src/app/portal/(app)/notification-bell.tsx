@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, Check, CheckCheck, Target, Trophy, ClipboardList, FlaskConical, Megaphone } from "lucide-react";
+import Link from "next/link";
+import { Bell, Check, CheckCheck, Target, Trophy, ClipboardList, FlaskConical, Megaphone, Mail, BookOpen, CheckSquare, CalendarX2, TrendingUp, AlarmClock } from "lucide-react";
 
 type Notif = { id: string; kind: string; title: string; body: string | null; link: string | null; read_at: string | null; created_at: string };
 
@@ -12,6 +13,12 @@ const KIND_ICON: Record<string, React.ReactNode> = {
   assignment: <ClipboardList size={14} className="text-cyan" />,
   test: <FlaskConical size={14} className="text-magenta" />,
   announcement: <Megaphone size={14} className="text-emerald2" />,
+  mail: <Mail size={14} className="text-cyan" />,
+  resource: <BookOpen size={14} className="text-emerald2" />,
+  marks: <CheckSquare size={14} className="text-amber-300" />,
+  attendance: <CalendarX2 size={14} className="text-signal" />,
+  rank: <TrendingUp size={14} className="text-cyan" />,
+  reminder: <AlarmClock size={14} className="text-amber-300" />,
 };
 function rel(ts: string) {
   const s = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
@@ -95,6 +102,11 @@ export function NotificationBell() {
               <li className="px-4 py-8 text-center text-xs text-dust">No notifications yet.</li>
             )}
           </ul>
+          <div className="border-t border-white/10 px-4 py-2.5 text-center">
+            <Link href="/portal/notifications" onClick={() => setOpen(false)} className="text-xs font-semibold text-cyan hover:underline">
+              See all notifications
+            </Link>
+          </div>
         </div>
       ) : null}
     </div>
