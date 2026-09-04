@@ -54,7 +54,9 @@ function navFor(roles: EduRole[]): NavSection[] {
     adminItems.push({ href: "/portal/admin/attendance-view", label: "Daily attendance" });
     adminItems.push({ href: "/portal/admin/proctoring", label: "Proctoring & Locks" });
     adminItems.push({ href: "/portal/admin/mail", label: "Email" });
+    adminItems.push({ href: "/portal/notifications", label: "Notifications" });
   }
+  if (admin) adminItems.push({ href: "/portal/admin/notify", label: "Announcements" });
   if (admin) {
     adminItems.push({ href: "/portal/admin/academics", label: "Academics" });
     adminItems.push({ href: "/portal/admin/finance", label: "Fees & Finance" });
@@ -75,7 +77,9 @@ function navFor(roles: EduRole[]): NavSection[] {
     learnItems.push({ href: "/portal/exam-lab", label: "Exam Lab" });
     learnItems.push({ href: "/portal/learn", label: "My Learning" });
     learnItems.push({ href: "/portal/progress", label: "My Progress" });
+    learnItems.push({ href: "/portal/my-ranking", label: "My Ranking" });
     learnItems.push({ href: "/portal/leaderboard", label: "Leaderboard" });
+    learnItems.push({ href: "/portal/notifications", label: "Notifications" });
   }
   if (isParent) learnItems.push({ href: "/portal/family", label: "My Children" });
   if (learnItems.length) sections.push({ title: staff ? "Learning" : undefined, items: learnItems });
