@@ -5,7 +5,9 @@
   "description": "Official personal website of Syed Jabran Ali Kamran",
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/check-ai-provider-policy.mjs",
     "build": "next build",
+    "check:ai-policy": "node scripts/check-ai-provider-policy.mjs",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"

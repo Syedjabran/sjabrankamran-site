@@ -1,9 +1,9 @@
 /**
  * Public-website AI Physics Tutor. SERVER-ONLY.
  *
- * POLICY (per JB, 2026-08-05): the public website uses GOOGLE GEMINI ONLY.
- * Claude and OpenAI are reserved for the Admin Portal — do not wire them
- * into any public-facing route. If GEMINI_API_KEY is missing or the call
+ * POLICY: the website and portal use GOOGLE GEMINI ONLY for AI features.
+ * Anthropic/Claude, OpenAI, Moonshot/Kimi and OpenClaw must never be wired
+ * into this application. If GEMINI_API_KEY is missing or the call
  * fails, the question defers to teacher review instead of erroring.
  */
 
