@@ -2,10 +2,17 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireStaff, audit } from "@/lib/portal/admin";
 import { notify } from "@/lib/portal/notifications";
+import {
+  ATTENDANCE_LABEL,
+  ATTENDANCE_MIGRATION_FILE,
+  allowsReason,
+  isAttendanceStatus,
+  needsEnumMigration,
+  normaliseReason,
+  requiresReason,
+} from "@/lib/edu/attendance";
 
 export const runtime = "nodejs";
-
-const STATUSES = ["present", "absent", "late", "excused", "online"] as const;
 
 /** Tell each newly-absent student — only for marks that actually changed to
  * 'absent' in this save, so re-saving a register doesn't re-notify. */
@@ -72,23 +79,47 @@ export async function GET(req: Request) {
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const { data: existing } = await sb.from("edu_attendance").select("student_id, status").eq("lesson_id", lessonId);
+  // `note` carries the official exemption reason, so a reload re-hydrates it
+  // and the comment box can stay collapsed.
+  const { data: existing } = await sb.from("edu_attendance").select("student_id, status, note").eq("lesson_id", lessonId);
   const marks: Record<string, string> = {};
-  for (const e of existing || []) marks[e.student_id as string] = e.status as string;
+  const notes: Record<string, string> = {};
+  for (const e of existing || []) {
+    const sid = e.student_id as string;
+    const status = e.status as string;
+    marks[sid] = status;
+    // Only surface a reason for the status it was recorded against.
+    const note = normaliseReason(e.note);
+    if (note && allowsReason(status)) notes[sid] = note;
+  }
 
-  return NextResponse.json({ lessonId, date, roster, marks }, { status: 200 });
+  return NextResponse.json({ lessonId, date, roster, marks, notes }, { status: 200 });
 }
 
-/** POST { lessonId, marks:[{studentId,status}] } — save attendance. */
+/** POST { lessonId, marks:[{studentId,status,note?}] } — save attendance. */
 export async function POST(req: Request) {
   const staff = await requireStaff();
   if (!staff) return NextResponse.json({ error: "Staff only." }, { status: 403 });
-  const b = (await req.json().catch(() => null)) as { lessonId?: string; marks?: { studentId: string; status: string }[] } | null;
+  const b = (await req.json().catch(() => null)) as { lessonId?: string; marks?: { studentId: string; status: string; note?: string }[] } | null;
   if (!b?.lessonId || !Array.isArray(b.marks)) return NextResponse.json({ error: "lessonId and marks required." }, { status: 400 });
   const rows = b.marks
-    .filter((m) => m.studentId && (STATUSES as readonly string[]).includes(m.status))
-    .map((m) => ({ lesson_id: b.lessonId, student_id: m.studentId, status: m.status, recorded_by: staff.id, recorded_at: new Date().toISOString() }));
+    .filter((m) => m.studentId && isAttendanceStatus(m.status))
+    .map((m) => {
+      // A reason is only stored for the statuses that allow one, so moving a
+      // student off 'exempt'/'leave' clears the old reason instead of leaving
+      // a stale one attached to e.g. 'present'.
+      const note = allowsReason(m.status) ? normaliseReason(m.note) : "";
+      return { lesson_id: b.lessonId, student_id: m.studentId, status: m.status, note: note || null, recorded_by: staff.id, recorded_at: new Date().toISOString() };
+    });
   if (!rows.length) return NextResponse.json({ error: "No valid marks." }, { status: 400 });
+  // A lesson exemption is an official act: it cannot be saved without a reason.
+  const missingReason = rows.filter((r) => requiresReason(r.status) && !r.note).length;
+  if (missingReason) {
+    return NextResponse.json(
+      { error: `${missingReason} student${missingReason === 1 ? "" : "s"} marked Exempt still need${missingReason === 1 ? "s" : ""} an official reason. Record the reason in the comment box, then save.` },
+      { status: 400 },
+    );
+  }
   const sb = createAdminClient();
   // Snapshot existing marks first so we only notify NEWLY-absent students.
   const prevMarks: Record<string, string> = {};
@@ -98,21 +129,26 @@ export async function POST(req: Request) {
   } catch { /* best effort */ }
   const { error } = await sb.from("edu_attendance").upsert(rows, { onConflict: "lesson_id,student_id" });
   if (error) {
-    // 'online' is a new enum value that needs a one-time DB migration
-    // (ALTER TYPE edu_attendance_status ADD VALUE 'online'). Until it's run,
-    // still save the present/late/absent/excused marks rather than lose them.
-    const hasOnline = rows.some((r) => r.status === "online");
-    if (hasOnline) {
-      const safe = rows.filter((r) => r.status !== "online");
+    // 'online', 'leave' and 'exempt' only exist in the enum once edu-002 has
+    // been run. Until then, still save every mark the DB does accept rather
+    // than lose a whole register — and say exactly what has to be run.
+    const blocked = [...new Set(rows.filter((r) => needsEnumMigration(r.status)).map((r) => r.status))];
+    if (blocked.length) {
+      const names = blocked.map((s) => `‘${ATTENDANCE_LABEL[s as keyof typeof ATTENDANCE_LABEL] ?? s}’`).join(", ");
+      const safe = rows.filter((r) => !needsEnumMigration(r.status));
       if (safe.length) {
         const retry = await sb.from("edu_attendance").upsert(safe, { onConflict: "lesson_id,student_id" });
         if (!retry.error) {
-          await audit(staff.id, "attendance.save", "edu_lessons", b.lessonId, { count: safe.length, online_skipped: rows.length - safe.length });
+          await audit(staff.id, "attendance.save", "edu_lessons", b.lessonId, { count: safe.length, skipped: rows.length - safe.length, blocked });
           await notifyAbsent(sb, b.lessonId, safe, prevMarks);
-          return NextResponse.json({ ok: true, saved: safe.length, warning: "‘Online’ needs a one-time DB migration before it can be saved — other marks were saved." }, { status: 200 });
+          return NextResponse.json({
+            ok: true,
+            saved: safe.length,
+            warning: `${names} could not be saved yet — run ${ATTENDANCE_MIGRATION_FILE} in the Supabase SQL Editor. All other marks were saved.`,
+          }, { status: 200 });
         }
       }
-      return NextResponse.json({ error: "‘Online’ attendance needs a one-time DB migration (ALTER TYPE edu_attendance_status ADD VALUE 'online')." }, { status: 400 });
+      return NextResponse.json({ error: `${names} attendance needs a one-time DB migration — run ${ATTENDANCE_MIGRATION_FILE} in the Supabase SQL Editor.` }, { status: 400 });
     }
     return NextResponse.json({ error: error.message }, { status: 400 });
   }

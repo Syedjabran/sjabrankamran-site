@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CalendarCheck, Users, RefreshCw } from "lucide-react";
 
-type Student = { name: string; status: string };
+type Student = { name: string; status: string; reason?: string | null };
 type ClassRow = {
   classId: string;
   className: string;
@@ -16,6 +16,8 @@ type ClassRow = {
   online: number;
   absent: number;
   excused: number;
+  leave: number;
+  exempt: number;
   students: Student[];
 };
 type Payload = {
@@ -32,11 +34,13 @@ const STATUS_STYLE: Record<string, string> = {
   online: "border-cyan/40 bg-cyan/10 text-cyan",
   late: "border-amber-400/40 bg-amber-400/10 text-amber-300",
   excused: "border-white/20 bg-white/5 text-fog",
+  leave: "border-ultraviolet/40 bg-ultraviolet/10 text-ultraviolet",
+  exempt: "border-lime2/40 bg-lime2/10 text-lime2",
   absent: "border-signal/40 bg-signal/10 text-signal",
   unmarked: "border-white/10 bg-white/[0.02] text-dust",
 };
 const STATUS_LABEL: Record<string, string> = {
-  present: "Present", online: "Online", late: "Late", excused: "Excused", absent: "Absent", unmarked: "Not marked",
+  present: "Present", online: "Online", late: "Late", excused: "Excused", leave: "Leave", exempt: "Exempt", absent: "Absent", unmarked: "Not marked",
 };
 
 function todayISO() {
@@ -70,14 +74,18 @@ export function AttendanceView() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Leave/exempt are authorised non-attendance: kept out of "attended" and
+  // surfaced on their own so they can never be silently swallowed.
   const totals = (data?.register || []).reduce(
     (t, c) => ({
       present: t.present + c.present + c.online,
       late: t.late + c.late,
       absent: t.absent + c.absent,
+      leave: t.leave + (c.leave || 0),
+      exempt: t.exempt + (c.exempt || 0),
       total: t.total + c.total,
     }),
-    { present: 0, late: 0, absent: 0, total: 0 }
+    { present: 0, late: 0, absent: 0, leave: 0, exempt: 0, total: 0 }
   );
 
   return (
@@ -118,8 +126,8 @@ export function AttendanceView() {
 
       {data && !err ? (
         <>
-          <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {([["Attended", totals.present, "#12D48C"], ["Late", totals.late, "#F5C451"], ["Absent", totals.absent, "#F03Dce"], ["On roster", totals.total, "#E9EEF5"]] as [string, number, string][]).map(([k, v, c]) => (
+          <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {([["Attended", totals.present, "#12D48C"], ["Late", totals.late, "#F5C451"], ["Absent", totals.absent, "#F03Dce"], ["Leave", totals.leave, "#A78BFA"], ["Exempt", totals.exempt, "#B6FF3D"], ["On roster", totals.total, "#E9EEF5"]] as [string, number, string][]).map(([k, v, c]) => (
               <div key={k} className="rounded-xl border border-white/10 bg-white/[0.02] px-3.5 py-2.5">
                 <div className="font-mono text-[10px] uppercase tracking-widest text-dust">{k}</div>
                 <div className="mt-0.5 font-display text-lg" style={{ color: c }}>{v}</div>
@@ -141,6 +149,8 @@ export function AttendanceView() {
                       <span className="rounded-full border border-emerald2/30 px-2.5 py-0.5 text-emerald2">{cl.present + cl.online} attended</span>
                       {cl.late ? <span className="rounded-full border border-amber-400/30 px-2.5 py-0.5 text-amber-300">{cl.late} late</span> : null}
                       {cl.absent ? <span className="rounded-full border border-signal/30 px-2.5 py-0.5 text-signal">{cl.absent} absent</span> : null}
+                      {cl.leave ? <span className="rounded-full border border-ultraviolet/30 px-2.5 py-0.5 text-ultraviolet">{cl.leave} leave</span> : null}
+                      {cl.exempt ? <span className="rounded-full border border-lime2/30 px-2.5 py-0.5 text-lime2">{cl.exempt} exempt</span> : null}
                       <span className="rounded-full border border-white/10 px-2.5 py-0.5 text-dust">{cl.marked}/{cl.total} marked</span>
                     </div>
                   </div>
@@ -152,8 +162,12 @@ export function AttendanceView() {
                   ) : (
                     <div className="flex flex-wrap gap-2">
                       {cl.students.map((s, i) => (
-                        <span key={i} className={"inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs " + (STATUS_STYLE[s.status] || STATUS_STYLE.unmarked)}>
-                          {s.name} <span className="font-mono text-[10px] opacity-80">· {STATUS_LABEL[s.status] || s.status}</span>
+                        <span key={i} className={"inline-flex max-w-full flex-col items-start gap-0.5 rounded-lg border px-2.5 py-1 text-xs " + (STATUS_STYLE[s.status] || STATUS_STYLE.unmarked)}>
+                          <span className="inline-flex items-center gap-1.5">
+                            {s.name} <span className="font-mono text-[10px] opacity-80">· {STATUS_LABEL[s.status] || s.status}</span>
+                          </span>
+                          {/* The official reason recorded at marking time. */}
+                          {s.reason ? <span className="max-w-[16rem] whitespace-normal break-words text-[10px] leading-snug opacity-90">Reason: {s.reason}</span> : null}
                         </span>
                       ))}
                     </div>

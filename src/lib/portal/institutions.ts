@@ -10,6 +10,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getAttempts } from "@/lib/exam-lab/attempts";
 import { analyse } from "@/lib/exam-lab/analytics";
 import { PORTAL_BUCKET } from "@/lib/portal/onboarding";
+import { attendancePercent } from "@/lib/edu/attendance";
 
 export type ClassMeta = {
   id: string; key: string; school: string; year: string;
@@ -143,10 +144,8 @@ export async function getClassReport(meta: ClassMeta): Promise<ClassReport> {
       let attendancePct: number | null = null;
       if (s?.id) {
         const { data: att } = await supabase.from("edu_attendance").select("status").eq("student_id", s.id);
-        if (att && att.length) {
-          const good = att.filter((x) => x.status === "present" || x.status === "late").length;
-          attendancePct = Math.round((good / att.length) * 100);
-        }
+        // excused / leave / exempt are excluded from the denominator.
+        if (att && att.length) attendancePct = attendancePercent(att.map((x) => x.status as string));
       }
       const lastActive = attempts.length ? Math.max(...attempts.map((x) => x.ts)) : null;
       return {

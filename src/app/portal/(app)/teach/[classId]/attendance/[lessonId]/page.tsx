@@ -4,10 +4,11 @@ import { revalidatePath } from "next/cache";
 import { CheckSquare } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getPortalUser, isAdmin } from "@/lib/edu/auth";
+import { ATTENDANCE_STATUSES, ATTENDANCE_LABEL, normaliseReason, allowsReason, requiresReason } from "@/lib/edu/attendance";
 
 export const metadata = { title: "Mark Attendance" };
 
-const STATUSES = ["present", "absent", "late", "excused"] as const;
+const STATUSES = ATTENDANCE_STATUSES;
 
 async function saveAttendance(formData: FormData) {
   "use server";
@@ -20,11 +21,16 @@ async function saveAttendance(formData: FormData) {
   for (const [key, value] of formData.entries()) {
     if (key.startsWith("status:")) {
       const studentId = key.slice("status:".length);
-      const note = String(formData.get(`note:${studentId}`) ?? "").trim();
+      const status = String(value);
+      // A reason is only kept for the statuses that carry one, so switching a
+      // student back to Present cannot leave a stale exemption reason behind.
+      const note = allowsReason(status) ? normaliseReason(formData.get(`note:${studentId}`)) : "";
+      // A lesson exemption is an official act — never store one without a reason.
+      if (requiresReason(status) && !note) continue;
       rows.push({
         lesson_id: lessonId,
         student_id: studentId,
-        status: String(value),
+        status,
         note: note || null,
       });
     }
@@ -116,13 +122,14 @@ export default async function AttendancePage({
                         defaultChecked={current ? current.status === st : st === "present"}
                         className="accent-cyan"
                       />
-                      {st}
+                      {ATTENDANCE_LABEL[st]}
                     </label>
                   ))}
                   <input
                     name={`note:${s.id}`}
                     defaultValue={current?.note ?? ""}
-                    placeholder="Note (optional)"
+                    aria-label={`Reason or note for ${s.edu_profiles?.full_name || "student"} — required when Exempt is selected`}
+                    placeholder="Reason (required for Exempt)"
                     className="ml-auto w-44 rounded-lg border border-white/10 bg-abyss/60 px-2.5 py-1.5 text-xs text-ice placeholder:text-dust focus:border-cyan focus:outline-none"
                   />
                 </div>

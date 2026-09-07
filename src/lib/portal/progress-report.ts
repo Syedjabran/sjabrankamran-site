@@ -9,6 +9,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAttempts } from "@/lib/exam-lab/attempts";
 import { analyse } from "@/lib/exam-lab/analytics";
+import { attendancePercent } from "@/lib/edu/attendance";
 
 export type ProgressStats = {
   name: string;
@@ -40,10 +41,9 @@ export async function buildStats(uid: string, studentId: string, name: string, c
   let attendancePct: number | null = null;
   if (studentId) {
     const { data: att } = await supabase.from("edu_attendance").select("status").eq("student_id", studentId);
-    if (att && att.length) {
-      const good = att.filter((x) => x.status === "present" || x.status === "late").length;
-      attendancePct = Math.round((good / att.length) * 100);
-    }
+    // excused / leave / exempt are excluded from the denominator, so an
+    // approved absence never drags a parent-facing report down.
+    if (att && att.length) attendancePct = attendancePercent(att.map((x) => x.status as string));
   }
 
   let trend: ProgressStats["trend"] = "n/a";

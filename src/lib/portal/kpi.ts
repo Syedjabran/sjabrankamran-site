@@ -42,6 +42,7 @@ import { listAllocations, type ExamAllocation } from "@/lib/exam-lab/allocations
 import { listTasks, type PersonalTask } from "@/lib/portal/tasks";
 import { getContrib } from "@/lib/portal/contribution";
 import { notify } from "@/lib/portal/notifications";
+import { countedStatuses } from "@/lib/edu/attendance";
 
 const DATA = "portal-data";
 const LATEST_KEY = "kpi/latest.json";
@@ -232,12 +233,14 @@ function dailyPillar(attempts: Attempt[], allocs: ExamAllocation[], tasks: Perso
 }
 
 function attendancePillar(statuses: string[]): PillarScore {
-  const counted = statuses.filter((s) => s !== "excused");
+  // excused / leave / exempt are authorised non-attendance: dropped from the
+  // denominator so approved leave can never read as truancy.
+  const counted = countedStatuses(statuses);
   if (!counted.length) return { score: 50, detail: "No attendance recorded yet — neutral 50." };
   const attended = counted.filter((s) => s === "present" || s === "online").length;
   const late = counted.filter((s) => s === "late").length;
   const score = Math.round(((attended + 0.5 * late) / counted.length) * 100);
-  return { score, detail: `${attended} attended + ${late} late of ${counted.length} lessons (excused excluded)` };
+  return { score, detail: `${attended} attended + ${late} late of ${counted.length} lessons (excused, leave & exemptions excluded)` };
 }
 
 function contributionPillar(contrib: { total: number; monthPoints: number } | null): PillarScore {

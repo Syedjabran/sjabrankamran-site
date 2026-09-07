@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getPortalUser, isStaff, isAdmin, isAttendanceRegistrar } from "@/lib/edu/auth";
 import { getStaffSchool } from "@/lib/portal/staff-school";
 import { getRegistry } from "@/lib/portal/institutions";
+import { allowsReason, normaliseReason } from "@/lib/edu/attendance";
 
 export const runtime = "nodejs";
 
@@ -16,7 +17,11 @@ export const runtime = "nodejs";
  * GET ?date=YYYY-MM-DD[&school=<name>][&classId=<id>]
  *   → { date, school, schools, classes:[{id,name,section,year}],
  *       register:[{ classId, className, present, late, online, absent, excused,
- *                   total, marked, students:[{name,status}] }] }
+ *                   leave, exempt, total, marked,
+ *                   students:[{name,status,reason}] }] }
+ *
+ * `reason` replays the official lesson-exemption reason recorded by staff
+ * (edu_attendance.note) so it "reappears in the report".
  */
 export async function GET(req: Request) {
   const user = await getPortalUser();
@@ -52,7 +57,7 @@ export async function GET(req: Request) {
   const targetClasses = onlyClassId ? classesForSchool.filter((c) => c.id === onlyClassId) : classesForSchool;
 
   const sb = createAdminClient();
-  const STATUS_KEYS = ["present", "late", "online", "absent", "excused"] as const;
+  const STATUS_KEYS = ["present", "late", "online", "absent", "excused", "leave", "exempt"] as const;
 
   const register = await Promise.all(
     targetClasses.map(async (cl) => {
@@ -78,17 +83,25 @@ export async function GET(req: Request) {
       }));
 
       const marks: Record<string, string> = {};
+      const reasons: Record<string, string> = {};
       if (lesson?.id) {
-        const { data: att } = await sb.from("edu_attendance").select("student_id, status").eq("lesson_id", lesson.id);
-        for (const a of att || []) marks[a.student_id as string] = a.status as string;
+        const { data: att } = await sb.from("edu_attendance").select("student_id, status, note").eq("lesson_id", lesson.id);
+        for (const a of att || []) {
+          const sid = a.student_id as string;
+          const status = a.status as string;
+          marks[sid] = status;
+          const note = normaliseReason(a.note);
+          // Only show a note where it is an official leave/exemption reason.
+          if (note && allowsReason(status)) reasons[sid] = note;
+        }
       }
 
-      const counts: Record<string, number> = { present: 0, late: 0, online: 0, absent: 0, excused: 0 };
+      const counts: Record<string, number> = { present: 0, late: 0, online: 0, absent: 0, excused: 0, leave: 0, exempt: 0 };
       const students = roster
         .map((s) => {
           const status = marks[s.studentId] || "unmarked";
           if (status in counts) counts[status] += 1;
-          return { name: s.name, status };
+          return { name: s.name, status, reason: reasons[s.studentId] || null };
         })
         .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -105,6 +118,8 @@ export async function GET(req: Request) {
         online: counts.online,
         absent: counts.absent,
         excused: counts.excused,
+        leave: counts.leave,
+        exempt: counts.exempt,
         students,
       };
     })
