@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { bearerToken, createClient } from "@/lib/supabase/server";
 
 export type EduRole =
   | "super_admin"
@@ -66,12 +66,28 @@ export function isAdmin(roles: EduRole[]) {
   return roles.some((r) => ["super_admin", "admin"].includes(r));
 }
 
-/** Server-side: current signed-in portal user with roles (RLS-scoped). */
+/**
+ * Server-side: current signed-in portal user with roles (RLS-scoped).
+ *
+ * Resolves the caller from the session cookie (the website) or, when there is
+ * no cookie session, from an `Authorization: Bearer <access_token>` header
+ * (the React Native portal app). Both paths validate the token against the
+ * Auth server, and createClient() forwards a bearer token to PostgREST so RLS
+ * applies identically either way.
+ */
 export async function getPortalUser(): Promise<PortalUser | null> {
   const supabase = await createClient();
-  const {
+  let {
     data: { user },
   } = await supabase.auth.getUser();
+
+  if (!user) {
+    const token = await bearerToken();
+    if (token) {
+      const { data } = await supabase.auth.getUser(token);
+      user = data.user;
+    }
+  }
   if (!user) return null;
 
   let fullName = "";
