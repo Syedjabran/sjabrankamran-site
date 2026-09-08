@@ -19,7 +19,11 @@ const ENROLLMENT_CODES: Record<string, { code: string; school: string; className
     school: "LGS Paragon",
     className: "AS (Year 1) Physics",
   },
-  // Add more classes here as needed
+  "e81bb239-9f4a-46b9-ac50-703452f7bee3": {
+    code: "PARAGON-A2-2026",
+    school: "LGS Paragon",
+    className: "A2 (Year 2) Physics",
+  },
 };
 
 const schema = z.object({
