@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Bell, BellRing, CheckCheck, Target, Trophy, ClipboardList, FlaskConical,
   Megaphone, Mail, BookOpen, CheckSquare, CalendarX2, TrendingUp, AlarmClock,
+  CalendarPlus, Smartphone, Copy, Check, ChevronDown,
 } from "lucide-react";
 
 type Notif = { id: string; kind: string; title: string; body: string | null; link: string | null; read_at: string | null; created_at: string };
@@ -42,6 +43,94 @@ function rel(ts: string) {
   const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
   const d = Math.floor(h / 24); if (d < 7) return `${d}d ago`;
   return new Date(ts).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function urlBase64ToUint8Array(base64: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(b64);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+function AlertsSetup() {
+  const [open, setOpen] = useState(false);
+  const [pushState, setPushState] = useState<"unknown" | "unsupported" | "unavailable" | "off" | "on" | "busy">("unknown");
+  const [cal, setCal] = useState<{ subscribeUrl: string; googleSubscribeUrl: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) { setPushState("unsupported"); return; }
+        const r = await fetch("/api/portal/push");
+        const j = await r.json();
+        if (!j.enabled || !j.publicKey) { setPushState("unavailable"); return; }
+        const reg = await navigator.serviceWorker.getRegistration();
+        const sub = reg ? await reg.pushManager.getSubscription() : null;
+        setPushState(sub ? "on" : "off");
+      } catch { setPushState("unavailable"); }
+    })();
+    fetch("/api/portal/calendar").then((r) => r.json()).then((j) => setCal({ subscribeUrl: j.subscribeUrl, googleSubscribeUrl: j.googleSubscribeUrl })).catch(() => {});
+  }, []);
+
+  async function enablePush() {
+    try {
+      setPushState("busy");
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { setPushState("off"); return; }
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      await navigator.serviceWorker.ready;
+      const { publicKey } = await (await fetch("/api/portal/push")).json();
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
+      await fetch("/api/portal/push", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ op: "subscribe", subscription: sub.toJSON() }) });
+      setPushState("on");
+    } catch { setPushState("off"); }
+  }
+  async function disablePush() {
+    try {
+      setPushState("busy");
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = reg ? await reg.pushManager.getSubscription() : null;
+      if (sub) { await fetch("/api/portal/push", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ op: "unsubscribe", endpoint: sub.endpoint }) }); await sub.unsubscribe(); }
+      setPushState("off");
+    } catch { setPushState("on"); }
+  }
+  function copyFeed() { if (cal?.subscribeUrl) { navigator.clipboard?.writeText(cal.subscribeUrl).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1800); }).catch(() => {}); } }
+
+  return (
+    <div className="rounded-2xl border border-cyan/20 bg-cyan/[0.04]">
+      <button onClick={() => setOpen((s) => !s)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
+        <span className="flex items-center gap-2 text-sm font-semibold text-ice"><BellRing size={16} className="text-cyan" /> Alerts &amp; calendar sync</span>
+        <ChevronDown size={16} className={"text-dust transition " + (open ? "rotate-180" : "")} />
+      </button>
+      {open ? (
+        <div className="grid gap-3 border-t border-white/10 p-4 sm:grid-cols-2">
+          <div className="rounded-xl border border-white/10 bg-space/60 p-4">
+            <p className="flex items-center gap-2 text-sm font-semibold text-ice"><Smartphone size={15} className="text-cyan" /> Push notifications</p>
+            <p className="mt-1 text-xs text-dust">Get alerts on this device for tests, assignments, reminders and class timings — even when the app is closed. Install the portal to your home screen first for the best results.</p>
+            <div className="mt-3">
+              {pushState === "on" ? <button onClick={disablePush} className="rounded-lg border border-cyan/40 bg-cyan/10 px-3 py-1.5 text-xs font-semibold text-cyan">Alerts on · turn off</button>
+                : pushState === "off" || pushState === "busy" ? <button disabled={pushState === "busy"} onClick={enablePush} className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-fog hover:border-cyan/40 hover:text-cyan disabled:opacity-60">{pushState === "busy" ? "Working…" : "Enable push on this device"}</button>
+                : pushState === "unsupported" ? <p className="text-xs text-dust/80">This browser doesn’t support push. On iPhone, add the app to your Home Screen first.</p>
+                : pushState === "unavailable" ? <p className="text-xs text-dust/80">In-app alerts are active. Device push isn’t enabled on the server yet.</p>
+                : <p className="text-xs text-dust/80">Checking…</p>}
+            </div>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-space/60 p-4">
+            <p className="flex items-center gap-2 text-sm font-semibold text-ice"><CalendarPlus size={15} className="text-emerald2" /> Google Calendar sync</p>
+            <p className="mt-1 text-xs text-dust">Subscribe once and your tests, due dates, class timings and extra classes stay in your calendar with reminders.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {cal?.googleSubscribeUrl ? <a href={cal.googleSubscribeUrl} target="_blank" rel="noreferrer" className="rounded-lg border border-emerald2/40 bg-emerald2/10 px-3 py-1.5 text-xs font-semibold text-emerald2">Add to Google Calendar</a> : null}
+              <button onClick={copyFeed} className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 px-3 py-1.5 text-xs text-fog hover:border-cyan/40 hover:text-cyan">{copied ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy feed URL</>}</button>
+            </div>
+            <p className="mt-2 text-[10px] text-dust/70">Apple Calendar / Outlook: use the copied URL as a subscribed calendar.</p>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function NotificationsClient() {
@@ -101,6 +190,8 @@ export function NotificationsClient() {
           </button>
         ) : null}
       </div>
+
+      <AlertsSetup />
 
       <div className="flex flex-wrap items-center gap-2">
         {FILTERS.map((f) => (

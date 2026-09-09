@@ -26,3 +26,6 @@ yarn-error.log*
 *.tsbuildinfo
 .env*
 graphify-out/
+
+# local VAPID keypair (never commit)
+vapid-keys.local.json

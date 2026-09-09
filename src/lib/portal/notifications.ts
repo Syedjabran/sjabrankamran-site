@@ -17,6 +17,7 @@
  *    read-modify-write on a shared JSON can never lose updates.
  */
 import { createAdminClient } from "@/lib/supabase/admin";
+import { sendPush } from "@/lib/portal/push";
 import { listAllocations } from "@/lib/exam-lab/allocations";
 import { listTasks } from "@/lib/portal/tasks";
 import { getRegistry } from "@/lib/portal/institutions";
@@ -97,6 +98,8 @@ export async function notify(target: NotifyTarget, input: NotifyInput): Promise<
     for (let i = 0; i < rows.length; i += 400) {
       await db.from("edu_notifications").insert(rows.slice(i, i + 400));
     }
+    // Mirror to OS-level Web Push for installed PWAs (no-op until VAPID is set).
+    void sendPush(uids, { title: input.title, body: input.body || undefined, url: input.href || "/portal/notifications", tag: input.type });
     // Cap enforcement for single-user targets is cheap; broadcasts rely on the
     // lazy on-read cap instead (per-user queries for 100s of users are wasteful).
     if (uids.length <= 3) await Promise.all(uids.map((u) => enforceCap(u)));
@@ -191,6 +194,28 @@ function fmtDue(iso: string): string {
     (d.getHours() || d.getMinutes() ? ` ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}` : "");
 }
 
+// Class schedules/lessons store wall-clock time for the school's timezone
+// (Asia/Karachi, UTC+5, no DST). Compute occurrences against that offset so a
+// UTC serverless runtime doesn't drift the "class today" window by 5 hours.
+const SCHOOL_TZ_OFFSET_MS = 5 * 3600_000;
+function hhmm(t: string | null): string { return (t || "").slice(0, 5); }
+/** Next real-UTC timestamp for a weekly weekday+time slot (0=Sun..6=Sat, PKT). */
+function nextWeeklyOccurrence(weekday: number, startsAt: string): number {
+  const nowUtc = Date.now();
+  const pkt = new Date(nowUtc + SCHOOL_TZ_OFFSET_MS);
+  const [h, m] = (startsAt || "00:00").split(":").map((x) => parseInt(x, 10) || 0);
+  let add = (weekday - pkt.getUTCDay() + 7) % 7;
+  let ms = Date.UTC(pkt.getUTCFullYear(), pkt.getUTCMonth(), pkt.getUTCDate() + add, h, m) - SCHOOL_TZ_OFFSET_MS;
+  if (add === 0 && ms <= nowUtc) ms += 7 * 24 * 3600_000;
+  return ms;
+}
+/** Real-UTC timestamp for a dated PKT wall-clock lesson. */
+function lessonStartMs(dateStr: string, startsAt: string | null): number {
+  const [h, m] = hhmm(startsAt || "00:00").split(":").map((x) => parseInt(x, 10) || 0);
+  const [y, mo, d] = dateStr.split("-").map((x) => parseInt(x, 10) || 0);
+  return Date.UTC(y, (mo || 1) - 1, d || 1, h, m) - SCHOOL_TZ_OFFSET_MS;
+}
+
 // Per-warm-instance throttle so the 60s bell poll doesn't hammer Storage.
 const _lastSynth = new Map<string, number>();
 
@@ -212,18 +237,18 @@ export async function synthesizeForUser(uid: string, opts?: { force?: boolean })
 
     // -- Exam Lab allocations due within 48h and not yet submitted --
     const allocs = await listAllocations(uid).catch(() => []);
+    const testHorizon = now + 7 * 24 * 3600_000; // surface upcoming tests a week out
     for (const a of allocs) {
       if (a.status !== "assigned" || !a.dueAt) continue;
       const due = new Date(a.dueAt).getTime();
-      if (due <= now || due > horizon) continue;
+      if (due <= now) continue;
+      const isTest = a.mode === "test";
+      if (due > (isTest ? testHorizon : horizon)) continue;
       pending.push({
-        key: `alloc-due:${a.id}`,
-        input: {
-          type: "reminder",
-          title: `Due soon: ${a.title}`,
-          body: `Your Exam Lab ${a.mode === "test" ? "test" : "assignment"} is due ${fmtDue(a.dueAt)}.`,
-          href: "/portal/exam-lab",
-        },
+        key: isTest ? `test-due:${a.id}` : `alloc-due:${a.id}`,
+        input: isTest
+          ? { type: "test", title: `Upcoming test: ${a.title}`, body: `Your proctored/self test is on ${fmtDue(a.dueAt)}. Prepare in Exam Lab.`, href: "/portal/exam-lab" }
+          : { type: "reminder", title: `Due soon: ${a.title}`, body: `Your Exam Lab assignment is due ${fmtDue(a.dueAt)}.`, href: "/portal/exam-lab" },
       });
     }
 
@@ -283,6 +308,49 @@ export async function synthesizeForUser(uid: string, opts?: { force?: boolean })
           href: "/portal/learn",
         },
       });
+    }
+
+    // -- Scheduled class timings (weekly) + extra/dated lessons --
+    const { data: myStu } = await db.from("edu_students").select("id").eq("profile_id", uid).maybeSingle();
+    if (myStu?.id) {
+      const { data: enrRows } = await db.from("edu_enrolments").select("class_id").eq("student_id", myStu.id).eq("status", "active");
+      const classIds = [...new Set(((enrRows || []) as { class_id: string }[]).map((r) => r.class_id).filter(Boolean))];
+      if (classIds.length) {
+        const classNames = new Map((await getRegistry()).classes.map((c) => [c.id, c.name] as const));
+        const soon = now + 24 * 3600_000;
+        const weekdayHas = new Set<string>();
+        const { data: scheds } = await db.from("edu_schedules").select("class_id, weekday, starts_at, ends_at").in("class_id", classIds);
+        for (const s of (scheds || []) as { class_id: string; weekday: number; starts_at: string; ends_at: string }[]) {
+          weekdayHas.add(`${s.class_id}:${s.weekday}`);
+          const occ = nextWeeklyOccurrence(s.weekday, s.starts_at);
+          if (occ <= now || occ > soon) continue;
+          const day = new Date(occ + SCHOOL_TZ_OFFSET_MS).toISOString().slice(0, 10);
+          pending.push({
+            key: `class:${s.class_id}:${day}`,
+            input: { type: "reminder", title: `Class reminder: ${classNames.get(s.class_id) || "Your class"}`, body: `Scheduled ${fmtDue(new Date(occ).toISOString())}${s.ends_at ? `–${hhmm(s.ends_at)}` : ""}.`, href: "/portal" },
+          });
+        }
+        const today = new Date(now + SCHOOL_TZ_OFFSET_MS).toISOString().slice(0, 10);
+        const end = new Date(horizon + SCHOOL_TZ_OFFSET_MS).toISOString().slice(0, 10);
+        const { data: lessons } = await db.from("edu_lessons")
+          .select("id, class_id, lesson_date, starts_at, ends_at, title, status")
+          .in("class_id", classIds).gte("lesson_date", today).lte("lesson_date", end).eq("status", "planned");
+        for (const l of (lessons || []) as { id: string; class_id: string; lesson_date: string; starts_at: string | null; ends_at: string | null; title: string | null }[]) {
+          const t = lessonStartMs(l.lesson_date, l.starts_at);
+          if (t <= now || t > horizon) continue;
+          const wd = new Date(t + SCHOOL_TZ_OFFSET_MS).getUTCDay();
+          const isExtra = !weekdayHas.has(`${l.class_id}:${wd}`);
+          pending.push({
+            key: `lesson:${l.id}`,
+            input: {
+              type: isExtra ? "announcement" : "reminder",
+              title: `${isExtra ? "Extra class" : "Class"}: ${l.title || classNames.get(l.class_id) || "Session"}`,
+              body: `${isExtra ? "An additional class has been scheduled for " : "Class on "}${fmtDue(new Date(t).toISOString())}${l.ends_at ? `–${hhmm(l.ends_at)}` : ""}.`,
+              href: "/portal",
+            },
+          });
+        }
+      }
     }
 
     if (!pending.length) return;
