@@ -3,9 +3,14 @@
 import { useState } from "react";
 import { Eye, X, ChevronDown } from "lucide-react";
 
+// Every previewable role (all except the admin's own super_admin view).
 const ROLES: [string, string][] = [
-  ["student", "Student"], ["teacher", "Teacher"], ["teaching_assistant", "Teaching Assistant"],
-  ["parent", "Parent / Guardian"], ["counsellor", "Counsellor"], ["finance_manager", "Finance Manager"],
+  ["student", "Student"], ["parent", "Parent / Guardian"],
+  ["teacher", "Teacher"], ["teaching_assistant", "Teaching Assistant"],
+  ["facilitator", "Facilitator"], ["coordinator", "Coordinator"],
+  ["counsellor", "Counsellor"], ["attendance_registrar", "Attendance Registrar"],
+  ["content_manager", "Content Manager"], ["finance_manager", "Finance Manager"],
+  ["admin", "Admin"],
 ];
 const LABEL = Object.fromEntries(ROLES);
 
@@ -36,7 +41,7 @@ export function RolePreviewSwitcher({ previewing }: { previewing: string | null 
       {open ? (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-20 mt-2 w-52 overflow-hidden rounded-xl border border-white/10 bg-abyss/95 p-1 shadow-xl backdrop-blur">
+          <div className="absolute right-0 z-20 mt-2 max-h-[70vh] w-52 overflow-y-auto rounded-xl border border-white/10 bg-abyss/95 p-1 shadow-xl backdrop-blur">
             <p className="px-3 py-1.5 text-[10px] uppercase tracking-widest text-dust">Preview interface as</p>
             {ROLES.map(([v, l]) => (
               <button key={v} onClick={() => setRole(v)}
