@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin, audit, genPassword, emailCredentials, ALL_ROLES, SUSPEND_DURATION } from "@/lib/portal/admin";
 import type { EduRole } from "@/lib/edu/auth";
-import { setStaffSchool } from "@/lib/portal/staff-school";
+import { getStaffSchool, setStaffSchool } from "@/lib/portal/staff-school";
+import { SCHOOL_SCOPED_ROLES } from "@/lib/edu/auth";
+import { getRegistry } from "@/lib/portal/institutions";
 
 export const runtime = "nodejs";
 
@@ -81,6 +83,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
     case "enrol": {
       if (!b.class_id) return NextResponse.json({ error: "class_id required." }, { status: 400 });
+      const { data: roleRows } = await sb.from("edu_user_roles").select("role").eq("user_id", uid);
+      const scoped = (roleRows || []).some((r) => SCHOOL_SCOPED_ROLES.includes(r.role as EduRole));
+      if (scoped) {
+        const [school, registry] = await Promise.all([getStaffSchool(uid), getRegistry()]);
+        const targetClass = registry.classes.find((c) => c.id === b.class_id);
+        if (!school) return NextResponse.json({ error: "Assign the staff member's school before assigning a class." }, { status: 400 });
+        if (!targetClass || targetClass.school !== school) {
+          return NextResponse.json({ error: "A school-scoped staff member can only be assigned to a class in their assigned school." }, { status: 403 });
+        }
+      }
       const sid = await ensureStudentId(sb, uid, admin.id);
       if (!sid) return NextResponse.json({ error: "Could not resolve student record." }, { status: 400 });
       const { error } = await sb.from("edu_enrolments").upsert({ class_id: b.class_id, student_id: sid, status: "active" }, { onConflict: "class_id,student_id" });

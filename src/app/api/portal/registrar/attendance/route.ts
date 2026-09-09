@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getPortalUser, isStaff, isAdmin, isAttendanceRegistrar } from "@/lib/edu/auth";
-import { getStaffSchool } from "@/lib/portal/staff-school";
-import { getRegistry } from "@/lib/portal/institutions";
+import { getPortalUser, isStaff, isAdmin, isAttendanceRegistrar, isSchoolScopedStaff } from "@/lib/edu/auth";
+import { getStaffScope } from "@/lib/portal/staff-school";
+import { getRegistry, staffRoleMap } from "@/lib/portal/institutions";
 import { allowsReason, normaliseReason } from "@/lib/edu/attendance";
 
 export const runtime = "nodejs";
@@ -42,17 +42,19 @@ export async function GET(req: Request) {
   // Resolve the school scope. A registrar is HARD-pinned to their assigned
   // school; only admins can freely choose (or view all).
   let school: string | null = null;
-  const assigned = await getStaffSchool(user.id);
-  if (registrar && !admin) {
-    if (!assigned) {
-      return NextResponse.json({ error: "No school has been assigned to your account yet. Please contact the administrator." }, { status: 403 });
+  const scoped = isSchoolScopedStaff(user.roles);
+  const scope = scoped ? await getStaffScope(user.id) : null;
+  if (scoped) {
+    if (!scope) {
+      return NextResponse.json({ error: "Both a school and class must be assigned to your account." }, { status: 403 });
     }
-    school = assigned;
+    school = scope.school;
   } else {
-    school = url.searchParams.get("school") || assigned || null;
+    school = url.searchParams.get("school") || null;
   }
 
-  const classesForSchool = reg.classes.filter((c) => !school || c.school === school);
+  const allowedIds = scope ? new Set(scope.classIds) : null;
+  const classesForSchool = reg.classes.filter((c) => (!school || c.school === school) && (!allowedIds || allowedIds.has(c.id)));
   const onlyClassId = url.searchParams.get("classId") || "";
   const targetClasses = onlyClassId ? classesForSchool.filter((c) => c.id === onlyClassId) : classesForSchool;
 
@@ -73,11 +75,13 @@ export async function GET(req: Request) {
       // Roster (active enrolments) with names.
       const { data: enr } = await sb
         .from("edu_enrolments")
-        .select("student_id, edu_students(id, edu_profiles!edu_students_profile_id_fkey(full_name))")
+        .select("student_id, edu_students(id, profile_id, edu_profiles!edu_students_profile_id_fkey(full_name))")
         .eq("class_id", cl.id)
         .eq("status", "active");
-      type ERow = { student_id: string; edu_students?: { edu_profiles?: { full_name?: string } } };
-      const roster = ((enr || []) as unknown as ERow[]).map((r) => ({
+      type ERow = { student_id: string; edu_students?: { profile_id?: string; edu_profiles?: { full_name?: string } } };
+      const enrolments = (enr || []) as unknown as ERow[];
+      const roleMap = await staffRoleMap(enrolments.map((r) => r.edu_students?.profile_id).filter((x): x is string => !!x));
+      const roster = enrolments.filter((r) => !r.edu_students?.profile_id || !roleMap.has(r.edu_students.profile_id)).map((r) => ({
         studentId: r.student_id,
         name: r.edu_students?.edu_profiles?.full_name || "Student",
       }));
@@ -130,7 +134,7 @@ export async function GET(req: Request) {
       date,
       school,
       canChooseSchool: admin && !registrar,
-      schools: reg.schools,
+      schools: scope ? [scope.school] : reg.schools,
       register: register.sort((a, b) => a.className.localeCompare(b.className)),
     },
     { status: 200 }

@@ -21,6 +21,7 @@ import { sendPush } from "@/lib/portal/push";
 import { listAllocations } from "@/lib/exam-lab/allocations";
 import { listTasks } from "@/lib/portal/tasks";
 import { getRegistry } from "@/lib/portal/institutions";
+import { isStaff, type EduRole } from "@/lib/edu/auth";
 
 export type NotifKind =
   | "task" | "challenge" | "assignment" | "test" | "announcement"
@@ -73,7 +74,19 @@ export async function resolveAudience(target: NotifyTarget): Promise<string[]> {
       .in("class_id", classIds)
       .eq("status", "active");
     const rows = (enr || []) as unknown as { edu_students?: { profile_id?: string } }[];
-    return [...new Set(rows.map((r) => r.edu_students?.profile_id).filter((x): x is string => !!x))];
+    const candidates = [...new Set(rows.map((r) => r.edu_students?.profile_id).filter((x): x is string => !!x))];
+    if (!candidates.length) return [];
+    const { data: roleRows } = await db.from("edu_user_roles").select("user_id, role").in("user_id", candidates);
+    const roles = new Map<string, EduRole[]>();
+    for (const row of (roleRows || []) as { user_id: string; role: EduRole }[]) {
+      const list = roles.get(row.user_id) || [];
+      list.push(row.role);
+      roles.set(row.user_id, list);
+    }
+    return candidates.filter((uid) => {
+      const userRoles = roles.get(uid) || [];
+      return userRoles.includes("student") && !isStaff(userRoles);
+    });
   } catch {
     return [];
   }

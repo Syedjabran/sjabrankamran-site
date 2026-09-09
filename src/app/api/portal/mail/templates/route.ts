@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
-import { getPortalUser, isStaff } from "@/lib/edu/auth";
+import { getPortalUser, canAccessGlobalStaffData } from "@/lib/edu/auth";
 import { getTemplates, saveTemplates, type Template } from "@/lib/portal/mail";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   const user = await getPortalUser();
-  if (!user || !isStaff(user.roles)) return NextResponse.json({ error: "Staff only." }, { status: 403 });
+  if (!user || !canAccessGlobalStaffData(user.roles)) return NextResponse.json({ error: "Not permitted." }, { status: 403 });
   return NextResponse.json({ templates: await getTemplates() }, { status: 200 });
 }
 
 export async function POST(req: Request) {
   const user = await getPortalUser();
-  if (!user || !isStaff(user.roles)) return NextResponse.json({ error: "Staff only." }, { status: 403 });
+  if (!user || !canAccessGlobalStaffData(user.roles)) return NextResponse.json({ error: "Not permitted." }, { status: 403 });
   const b = (await req.json().catch(() => null)) as { templates?: Template[] } | null;
   if (!b || !Array.isArray(b.templates)) return NextResponse.json({ error: "Invalid." }, { status: 400 });
   const clean = b.templates

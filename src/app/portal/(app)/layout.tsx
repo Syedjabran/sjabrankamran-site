@@ -43,8 +43,9 @@ function navFor(roles: EduRole[]): NavSection[] {
     ];
   }
   if (isCoordinatorOnly(roles)) {
-    return [{ title: "Coordinator", items: [
-      { href: "/portal/coordinator", label: "Coordinator desk" },
+    return [{ title: "Assigned class", items: [
+      { href: "/portal/coordinator", label: "Class staff desk" },
+      { href: "/portal/admin/attendance-view", label: "Daily attendance" },
       { href: "/portal/library", label: "Resource Library" },
       { href: "/portal/resources", label: "Physics Resources" },
       { href: "/portal/notifications", label: "Notifications" },
@@ -141,7 +142,7 @@ export default async function PortalLayout({ children }: { children: React.React
     if (!ok) redirect("/portal/admin/attendance-view");
   }
   if (isCoordinatorOnly(user.roles) && pathname) {
-    const allowed = ["/portal", "/portal/coordinator", "/portal/library", "/portal/resources", "/portal/notifications", "/portal/settings", "/portal/auth"];
+    const allowed = ["/portal", "/portal/coordinator", "/portal/admin/attendance-view", "/portal/library", "/portal/resources", "/portal/notifications", "/portal/settings", "/portal/auth"];
     if (!allowed.some((a) => pathname === a || pathname.startsWith(a + "/"))) redirect("/portal/coordinator");
   }
 

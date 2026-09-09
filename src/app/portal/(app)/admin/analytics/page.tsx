@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Gauge } from "lucide-react";
-import { getPortalUser, isStaff } from "@/lib/edu/auth";
+import { getPortalUser, canAccessGlobalStaffData } from "@/lib/edu/auth";
 import { AnalyticsClient } from "./analytics-client";
 
 export const metadata = { title: "Rankings & Analytics" };
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function AnalyticsPage() {
   const user = await getPortalUser();
   if (!user) redirect("/portal/login");
-  if (!isStaff(user.roles)) redirect("/portal");
+  if (!canAccessGlobalStaffData(user.roles)) redirect("/portal");
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 rounded-2xl border border-cyan/20 bg-cyan/[0.04] px-4 py-3">

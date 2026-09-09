@@ -6,7 +6,7 @@
  * assignments & tests. Every mutation is service-role (bypasses RLS) but is
  * gated behind `requireAdmin()` and written to edu_audit_logs.
  */
-import { getPortalUser, isAdmin, isStaff, ROLE_LABELS, type EduRole, type PortalUser } from "@/lib/edu/auth";
+import { getPortalUser, isAdmin, canAccessGlobalStaffData, ROLE_LABELS, type EduRole, type PortalUser } from "@/lib/edu/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendMail } from "@/lib/portal/mail";
 
@@ -26,7 +26,7 @@ export async function requireAdmin(): Promise<PortalUser | null> {
  * like analytics, rankings and presence that all staff may view. */
 export async function requireStaff(): Promise<PortalUser | null> {
   const u = await getPortalUser();
-  if (!u || !isStaff(u.roles)) return null;
+  if (!u || !canAccessGlobalStaffData(u.roles)) return null;
   return u;
 }
 

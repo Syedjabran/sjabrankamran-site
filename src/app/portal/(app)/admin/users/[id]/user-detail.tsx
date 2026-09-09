@@ -90,6 +90,8 @@ export function UserDetail({ id, isSuper, selfId }: { id: string; isSuper: boole
 
   const p = d.profile;
   const suspended = p.status === "archived" || d.access.banned;
+  const schoolScoped = p.roles.some((r) => ["coordinator", "facilitator", "attendance_registrar"].includes(r));
+  const availableClasses = schoolScoped ? classes.filter((c) => !!d.staffSchool && c.school === d.staffSchool) : classes;
 
   return (
     <div className="space-y-5">
@@ -170,7 +172,7 @@ export function UserDetail({ id, isSuper, selfId }: { id: string; isSuper: boole
       </Card>
 
       {/* Enrolments */}
-      <Card title="Enrolments (schools & classes)" icon={<GraduationCap size={13} className="text-cyan" />}>
+      <Card title={schoolScoped ? "Assigned class access" : "Enrolments (schools & classes)"} icon={<GraduationCap size={13} className="text-cyan" />}>
         {d.enrolments.length ? (
           <ul className="mb-3 space-y-1.5">
             {d.enrolments.map((e) => (
@@ -180,11 +182,11 @@ export function UserDetail({ id, isSuper, selfId }: { id: string; isSuper: boole
               </li>
             ))}
           </ul>
-        ) : <p className="mb-3 text-xs text-dust">Not enrolled in any class.</p>}
+        ) : <p className="mb-3 text-xs text-dust">{schoolScoped ? "No class assigned. This staff account cannot view or contact any students until a class is assigned." : "Not enrolled in any class."}</p>}
         <div className="flex flex-wrap items-center gap-2">
           <select value={enrolClass} onChange={(e) => setEnrolClass(e.target.value)} className="rounded-lg border border-white/10 bg-abyss/60 px-2 py-1.5 text-xs text-ice focus:border-cyan focus:outline-none">
             <option value="">Add to class…</option>
-            {classes.map((c) => <option key={c.id} value={c.id}>{c.school} — {c.name}{c.section ? ` (${c.section})` : ""}</option>)}
+            {availableClasses.map((c) => <option key={c.id} value={c.id}>{c.school} — {c.name}{c.section ? ` (${c.section})` : ""}</option>)}
           </select>
           <button disabled={!enrolClass || !!busy} onClick={() => { act("enrol", { class_id: enrolClass }); setEnrolClass(""); }} className="btn-ghost !px-3 !py-1.5 text-xs">Enrol</button>
         </div>

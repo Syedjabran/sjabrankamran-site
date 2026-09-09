@@ -40,6 +40,19 @@ export const ROLE_LABELS: Record<EduRole, string> = {
 /** Roles that belong to a specific school (a school dropdown is shown for them). */
 export const SCHOOL_SCOPED_ROLES: EduRole[] = ["coordinator", "facilitator", "attendance_registrar"];
 
+/**
+ * School-scoped roles are never allowed to inherit global staff visibility.
+ * An explicit admin/super-admin grant is the only bypass.
+ */
+export function isSchoolScopedStaff(roles: EduRole[]) {
+  return roles.some((r) => SCHOOL_SCOPED_ROLES.includes(r)) && !isAdmin(roles);
+}
+
+/** Generic staff surfaces contain network-wide data and are unsafe for scoped staff. */
+export function canAccessGlobalStaffData(roles: EduRole[]) {
+  return isStaff(roles) && !isSchoolScopedStaff(roles);
+}
+
 export function isStaff(roles: EduRole[]) {
   return roles.some((r) =>
     ["super_admin", "admin", "teacher", "teaching_assistant", "counsellor", "content_manager", "finance_manager", "coordinator", "facilitator", "attendance_registrar"].includes(r)
@@ -58,14 +71,12 @@ export function isAttendanceRegistrar(roles: EduRole[]) {
 
 /** True when the user's ONLY staff-granting role is attendance_registrar. */
 export function isRegistrarOnly(roles: EduRole[]) {
-  const fullerStaff = ["super_admin", "admin", "teacher", "teaching_assistant", "counsellor", "content_manager", "finance_manager", "coordinator", "facilitator"];
-  return roles.includes("attendance_registrar") && !roles.some((r) => fullerStaff.includes(r));
+  return roles.includes("attendance_registrar") && !roles.includes("coordinator") && !roles.includes("facilitator") && !isAdmin(roles);
 }
 
-/** A school coordinator without a broader staff grant gets only their scoped desk. */
+/** Coordinators and facilitators use only the school-and-class scoped desk. */
 export function isCoordinatorOnly(roles: EduRole[]) {
-  const broader = ["super_admin", "admin", "teacher", "teaching_assistant", "counsellor", "content_manager", "finance_manager", "facilitator"];
-  return roles.includes("coordinator") && !roles.some((r) => broader.includes(r));
+  return (roles.includes("coordinator") || roles.includes("facilitator")) && !isAdmin(roles);
 }
 
 export function isAdmin(roles: EduRole[]) {

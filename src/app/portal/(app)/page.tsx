@@ -1,11 +1,12 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   Users, School, BookOpen, Receipt, AlertTriangle, Hourglass, GraduationCap,
   UserPlus, ClipboardList, Mail, BarChart3, Activity, ShieldCheck, KeyRound,
   Ban, RotateCcw, Trash2, UserCog, FileText, Paperclip, ArrowRight, Building2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { getPortalUser, isAdmin, isStaff, ROLE_LABELS, type EduRole } from "@/lib/edu/auth";
+import { getPortalUser, isAdmin, isStaff, isSchoolScopedStaff, ROLE_LABELS, type EduRole } from "@/lib/edu/auth";
 import { getRegistry } from "@/lib/portal/institutions";
 import { effectiveRoles } from "@/lib/portal/view-as";
 import { AdminUserSearch } from "./admin-user-search";
@@ -116,6 +117,10 @@ async function recentActivity(): Promise<{ id: string; actor: string; action: st
 export default async function PortalDashboard() {
   const user = await getPortalUser();
   if (!user) return null;
+  if (isSchoolScopedStaff(user.roles)) {
+    if (user.roles.includes("coordinator") || user.roles.includes("facilitator")) redirect("/portal/coordinator");
+    redirect("/portal/admin/attendance-view");
+  }
   const { roles: effRoles } = await effectiveRoles(user);
 
   if (user.roles.length === 0) {

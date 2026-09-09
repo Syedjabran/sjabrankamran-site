@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getPortalUser, isStaff } from "@/lib/edu/auth";
+import { getPortalUser, canAccessGlobalStaffData } from "@/lib/edu/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { guardianEmails, EMAIL_RE } from "@/lib/portal/onboarding";
 import { buildStats, composeProgressEmail } from "@/lib/portal/progress-report";
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   let actorName = "Progress agent";
   if (!isSystem) {
     const user = await getPortalUser();
-    if (!user || !isStaff(user.roles)) return NextResponse.json({ error: "Staff only." }, { status: 403 });
+    if (!user || !canAccessGlobalStaffData(user.roles)) return NextResponse.json({ error: "Global progress-email access is not permitted for class-scoped staff." }, { status: 403 });
     actorId = user.id;
     actorName = user.fullName || user.email;
   }

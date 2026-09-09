@@ -231,10 +231,11 @@ export async function getClassReport(meta: ClassMeta): Promise<ClassReport> {
 }
 
 /** Full institutional report: schools → classes → students. */
-/** Optional school argument is an authorization boundary for coordinators. */
-export async function getInstitutionReport(onlySchool?: string | null): Promise<SchoolReport[]> {
+/** Optional school/class arguments are authorization boundaries for scoped staff. */
+export async function getInstitutionReport(onlySchool?: string | null, onlyClassIds?: string[] | null): Promise<SchoolReport[]> {
   const reg = await getRegistry();
-  const allowed = onlySchool ? reg.classes.filter((c) => c.school === onlySchool) : reg.classes;
+  const classSet = onlyClassIds ? new Set(onlyClassIds) : null;
+  const allowed = reg.classes.filter((c) => (!onlySchool || c.school === onlySchool) && (!classSet || classSet.has(c.id)));
   const classReports = await Promise.all(allowed.map((c) => getClassReport(c)));
   const bySchool = new Map<string, ClassReport[]>();
   for (const cr of classReports) {
