@@ -62,6 +62,12 @@ export function isRegistrarOnly(roles: EduRole[]) {
   return roles.includes("attendance_registrar") && !roles.some((r) => fullerStaff.includes(r));
 }
 
+/** A school coordinator without a broader staff grant gets only their scoped desk. */
+export function isCoordinatorOnly(roles: EduRole[]) {
+  const broader = ["super_admin", "admin", "teacher", "teaching_assistant", "counsellor", "content_manager", "finance_manager", "facilitator"];
+  return roles.includes("coordinator") && !roles.some((r) => broader.includes(r));
+}
+
 export function isAdmin(roles: EduRole[]) {
   return roles.some((r) => ["super_admin", "admin"].includes(r));
 }

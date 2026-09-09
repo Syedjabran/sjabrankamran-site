@@ -17,9 +17,12 @@ const INDEX = "forum/index.json";
 
 export type ForumTag = "resource" | "help" | "topic" | "discussion";
 export type Attachment = { path: string; name: string; size: number };
-export type Post = { id: string; authorId: string; authorName: string; body: string; attachments: Attachment[]; ts: number; helpful: number; helpfulBy: string[] };
+export type Reactions = Record<"like" | "dislike" | "love", string[]>;
+export type Post = { id: string; authorId: string; authorName: string; body: string; attachments: Attachment[]; ts: number; helpful: number; helpfulBy: string[]; reactions?: Reactions };
 export type ThreadMeta = { id: string; title: string; tag: ForumTag; authorId: string; authorName: string; ts: number; lastTs: number; replies: number; resources: number };
-export type Thread = ThreadMeta & { body: string; attachments: Attachment[]; posts: Post[] };
+export type Thread = ThreadMeta & { body: string; attachments: Attachment[]; posts: Post[]; reactions?: Reactions };
+
+const emptyReactions = (): Reactions => ({ like: [], dislike: [], love: [] });
 
 function newId() { return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }
 function tpath(id: string) { return `forum/threads/${id}.json`; }
@@ -62,7 +65,7 @@ export async function createThread(input: { title: string; body: string; tag: Fo
   const thread: Thread = {
     id, title: input.title.slice(0, 200), tag: input.tag, authorId: input.authorId, authorName: input.authorName,
     ts: now, lastTs: now, replies: 0, resources: input.attachments.length ? 1 : 0,
-    body: input.body, attachments: input.attachments, posts: [],
+    body: input.body, attachments: input.attachments, posts: [], reactions: emptyReactions(),
   };
   await writeJson(DATA, tpath(id), thread);
   const { body: _b, attachments: _a, posts: _p, ...meta } = thread; void _b; void _a; void _p;
@@ -73,7 +76,7 @@ export async function createThread(input: { title: string; body: string; tag: Fo
 export async function addPost(threadId: string, input: { authorId: string; authorName: string; body: string; attachments: Attachment[] }): Promise<Post | null> {
   const thread = await getThread(threadId);
   if (!thread) return null;
-  const post: Post = { id: newId(), authorId: input.authorId, authorName: input.authorName, body: input.body, attachments: input.attachments, ts: Date.now(), helpful: 0, helpfulBy: [] };
+  const post: Post = { id: newId(), authorId: input.authorId, authorName: input.authorName, body: input.body, attachments: input.attachments, ts: Date.now(), helpful: 0, helpfulBy: [], reactions: emptyReactions() };
   thread.posts.push(post);
   thread.replies = thread.posts.length;
   thread.resources += input.attachments.length ? 1 : 0;
@@ -98,6 +101,21 @@ export async function markHelpful(threadId: string, postId: string, byUid: strin
   post.helpful = post.helpfulBy.length;
   await writeJson(DATA, tpath(threadId), thread);
   return { ok: true, awardedTo, awardedName: post.authorName, helpful: post.helpful, on: !had };
+}
+
+/** One reaction per member per item. Changing reaction replaces their prior one. */
+export async function react(threadId: string, targetId: string | null, kind: keyof Reactions, byUid: string): Promise<{ ok: boolean; reactions?: Reactions }> {
+  const thread = await getThread(threadId);
+  if (!thread || !["like", "dislike", "love"].includes(kind)) return { ok: false };
+  const target = targetId ? thread.posts.find((p) => p.id === targetId) : thread;
+  if (!target) return { ok: false };
+  const reactions = target.reactions || emptyReactions();
+  const already = reactions[kind].includes(byUid);
+  for (const key of Object.keys(reactions) as (keyof Reactions)[]) reactions[key] = reactions[key].filter((id) => id !== byUid);
+  if (!already) reactions[kind].push(byUid);
+  target.reactions = reactions;
+  await writeJson(DATA, tpath(threadId), thread);
+  return { ok: true, reactions };
 }
 
 /** Upload a library attachment; returns metadata + signed URL. */

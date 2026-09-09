@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { Building2, Users, Target, Activity, CalendarCheck, GraduationCap, TrendingUp, MessageCircle } from "lucide-react";
-import { getPortalUser, isStaff } from "@/lib/edu/auth";
+import { getPortalUser, isAdmin } from "@/lib/edu/auth";
 import { getInstitutionReport, type StudentProgress } from "@/lib/portal/institutions";
 
 export const metadata = { title: "Institutions — progress by school & class", robots: { index: false } };
@@ -88,7 +88,7 @@ function StudentRow({ s }: { s: StudentProgress }) {
 export default async function InstitutionsPage() {
   const user = await getPortalUser();
   if (!user) redirect("/portal/login");
-  if (!isStaff(user.roles)) redirect("/portal");
+  if (!isAdmin(user.roles)) redirect("/portal");
 
   const schools = await getInstitutionReport();
   const totalStudents = schools.reduce((s, x) => s + x.students, 0);

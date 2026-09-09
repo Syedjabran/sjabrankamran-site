@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { LogOut, GraduationCap, Settings } from "lucide-react";
-import { getPortalUser, ROLE_LABELS, isAdmin, isStaff, isRegistrarOnly, type EduRole } from "@/lib/edu/auth";
+import { getPortalUser, ROLE_LABELS, isAdmin, isStaff, isRegistrarOnly, isCoordinatorOnly, type EduRole } from "@/lib/edu/auth";
 import { isOnboardingComplete } from "@/lib/portal/onboarding";
 import { effectiveRoles } from "@/lib/portal/view-as";
 import { PresenceBeacon } from "./presence-beacon";
@@ -42,6 +42,14 @@ function navFor(roles: EduRole[]): NavSection[] {
       },
     ];
   }
+  if (isCoordinatorOnly(roles)) {
+    return [{ title: "Coordinator", items: [
+      { href: "/portal/coordinator", label: "Coordinator desk" },
+      { href: "/portal/library", label: "Resource Library" },
+      { href: "/portal/resources", label: "Physics Resources" },
+      { href: "/portal/notifications", label: "Notifications" },
+    ] }];
+  }
 
   // --- Administration (staff / owner) ---
   const adminItems: NavItem[] = [{ href: "/portal", label: "Dashboard" }];
@@ -56,6 +64,7 @@ function navFor(roles: EduRole[]): NavSection[] {
     adminItems.push({ href: "/portal/admin/mail", label: "Email" });
     adminItems.push({ href: "/portal/notifications", label: "Notifications" });
   }
+  if (roles.includes("coordinator")) adminItems.push({ href: "/portal/coordinator", label: "Coordinator desk" });
   if (admin) adminItems.push({ href: "/portal/admin/notify", label: "Announcements" });
   if (admin) {
     adminItems.push({ href: "/portal/admin/academics", label: "Academics" });
@@ -75,6 +84,7 @@ function navFor(roles: EduRole[]): NavSection[] {
   const learnItems: NavItem[] = [];
   if (isStudent) {
     learnItems.push({ href: "/portal/exam-lab", label: "Exam Lab" });
+    learnItems.push({ href: "/portal/exam-lab/review", label: "My answer scripts" });
     learnItems.push({ href: "/portal/learn", label: "My Learning" });
     learnItems.push({ href: "/portal/progress", label: "My Progress" });
     learnItems.push({ href: "/portal/my-ranking", label: "My Ranking" });
@@ -129,6 +139,10 @@ export default async function PortalLayout({ children }: { children: React.React
     ];
     const ok = allowed.some((a) => pathname === a || pathname.startsWith(a + "/"));
     if (!ok) redirect("/portal/admin/attendance-view");
+  }
+  if (isCoordinatorOnly(user.roles) && pathname) {
+    const allowed = ["/portal", "/portal/coordinator", "/portal/library", "/portal/resources", "/portal/notifications", "/portal/settings", "/portal/auth"];
+    if (!allowed.some((a) => pathname === a || pathname.startsWith(a + "/"))) redirect("/portal/coordinator");
   }
 
   const { roles: navRoles, previewing } = await effectiveRoles(user);

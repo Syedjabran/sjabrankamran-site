@@ -6,8 +6,9 @@ import { Plus, MessageSquare, Paperclip, ThumbsUp, ArrowLeft, Trophy, Sparkles, 
 type Tag = "resource" | "help" | "topic" | "discussion";
 type ThreadMeta = { id: string; title: string; tag: Tag; authorName: string; ts: number; lastTs: number; replies: number; resources: number };
 type Att = { path: string; name: string; size: number; url: string | null };
-type Post = { id: string; authorName: string; authorId: string; body: string; attachments: Att[]; ts: number; helpful: number; mine: boolean; iMarked: boolean };
-type Thread = { id: string; title: string; tag: Tag; authorName: string; authorId: string; body: string; ts: number; attachments: Att[]; posts: Post[] };
+type Reactions = { like: string[]; dislike: string[]; love: string[] };
+type Post = { id: string; authorName: string; authorId: string; body: string; attachments: Att[]; ts: number; helpful: number; mine: boolean; iMarked: boolean; reactions: Reactions };
+type Thread = { id: string; title: string; tag: Tag; authorName: string; authorId: string; body: string; ts: number; attachments: Att[]; posts: Post[]; reactions: Reactions };
 type Row = { uid: string; name: string; total: number; monthPoints: number; rank: number; isMe: boolean };
 type Community = { month: string; monthlyTop5: Row[]; allTime: Row[]; me: { total: number; monthPoints: number }; guide: { kind: string; label: string; pts: number }[] };
 
@@ -181,6 +182,7 @@ function ThreadView({ thread, isAdmin, onBack, onReload }: { thread: Thread; isA
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
   async function helpful(postId: string) { try { await api(`/api/portal/library/${thread.id}`, { method: "POST", body: JSON.stringify({ op: "helpful", postId }) }); onReload(); } catch { /* */ } }
+  async function reaction(reaction: keyof Reactions, postId?: string) { try { await api(`/api/portal/library/${thread.id}`, { method: "POST", body: JSON.stringify({ op: "reaction", postId, reaction }) }); onReload(); } catch { /* ignore */ } }
   async function del() { if (!confirm("Delete this thread?")) return; try { await api(`/api/portal/library/${thread.id}`, { method: "DELETE" }); onBack(); } catch (e) { setErr((e as Error).message); } }
   async function addResource() { if (!file) return; setBusy(true); try { const fd = new FormData(); fd.append("file", file); await fetch(`/api/portal/library/${thread.id}/upload`, { method: "POST", body: fd }); setFile(null); onReload(); } finally { setBusy(false); } }
 
@@ -203,6 +205,7 @@ function ThreadView({ thread, isAdmin, onBack, onReload }: { thread: Thread; isA
           {isAdmin ? <button onClick={del} className="text-signal hover:text-signal/70" title="Delete (admin)"><Trash2 size={15} /></button> : null}
         </div>
         {thread.body ? <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-fog">{thread.body}</p> : null}
+        <ReactionBar reactions={thread.reactions} onReact={(r) => reaction(r)} />
         <AttList atts={thread.attachments} />
         <label className="mt-3 inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-dust hover:text-cyan">
           <Paperclip size={12} /> {file ? file.name : "Add a resource to this thread"}
@@ -223,6 +226,7 @@ function ThreadView({ thread, isAdmin, onBack, onReload }: { thread: Thread; isA
             <button onClick={() => helpful(p.id)} className={"mt-2 inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] " + (p.iMarked ? "border-emerald2/50 text-emerald2 bg-emerald2/10" : "border-white/10 text-dust hover:text-emerald2")}>
               <ThumbsUp size={11} /> Helpful {p.helpful ? p.helpful : ""}
             </button>
+            <ReactionBar reactions={p.reactions} onReact={(r) => reaction(r, p.id)} />
           </div>
         ))}
       </div>
@@ -237,4 +241,9 @@ function ThreadView({ thread, isAdmin, onBack, onReload }: { thread: Thread; isA
       </div>
     </div>
   );
+}
+
+function ReactionBar({ reactions, onReact }: { reactions: Reactions; onReact: (r: keyof Reactions) => void }) {
+  const items: [keyof Reactions, string, string][] = [["like", "👍", "Like"], ["love", "❤️", "Love"], ["dislike", "👎", "Dislike"]];
+  return <div className="mt-2 flex flex-wrap gap-1.5">{items.map(([key, emoji, label]) => <button key={key} onClick={() => onReact(key)} title={label} className="rounded-full border border-white/10 px-2 py-0.5 text-[11px] text-dust hover:border-cyan/40 hover:text-ice">{emoji} {reactions?.[key]?.length || ""}</button>)}</div>;
 }

@@ -128,7 +128,13 @@ export function PaperRunner({
     const ai = q.answer ? "ABCD".indexOf(q.answer) : -1;
     const mcq = isMcq(q);
     const earned = mcq ? (answers[q.id] === ai ? q.marks || 1 : 0) : (maxwell[q.id]?.awarded ?? null);
-    return { id: q.id, topic: q.topic, level: q.level, paperType: q.paperType, marks: q.marks || 1, earned: earned as number | null, correct: mcq ? answers[q.id] === ai : null, spentSec: perQ[q.id] ?? null, expectedSec: questionSeconds({ paper: q.paperType, difficulty: q.level, marks: q.marks }) };
+    return {
+      id: q.id, topic: q.topic, level: q.level, paperType: q.paperType, marks: q.marks || 1,
+      earned: earned as number | null, correct: mcq ? answers[q.id] === ai : null,
+      spentSec: perQ[q.id] ?? null, expectedSec: questionSeconds({ paper: q.paperType, difficulty: q.level, marks: q.marks }),
+      response: mcq ? (answers[q.id] == null ? null : "ABCD"[answers[q.id]]) : (structAnswers[q.id] || null),
+      feedback: maxwell[q.id]?.feedback || null,
+    };
   }), [questions, answers, maxwell, perQ]);
 
   const postAttempt = useCallback((cancelled: boolean, lockedReason: string | null) => {

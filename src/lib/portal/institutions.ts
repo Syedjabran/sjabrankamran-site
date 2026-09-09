@@ -182,9 +182,11 @@ export async function getClassReport(meta: ClassMeta): Promise<ClassReport> {
 }
 
 /** Full institutional report: schools → classes → students. */
-export async function getInstitutionReport(): Promise<SchoolReport[]> {
+/** Optional school argument is an authorization boundary for coordinators. */
+export async function getInstitutionReport(onlySchool?: string | null): Promise<SchoolReport[]> {
   const reg = await getRegistry();
-  const classReports = await Promise.all(reg.classes.map((c) => getClassReport(c)));
+  const allowed = onlySchool ? reg.classes.filter((c) => c.school === onlySchool) : reg.classes;
+  const classReports = await Promise.all(allowed.map((c) => getClassReport(c)));
   const bySchool = new Map<string, ClassReport[]>();
   for (const cr of classReports) {
     const arr = bySchool.get(cr.school) || [];
