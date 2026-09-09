@@ -12,7 +12,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { listAllocations } from "@/lib/exam-lab/allocations";
 import { listTasks } from "@/lib/portal/tasks";
-import { getRegistry } from "@/lib/portal/institutions";
+import { timetableForUid } from "@/lib/portal/timetable";
 
 const DATA = "portal-data";
 const tokenPath = (token: string) => `calendar-tokens/${token}.json`;
@@ -118,43 +118,31 @@ export async function buildCalendarEvents(uid: string, siteOrigin: string): Prom
       });
     }
 
-    // Class timings + extra/dated lessons
-    const { data: enr } = await db.from("edu_enrolments").select("class_id").eq("student_id", stu.id).eq("status", "active");
-    const classIds = [...new Set(((enr || []) as { class_id: string }[]).map((r) => r.class_id).filter(Boolean))];
-    if (classIds.length) {
-      const names = new Map((await getRegistry()).classes.map((c) => [c.id, c.name] as const));
-      const { data: scheds } = await db.from("edu_schedules").select("id, class_id, weekday, starts_at, ends_at").in("class_id", classIds);
-      for (const s of (scheds || []) as { id: string; class_id: string; weekday: number; starts_at: string; ends_at: string }[]) {
-        const start = nextWeeklyOccurrence(s.weekday, s.starts_at);
-        const dur = (() => {
-          const [sh, sm] = s.starts_at.slice(0, 5).split(":").map(Number);
-          const [eh, em] = (s.ends_at || s.starts_at).slice(0, 5).split(":").map(Number);
-          return Math.max(30, (eh * 60 + em) - (sh * 60 + sm)) * 60_000;
-        })();
-        events.push({
-          uid: `sched-${s.id}@sjak`, title: `Class: ${names.get(s.class_id) || "Physics"}`,
-          start, end: start + dur, alarmMin: 30, rrule: `FREQ=WEEKLY;BYDAY=${BYDAY[s.weekday] || "MO"}`,
-          description: "Scheduled class on the SJAK portal.", url: `${siteOrigin}/portal`,
-        });
-      }
-      const today = new Date(now + SCHOOL_TZ_OFFSET_MS).toISOString().slice(0, 10);
-      const { data: lessons } = await db.from("edu_lessons")
-        .select("id, class_id, lesson_date, starts_at, ends_at, title, status")
-        .in("class_id", classIds).gte("lesson_date", today).neq("status", "cancelled");
-      const weekdayHas = new Set(((scheds || []) as { class_id: string; weekday: number }[]).map((s) => `${s.class_id}:${s.weekday}`));
-      for (const l of (lessons || []) as { id: string; class_id: string; lesson_date: string; starts_at: string | null; ends_at: string | null; title: string | null }[]) {
-        const start = lessonStartMs(l.lesson_date, l.starts_at);
-        if (start > soon) continue;
-        const wd = new Date(start + SCHOOL_TZ_OFFSET_MS).getUTCDay();
-        const isExtra = !weekdayHas.has(`${l.class_id}:${wd}`);
-        const end = l.ends_at ? lessonStartMs(l.lesson_date, l.ends_at) : start + 3600_000;
-        events.push({
-          uid: `lesson-${l.id}@sjak`, title: `${isExtra ? "Extra class" : "Class"}: ${l.title || names.get(l.class_id) || "Physics"}`,
-          start, end, alarmMin: 60, description: isExtra ? "Additional class scheduled on the SJAK portal." : "Class on the SJAK portal.",
-          url: `${siteOrigin}/portal`,
-        });
-      }
-    }
+  }
+
+  // Role-aware class timings + extra classes. This includes students, parents,
+  // assigned staff and the super-admin's complete all-schools timetable.
+  const timetable = await timetableForUid(uid);
+  for (const s of timetable.slots) {
+    const start = nextWeeklyOccurrence(s.weekday, s.startsAt);
+    const [sh, sm] = s.startsAt.slice(0, 5).split(":").map(Number);
+    const [eh, em] = s.endsAt.slice(0, 5).split(":").map(Number);
+    const duration = Math.max(30, (eh * 60 + em) - (sh * 60 + sm)) * 60_000;
+    events.push({
+      uid: `sched-${s.id}@sjak`, title: `Class: ${s.classMeta.name}`,
+      start, end: start + duration, alarmMin: 30, rrule: `FREQ=WEEKLY;BYDAY=${BYDAY[s.weekday] || "MO"}`,
+      description: "Scheduled Physics class (Pakistan time).", url: `${siteOrigin}/portal/timetable`,
+    });
+  }
+  for (const l of timetable.extras) {
+    const start = lessonStartMs(l.lessonDate, l.startsAt);
+    if (start > soon) continue;
+    const end = l.endsAt ? lessonStartMs(l.lessonDate, l.endsAt) : start + 3600_000;
+    events.push({
+      uid: `lesson-${l.id}@sjak`, title: `Extra class: ${l.title || l.classMeta.name}`,
+      start, end, alarmMin: 60, description: "Additional Physics class scheduled on the portal.",
+      url: `${siteOrigin}/portal/timetable`,
+    });
   }
 
   return events.sort((a, b) => a.start - b.start);

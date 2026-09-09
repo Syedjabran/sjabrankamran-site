@@ -38,6 +38,7 @@ function navFor(roles: EduRole[]): NavSection[] {
         items: [
           { href: "/portal", label: "Dashboard" },
           { href: "/portal/admin/attendance-view", label: "Daily attendance" },
+          { href: "/portal/timetable", label: "Physics timetable" },
         ],
       },
     ];
@@ -45,6 +46,7 @@ function navFor(roles: EduRole[]): NavSection[] {
   if (isCoordinatorOnly(roles)) {
     return [{ title: "Assigned class", items: [
       { href: "/portal/coordinator", label: "Class staff desk" },
+      { href: "/portal/timetable", label: "Physics timetable" },
       { href: "/portal/admin/attendance-view", label: "Daily attendance" },
       { href: "/portal/library", label: "Resource Library" },
       { href: "/portal/resources", label: "Physics Resources" },
@@ -55,6 +57,7 @@ function navFor(roles: EduRole[]): NavSection[] {
   // --- Administration (staff / owner) ---
   const adminItems: NavItem[] = [{ href: "/portal", label: "Dashboard" }];
   if (staff) {
+    adminItems.push({ href: "/portal/timetable", label: "Physics timetable" });
     adminItems.push({ href: "/portal/admin/users", label: "Users & activity" });
     adminItems.push({ href: "/portal/admin/analytics", label: "Rankings & analytics" });
     adminItems.push({ href: "/portal/admin/institutions", label: "Institutions" });
@@ -84,6 +87,8 @@ function navFor(roles: EduRole[]): NavSection[] {
   // --- Learning (students only) + parents ---
   const learnItems: NavItem[] = [];
   if (isStudent) {
+    learnItems.push({ href: "/portal/timetable", label: "Physics timetable" });
+    learnItems.push({ href: "/portal/study-plan", label: "My study plan" });
     learnItems.push({ href: "/portal/exam-lab", label: "Exam Lab" });
     learnItems.push({ href: "/portal/exam-lab/review", label: "My answer scripts" });
     learnItems.push({ href: "/portal/learn", label: "My Learning" });
@@ -92,7 +97,10 @@ function navFor(roles: EduRole[]): NavSection[] {
     learnItems.push({ href: "/portal/leaderboard", label: "Leaderboard" });
     learnItems.push({ href: "/portal/notifications", label: "Notifications" });
   }
-  if (isParent) learnItems.push({ href: "/portal/family", label: "My Children" });
+  if (isParent) {
+    learnItems.push({ href: "/portal/family", label: "My Children" });
+    learnItems.push({ href: "/portal/timetable", label: "Physics timetable" });
+  }
   if (learnItems.length) sections.push({ title: staff ? "Learning" : undefined, items: learnItems });
 
   return sections;
@@ -134,6 +142,7 @@ export default async function PortalLayout({ children }: { children: React.React
     const allowed = [
       "/portal",
       "/portal/admin/attendance-view",
+      "/portal/timetable",
       "/portal/settings",
       "/portal/auth",
       "/portal/onboarding",
@@ -142,7 +151,7 @@ export default async function PortalLayout({ children }: { children: React.React
     if (!ok) redirect("/portal/admin/attendance-view");
   }
   if (isCoordinatorOnly(user.roles) && pathname) {
-    const allowed = ["/portal", "/portal/coordinator", "/portal/admin/attendance-view", "/portal/library", "/portal/resources", "/portal/notifications", "/portal/settings", "/portal/auth"];
+    const allowed = ["/portal", "/portal/coordinator", "/portal/admin/attendance-view", "/portal/timetable", "/portal/library", "/portal/resources", "/portal/notifications", "/portal/settings", "/portal/auth"];
     if (!allowed.some((a) => pathname === a || pathname.startsWith(a + "/"))) redirect("/portal/coordinator");
   }
 

@@ -4,12 +4,13 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   PORTAL_BUCKET, PHOTO_PREFIX, PHOTO_MAX_BYTES, PHOTO_TYPES,
 } from "@/lib/portal/onboarding";
+import { mirrorUserUpload } from "@/lib/google/drive-write";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
 /**
- * Optional student photo upload for onboarding. Multipart: field "file".
+ * Required student photo upload for onboarding. Multipart: field "file".
  * Student-only. Stores to the PRIVATE portal-data bucket at photos/<uid>.<ext>
  * and returns { path, url } where url is a short-lived signed preview link.
  */
@@ -44,5 +45,9 @@ export async function POST(req: Request) {
   if (upErr) return NextResponse.json({ error: "Upload failed. Please try again." }, { status: 500 });
 
   const { data: signed } = await supabase.storage.from(PORTAL_BUCKET).createSignedUrl(path, 3600);
+  try {
+    const label = user.fullName ? `${user.fullName} (${user.email})` : user.email;
+    await mirrorUserUpload("profiles", user.id, label, `profile-${Date.now()}.${ext}`, file.type, buf);
+  } catch { /* primary upload already succeeded */ }
   return NextResponse.json({ ok: true, path, url: signed?.signedUrl || null }, { status: 200 });
 }

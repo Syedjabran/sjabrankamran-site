@@ -28,7 +28,7 @@ export type Onboarding = {
   whatsapp: string; // REQUIRED — at least the student's WhatsApp number
   city: string;
   address?: string;
-  photo_path?: string; // OPTIONAL — object path in the private portal-data bucket
+  photo_path?: string; // REQUIRED — object path in the private portal-data bucket
   school?: string; // read-only, from enrolment
   class_label?: string; // read-only, from enrolment
   guardians: Guardian[];
@@ -40,7 +40,7 @@ export type Onboarding = {
 
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// Student photo upload constraints (optional field).
+// Student photo upload constraints.
 export const PHOTO_PREFIX = "photos";
 export const PHOTO_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 export const PHOTO_TYPES: Record<string, string> = {
@@ -57,6 +57,7 @@ export function validateOnboarding(o: Partial<Onboarding>): string[] {
   if (!o.phone || o.phone.replace(/\D/g, "").length < 7) errs.push("A valid phone number is required.");
   if (!o.whatsapp || o.whatsapp.replace(/\D/g, "").length < 7) errs.push("A valid WhatsApp number is required.");
   if (!o.city || o.city.trim().length < 2) errs.push("City is required.");
+  if (!o.photo_path || !o.photo_path.startsWith(`${PHOTO_PREFIX}/`)) errs.push("A student profile photo is required.");
   const gs = (o.guardians || []).filter((g) => g && (g.name || g.email || g.phone));
   if (gs.length < 1) errs.push("At least one parent/guardian is required.");
   const primary = gs.find((g) => g.is_primary) || gs[0];
@@ -100,7 +101,7 @@ export async function saveOnboarding(uid: string, o: Onboarding): Promise<boolea
 /** Fast gate used by the portal layout — true when the student is cleared to proceed. */
 export async function isOnboardingComplete(uid: string): Promise<boolean> {
   const o = await getOnboarding(uid);
-  return !!(o && o.completed_at);
+  return !!(o && o.completed_at && validateOnboarding(o).length === 0);
 }
 
 /** All guardian emails on record for a student uid (used by the progress-email agent). */
@@ -108,4 +109,13 @@ export async function guardianEmails(uid: string): Promise<string[]> {
   const o = await getOnboarding(uid);
   if (!o) return [];
   return (o.guardians || []).map((g) => (g.email || "").trim()).filter((e) => EMAIL_RE.test(e));
+}
+
+/** Named contacts used to address each Saturday report personally. */
+export async function guardianContacts(uid: string): Promise<{ name: string; email: string; phone: string; relationship: string }[]> {
+  const o = await getOnboarding(uid);
+  if (!o) return [];
+  return (o.guardians || [])
+    .filter((g) => EMAIL_RE.test((g.email || "").trim()))
+    .map((g) => ({ name: (g.name || "Parent/Guardian").trim(), email: g.email.trim(), phone: (g.phone || "").trim(), relationship: (g.relationship || "Guardian").trim() }));
 }

@@ -8,6 +8,7 @@ type Task = {
   dueAt: string | null; points: number | null; resourceUrl: string | null;
   status: "assigned" | "in_progress" | "done"; createdByName: string;
   createdAt: number; completedAt: number | null; studentNote: string | null;
+  mandatory?: boolean; topic?: string | null; activityType?: string; expectedMinutes?: number | null;
 };
 
 async function api(url: string, opts?: RequestInit) {
@@ -37,7 +38,16 @@ export function MyTasks() {
 
   async function cycle(t: Task) {
     setBusy(t.id);
-    try { await api("/api/portal/tasks", { method: "POST", body: JSON.stringify({ task_id: t.id, status: NEXT[t.status].status }) }); await load(); }
+    try {
+      const next = NEXT[t.status].status;
+      let note: string | undefined;
+      if (next === "done" && t.mandatory && t.activityType !== "daily_challenge" && t.activityType !== "short_test") {
+        note = window.prompt("Add a brief completion/submission note. This becomes part of your study record.")?.trim();
+        if (!note) return;
+      }
+      await api("/api/portal/tasks", { method: "POST", body: JSON.stringify({ task_id: t.id, status: next, note }) });
+      await load();
+    }
     finally { setBusy(""); }
   }
 
@@ -66,12 +76,14 @@ export function MyTasks() {
                     <span>{t.title}</span>
                     <span className={"inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] " + sm.cls}>{sm.icon} {sm.label}</span>
                     {t.points ? <span className="rounded-full border border-amber-300/30 px-2 py-0.5 text-[10px] text-amber-300">+{t.points} pts</span> : null}
+                    {t.mandatory ? <span className="rounded-full border border-signal/35 px-2 py-0.5 text-[10px] uppercase tracking-wider text-signal">mandatory</span> : null}
                   </p>
                   {t.details ? <p className="mt-1 whitespace-pre-wrap text-xs text-fog">{t.details}</p> : null}
                   <p className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-dust">
                     <span>set by {t.createdByName}</span>
                     {t.dueAt ? <span className={overdue ? "text-signal" : ""}>· due {new Date(t.dueAt).toLocaleString()}</span> : null}
                     {t.resourceUrl ? <a href={t.resourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan hover:underline"><Link2 size={10} /> open resource</a> : null}
+                    {t.expectedMinutes ? <span>· {t.expectedMinutes} min</span> : null}
                   </p>
                 </div>
                 <button onClick={() => cycle(t)} disabled={busy === t.id}

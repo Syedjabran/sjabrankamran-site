@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPortalUser } from "@/lib/edu/auth";
 import { listTasks, setTaskStatus, type TaskStatus } from "@/lib/portal/tasks";
+import { ensureStudyPlan } from "@/lib/portal/study-plan";
 
 export const runtime = "nodejs";
 
@@ -8,6 +9,7 @@ export const runtime = "nodejs";
 export async function GET() {
   const user = await getPortalUser();
   if (!user) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+  if (user.roles.includes("student")) await ensureStudyPlan(user.id);
   return NextResponse.json({ tasks: await listTasks(user.id) }, { status: 200 });
 }
 

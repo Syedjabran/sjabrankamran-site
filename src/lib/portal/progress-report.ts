@@ -10,6 +10,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getAttempts } from "@/lib/exam-lab/attempts";
 import { analyse } from "@/lib/exam-lab/analytics";
 import { attendancePercent } from "@/lib/edu/attendance";
+import { listTasks } from "@/lib/portal/tasks";
 
 export type ProgressStats = {
   name: string;
@@ -25,6 +26,10 @@ export type ProgressStats = {
   attendancePct: number | null;
   trend: "up" | "down" | "flat" | "n/a";
   lastActive: number | null;
+  tasksOpen: number;
+  tasksCompleted: number;
+  assignmentsSubmitted: number;
+  assignmentsOutstanding: number;
 };
 
 function model() {
@@ -39,12 +44,19 @@ export async function buildStats(uid: string, studentId: string, name: string, c
   const a = analyse(attempts);
 
   let attendancePct: number | null = null;
+  let assignmentsSubmitted = 0, assignmentsOutstanding = 0;
   if (studentId) {
-    const { data: att } = await supabase.from("edu_attendance").select("status").eq("student_id", studentId);
+    const [{ data: att }, { data: submissions }] = await Promise.all([
+      supabase.from("edu_attendance").select("status").eq("student_id", studentId),
+      supabase.from("edu_submissions").select("status").eq("student_id", studentId),
+    ]);
     // excused / leave / exempt are excluded from the denominator, so an
     // approved absence never drags a parent-facing report down.
     if (att && att.length) attendancePct = attendancePercent(att.map((x) => x.status as string));
+    assignmentsSubmitted = (submissions || []).filter((x) => ["submitted", "late", "marked", "returned"].includes(x.status as string)).length;
+    assignmentsOutstanding = (submissions || []).filter((x) => ["assigned", "resubmit"].includes(x.status as string)).length;
   }
+  const tasks = await listTasks(uid).catch(() => []);
 
   let trend: ProgressStats["trend"] = "n/a";
   if (a.timeline.length >= 2) {
@@ -66,17 +78,21 @@ export async function buildStats(uid: string, studentId: string, name: string, c
     attendancePct,
     trend,
     lastActive: attempts.length ? Math.max(...attempts.map((x) => x.ts)) : null,
+    tasksOpen: tasks.filter((t) => t.status !== "done").length,
+    tasksCompleted: tasks.filter((t) => t.status === "done").length,
+    assignmentsSubmitted,
+    assignmentsOutstanding,
   };
 }
 
-function fallbackEmail(s: ProgressStats, forParent: boolean): { subject: string; body: string } {
+function fallbackEmail(s: ProgressStats, forParent: boolean, recipientName?: string): { subject: string; body: string } {
   const who = forParent ? `your child ${s.name}` : "you";
   const acc = s.accuracy != null ? `${s.accuracy}%` : "not enough scored questions yet";
   const trendLine = s.trend === "up" ? "The trend is improving — keep it up." :
     s.trend === "down" ? "Accuracy has dipped recently; a little more consistent practice will help." :
     s.trend === "flat" ? "Performance is steady." : "";
   const lines = [
-    `Dear ${forParent ? "Parent/Guardian" : s.name},`,
+    `Dear ${forParent ? (recipientName || "Parent/Guardian") : s.name},`,
     "",
     `Here is a brief Physics progress update for ${who} (${s.className}).`,
     "",
@@ -84,6 +100,8 @@ function fallbackEmail(s: ProgressStats, forParent: boolean): { subject: string;
     `• Overall accuracy: ${acc}.`,
     `• Progress level: ${s.level}/10 (${s.levelLabel}).`,
     s.attendancePct != null ? `• Class attendance: ${s.attendancePct}%.` : "",
+    `• Assignments: ${s.assignmentsSubmitted} submitted; ${s.assignmentsOutstanding} outstanding.`,
+    `• Personal study plan: ${s.tasksCompleted} completed; ${s.tasksOpen} outstanding.`,
     s.strengths.length ? `• Strengths: ${s.strengths.join(", ")}.` : "",
     s.focus.length ? `• Focus areas: ${s.focus.join(", ")}.` : "",
     trendLine ? `• ${trendLine}` : "",
@@ -97,20 +115,23 @@ function fallbackEmail(s: ProgressStats, forParent: boolean): { subject: string;
   return { subject: `Physics progress update — ${s.name}`, body: lines.join("\n") };
 }
 
-export async function composeProgressEmail(s: ProgressStats, forParent: boolean): Promise<{ subject: string; body: string }> {
-  if (!process.env.GEMINI_API_KEY) return fallbackEmail(s, forParent);
+export async function composeProgressEmail(s: ProgressStats, forParent: boolean, recipientName?: string, opts?: { ai?: boolean }): Promise<{ subject: string; body: string }> {
+  if (opts?.ai === false || !process.env.GEMINI_API_KEY) return fallbackEmail(s, forParent, recipientName);
   const audience = forParent
     ? "the student's parent/guardian (address them warmly and refer to the student by name in the third person)"
     : "the student directly (encouraging, second person)";
   const prompt = `You are Syed Jabran Ali Kamran, an experienced Cambridge A-Level Physics teacher. Write a short, warm, professional progress-update email to ${audience}. British English. 130-190 words. No markdown, plain text with short bullet lines using "• ". End with a sign-off "Warm regards,\\nSyed Jabran Ali Kamran".
 
 Student: ${s.name}
+Recipient name: ${recipientName || (forParent ? "Parent/Guardian" : s.name)}
 Class: ${s.className}
 Data:
 - Exam Lab sessions: ${s.attempts}; full papers: ${s.papersSat}; scored questions: ${s.scoredQuestions}
 - Overall accuracy: ${s.accuracy != null ? s.accuracy + "%" : "insufficient data"}
 - Progress level: ${s.level}/10 (${s.levelLabel})
 - Attendance: ${s.attendancePct != null ? s.attendancePct + "%" : "n/a"}
+- Assignments submitted/outstanding: ${s.assignmentsSubmitted}/${s.assignmentsOutstanding}
+- Study-plan tasks completed/outstanding: ${s.tasksCompleted}/${s.tasksOpen}
 - Strengths: ${s.strengths.join(", ") || "n/a"}
 - Focus areas: ${s.focus.join(", ") || "n/a"}
 - Recent trend: ${s.trend}
@@ -132,14 +153,14 @@ BODY:
         signal: ctrl.signal,
       }
     );
-    if (!r.ok) return fallbackEmail(s, forParent);
+    if (!r.ok) return fallbackEmail(s, forParent, recipientName);
     const j = await r.json();
     const text: string = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text).join("") ?? "";
     const m = text.match(/SUBJECT:\s*(.+?)\s*\nBODY:\s*([\s\S]+)/i);
-    if (!m) return fallbackEmail(s, forParent);
+    if (!m) return fallbackEmail(s, forParent, recipientName);
     return { subject: m[1].trim().slice(0, 200), body: m[2].trim().slice(0, 6000) };
   } catch {
-    return fallbackEmail(s, forParent);
+    return fallbackEmail(s, forParent, recipientName);
   } finally {
     clearTimeout(timer);
   }

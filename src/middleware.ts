@@ -25,7 +25,8 @@ const AUTH_TIMEOUT_MS = 3500;
 // to enforce the gate. It fails OPEN on any slow/erroring check (the layout gate
 // remains as a second layer) so a transient blip never 504s or locks anyone out.
 const GATE_TIMEOUT_MS = 2500;
-const GATE_COOKIE = "pb_onb"; // value = the onboarded student's own user id
+const GATE_COOKIE = "pb_onb";
+const GATE_VERSION = "v2"; // guardian details + student photo required
 
 function hasAuthCookie(request: NextRequest): boolean {
   return request.cookies.getAll().some((c) => c.name.startsWith("sb-") && c.name.includes("-auth-token"));
@@ -70,8 +71,15 @@ async function onboardingGate(uid: string): Promise<"allow" | "block" | "unknown
       headers: h, signal: ctrl.signal, cache: "no-store",
     });
     if (orr.status === 200) {
-      const doc = (await orr.json().catch(() => null)) as { completed_at?: string } | null;
-      return doc && doc.completed_at ? "allow" : "block";
+      const doc = (await orr.json().catch(() => null)) as {
+        completed_at?: string; photo_path?: string; whatsapp?: string;
+        guardians?: { name?: string; email?: string; phone?: string }[];
+      } | null;
+      const guardian = doc?.guardians?.find((g) =>
+        (g.name || "").trim().length >= 2 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((g.email || "").trim()) && (g.phone || "").replace(/\D/g, "").length >= 7
+      );
+      const complete = !!(doc?.completed_at && doc.photo_path?.startsWith("photos/") && (doc.whatsapp || "").replace(/\D/g, "").length >= 7 && guardian);
+      return complete ? "allow" : "block";
     }
     if (orr.status === 400 || orr.status === 404) return "block"; // object not found
     return "unknown";
@@ -183,7 +191,7 @@ export async function middleware(request: NextRequest) {
   // once per session per browser, so this adds no ongoing latency. The cookie is
   // keyed to the user id so a different account on a SHARED device is re-checked.
   if (user && isGatedActivityPath(pathname) && !isPrefetch) {
-    const cookieOk = request.cookies.get(GATE_COOKIE)?.value === user.id;
+    const cookieOk = request.cookies.get(GATE_COOKIE)?.value === `${GATE_VERSION}:${user.id}`;
     if (!cookieOk) {
       const decision = await onboardingGate(user.id);
       if (decision === "block") {
@@ -193,7 +201,7 @@ export async function middleware(request: NextRequest) {
         return protectedRedirect(url);
       }
       if (decision === "allow") {
-        response.cookies.set(GATE_COOKIE, user.id, {
+        response.cookies.set(GATE_COOKIE, `${GATE_VERSION}:${user.id}`, {
           path: "/portal", httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 12,
         });
       }

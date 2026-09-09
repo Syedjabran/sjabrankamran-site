@@ -36,7 +36,7 @@ export async function GET() {
       class_label: classLabel || existing?.class_label || "",
       date_of_birth: existing?.date_of_birth || student?.date_of_birth || "",
     },
-    complete: !!existing?.completed_at,
+    complete: !!existing?.completed_at && validateOnboarding(existing).length === 0,
   });
 }
 
@@ -107,7 +107,7 @@ export async function POST(req: Request) {
   // different account on a shared device is still re-checked. This also avoids a
   // brief re-gate if storage read-after-write lags right after completion.
   const res = NextResponse.json({ ok: true }, { status: 200 });
-  res.cookies.set("pb_onb", user.id, {
+  res.cookies.set("pb_onb", `v2:${user.id}`, {
     path: "/portal", httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 12,
   });
   return res;

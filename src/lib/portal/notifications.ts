@@ -21,6 +21,7 @@ import { sendPush } from "@/lib/portal/push";
 import { listAllocations } from "@/lib/exam-lab/allocations";
 import { listTasks } from "@/lib/portal/tasks";
 import { getRegistry } from "@/lib/portal/institutions";
+import { timetableForUid } from "@/lib/portal/timetable";
 import { isStaff, type EduRole } from "@/lib/edu/auth";
 
 export type NotifKind =
@@ -324,46 +325,29 @@ export async function synthesizeForUser(uid: string, opts?: { force?: boolean })
     }
 
     // -- Scheduled class timings (weekly) + extra/dated lessons --
-    const { data: myStu } = await db.from("edu_students").select("id").eq("profile_id", uid).maybeSingle();
-    if (myStu?.id) {
-      const { data: enrRows } = await db.from("edu_enrolments").select("class_id").eq("student_id", myStu.id).eq("status", "active");
-      const classIds = [...new Set(((enrRows || []) as { class_id: string }[]).map((r) => r.class_id).filter(Boolean))];
-      if (classIds.length) {
-        const classNames = new Map((await getRegistry()).classes.map((c) => [c.id, c.name] as const));
-        const soon = now + 24 * 3600_000;
-        const weekdayHas = new Set<string>();
-        const { data: scheds } = await db.from("edu_schedules").select("class_id, weekday, starts_at, ends_at").in("class_id", classIds);
-        for (const s of (scheds || []) as { class_id: string; weekday: number; starts_at: string; ends_at: string }[]) {
-          weekdayHas.add(`${s.class_id}:${s.weekday}`);
-          const occ = nextWeeklyOccurrence(s.weekday, s.starts_at);
-          if (occ <= now || occ > soon) continue;
-          const day = new Date(occ + SCHOOL_TZ_OFFSET_MS).toISOString().slice(0, 10);
-          pending.push({
-            key: `class:${s.class_id}:${day}`,
-            input: { type: "reminder", title: `Class reminder: ${classNames.get(s.class_id) || "Your class"}`, body: `Scheduled ${fmtDue(new Date(occ).toISOString())}${s.ends_at ? `–${hhmm(s.ends_at)}` : ""}.`, href: "/portal" },
-          });
-        }
-        const today = new Date(now + SCHOOL_TZ_OFFSET_MS).toISOString().slice(0, 10);
-        const end = new Date(horizon + SCHOOL_TZ_OFFSET_MS).toISOString().slice(0, 10);
-        const { data: lessons } = await db.from("edu_lessons")
-          .select("id, class_id, lesson_date, starts_at, ends_at, title, status")
-          .in("class_id", classIds).gte("lesson_date", today).lte("lesson_date", end).eq("status", "planned");
-        for (const l of (lessons || []) as { id: string; class_id: string; lesson_date: string; starts_at: string | null; ends_at: string | null; title: string | null }[]) {
-          const t = lessonStartMs(l.lesson_date, l.starts_at);
-          if (t <= now || t > horizon) continue;
-          const wd = new Date(t + SCHOOL_TZ_OFFSET_MS).getUTCDay();
-          const isExtra = !weekdayHas.has(`${l.class_id}:${wd}`);
-          pending.push({
-            key: `lesson:${l.id}`,
-            input: {
-              type: isExtra ? "announcement" : "reminder",
-              title: `${isExtra ? "Extra class" : "Class"}: ${l.title || classNames.get(l.class_id) || "Session"}`,
-              body: `${isExtra ? "An additional class has been scheduled for " : "Class on "}${fmtDue(new Date(t).toISOString())}${l.ends_at ? `–${hhmm(l.ends_at)}` : ""}.`,
-              href: "/portal",
-            },
-          });
-        }
-      }
+    const timetable = await timetableForUid(uid);
+    const soon = now + 24 * 3600_000;
+    for (const s of timetable.slots) {
+      const occ = nextWeeklyOccurrence(s.weekday, s.startsAt);
+      if (occ <= now || occ > soon) continue;
+      const day = new Date(occ + SCHOOL_TZ_OFFSET_MS).toISOString().slice(0, 10);
+      pending.push({
+        key: `class:${s.classId}:${day}:${hhmm(s.startsAt)}`,
+        input: { type: "reminder", title: `Class reminder: ${s.classMeta.name}`, body: `Scheduled ${fmtDue(new Date(occ).toISOString())}–${hhmm(s.endsAt)} Pakistan time.`, href: "/portal/timetable" },
+      });
+    }
+    for (const l of timetable.extras) {
+      const t = lessonStartMs(l.lessonDate, l.startsAt);
+      if (t <= now || t > horizon) continue;
+      pending.push({
+        key: `lesson:${l.id}`,
+        input: {
+          type: "announcement",
+          title: `Extra class: ${l.title || l.classMeta.name}`,
+          body: `An additional class has been scheduled for ${fmtDue(new Date(t).toISOString())}${l.endsAt ? `–${hhmm(l.endsAt)}` : ""} Pakistan time.`,
+          href: "/portal/timetable",
+        },
+      });
     }
 
     if (!pending.length) return;

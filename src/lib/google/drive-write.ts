@@ -4,7 +4,8 @@
  * Provisions a tidy folder tree under the connected account and routes portal
  * uploads into it:
  *
- *   sjabrankamran.com/
+ *   sjabrankamran/
+ *     ├─ Students/<Student>/Profile/  ← required onboarding photos
  *     ├─ Physics Resource/            ← Physics Resources uploads
  *     ├─ Resource Library/            ← community library attachments
  *     ├─ Tests/<Student>/             ← Exam Lab answer uploads (per user)
@@ -17,17 +18,19 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAccessToken, googleReady } from "./auth";
 
-const ROOT_NAME = "sjabrankamran.com";
-const SUB = { physicsResource: "Physics Resource", resourceLibrary: "Resource Library", tests: "Tests", assignments: "Assignments" } as const;
+const ROOT_NAME = "sjabrankamran";
+const SUB = { students: "Students", physicsResource: "Physics Resource", resourceLibrary: "Resource Library", tests: "Tests", assignments: "Assignments" } as const;
 const CACHE_PATH = "secrets/google-folders.json";
 
 type FolderCache = {
+  rootName?: string;
   root?: string;
+  students?: string;
   physicsResource?: string;
   resourceLibrary?: string;
   tests?: string;
   assignments?: string;
-  users?: Record<string, { tests?: string; assignments?: string }>;
+  users?: Record<string, { tests?: string; assignments?: string; profiles?: string }>;
 };
 
 let mem: FolderCache | null = null;
@@ -72,26 +75,32 @@ async function ensureFolder(name: string, parentId: string): Promise<string> {
 }
 
 /** Ensure the whole base tree exists; returns (and caches) the folder ids. */
-export async function ensureBaseFolders(): Promise<Required<Omit<FolderCache, "users">> & { users: Record<string, { tests?: string; assignments?: string }> }> {
+export async function ensureBaseFolders(): Promise<Required<Omit<FolderCache, "users">> & { users: Record<string, { tests?: string; assignments?: string; profiles?: string }> }> {
   const c = await readCache();
+  if (c.rootName !== ROOT_NAME) {
+    c.rootName = ROOT_NAME;
+    delete c.root; delete c.students; delete c.physicsResource; delete c.resourceLibrary; delete c.tests; delete c.assignments;
+    c.users = {};
+  }
   if (!c.root) c.root = await ensureFolder(ROOT_NAME, "root");
+  if (!c.students) c.students = await ensureFolder(SUB.students, c.root);
   if (!c.physicsResource) c.physicsResource = await ensureFolder(SUB.physicsResource, c.root);
   if (!c.resourceLibrary) c.resourceLibrary = await ensureFolder(SUB.resourceLibrary, c.root);
   if (!c.tests) c.tests = await ensureFolder(SUB.tests, c.root);
   if (!c.assignments) c.assignments = await ensureFolder(SUB.assignments, c.root);
   if (!c.users) c.users = {};
   await writeCache(c);
-  return c as Required<Omit<FolderCache, "users">> & { users: Record<string, { tests?: string; assignments?: string }> };
+  return c as Required<Omit<FolderCache, "users">> & { users: Record<string, { tests?: string; assignments?: string; profiles?: string }> };
 }
 
 /** Ensure a per-user subfolder under Tests/ or Assignments/; returns its id. */
-async function ensureUserFolder(kind: "tests" | "assignments", uid: string, label: string): Promise<string> {
+async function ensureUserFolder(kind: "tests" | "assignments" | "profiles", uid: string, label: string): Promise<string> {
   const base = await ensureBaseFolders();
   const c = await readCache();
   c.users = c.users || {};
   c.users[uid] = c.users[uid] || {};
   if (c.users[uid][kind]) return c.users[uid][kind]!;
-  const parent = kind === "tests" ? base.tests : base.assignments;
+  const parent = kind === "tests" ? base.tests : kind === "assignments" ? base.assignments : base.students;
   const folderName = label.replace(/[\\/]/g, "-").slice(0, 100) || uid.slice(0, 8);
   const id = await ensureFolder(folderName, parent);
   c.users[uid][kind] = id;
@@ -130,7 +139,7 @@ export async function mirrorToDrive(target: "physicsResource" | "resourceLibrary
 }
 
 /** Best-effort mirror of a user upload into Tests/<user> or Assignments/<user>. */
-export async function mirrorUserUpload(kind: "tests" | "assignments", uid: string, label: string, name: string, mime: string, file: Blob | ArrayBuffer | Uint8Array): Promise<{ id: string; webViewLink: string | null } | null> {
+export async function mirrorUserUpload(kind: "tests" | "assignments" | "profiles", uid: string, label: string, name: string, mime: string, file: Blob | ArrayBuffer | Uint8Array): Promise<{ id: string; webViewLink: string | null } | null> {
   try {
     if (!(await googleReady())) return null;
     const folder = await ensureUserFolder(kind, uid, label);
@@ -143,7 +152,7 @@ export async function baseFolderLinks(): Promise<Record<string, string>> {
   const c = await ensureBaseFolders();
   const link = (id?: string) => (id ? `https://drive.google.com/drive/folders/${id}` : "");
   return {
-    root: link(c.root), "Physics Resource": link(c.physicsResource), "Resource Library": link(c.resourceLibrary),
+    root: link(c.root), Students: link(c.students), "Physics Resource": link(c.physicsResource), "Resource Library": link(c.resourceLibrary),
     Tests: link(c.tests), Assignments: link(c.assignments),
   };
 }
