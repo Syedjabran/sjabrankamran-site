@@ -8,7 +8,7 @@
  * overall; each school overall. Plus a composite performance score, level
  * distribution, and top-N boards — everything the analytics UI needs.
  */
-import { getInstitutionReport } from "@/lib/portal/institutions";
+import { getInstitutionReport, type ClassStaff } from "@/lib/portal/institutions";
 
 export type RankedStudent = {
   studentId: string; uid: string; name: string; email: string;
@@ -21,6 +21,7 @@ export type RankedStudent = {
 };
 export type RankedClass = {
   id: string; name: string; school: string; section: string | null; year: string;
+  staff: ClassStaff[];
   students: number; activeStudents: number;
   avgAccuracy: number | null; avgLevel: number; avgAttendance: number | null; totalAttempts: number;
   score: number; rankOverall: number; rankInSchool: number; outOfOverall: number; outOfSchool: number;
@@ -87,6 +88,7 @@ export async function buildRankings(): Promise<RankingsData> {
     for (const cr of sr.classes) {
       classesFlat.push({
         id: cr.id, name: cr.name, school: cr.school, section: cr.section, year: cr.year,
+        staff: cr.staff,
         students: cr.students.length, activeStudents: cr.activeStudents,
         avgAccuracy: cr.avgAccuracy, avgLevel: mean(cr.students.map((s) => s.level)),
         avgAttendance: cr.avgAttendance, totalAttempts: cr.totalAttempts,
