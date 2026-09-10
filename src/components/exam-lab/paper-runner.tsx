@@ -87,6 +87,19 @@ export function PaperRunner({
   const isMcq = (q: ImgQuestion) => q.paperType === "P1";
   const totalMarks = useMemo(() => questions.reduce((s, q) => s + (q.marks || 0), 0), [questions]);
 
+  // Per-question time budget (seconds). In timed mode every question gets its
+  // own countdown; when it reaches zero the question locks and the runner
+  // auto-scrolls to the next unanswered question.
+  const qBudget = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const q of questions) m[q.id] = questionSeconds({ paper: q.paperType, difficulty: q.level, marks: q.marks });
+    return m;
+  }, [questions]);
+  const qLocked = useCallback((id: string) => {
+    if (!timed || !begun || submitted) return false;
+    return (perQ[id] || 0) >= (qBudget[id] || 90);
+  }, [timed, begun, submitted, perQ, qBudget]);
+
   // load exact past-paper images
   useEffect(() => {
     let alive = true;
@@ -240,16 +253,33 @@ export function PaperRunner({
     return () => { window.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); clearInterval(iv); cancelAnimationFrame(raf); };
   }, [loading, submitted, begun, questions]);
 
-  // Accumulate time on the active question.
+  // Accumulate time on the active question; auto-advance when per-Q budget expires.
   useEffect(() => {
     if (!running) return;
     const iv = setInterval(() => {
       const id = activeIdRef.current;
       if (!id || document.visibilityState === "hidden") return;
-      setPerQ((m) => ({ ...m, [id]: (m[id] || 0) + 1 }));
+      setPerQ((prev) => {
+        const next = { ...prev, [id]: (prev[id] || 0) + 1 };
+        const budget = qBudget[id] || 90;
+        if (next[id] >= budget) {
+          // Question just expired — auto-scroll to the next unanswered, unlocked question.
+          requestAnimationFrame(() => {
+            const idx = questions.findIndex((q) => q.id === id);
+            for (let j = idx + 1; j < questions.length; j++) {
+              const nq = questions[j];
+              if ((next[nq.id] || 0) < (qBudget[nq.id] || 90)) {
+                liRefs.current[nq.id]?.scrollIntoView({ behavior: "smooth", block: "center" });
+                break;
+              }
+            }
+          });
+        }
+        return next;
+      });
     }, 1000);
     return () => clearInterval(iv);
-  }, [running]);
+  }, [running, questions, qBudget]);
 
   async function beginStrict() {
     if (!consent || !camStatus?.calibrated) return;
@@ -463,11 +493,12 @@ export function PaperRunner({
                 {q.topic && <span className="rounded-full border border-cyan/30 px-2.5 py-0.5 font-mono text-[10px] text-cyan">{q.topic}</span>}
                 <span className={"rounded-full border px-2.5 py-0.5 font-mono text-[10px] " + (q.level === "LOT" ? "border-emerald2/40 text-emerald2" : "border-magenta/40 text-magenta")}>{q.level}</span>
                 <span className="rounded-full border border-white/15 px-2.5 py-0.5 font-mono text-[10px] text-fog">{q.paperType}</span>
-                <span title="Expected time for this question (by paper & difficulty)" className="inline-flex items-center gap-1 rounded-full border border-white/15 px-2.5 py-0.5 font-mono text-[10px] text-dust"><Timer size={10} /> {formatDuration(expSec)}</span>
+                <span title="Time budget for this question" className="inline-flex items-center gap-1 rounded-full border border-white/15 px-2.5 py-0.5 font-mono text-[10px] text-dust"><Timer size={10} /> {formatDuration(expSec)}</span>
                 {!submitted ? (
-                  <span title={isActive ? "Timing this question now" : "Countdown starts when this question is on screen"} className={"inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-[10px] " + (overTime ? "border-signal/50 text-signal" : isActive ? "border-cyan/60 text-cyan" : "border-white/10 text-fog")}>
-                    {isActive ? <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" /> : null}
-                    {overTime ? `+${formatDuration(spentSec - expSec)}` : formatDuration(Math.max(0, expSec - spentSec))}
+                  <span title={qLocked(q.id) ? "Time expired — answer locked" : isActive ? "Counting down" : "Countdown starts when this question is on screen"}
+                    className={"inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-[10px] " + (qLocked(q.id) ? "border-signal/60 bg-signal/10 text-signal" : overTime ? "border-signal/50 text-signal" : isActive ? "border-cyan/60 text-cyan" : "border-white/10 text-fog")}>
+                    {qLocked(q.id) ? <Lock size={10} /> : isActive ? <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" /> : null}
+                    {qLocked(q.id) ? "Locked" : overTime ? `+${formatDuration(spentSec - expSec)}` : formatDuration(Math.max(0, expSec - spentSec))}
                   </span>
                 ) : (
                   <span title="Time you spent vs expected" className={"inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-[10px] " + (overTime ? "border-signal/40 text-signal" : "border-emerald2/40 text-emerald2")}>{formatDuration(spentSec)} / {formatDuration(expSec)}</span>
@@ -488,8 +519,8 @@ export function PaperRunner({
                     return (
                       <button
                         key={L}
-                        disabled={submitted}
-                        onClick={() => setAnswers((a) => ({ ...a, [q.id]: k }))}
+                        disabled={submitted || qLocked(q.id)}
+                        onClick={() => { if (!qLocked(q.id)) setAnswers((a) => ({ ...a, [q.id]: k })); }}
                         className={
                           "h-10 w-12 rounded-lg border font-display text-base font-bold transition " +
                           (isCorrect ? "border-emerald2 bg-emerald2 text-space" :
