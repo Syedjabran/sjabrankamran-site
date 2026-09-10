@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FileText, Layers, Play, Zap, Library, Coffee, ShieldAlert, Video, ClipboardList, Lock, CheckCircle2, Send, Loader2, Clock } from "lucide-react";
-import { IMAGE_BANK, IMAGE_PAPERS, type ImgQuestion } from "@/lib/exam-lab/image-bank";
+import { IMAGE_BANK, IMAGE_PAPERS, FULL_BANK, type ImgQuestion } from "@/lib/exam-lab/image-bank";
 import { PaperRunner, type AttemptKind } from "./paper-runner";
 import type { GuardMode } from "./use-exam-guard";
 
@@ -166,7 +166,12 @@ export function PapersHub({ canTest = false }: { canTest?: boolean }) {
       enter({ questions: qs, title: al.title || `Topic drill · ${PAPER_NAME[paperType].split(" · ")[0]}`, subtitle: `${qs.length} questions · ${mins} min`, duration: mins, logMeta: { mode: "drill", paperType }, ...common });
     } else if (al.content.type === "custom") {
       const idset = new Set(al.content.ids);
-      const qs = IMAGE_BANK.filter((q) => idset.has(q.id));
+      // Custom allocations may reference the secure (allocation-only) bank.
+      // Tests are shuffled per student per sitting; marking is keyed by
+      // question id, so the auto-check key always follows each student's own
+      // question arrangement.
+      let qs = FULL_BANK.filter((q) => idset.has(q.id));
+      if (al.mode === "test") qs = shuffle([...qs]);
       if (!qs.length) return;
       const pts = new Set(qs.map((q) => q.paperType));
       const pt: "P1" | "P2" | "P4" | "mixed" = pts.size === 1 ? qs[0].paperType : "mixed";
