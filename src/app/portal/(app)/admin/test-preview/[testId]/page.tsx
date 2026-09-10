@@ -27,7 +27,7 @@ export default async function TestPreviewPage({ params }: { params: Promise<{ te
   if (!meta) notFound();
 
   const questions = [...SECURE_BANK]
-    .filter((q) => q.id.startsWith("ct1-pqu-"))
+    .filter((q) => q.id.startsWith("9702_ct1_pqu-"))
     .sort((a, b) => a.qnum - b.qnum);
   if (questions.length !== 20) notFound();
 
