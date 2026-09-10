@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 import { audit, genPassword, isSuperAdmin, requireAdmin } from "@/lib/portal/admin";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { DEMO_STUDENT_UID } from "@/lib/portal/demo-student";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const DEMO_STUDENT_UID = "861414dd-f76d-4c03-b0d1-13be6ca6303e";
 
 /** Generate a fresh, one-time-visible login for the private QA student. */
 export async function POST() {

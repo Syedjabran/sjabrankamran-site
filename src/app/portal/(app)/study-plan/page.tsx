@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { BookOpenCheck, BrainCircuit, ShieldCheck, Target } from "lucide-react";
 import { getPortalUser } from "@/lib/edu/auth";
 import { ensureStudyPlan } from "@/lib/portal/study-plan";
+import { effectiveRoles } from "@/lib/portal/view-as";
+import { DEMO_STUDENT_UID } from "@/lib/portal/demo-student";
 import { MyTasks } from "../learn/my-tasks";
 
 export const metadata = { title: "My study plan" };
@@ -10,14 +12,17 @@ export const dynamic = "force-dynamic";
 export default async function StudyPlanPage() {
   const user = await getPortalUser();
   if (!user) redirect("/portal/login");
-  if (!user.roles.includes("student")) redirect("/portal");
-  const plan = await ensureStudyPlan(user.id);
+  const { roles, previewing } = await effectiveRoles(user);
+  if (!roles.includes("student")) redirect("/portal");
+  const isRealStudent = user.roles.includes("student");
+  const plan = await ensureStudyPlan(isRealStudent ? user.id : DEMO_STUDENT_UID);
 
   return (
     <div className="space-y-7">
       <div>
-        <h1 className="flex items-center gap-2.5 text-2xl font-semibold text-ice"><BrainCircuit size={22} className="text-cyan" /> My automated study plan</h1>
+        <h1 className="flex items-center gap-2.5 text-2xl font-semibold text-ice"><BrainCircuit size={22} className="text-cyan" /> My personalised weekly study plan</h1>
         <p className="mt-1 max-w-2xl text-sm text-fog">Your ranking and Exam Lab evidence determine this gradual weekly preparation path. It refreshes as your results improve.</p>
+        {previewing === "student" && !isRealStudent ? <p className="mt-2 rounded-xl border border-amber-300/25 bg-amber-300/[0.05] px-3 py-2 text-xs text-amber-200">Student preview uses the private Portal QA Student record. Activities are read-only in preview mode.</p> : null}
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="rounded-2xl border border-white/10 bg-space/60 p-4"><p className="text-[10px] uppercase tracking-widest text-dust">Current level</p><p className="mt-1 text-xl font-semibold text-ice">{plan.level}/10 · {plan.levelLabel}</p></div>
@@ -31,7 +36,7 @@ export default async function StudyPlanPage() {
       </div>
       <div className="rounded-2xl border border-white/10 bg-space/40 p-5">
         <p className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-widest text-dust"><Target size={14} className="text-cyan" /> Your plan activities</p>
-        <MyTasks />
+        <MyTasks initialTasks={plan.tasks} readOnly={!isRealStudent} showEmpty />
       </div>
     </div>
   );
