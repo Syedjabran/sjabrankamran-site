@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Target, Trophy, Link2, CheckCircle2, Clock, CircleDashed, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Target, Trophy, Link2, CheckCircle2, Clock, CircleDashed, Loader2, ArrowRight } from "lucide-react";
 
 type Task = {
   id: string; title: string; details: string; kind: "task" | "challenge";
@@ -9,6 +11,7 @@ type Task = {
   status: "assigned" | "in_progress" | "done"; createdByName: string;
   createdAt: number; completedAt: number | null; studentNote: string | null;
   mandatory?: boolean; topic?: string | null; activityType?: string; expectedMinutes?: number | null;
+  sourceId?: string | null;
 };
 
 async function api(url: string, opts?: RequestInit) {
@@ -18,11 +21,6 @@ async function api(url: string, opts?: RequestInit) {
   return j;
 }
 
-const NEXT: Record<Task["status"], { status: Task["status"]; label: string }> = {
-  assigned: { status: "in_progress", label: "Start" },
-  in_progress: { status: "done", label: "Mark done" },
-  done: { status: "assigned", label: "Reopen" },
-};
 const STATUS_META: Record<Task["status"], { label: string; cls: string; icon: React.ReactNode }> = {
   assigned: { label: "To do", cls: "border-white/20 text-dust", icon: <CircleDashed size={11} /> },
   in_progress: { label: "In progress", cls: "border-amber-300/40 text-amber-300", icon: <Clock size={11} /> },
@@ -30,25 +28,23 @@ const STATUS_META: Record<Task["status"], { label: string; cls: string; icon: Re
 };
 
 export function MyTasks() {
+  const router = useRouter();
   const [tasks, setTasks] = useState<Task[] | null>(null);
   const [busy, setBusy] = useState("");
 
   const load = async () => { try { const j = await api("/api/portal/tasks"); setTasks(j.tasks); } catch { setTasks([]); } };
   useEffect(() => { load(); }, []);
 
-  async function cycle(t: Task) {
+  async function openTask(t: Task) {
     setBusy(t.id);
     try {
-      const next = NEXT[t.status].status;
-      let note: string | undefined;
-      if (next === "done" && t.mandatory && t.activityType !== "daily_challenge" && t.activityType !== "short_test") {
-        note = window.prompt("Add a brief completion/submission note. This becomes part of your study record.")?.trim();
-        if (!note) return;
+      if (t.status === "assigned") {
+        await api("/api/portal/tasks", { method: "POST", body: JSON.stringify({ task_id: t.id, status: "in_progress" }) });
       }
-      await api("/api/portal/tasks", { method: "POST", body: JSON.stringify({ task_id: t.id, status: next, note }) });
-      await load();
+      router.push(`/portal/tasks/${encodeURIComponent(t.id)}`);
+    } finally {
+      setBusy("");
     }
-    finally { setBusy(""); }
   }
 
   if (!tasks || tasks.length === 0) return null; // hide entirely when the student has no personal work
@@ -73,7 +69,7 @@ export function MyTasks() {
                 <div className="min-w-0">
                   <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-ice">
                     {t.kind === "challenge" ? <Trophy size={14} className="shrink-0 text-amber-300" /> : <Target size={14} className="shrink-0 text-cyan" />}
-                    <span>{t.title}</span>
+                    <Link href={`/portal/tasks/${encodeURIComponent(t.id)}`} className="hover:text-cyan hover:underline">{t.title}</Link>
                     <span className={"inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] " + sm.cls}>{sm.icon} {sm.label}</span>
                     {t.points ? <span className="rounded-full border border-amber-300/30 px-2 py-0.5 text-[10px] text-amber-300">+{t.points} pts</span> : null}
                     {t.mandatory ? <span className="rounded-full border border-signal/35 px-2 py-0.5 text-[10px] uppercase tracking-wider text-signal">mandatory</span> : null}
@@ -86,9 +82,9 @@ export function MyTasks() {
                     {t.expectedMinutes ? <span>· {t.expectedMinutes} min</span> : null}
                   </p>
                 </div>
-                <button onClick={() => cycle(t)} disabled={busy === t.id}
+                <button onClick={() => openTask(t)} disabled={busy === t.id}
                   className={"shrink-0 inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs " + (t.status === "done" ? "border-white/10 text-dust hover:text-ice" : "border-cyan/50 text-cyan hover:bg-cyan/10")}>
-                  {busy === t.id ? <Loader2 size={13} className="animate-spin" /> : null} {NEXT[t.status].label}
+                  {busy === t.id ? <Loader2 size={13} className="animate-spin" /> : <ArrowRight size={13} />} {t.status === "done" ? "Review" : "Open task"}
                 </button>
               </div>
             </li>

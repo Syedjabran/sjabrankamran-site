@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getPortalUser } from "@/lib/edu/auth";
 import { listAllocations, getAllocation, markSubmitted } from "@/lib/exam-lab/allocations";
 import { getSession, requestUnlock } from "@/lib/exam-lab/proctor";
+import { completeTaskBySource } from "@/lib/portal/tasks";
 
 export const runtime = "nodejs";
 
@@ -31,6 +32,7 @@ export async function POST(req: Request) {
 
   if (b.action === "submitted") {
     const ok = await markSubmitted(user.id, b.id);
+    if (ok) await completeTaskBySource(user.id, b.id);
     return NextResponse.json({ ok }, { status: ok ? 200 : 404 });
   }
   if (b.action === "unlock-request") {

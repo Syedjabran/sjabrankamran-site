@@ -64,6 +64,12 @@ export async function listTasks(uid: string): Promise<PersonalTask[]> {
   return [...store.tasks].sort((a, b) => b.createdAt - a.createdAt);
 }
 
+/** One task owned by the signed-in user. */
+export async function getTask(uid: string, taskId: string): Promise<PersonalTask | null> {
+  const store = await readStore(uid);
+  return store.tasks.find((t) => t.id === taskId) || null;
+}
+
 export async function assignTask(uid: string, input: {
   title: string; details?: string; kind?: TaskKind; dueAt?: string | null;
   points?: number | null; resourceUrl?: string | null; createdBy: string; createdByName: string;
@@ -135,6 +141,18 @@ export async function setTaskStatus(uid: string, taskId: string, status: TaskSta
   t.updatedAt = Date.now();
   await writeStore(uid, store);
   return t;
+}
+
+/** Completing an Exam Lab allocation also completes its linked personal task. */
+export async function completeTaskBySource(uid: string, sourceId: string): Promise<PersonalTask | null> {
+  const store = await readStore(uid);
+  const task = store.tasks.find((t) => t.sourceId === sourceId);
+  if (!task) return null;
+  task.status = "done";
+  task.completedAt = Date.now();
+  task.updatedAt = Date.now();
+  await writeStore(uid, store);
+  return task;
 }
 
 /** Lightweight counts for dashboards. */

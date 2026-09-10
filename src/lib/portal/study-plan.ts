@@ -4,6 +4,8 @@ import { analyse } from "@/lib/exam-lab/analytics";
 import { allocateToStudents, newAllocId } from "@/lib/exam-lab/allocations";
 import { assignTask, listTasks, type PersonalTask } from "@/lib/portal/tasks";
 import { notify } from "@/lib/portal/notifications";
+import { getRegistry } from "@/lib/portal/institutions";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const OWNER_ID = "a9ed04e6-5386-41c7-8713-fa557431a309";
 const OWNER_NAME = "Syed Jabran Ali Kamran · Head of Physics World";
@@ -16,7 +18,24 @@ function duePk(offsetDays: number, hour: number) {
   const [y, m, d] = pkDate(offsetDays).split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d, hour - 5, 0)).toISOString();
 }
-function safeTopic(topic: string) { return topic === "Unclassified" ? "Core Physics foundations" : topic; }
+// Map analytics weakness labels to the canonical IMAGE_BANK topic strings.
+const TOPIC_MAP: Record<string, string> = {
+  "Unclassified": "Physical quantities & units",
+  "Core Physics foundations": "Physical quantities & units",
+  "Measurements and uncertainties": "Physical quantities & units",
+};
+const AS_TOPICS = [
+  "Physical quantities & units", "Kinematics", "Dynamics", "Forces, density & pressure",
+  "Work, energy & power", "Deformation of solids", "Waves", "Superposition",
+  "Electricity", "D.C. circuits", "Particle physics",
+];
+const A2_TOPICS = [
+  "Circular motion", "Gravitational fields", "Thermal physics", "Ideal gases", "Oscillations",
+  "Electric fields", "Capacitance", "Magnetic fields", "Alternating currents", "Quantum physics",
+  "Nuclear physics", "Astronomy & cosmology",
+];
+const CANONICAL_TOPICS = [...AS_TOPICS, ...A2_TOPICS];
+function safeTopic(topic: string) { return TOPIC_MAP[topic] || topic; }
 function searchUrl(kind: "resources" | "video" | "simulation", topic: string) {
   const q = encodeURIComponent(`CAIE 9702 Physics ${topic}`);
   if (kind === "resources") return `/portal/resources?search=${encodeURIComponent(topic)}`;
@@ -29,15 +48,38 @@ export type StudyPlanSummary = {
   tasks: PersonalTask[]; openMandatory: number;
 };
 
+/** Resolve the student's enrolled course stage; ranking level is performance,
+ * not AS/A2 course placement, so it must never choose the paper type. */
+async function courseStage(uid: string): Promise<"AS" | "A2"> {
+  try {
+    const db = createAdminClient();
+    const { data: student } = await db.from("edu_students").select("id").eq("profile_id", uid).maybeSingle();
+    if (!student?.id) return "AS";
+    const { data: enrolments } = await db.from("edu_enrolments").select("class_id").eq("student_id", student.id).eq("status", "active");
+    const ids = new Set((enrolments || []).map((e) => e.class_id as string));
+    const registry = await getRegistry();
+    const years = registry.classes.filter((c) => ids.has(c.id)).map((c) => c.year.toUpperCase());
+    return years.some((y) => y === "A2" || y.includes("YEAR 2")) ? "A2" : "AS";
+  } catch {
+    return "AS";
+  }
+}
+
 /**
  * Idempotently creates one weekly preparation sequence plus today's targeted
  * daily challenge. All generated work is stored in the normal task/allocation
  * records, so completion and submission remain auditable.
  */
 export async function ensureStudyPlan(uid: string): Promise<StudyPlanSummary> {
-  const attempts = await getAttempts(uid).catch(() => []);
+  const [attempts, stage] = await Promise.all([getAttempts(uid).catch(() => []), courseStage(uid)]);
   const a = analyse(attempts);
-  const focus = (a.weaknesses.length ? a.weaknesses.map((x) => safeTopic(x.topic)) : ["Core Physics foundations", "Measurements and uncertainties"]).slice(0, 3);
+  const stageTopics = stage === "A2" ? A2_TOPICS : AS_TOPICS;
+  const paperType = stage === "A2" ? "P4" : "P2";
+  const rawFocus = a.weaknesses.length ? a.weaknesses.map((x) => safeTopic(x.topic)) : stageTopics.slice(0, 3);
+  // De-duplicate and ensure every topic exists in the image bank.
+  const seen = new Set<string>();
+  const focus = rawFocus.filter((t) => stageTopics.includes(t) && CANONICAL_TOPICS.includes(t) && !seen.has(t) && (seen.add(t), true)).slice(0, 3);
+  if (!focus.length) focus.push(...stageTopics.slice(0, 3));
   const today = pkDate();
   const monday = (() => {
     const noon = new Date(`${today}T12:00:00+05:00`);
@@ -50,11 +92,11 @@ export async function ensureStudyPlan(uid: string): Promise<StudyPlanSummary> {
 
   if (!tasks.some((t) => t.generatedKey === weeklyKey)) {
     const topic = focus[0];
-    const specs: Array<Pick<PersonalTask, "title" | "details" | "activityType" | "expectedMinutes"> & { url: string; due: string }> = [
+    const specs: Array<Pick<PersonalTask, "title" | "details" | "activityType" | "expectedMinutes"> & { url: string | null; due: string }> = [
       { title: `Targeted study material · ${topic}`, details: `Read a concise explanation and make five retrieval notes on ${topic}.`, activityType: "study_material", expectedMinutes: 20, url: searchUrl("resources", topic), due: duePk(1, 20) },
       { title: `Video lesson · ${topic}`, details: "Watch one focused lesson, pause to solve each worked example, and record your key correction.", activityType: "video", expectedMinutes: 25, url: searchUrl("video", topic), due: duePk(2, 20) },
       { title: `Interactive simulation · ${topic}`, details: "Explore a relevant Physics simulation. Change at least two variables and write what changes and why.", activityType: "simulation", expectedMinutes: 20, url: searchUrl("simulation", topic), due: duePk(3, 20) },
-      { title: `Mandatory summary assignment · ${topic}`, details: "Submit a structured one-page explanation: definitions, equations, one worked example and your most common error.", activityType: "assignment", expectedMinutes: 35, url: "/portal/learn", due: duePk(4, 20) },
+      { title: `Mandatory summary assignment · ${topic}`, details: "Submit a structured one-page explanation: definitions, equations, one worked example and your most common error.", activityType: "assignment", expectedMinutes: 35, url: null, due: duePk(4, 20) },
     ];
     for (const s of specs) await assignTask(uid, {
       title: s.title, details: s.details, kind: "task", dueAt: s.due, points: 10, resourceUrl: s.url,
@@ -64,15 +106,15 @@ export async function ensureStudyPlan(uid: string): Promise<StudyPlanSummary> {
 
     const testId = newAllocId();
     await allocateToStudents([uid], {
-      id: testId, mode: "assignment_nohelp", content: { type: "drill", paperType: a.level >= 6 ? "P4" : "P2", topics: [topic], levels: a.level >= 5 ? ["LOT", "HOT"] : ["LOT"], count: 10 },
+      id: testId, mode: "assignment_nohelp", content: { type: "drill", paperType, topics: [topic], levels: a.level >= 5 ? ["LOT", "HOT"] : ["LOT"], count: 10 },
       title: `Weekly short test · ${topic}`, instructions: "Mandatory diagnostic check. Complete and submit before the deadline.", durationMin: 25,
       dueAt: duePk(5, 20), startsAt: null, classId: null, className: "Automated study plan", createdBy: OWNER_ID, createdByName: OWNER_NAME,
     });
-    await assignTask(uid, {
+    const shortTestTask = await assignTask(uid, {
       title: `Mandatory short test · ${topic}`, details: "Complete the assigned 10-question diagnostic in Exam Lab and submit it.", kind: "challenge", dueAt: duePk(5, 20), points: 20,
-      resourceUrl: "/portal/exam-lab", createdBy: OWNER_ID, createdByName: OWNER_NAME, mandatory: true, topic, activityType: "short_test", expectedMinutes: 25, generatedKey: weeklyKey, sourceId: testId,
+      resourceUrl: `/portal/exam-lab?allocation=${encodeURIComponent(testId)}`, createdBy: OWNER_ID, createdByName: OWNER_NAME, mandatory: true, topic, activityType: "short_test", expectedMinutes: 25, generatedKey: weeklyKey, sourceId: testId,
     });
-    await notify({ uids: [uid] }, { type: "assignment", title: "Your personalised weekly study plan is ready", body: `This week focuses on ${topic}. Every step is mandatory and recorded.`, href: "/portal/study-plan" });
+    await notify({ uids: [uid] }, { type: "assignment", title: "Your personalised weekly study plan is ready", body: `This week focuses on ${topic}. Every step is mandatory and recorded.`, href: `/portal/tasks/${encodeURIComponent(shortTestTask.id)}` });
   }
 
   tasks = await listTasks(uid);
@@ -80,15 +122,15 @@ export async function ensureStudyPlan(uid: string): Promise<StudyPlanSummary> {
     const topic = focus[Math.abs(new Date(`${today}T12:00:00+05:00`).getUTCDay()) % focus.length];
     const allocationId = newAllocId();
     await allocateToStudents([uid], {
-      id: allocationId, mode: "assignment_nohelp", content: { type: "drill", paperType: a.level >= 6 ? "P4" : "P2", topics: [topic], levels: ["LOT", "HOT"], count: 5 },
+      id: allocationId, mode: "assignment_nohelp", content: { type: "drill", paperType, topics: [topic], levels: ["LOT", "HOT"], count: 5 },
       title: `Daily challenge · ${topic}`, instructions: "Mandatory daily targeted practice. Complete and submit today.", durationMin: 15,
       dueAt: duePk(0, 20), startsAt: null, classId: null, className: "Automated study plan", createdBy: OWNER_ID, createdByName: OWNER_NAME,
     });
-    await assignTask(uid, {
+    const dailyTask = await assignTask(uid, {
       title: `Daily mandatory challenge · ${topic}`, details: "Complete today’s five targeted questions in Exam Lab and submit them.", kind: "challenge", dueAt: duePk(0, 20), points: 10,
-      resourceUrl: "/portal/exam-lab", createdBy: OWNER_ID, createdByName: OWNER_NAME, mandatory: true, topic, activityType: "daily_challenge", expectedMinutes: 15, generatedKey: dailyKey, sourceId: allocationId,
+      resourceUrl: `/portal/exam-lab?allocation=${encodeURIComponent(allocationId)}`, createdBy: OWNER_ID, createdByName: OWNER_NAME, mandatory: true, topic, activityType: "daily_challenge", expectedMinutes: 15, generatedKey: dailyKey, sourceId: allocationId,
     });
-    await notify({ uids: [uid] }, { type: "challenge", title: `Today’s mandatory challenge · ${topic}`, body: "A five-question targeted challenge is ready in Exam Lab.", href: "/portal/study-plan" });
+    await notify({ uids: [uid] }, { type: "challenge", title: `Today’s mandatory challenge · ${topic}`, body: "A five-question targeted challenge is ready in Exam Lab.", href: `/portal/tasks/${encodeURIComponent(dailyTask.id)}` });
   }
 
   tasks = await listTasks(uid);

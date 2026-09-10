@@ -103,11 +103,14 @@ export function PapersHub({ canTest = false }: { canTest?: boolean }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const runParam = searchParams.get("run") === "1";
+  const allocationParam = searchParams.get("allocation");
 
   const [tab, setTab] = useState<"papers" | "drill">("papers");
   const [sitMode, setSitMode] = useState<SitMode>("practice");
   const [active, setActive] = useState<Active | null>(null);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
+  const [launchError, setLaunchError] = useState("");
+  const deepLinkHandled = useRef<string | null>(null);
   // Have we actually observed ?run=1 for the current open paper yet? Guards the
   // transient first render (active set, but the pushed ?run=1 hasn't landed) so
   // we never clear `active` before it has even shown.
@@ -148,6 +151,7 @@ export function PapersHub({ canTest = false }: { canTest?: boolean }) {
   }, [active]);
 
   function startAllocation(al: Allocation) {
+    setLaunchError("");
     const cfg = allocCfg(al.mode);
     const common = { ...cfg, timed: true, attemptId: al.attemptId, allocationId: al.id };
     if (al.content.type === "paper") {
@@ -159,9 +163,18 @@ export function PapersHub({ canTest = false }: { canTest?: boolean }) {
     } else if (al.content.type === "drill") {
       const { paperType, topics, levels, count } = al.content;
       const tset = new Set(topics); const lset = new Set(levels);
-      const pool = IMAGE_BANK.filter((q) => q.paperType === paperType && (!tset.size || (q.topic && tset.has(q.topic))) && lset.has(q.level));
+      // Old automated allocations may contain a retired topic label or an
+      // over-restrictive level combination. Fall back within the assigned
+      // paper instead of silently doing nothing when Start is pressed.
+      const exact = IMAGE_BANK.filter((q) => q.paperType === paperType && (!tset.size || (q.topic && tset.has(q.topic))) && lset.has(q.level));
+      const topicAnyLevel = IMAGE_BANK.filter((q) => q.paperType === paperType && (!tset.size || (q.topic && tset.has(q.topic))));
+      const paperAndLevel = IMAGE_BANK.filter((q) => q.paperType === paperType && lset.has(q.level));
+      const pool = exact.length ? exact : topicAnyLevel.length ? topicAnyLevel : paperAndLevel.length ? paperAndLevel : IMAGE_BANK.filter((q) => q.paperType === paperType);
       const qs = shuffle([...pool]).slice(0, count);
-      if (!qs.length) return;
+      if (!qs.length) {
+        setLaunchError(`No questions are available for “${al.title}”. The assignment has been reported for repair.`);
+        return;
+      }
       const mins = al.durationMin || Math.max(5, Math.round(qs.length * (paperType === "P1" ? 1.5 : 9)));
       enter({ questions: qs, title: al.title || `Topic drill · ${PAPER_NAME[paperType].split(" · ")[0]}`, subtitle: `${qs.length} questions · ${mins} min`, duration: mins, logMeta: { mode: "drill", paperType }, ...common });
     } else if (al.content.type === "custom") {
@@ -182,6 +195,29 @@ export function PapersHub({ canTest = false }: { canTest?: boolean }) {
       enter({ questions: p1, title: al.title || "Daily Challenge", subtitle: "10 mixed Paper-1 questions", duration: al.durationMin || 15, logMeta: { mode: "drill", paperType: "P1" }, ...common });
     }
   }
+
+  // A task link opens its exact Exam Lab allocation rather than dropping the
+  // student at the generic hub. The normal status/time checks still apply.
+  useEffect(() => {
+    if (!allocationParam || active || !allocations.length || deepLinkHandled.current === allocationParam) return;
+    const allocation = allocations.find((a) => a.id === allocationParam);
+    if (!allocation) {
+      deepLinkHandled.current = allocationParam;
+      setLaunchError("This assigned activity is no longer available. Ask your teacher to reassign it.");
+      return;
+    }
+    deepLinkHandled.current = allocationParam;
+    const scheduled = allocation.startsAt && new Date(allocation.startsAt).getTime() > Date.now();
+    if (scheduled) {
+      setLaunchError(`This activity opens ${new Date(allocation.startsAt!).toLocaleString("en-GB")}.`);
+      return;
+    }
+    if (!["assigned", "unlocked", "cancelled"].includes(allocation.status)) return;
+    startAllocation(allocation);
+    // startAllocation deliberately stays local to this component; the ref
+    // prevents repeated launches when allocation state refreshes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allocationParam, allocations, active]);
 
   const grouped = useMemo(() => {
     const g: Record<string, typeof IMAGE_PAPERS> = { P1: [], P2: [], P4: [] };
@@ -230,6 +266,7 @@ export function PapersHub({ canTest = false }: { canTest?: boolean }) {
 
   return (
     <div>
+      {launchError ? <p className="mb-4 rounded-xl border border-signal/35 bg-signal/[0.06] px-4 py-3 text-sm text-signal">{launchError}</p> : null}
       {allocations.length ? <AssignedBoard allocations={allocations} onStart={startAllocation} /> : null}
 
       {/* sit-mode selector */}

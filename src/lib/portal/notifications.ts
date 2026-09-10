@@ -319,7 +319,7 @@ export async function synthesizeForUser(uid: string, opts?: { force?: boolean })
           type: "reminder",
           title: `Due soon: ${t.title}`,
           body: `Your personal ${t.kind} is due ${fmtDue(t.dueAt)}.`,
-          href: "/portal/learn",
+          href: `/portal/tasks/${encodeURIComponent(t.id)}`,
         },
       });
     }
