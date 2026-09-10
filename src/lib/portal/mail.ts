@@ -1,10 +1,10 @@
 /**
  * Portal email module. SERVER-ONLY.
  *
- * Outbound email (to students/parents) is sent through a Google Apps Script
- * web-app webhook that relays as physics@sjabrankamran.com (JB deploys it — see
- * the setup guide). Transport is configured by env:
- *   EDU_MAIL_WEBHOOK_URL, EDU_MAIL_WEBHOOK_SECRET
+ * Outbound email (to students/parents) uses either the existing Google Apps
+ * Script relay or the connected Gmail API account. Gmail uses the same
+ * protected GOOGLE_* / portal-data/secrets/google.json connection as Drive;
+ * no credentials are copied into mail records or client responses.
  * If the webhook is not configured (or fails), the message is QUEUED (logged
  * with status "queued") so nothing is ever lost — a later run can resend.
  *
@@ -14,6 +14,7 @@
  *   templates.json      — reusable templates
  */
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getAccessToken } from "@/lib/google/auth";
 
 export const MAIL_BUCKET = "portal-mail";
 export const MAIL_FROM_NAME = "Syed Jabran Ali Kamran — Physics";
@@ -65,14 +66,62 @@ function newId() {
 }
 
 export function mailConfigured(): boolean {
-  return !!(process.env.EDU_MAIL_WEBHOOK_URL && process.env.EDU_MAIL_WEBHOOK_SECRET);
+  return !!(
+    (process.env.EDU_MAIL_WEBHOOK_URL && process.env.EDU_MAIL_WEBHOOK_SECRET) ||
+    (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REFRESH_TOKEN)
+  );
 }
 
-/** Low-level transport: POST to the Apps Script relay. Returns true on 2xx. */
+function cleanHeader(value: string) { return value.replace(/[\r\n]+/g, " ").trim(); }
+function base64url(value: string) {
+  return Buffer.from(value, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+/** Direct Gmail REST transport using the already-protected Google OAuth token. */
+async function gmailRelay(rec: MailRecord): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const token = await getAccessToken();
+    const boundary = `sjak_${rec.id}`;
+    const text = rec.text || (rec.html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const html = rec.html || `<div style="font-family:Arial,sans-serif;white-space:pre-wrap">${text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>`;
+    const headers = [
+      `From: ${cleanHeader(MAIL_FROM_NAME)} <${MAIL_FROM}>`,
+      `To: ${rec.to.map(cleanHeader).join(", ")}`,
+      ...(rec.cc?.length ? [`Cc: ${rec.cc.map(cleanHeader).join(", ")}`] : []),
+      `Subject: ${cleanHeader(rec.subject)}`,
+      "MIME-Version: 1.0",
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      "",
+      `--${boundary}`,
+      "Content-Type: text/plain; charset=UTF-8",
+      "Content-Transfer-Encoding: 8bit",
+      "",
+      text,
+      `--${boundary}`,
+      "Content-Type: text/html; charset=UTF-8",
+      "Content-Transfer-Encoding: 8bit",
+      "",
+      html,
+      `--${boundary}--`,
+    ].join("\r\n");
+    const r = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ raw: base64url(headers) }),
+    });
+    const j = (await r.json().catch(() => ({}))) as { id?: string; error?: { message?: string; status?: string } };
+    if (!r.ok || !j.id) return { ok: false, error: `gmail_${r.status}:${j.error?.status || j.error?.message || "send_failed"}`.slice(0, 160) };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: `gmail_exception:${(e as Error).message}`.slice(0, 160) };
+  }
+}
+
+/** Low-level transport: Apps Script when configured, otherwise Gmail REST. */
 async function relay(rec: MailRecord): Promise<{ ok: boolean; error?: string }> {
   const url = process.env.EDU_MAIL_WEBHOOK_URL;
   const secret = process.env.EDU_MAIL_WEBHOOK_SECRET;
-  if (!url || !secret) return { ok: false, error: "webhook_not_configured" };
+  if (!url || !secret) return gmailRelay(rec);
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 25_000);
   try {
@@ -126,7 +175,7 @@ export async function sendMail(input: {
     rec.status = r.ok ? "sent" : "queued";
     if (!r.ok) rec.error = r.error;
   } else {
-    rec.status = "queued"; rec.error = "webhook_not_configured";
+    rec.status = "queued"; rec.error = "mail_transport_not_configured";
   }
   await writeJson(`msg/${rec.id}.json`, rec);
   const { html: _h, text: _t, ...idx } = rec;
