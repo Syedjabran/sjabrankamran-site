@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, Pressable, StyleSheet, View } from 'react-native';
+import { BackHandler, Pressable, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView, type WebViewNavigation } from 'react-native-webview';
@@ -8,6 +8,7 @@ import { SITE_URL } from '../../src/config';
 import { sessionCookiePairs, type Session } from '../../src/auth/session';
 import { useAuth } from '../../src/auth/context';
 import { ErrorNote, Screen, T } from '../../src/components/ui';
+import { SkeletonDocument, TopProgressBar } from '../../src/components/Skeleton';
 import { alpha, colors, spacing } from '../../src/theme/tokens';
 
 /**
@@ -34,6 +35,7 @@ export default function WebScreen() {
 
   const webRef = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
+  const [progress, setProgress] = useState(0);
   const [canGoBack, setCanGoBack] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
 
@@ -41,6 +43,26 @@ export default function WebScreen() {
   // resource's href is a signed storage link or a Google Drive URL.
   const isAbsolute = /^https?:\/\//i.test(path);
   const uri = isAbsolute ? path : SITE_URL + path;
+
+  /**
+   * This screen is a tab route, so opening a second page from "More" reuses
+   * this same component instead of mounting a fresh one — only `params` change.
+   * Without resetting here, the previous page stayed painted (with `loading`
+   * still false from its own load) until the new document rendered, which is
+   * the ungraceful flash between pages.
+   *
+   * Adjusting state during render is React's documented pattern for this: it
+   * re-renders before committing, so the placeholder is already covering the
+   * old page on the very first frame of the new URL.
+   */
+  const [shownUri, setShownUri] = useState(uri);
+  if (shownUri !== uri) {
+    setShownUri(uri);
+    setLoading(true);
+    setProgress(0);
+    setCanGoBack(false);
+    setFailed(null);
+  }
 
   /**
    * The session is attached ONLY for our own origin. Resource links point at
@@ -136,6 +158,9 @@ export default function WebScreen() {
       ) : (
         <View style={{ flex: 1 }}>
           <WebView
+            // Remount on a new URL rather than letting one native view carry the
+            // old document (and its history) into the next page.
+            key={uri}
             ref={webRef}
             source={
               cookieHeader ? { uri, headers: { Cookie: cookieHeader } } : { uri }
@@ -151,16 +176,27 @@ export default function WebScreen() {
             allowsInlineMediaPlayback
             originWhitelist={['https://*']}
             onNavigationStateChange={onNavigationStateChange}
-            onLoadEnd={() => setLoading(false)}
+            onLoadStart={() => {
+              setProgress(0);
+              setLoading(true);
+            }}
+            onLoadProgress={({ nativeEvent }) => setProgress(nativeEvent.progress)}
+            onLoadEnd={() => {
+              setProgress(1);
+              setLoading(false);
+            }}
             onError={() =>
               setFailed('Could not load this page. Check your connection and try again.')
             }
             style={styles.web}
             containerStyle={styles.webContainer}
           />
+          <View style={styles.progress} pointerEvents="none">
+            <TopProgressBar progress={progress} visible={loading} />
+          </View>
           {loading ? (
             <View style={styles.loader} pointerEvents="none">
-              <ActivityIndicator color={colors.cyan} />
+              <SkeletonDocument />
             </View>
           ) : null}
         </View>
@@ -191,14 +227,15 @@ const styles = StyleSheet.create({
   },
   web: { flex: 1, backgroundColor: colors.abyss },
   webContainer: { flex: 1, backgroundColor: colors.abyss },
+  progress: { position: 'absolute', top: 0, left: 0, right: 0 },
   loader: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: colors.abyss,
+    alignItems: 'stretch',
+    justifyContent: 'flex-start',
   },
 });

@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, Switch, TextInput, View } from 'react-native';
 import { KeyRound } from 'lucide-react-native';
 import { PortalHeader } from '../../src/components/PortalHeader';
-import { Badge, Button, Card, ErrorNote, H2, Loading, Screen, T } from '../../src/components/ui';
+import { Badge, Button, Card, ErrorNote, H2, Screen, T } from '../../src/components/ui';
+import { SkeletonCard } from '../../src/components/Skeleton';
 import { useMe, useUpdateMe } from '../../src/api/hooks';
 import { useAuth } from '../../src/auth/context';
 import { requestPasswordReset } from '../../src/auth/session';
@@ -43,7 +44,13 @@ export default function SettingsScreen() {
       <Screen>
         <H2>Profile &amp; settings</H2>
 
-        {isLoading ? <Loading /> : null}
+        {isLoading ? (
+          <>
+            <SkeletonCard lines={1} />
+            <SkeletonCard lines={1} />
+            <SkeletonCard lines={2} />
+          </>
+        ) : null}
         {error ? (
           <ErrorNote message={(error as Error).message} onRetry={() => void refetch()} />
         ) : null}

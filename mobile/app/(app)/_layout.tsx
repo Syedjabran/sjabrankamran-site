@@ -9,7 +9,9 @@ import {
   Trophy,
   Users,
 } from 'lucide-react-native';
-import { useMe } from '../../src/api/hooks';
+import { useAccessStatus, useMe } from '../../src/api/hooks';
+import { useAuth } from '../../src/auth/context';
+import { AccessBlocked } from '../../src/components/AccessBlocked';
 import { primaryTabsFor } from '../../src/nav/nav';
 import { alpha, colors, fonts, fontSize } from '../../src/theme/tokens';
 
@@ -26,7 +28,23 @@ const TAB_ROUTE_BY_LABEL: Record<string, string> = {
 
 export default function AppLayout() {
   const { data: me } = useMe();
+  const { data: access } = useAccessStatus();
+  const { signOut } = useAuth();
   const roles = me?.roles ?? [];
+
+  // An active access lock replaces the entire app, exactly as the website
+  // replaces the whole portal layout. The JSON endpoints do not enforce this
+  // themselves, so this gate is what keeps a locked account out of the app.
+  if (access?.restricted && access.restriction) {
+    return (
+      <AccessBlocked
+        restriction={access.restriction}
+        onSignOut={() => {
+          void signOut();
+        }}
+      />
+    );
+  }
   // Until /me resolves, show only the Dashboard and More tabs so the bar does
   // not visibly reshuffle once roles arrive.
   const visible = new Set(

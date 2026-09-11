@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { alpha, colors, fonts, fontSize, radius, spacing, tracking } from '../theme/tokens';
 import { T } from './ui';
+import { Spinner } from './Skeleton';
 
 type Accent = 'cyan' | 'emerald' | 'magenta' | 'amber';
 
@@ -22,12 +23,15 @@ export function StatCard({
   icon,
   accent = 'cyan',
   onPress,
+  loading = false,
 }: {
   label: string;
   value: number | string | null | undefined;
   icon: React.ReactNode;
   accent?: Accent;
   onPress?: () => void;
+  /** The tile is already on screen and only its figure is still in flight. */
+  loading?: boolean;
 }) {
   const body = (
     <View style={styles.card}>
@@ -37,9 +41,15 @@ export function StatCard({
         </T>
         <View style={[styles.iconBox, { borderColor: alpha.border }]}>{icon}</View>
       </View>
-      <T weight="display" style={styles.value}>
-        {value === null || value === undefined ? '—' : value}
-      </T>
+      {loading ? (
+        <View style={styles.valueLoading}>
+          <Spinner tone="dust" />
+        </View>
+      ) : (
+        <T weight="display" style={styles.value}>
+          {value === null || value === undefined ? '—' : value}
+        </T>
+      )}
     </View>
   );
   if (!onPress) return body;
@@ -69,6 +79,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     borderWidth: 1,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  valueLoading: {
+    marginTop: spacing.md,
+    height: fontSize['3xl'] + spacing.xs,
     justifyContent: 'center',
   },
   value: {

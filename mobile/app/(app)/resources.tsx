@@ -3,7 +3,8 @@ import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native
 import { useRouter } from 'expo-router';
 import { FileText, Search } from 'lucide-react-native';
 import { PortalHeader } from '../../src/components/PortalHeader';
-import { Card, Empty, ErrorNote, H2, Loading, Screen, T } from '../../src/components/ui';
+import { Card, Empty, ErrorNote, H2, Screen, T } from '../../src/components/ui';
+import { SkeletonList } from '../../src/components/Skeleton';
 import { useResources } from '../../src/api/hooks';
 import type { Resource } from '../../src/api/types';
 import { alpha, colors, fonts, fontSize, radius, spacing } from '../../src/theme/tokens';
@@ -92,7 +93,7 @@ export default function ResourcesScreen() {
           </ScrollView>
         ) : null}
 
-        {isLoading ? <Loading label="Loading resources…" /> : null}
+        {isLoading ? <SkeletonList count={5} lines={1} /> : null}
         {error ? (
           <ErrorNote message={(error as Error).message} onRetry={() => void refetch()} />
         ) : null}

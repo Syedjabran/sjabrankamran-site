@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Award, Sparkles } from 'lucide-react-native';
 import { PortalHeader } from '../../src/components/PortalHeader';
-import { Card, Empty, ErrorNote, H2, Loading, Screen, T } from '../../src/components/ui';
+import { Card, Empty, ErrorNote, H2, Screen, T } from '../../src/components/ui';
+import { SkeletonCard, SkeletonRankRows } from '../../src/components/Skeleton';
 import { useCommunity, useLeaderboard, useMe } from '../../src/api/hooks';
 import type { BoardRow } from '../../src/api/types';
 import { alpha, colors, fonts, fontSize, radius, spacing, tracking } from '../../src/theme/tokens';
@@ -68,7 +69,12 @@ export default function LeaderboardScreen() {
           <Empty message="The student leaderboard is only shown for student accounts. Staff can see full rankings under Rankings & analytics." />
         ) : null}
 
-        {isStudent && board.isLoading ? <Loading label="Loading the boards…" /> : null}
+        {isStudent && board.isLoading ? (
+          <>
+            <SkeletonCard lines={1} />
+            <SkeletonRankRows count={6} />
+          </>
+        ) : null}
         {isStudent && board.error ? (
           <ErrorNote message={(board.error as Error).message} onRetry={() => void board.refetch()} />
         ) : null}
@@ -129,7 +135,12 @@ export default function LeaderboardScreen() {
         ) : null}
 
         <H2>Contribution board</H2>
-        {community.isLoading ? <Loading label="Loading contributions…" /> : null}
+        {community.isLoading ? (
+          <>
+            <SkeletonCard lines={0} showEyebrow={false} />
+            <SkeletonRankRows count={5} />
+          </>
+        ) : null}
         {community.error ? (
           <ErrorNote
             message={(community.error as Error).message}

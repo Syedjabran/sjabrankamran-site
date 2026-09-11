@@ -4,7 +4,8 @@ import { useRouter } from 'expo-router';
 import { BarChart3, ExternalLink } from 'lucide-react-native';
 import { PortalHeader } from '../../src/components/PortalHeader';
 import { StatCard } from '../../src/components/StatCard';
-import { Card, Empty, ErrorNote, H2, Loading, Screen, T } from '../../src/components/ui';
+import { Card, Empty, ErrorNote, H2, Screen, T } from '../../src/components/ui';
+import { SkeletonRankRows, SkeletonStatRow } from '../../src/components/Skeleton';
 import { useMe, useRankings } from '../../src/api/hooks';
 import { isStaff } from '../../src/nav/roles';
 import { alpha, colors, radius, spacing } from '../../src/theme/tokens';
@@ -53,7 +54,12 @@ export default function RankingsScreen() {
       <Screen>
         <H2>Rankings &amp; analytics</H2>
 
-        {isLoading ? <Loading label="Computing rankings…" /> : null}
+        {isLoading ? (
+          <>
+            <SkeletonStatRow count={4} />
+            <SkeletonRankRows count={8} />
+          </>
+        ) : null}
         {error ? (
           <ErrorNote message={(error as Error).message} onRetry={() => void refetch()} />
         ) : null}

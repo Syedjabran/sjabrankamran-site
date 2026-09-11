@@ -17,7 +17,8 @@ import {
 } from 'lucide-react-native';
 import { PortalHeader } from '../../src/components/PortalHeader';
 import { StatCard } from '../../src/components/StatCard';
-import { Card, Empty, ErrorNote, H2, Loading, Screen, T } from '../../src/components/ui';
+import { Card, Empty, ErrorNote, H2, Screen, T } from '../../src/components/ui';
+import { Skeleton, SkeletonStatRow } from '../../src/components/Skeleton';
 import { useAdminUsers, useMe, useRankings, useTasks } from '../../src/api/hooks';
 import { isStaff } from '../../src/nav/roles';
 import { alpha, colors, radius, spacing } from '../../src/theme/tokens';
@@ -44,7 +45,12 @@ export default function DashboardScreen() {
     return (
       <View style={styles.root}>
         <PortalHeader />
-        <Loading label="Loading your portal…" />
+        <Screen>
+          <Skeleton width="45%" height={20} />
+          <SkeletonStatRow count={4} />
+          <Skeleton width="35%" height={17} style={{ marginTop: spacing.sm }} />
+          <SkeletonStatRow count={2} />
+        </Screen>
       </View>
     );
   }
@@ -60,6 +66,8 @@ export default function DashboardScreen() {
     );
   }
 
+  const rankingsLoading = rankings.isLoading;
+  const usersLoading = users.isLoading;
   const totals = rankings.data?.totals;
   const counts = users.data?.counts;
   const openTasks = tasks.data?.filter((t) => t.status !== 'done').length ?? 0;
@@ -81,19 +89,12 @@ export default function DashboardScreen() {
 
         {staff ? (
           <>
-            {rankings.isLoading || users.isLoading ? (
-              <Card>
-                <T tone="dust" size="sm">
-                  Loading network figures…
-                </T>
-              </Card>
-            ) : null}
-
             <View style={styles.grid}>
               <View style={styles.col}>
                 <StatCard
                   label="Students"
                   value={counts?.students ?? totals?.students}
+                  loading={usersLoading || rankingsLoading}
                   icon={<GraduationCap size={15} color={colors.cyan} />}
                   onPress={() => router.push('/users')}
                 />
@@ -102,6 +103,7 @@ export default function DashboardScreen() {
                 <StatCard
                   label="Schools"
                   value={totals?.schools}
+                  loading={rankingsLoading}
                   accent="emerald"
                   icon={<Building2 size={15} color={colors.emerald2} />}
                 />
@@ -110,6 +112,7 @@ export default function DashboardScreen() {
                 <StatCard
                   label="Classes"
                   value={totals?.classes}
+                  loading={rankingsLoading}
                   accent="magenta"
                   icon={<School size={15} color={colors.magenta} />}
                 />
@@ -118,6 +121,7 @@ export default function DashboardScreen() {
                 <StatCard
                   label="Active students"
                   value={totals?.activeStudents}
+                  loading={rankingsLoading}
                   accent="amber"
                   icon={<Activity size={15} color={colors.amber300} />}
                 />
@@ -126,6 +130,7 @@ export default function DashboardScreen() {
                 <StatCard
                   label="Total attempts"
                   value={totals?.totalAttempts}
+                  loading={rankingsLoading}
                   icon={<ClipboardList size={15} color={colors.cyan} />}
                 />
               </View>
@@ -133,6 +138,7 @@ export default function DashboardScreen() {
                 <StatCard
                   label="Avg accuracy"
                   value={totals ? `${Math.round(totals.avgAccuracy)}%` : null}
+                  loading={rankingsLoading}
                   accent="emerald"
                   icon={<Target size={15} color={colors.emerald2} />}
                   onPress={() => router.push('/rankings')}
@@ -142,6 +148,7 @@ export default function DashboardScreen() {
                 <StatCard
                   label="Avg attendance"
                   value={totals ? `${Math.round(totals.avgAttendance)}%` : null}
+                  loading={rankingsLoading}
                   accent="amber"
                   icon={<TrendingUp size={15} color={colors.amber300} />}
                 />
@@ -150,6 +157,7 @@ export default function DashboardScreen() {
                 <StatCard
                   label="All users"
                   value={counts?.total}
+                  loading={usersLoading}
                   accent="magenta"
                   icon={<Users size={15} color={colors.magenta} />}
                   onPress={() => router.push('/users')}
@@ -173,7 +181,8 @@ export default function DashboardScreen() {
               <View style={styles.col}>
                 <StatCard
                   label="Open tasks"
-                  value={tasks.isLoading ? null : openTasks}
+                  value={openTasks}
+                  loading={tasks.isLoading}
                   icon={<ClipboardList size={15} color={colors.cyan} />}
                   onPress={() => router.push('/learn')}
                 />

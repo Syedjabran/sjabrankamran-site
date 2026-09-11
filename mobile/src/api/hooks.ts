@@ -1,6 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from './client';
 import type {
+  AccessStatus,
   AdminUser,
   ClassRow,
   Community,
@@ -17,6 +18,7 @@ import type {
 
 export const qk = {
   me: ['me'] as const,
+  accessStatus: ['access-status'] as const,
   tasks: ['tasks'] as const,
   notifications: ['notifications'] as const,
   library: ['library'] as const,
@@ -30,6 +32,24 @@ export const qk = {
 
 export function useMe() {
   return useQuery({ queryKey: qk.me, queryFn: () => apiFetch<Me>('/api/portal/me') });
+}
+
+/**
+ * Whether an access lock currently blocks this user from the portal.
+ *
+ * The website enforces this in its portal layout, but the JSON endpoints the
+ * app calls do not check it — so without this gate a locked account would be
+ * blocked in a browser yet fully usable in the app. Re-checked on an interval
+ * and on refocus so a lock applied mid-session takes effect without a restart.
+ */
+export function useAccessStatus() {
+  return useQuery({
+    queryKey: qk.accessStatus,
+    queryFn: () => apiFetch<AccessStatus>('/api/portal/access-status'),
+    refetchInterval: 60 * 1000,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+  });
 }
 
 export function useTasks() {
@@ -86,6 +106,10 @@ export function useAdminUsers(search: string, enabled: boolean) {
         `/api/portal/admin/users?limit=50${search ? `&q=${encodeURIComponent(search)}` : ''}`
       ),
     enabled,
+    // Keep the previous page of results on screen while a new search resolves,
+    // so the list stays readable and the search box can show a small inline
+    // spinner instead of the whole list collapsing back to skeletons.
+    placeholderData: keepPreviousData,
   });
 }
 

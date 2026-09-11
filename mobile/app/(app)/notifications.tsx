@@ -3,7 +3,8 @@ import { StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Bell, CheckCheck } from 'lucide-react-native';
 import { PortalHeader } from '../../src/components/PortalHeader';
-import { Button, Card, Empty, ErrorNote, H2, Loading, Screen, T } from '../../src/components/ui';
+import { Button, Card, Empty, ErrorNote, H2, Screen, T } from '../../src/components/ui';
+import { SkeletonList } from '../../src/components/Skeleton';
 import { useMarkNotificationsRead, useNotifications } from '../../src/api/hooks';
 import { alpha, colors, radius, spacing } from '../../src/theme/tokens';
 
@@ -32,7 +33,7 @@ export default function NotificationsScreen() {
       <Screen>
         <H2>Notifications</H2>
 
-        {isLoading ? <Loading /> : null}
+        {isLoading ? <SkeletonList count={5} lines={1} /> : null}
         {error ? (
           <ErrorNote message={(error as Error).message} onRetry={() => void refetch()} />
         ) : null}

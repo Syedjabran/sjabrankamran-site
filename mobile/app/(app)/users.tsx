@@ -3,7 +3,8 @@ import { StyleSheet, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Search, UserCircle2 } from 'lucide-react-native';
 import { PortalHeader } from '../../src/components/PortalHeader';
-import { Badge, Card, Empty, ErrorNote, H2, Loading, Screen, T } from '../../src/components/ui';
+import { Badge, Card, Empty, ErrorNote, H2, Screen, T } from '../../src/components/ui';
+import { SkeletonList, SkeletonStatRow, Spinner } from '../../src/components/Skeleton';
 import { useAdminUsers, useMe } from '../../src/api/hooks';
 import { ROLE_LABELS, isStaff } from '../../src/nav/roles';
 import { alpha, colors, fonts, fontSize, radius, spacing } from '../../src/theme/tokens';
@@ -24,7 +25,10 @@ export default function UsersScreen() {
   const staff = me ? isStaff(me.roles) : false;
   const [query, setQuery] = useState('');
   const debounced = useDebounced(query, 300);
-  const { data, isLoading, error, refetch } = useAdminUsers(debounced, staff);
+  const { data, isLoading, isFetching, error, refetch } = useAdminUsers(debounced, staff);
+  // The list is kept on screen across searches, so a refetch is a field-level
+  // event (spinner in the search box), not a reason to blank the whole screen.
+  const searching = isFetching && !isLoading;
 
   if (me && !staff) {
     return (
@@ -44,6 +48,8 @@ export default function UsersScreen() {
       <PortalHeader />
       <Screen>
         <H2>Users &amp; activity</H2>
+
+        {isLoading ? <SkeletonStatRow count={5} /> : null}
 
         {counts ? (
           <View style={styles.countRow}>
@@ -65,9 +71,10 @@ export default function UsersScreen() {
             style={styles.search}
             autoCapitalize="none"
           />
+          {searching ? <Spinner tone="dust" /> : null}
         </View>
 
-        {isLoading ? <Loading label="Loading users…" /> : null}
+        {isLoading ? <SkeletonList count={6} lines={1} /> : null}
         {error ? (
           <ErrorNote message={(error as Error).message} onRetry={() => void refetch()} />
         ) : null}

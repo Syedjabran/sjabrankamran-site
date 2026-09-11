@@ -82,6 +82,26 @@ export type AdminUser = {
   status: string;
   created_at: string;
   roles: EduRole[];
+  /** True when an access lock targets this user directly (not via a wider scope). */
+  locked: boolean;
+};
+
+/**
+ * An application-level portal restriction ("access lock"). These deliberately
+ * leave Supabase auth intact — the user signs in fine, then every portal
+ * surface is replaced by the configured message. Mirrors the website's
+ * /api/portal/access-status.
+ */
+export type Restriction = {
+  mode: string;
+  message: string;
+  scopeLabel: string;
+  endsAt: string | null;
+};
+
+export type AccessStatus = {
+  restricted: boolean;
+  restriction: Restriction | null;
 };
 
 export type UserCounts = {

@@ -60,6 +60,16 @@ export const alpha = {
   amberBorder: 'rgba(252,211,77,0.30)',
   amberFaint: 'rgba(252,211,77,0.06)',
   spaceTranslucent: 'rgba(7,11,24,0.60)', // bg-space/60
+  /** Skeleton placeholder fill — one step above .card so it reads as content. */
+  skeleton: 'rgba(255,255,255,0.06)',
+} as const;
+
+/** Shared motion values so loading states feel like one system, not per-screen. */
+export const motion = {
+  /** Half-cycle of the skeleton pulse, in ms. */
+  pulseDuration: 900,
+  pulseMinOpacity: 0.35,
+  pulseMaxOpacity: 0.8,
 } as const;
 
 /** Tailwind's default spacing scale, in the steps the portal actually uses. */

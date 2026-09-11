@@ -193,17 +193,6 @@ export function Screen({
   );
 }
 
-export function Loading({ label = 'Loading…' }: { label?: string }) {
-  return (
-    <View style={styles.centered}>
-      <ActivityIndicator color={colors.cyan} />
-      <T tone="dust" size="sm" style={{ marginTop: spacing.md }}>
-        {label}
-      </T>
-    </View>
-  );
-}
-
 export function ErrorNote({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <Card style={{ borderColor: alpha.signalBorder, backgroundColor: alpha.signalFaint }}>
@@ -267,7 +256,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 3,
   },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing['3xl'] },
   h1: {
     color: colors.ice,
     fontFamily: fonts.displayBold,

@@ -3,11 +3,12 @@ import { StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ChevronRight, Globe } from 'lucide-react-native';
 import { PortalHeader } from '../../src/components/PortalHeader';
-import { Button, Card, H2, Loading, Screen, T } from '../../src/components/ui';
+import { Button, Card, H2, Screen, T } from '../../src/components/ui';
+import { SkeletonNav } from '../../src/components/Skeleton';
 import { useMe } from '../../src/api/hooks';
 import { useAuth } from '../../src/auth/context';
 import { navFor, type NavItem } from '../../src/nav/nav';
-import { alpha, colors, radius, spacing, tracking } from '../../src/theme/tokens';
+import { alpha, colors, spacing, tracking } from '../../src/theme/tokens';
 
 export default function MoreScreen() {
   const router = useRouter();
@@ -33,7 +34,7 @@ export default function MoreScreen() {
       <Screen>
         <H2>All sections</H2>
 
-        {isLoading ? <Loading /> : null}
+        {isLoading ? <SkeletonNav count={9} /> : null}
 
         {sections.map((section, i) => (
           <View key={i} style={{ gap: spacing.sm }}>

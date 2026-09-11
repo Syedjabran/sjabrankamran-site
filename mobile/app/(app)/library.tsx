@@ -3,7 +3,8 @@ import { StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { MessagesSquare, Paperclip } from 'lucide-react-native';
 import { PortalHeader } from '../../src/components/PortalHeader';
-import { Badge, Card, Empty, ErrorNote, H2, Loading, Screen, T } from '../../src/components/ui';
+import { Badge, Card, Empty, ErrorNote, H2, Screen, T } from '../../src/components/ui';
+import { SkeletonList } from '../../src/components/Skeleton';
 import { useLibrary } from '../../src/api/hooks';
 import { alpha, colors, radius, spacing } from '../../src/theme/tokens';
 
@@ -29,7 +30,7 @@ export default function LibraryScreen() {
       <Screen>
         <H2>Resource Library</H2>
 
-        {isLoading ? <Loading label="Loading discussions…" /> : null}
+        {isLoading ? <SkeletonList count={4} lines={1} showEyebrow={false} /> : null}
         {error ? (
           <ErrorNote message={(error as Error).message} onRetry={() => void refetch()} />
         ) : null}

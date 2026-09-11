@@ -3,10 +3,11 @@ import { Linking, Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { CheckCircle2, Circle, CircleDot, ExternalLink, Trophy } from 'lucide-react-native';
 import { PortalHeader } from '../../src/components/PortalHeader';
-import { Badge, Card, Empty, ErrorNote, H2, Loading, Screen, T } from '../../src/components/ui';
+import { Badge, Card, Empty, ErrorNote, H2, Screen, T } from '../../src/components/ui';
+import { SkeletonList } from '../../src/components/Skeleton';
 import { useSetTaskStatus, useTasks } from '../../src/api/hooks';
 import type { PersonalTask, TaskStatus } from '../../src/api/types';
-import { alpha, colors, radius, spacing } from '../../src/theme/tokens';
+import { alpha, colors, spacing } from '../../src/theme/tokens';
 
 /** Next status in the assigned -> in_progress -> done cycle. */
 function nextStatus(current: TaskStatus): TaskStatus {
@@ -104,7 +105,7 @@ export default function LearnScreen() {
       <Screen>
         <H2>My Learning</H2>
 
-        {isLoading ? <Loading label="Loading your tasks…" /> : null}
+        {isLoading ? <SkeletonList count={3} lines={2} showEyebrow={false} /> : null}
         {error ? (
           <ErrorNote message={(error as Error).message} onRetry={() => void refetch()} />
         ) : null}
