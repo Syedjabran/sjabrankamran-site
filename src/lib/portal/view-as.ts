@@ -10,7 +10,12 @@ import { cookies } from "next/headers";
 import { isAdmin, type EduRole, type PortalUser } from "@/lib/edu/auth";
 
 export const VIEW_AS_COOKIE = "pv_role";
-export const PREVIEWABLE: EduRole[] = ["student", "teacher", "teaching_assistant", "parent", "counsellor", "finance_manager"];
+// Every role an admin can preview — the full model except super_admin (that is
+// the admin's own real view). Order matches the switcher menu.
+export const PREVIEWABLE: EduRole[] = [
+  "student", "parent", "teacher", "teaching_assistant", "facilitator", "coordinator",
+  "counsellor", "attendance_registrar", "content_manager", "finance_manager", "admin",
+];
 
 export async function getViewAsRole(): Promise<EduRole | null> {
   try {

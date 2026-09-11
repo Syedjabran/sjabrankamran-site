@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, MicOff, Check, Save, CalendarDays, Users, CircleCheck, CircleX, Clock3, RotateCcw, Wifi } from "lucide-react";
+import { Mic, MicOff, Check, Save, CalendarDays, Users, CircleCheck, CircleX, Clock3, RotateCcw, Wifi, Plane, ShieldCheck, Pencil } from "lucide-react";
+import { ATTENDANCE_NOTE_MAX, allowsReason, requiresReason } from "@/lib/edu/attendance";
 
 type ClassItem = { id: string; name: string; school: string; section: string | null; students: number };
 type RosterRow = { studentId: string; name: string; firstName: string };
-type Status = "present" | "absent" | "late" | "excused" | "online" | "";
+type Status = "present" | "absent" | "late" | "excused" | "online" | "leave" | "exempt" | "";
 
 const STATUS_META: Record<string, { label: string; cls: string; icon: React.ReactNode }> = {
   present: { label: "Present", cls: "border-emerald2/50 text-emerald2 bg-emerald2/10", icon: <CircleCheck size={13} /> },
@@ -13,8 +14,12 @@ const STATUS_META: Record<string, { label: string; cls: string; icon: React.Reac
   online: { label: "Online", cls: "border-cyan/50 text-cyan bg-cyan/10", icon: <Wifi size={13} /> },
   absent: { label: "Absent", cls: "border-magenta/50 text-magenta bg-magenta/10", icon: <CircleX size={13} /> },
   excused: { label: "Excused", cls: "border-white/20 text-dust bg-white/[0.04]", icon: <Check size={13} /> },
+  leave: { label: "Leave", cls: "border-ultraviolet/50 text-ultraviolet bg-ultraviolet/10", icon: <Plane size={13} /> },
+  exempt: { label: "Exempt", cls: "border-lime2/50 text-lime2 bg-lime2/10", icon: <ShieldCheck size={13} /> },
 };
-const CYCLE: Status[] = ["present", "late", "online", "absent", "excused", ""];
+const CYCLE: Status[] = ["present", "late", "online", "absent", "excused", "leave", "exempt", ""];
+/** Quick-tap buttons on every student row (excused stays on the tap-to-cycle). */
+const QUICK: Status[] = ["present", "late", "online", "absent", "leave", "exempt"];
 
 async function api(url: string, opts?: RequestInit) {
   const r = await fetch(url, { ...opts, headers: { "content-type": "application/json", ...(opts?.headers || {}) } });
@@ -29,7 +34,10 @@ function statusFromWords(text: string): Status | null {
   if (/\b(absent|away|missing|not here|nope|no)\b/.test(t)) return "absent";
   if (/\b(late|tardy)\b/.test(t)) return "late";
   if (/\b(online|remote|zoom|virtual)\b/.test(t)) return "online";
-  if (/\b(excused|leave|sick)\b/.test(t)) return "excused";
+  // "exempt" before "excused": an exemption is the stricter, reason-bearing mark.
+  if (/\b(exempt|exemption|exempted)\b/.test(t)) return "exempt";
+  if (/\b(leave|on leave)\b/.test(t)) return "leave";
+  if (/\b(excused|sick)\b/.test(t)) return "excused";
   if (/\b(present|here|yes|yep|in|hazir)\b/.test(t)) return "present";
   return null;
 }
@@ -41,6 +49,14 @@ export function VoiceAttendance() {
   const [lessonId, setLessonId] = useState<string | null>(null);
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [marks, setMarks] = useState<Record<string, Status>>({});
+  // Official reasons (edu_attendance.note). `openReason` is the student whose
+  // comment box is currently open — it opens on Exempt and collapses to a chip
+  // once a reason is recorded.
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [openReason, setOpenReason] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [reasonError, setReasonError] = useState("");
+  const reasonInputRef = useRef<HTMLInputElement | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -67,13 +83,61 @@ export function VoiceAttendance() {
       const j = await api(`/api/portal/admin/attendance?classId=${classId}&date=${date}`);
       setLessonId(j.lessonId); setRoster(j.roster);
       const m: Record<string, Status> = {};
-      for (const r of j.roster as RosterRow[]) m[r.studentId] = (j.marks?.[r.studentId] as Status) || "";
-      setMarks(m);
+      const n: Record<string, string> = {};
+      for (const r of j.roster as RosterRow[]) {
+        m[r.studentId] = (j.marks?.[r.studentId] as Status) || "";
+        const note = (j.notes?.[r.studentId] as string) || "";
+        if (note) n[r.studentId] = note;
+      }
+      setMarks(m); setNotes(n); setOpenReason(null); setDraft(""); setReasonError("");
     } catch (e) { setMsg((e as Error).message); } finally { setLoading(false); }
   }, [classId, date]);
 
-  const setStatus = (studentId: string, status: Status) => setMarks((m) => ({ ...m, [studentId]: status }));
-  const cycle = (studentId: string) => setMarks((m) => { const cur = m[studentId] || ""; const next = CYCLE[(CYCLE.indexOf(cur) + 1) % CYCLE.length]; return { ...m, [studentId]: next }; });
+  /** Drop a recorded reason as soon as the status can no longer carry one. */
+  const dropReasonIfUnusable = useCallback((studentId: string, status: Status) => {
+    if (allowsReason(status)) return;
+    setNotes((n) => { if (!(studentId in n)) return n; const next = { ...n }; delete next[studentId]; return next; });
+    setOpenReason((cur) => (cur === studentId ? null : cur));
+  }, []);
+
+  /** Open the inline comment box for a student, pre-filled with any reason. */
+  const openReasonFor = useCallback((studentId: string) => {
+    setDraft(notes[studentId] || "");
+    setReasonError("");
+    setOpenReason(studentId);
+  }, [notes]);
+
+  const setStatus = useCallback((studentId: string, status: Status) => {
+    setMarks((m) => ({ ...m, [studentId]: status }));
+    dropReasonIfUnusable(studentId, status);
+    // JB's rule: the comment box opens the moment Exempt is clicked.
+    if (requiresReason(status)) openReasonFor(studentId);
+  }, [dropReasonIfUnusable, openReasonFor]);
+
+  const cycle = useCallback((studentId: string) => {
+    const cur = marks[studentId] || "";
+    setStatus(studentId, CYCLE[(CYCLE.indexOf(cur) + 1) % CYCLE.length]);
+  }, [marks, setStatus]);
+
+  /** Record the typed reason; it then collapses back to a chip. */
+  const commitReason = useCallback((studentId: string) => {
+    const value = draft.trim().slice(0, ATTENDANCE_NOTE_MAX);
+    if (!value && requiresReason(marks[studentId] || "")) {
+      setReasonError("An official reason is required before an exemption can be saved.");
+      return;
+    }
+    setNotes((n) => {
+      const next = { ...n };
+      if (value) next[studentId] = value; else delete next[studentId];
+      return next;
+    });
+    setReasonError("");
+    setOpenReason(null);
+    setDraft("");
+  }, [draft, marks]);
+
+  // Focus the comment box as soon as it appears (keyboard users included).
+  useEffect(() => { if (openReason) reasonInputRef.current?.focus(); }, [openReason]);
 
   // Match a spoken utterance to a roster student + status.
   const applyUtterance = useCallback((text: string) => {
@@ -269,23 +333,44 @@ export function VoiceAttendance() {
     }
   }, [clearRestartTimer]);
 
+  /** Exemptions without a recorded reason block the whole register. */
+  const missingReasons = useMemo(
+    () => roster.filter((r) => requiresReason(marks[r.studentId] || "") && !(notes[r.studentId] || "").trim()),
+    [roster, marks, notes],
+  );
+
   async function save() {
     if (!lessonId) return;
+    if (missingReasons.length) {
+      setMsg(`${missingReasons.length} exempted student${missingReasons.length === 1 ? "" : "s"} still need${missingReasons.length === 1 ? "s" : ""} an official reason — starting with ${missingReasons[0].name}.`);
+      openReasonFor(missingReasons[0].studentId);
+      return;
+    }
     setSaving(true); setMsg("");
     try {
-      const payload = { lessonId, marks: roster.map((r) => ({ studentId: r.studentId, status: marks[r.studentId] || "absent" })) };
+      const payload = {
+        lessonId,
+        marks: roster.map((r) => {
+          const status = marks[r.studentId] || "absent";
+          return { studentId: r.studentId, status, note: allowsReason(status) ? notes[r.studentId] || "" : "" };
+        }),
+      };
       const j = await api("/api/portal/admin/attendance", { method: "POST", body: JSON.stringify(payload) });
-      setMsg(`Saved attendance for ${j.saved} students.`);
+      setMsg(j.warning ? `Saved ${j.saved} students — ${j.warning}` : `Saved attendance for ${j.saved} students.`);
     } catch (e) { setMsg((e as Error).message); } finally { setSaving(false); }
   }
 
   const counts = useMemo(() => {
-    const c = { present: 0, late: 0, online: 0, absent: 0, excused: 0, unset: 0 };
+    const c = { present: 0, late: 0, online: 0, absent: 0, excused: 0, leave: 0, exempt: 0, unset: 0 };
     for (const r of roster) { const s = marks[r.studentId] || ""; if (s) c[s as keyof typeof c]++; else c.unset++; }
     return c;
   }, [roster, marks]);
 
-  function markAll(status: Status) { setMarks(() => Object.fromEntries(roster.map((r) => [r.studentId, status]))); }
+  function markAll(status: Status) {
+    setMarks(() => Object.fromEntries(roster.map((r) => [r.studentId, status])));
+    // Bulk marks never carry reasons, so no stale exemption reason can survive.
+    if (!allowsReason(status)) { setNotes({}); setOpenReason(null); setDraft(""); setReasonError(""); }
+  }
 
   return (
     <div className="space-y-5">
@@ -345,6 +430,8 @@ export function VoiceAttendance() {
             <span className="text-cyan">{counts.online} online</span> ·
             <span className="text-magenta">{counts.absent} absent</span> ·
             <span className="text-dust">{counts.excused} excused</span> ·
+            <span className="text-ultraviolet">{counts.leave} leave</span> ·
+            <span className="text-lime2">{counts.exempt} exempt</span> ·
             <span>{counts.unset} unmarked</span>
           </div>
 
@@ -352,17 +439,56 @@ export function VoiceAttendance() {
             {roster.map((r) => {
               const s = marks[r.studentId] || "";
               const meta = s ? STATUS_META[s] : null;
+              const reason = notes[r.studentId] || "";
+              const editing = openReason === r.studentId;
+              const needsReason = requiresReason(s) && !reason;
               return (
-                <li key={r.studentId} className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-space/60 px-3 py-2">
-                  <button onClick={() => cycle(r.studentId)} className="min-w-0 flex-1 truncate text-left text-sm text-fog hover:text-ice" title="Tap to cycle status">{r.name}</button>
-                  <div className="flex shrink-0 gap-1">
-                    {(["present", "late", "online", "absent"] as Status[]).map((st) => (
-                      <button key={st} onClick={() => setStatus(r.studentId, st)} title={STATUS_META[st].label}
-                        className={"grid h-7 w-7 place-items-center rounded-lg border " + (s === st ? STATUS_META[st].cls : "border-white/10 text-dust hover:text-ice")}>
-                        {STATUS_META[st].icon}
-                      </button>
-                    ))}
+                <li key={r.studentId} className="rounded-xl border border-white/10 bg-space/60 px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <button onClick={() => cycle(r.studentId)} className="min-w-0 flex-1 truncate text-left text-sm text-fog hover:text-ice" title={meta ? `${meta.label} — tap to cycle status` : "Tap to cycle status"}>{r.name}</button>
+                    <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                      {QUICK.map((st) => (
+                        <button key={st} onClick={() => setStatus(r.studentId, st as Status)} title={`${STATUS_META[st as string].label} — ${r.name}`} aria-label={`${STATUS_META[st as string].label} — ${r.name}`} aria-pressed={s === st}
+                          className={"grid h-7 w-7 place-items-center rounded-lg border " + (s === st ? STATUS_META[st as string].cls : "border-white/10 text-dust hover:text-ice")}>
+                          {STATUS_META[st as string].icon}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+
+                  {/* Comment box: opens on Exempt, collapses to a chip once the
+                      official reason is recorded, reopens when the chip is tapped. */}
+                  {editing ? (
+                    <div className="mt-2 rounded-lg border border-lime2/30 bg-lime2/[0.04] p-2">
+                      <label htmlFor={`reason-${r.studentId}`} className="mb-1 block text-[11px] uppercase tracking-widest text-dust">
+                        {requiresReason(s) ? "Official reason for exemption" : "Reason for leave (optional)"} — {r.name}
+                      </label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input id={`reason-${r.studentId}`} ref={reasonInputRef} value={draft} maxLength={ATTENDANCE_NOTE_MAX}
+                          onChange={(e) => { setDraft(e.target.value); if (reasonError) setReasonError(""); }}
+                          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitReason(r.studentId); } if (e.key === "Escape" && !requiresReason(s)) { setOpenReason(null); setDraft(""); } }}
+                          placeholder="e.g. School sports trip — approved by Head"
+                          className="min-w-[10rem] flex-1 rounded-lg border border-white/10 bg-abyss/60 px-2.5 py-1.5 text-xs text-ice placeholder:text-dust focus:border-lime2 focus:outline-none" />
+                        <button onClick={() => commitReason(r.studentId)} className="rounded-lg border border-lime2/40 px-3 py-1.5 text-xs text-lime2 hover:bg-lime2/10">Save reason</button>
+                      </div>
+                      {reasonError ? <p role="alert" className="mt-1 text-[11px] text-magenta">{reasonError}</p> : null}
+                    </div>
+                  ) : reason ? (
+                    <button onClick={() => openReasonFor(r.studentId)}
+                      className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-lg border border-lime2/30 bg-lime2/[0.06] px-2 py-1 text-left text-[11px] text-lime2 hover:bg-lime2/10"
+                      aria-label={`Edit recorded reason for ${r.name}: ${reason}`}>
+                      <span className="truncate">Reason: {reason}</span> <Pencil size={11} className="shrink-0" />
+                    </button>
+                  ) : needsReason ? (
+                    <button onClick={() => openReasonFor(r.studentId)}
+                      className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-magenta/40 bg-magenta/[0.06] px-2 py-1 text-[11px] text-magenta hover:bg-magenta/10">
+                      Add official reason <Pencil size={11} />
+                    </button>
+                  ) : allowsReason(s) ? (
+                    <button onClick={() => openReasonFor(r.studentId)} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-2 py-1 text-[11px] text-dust hover:text-ice">
+                      Add reason (optional) <Pencil size={11} />
+                    </button>
+                  ) : null}
                 </li>
               );
             })}
@@ -370,6 +496,7 @@ export function VoiceAttendance() {
 
           <div className="flex flex-wrap items-center gap-3">
             <button onClick={save} disabled={saving} className="btn-primary !px-5 !py-2.5 text-sm">{saving ? "Saving…" : <><Save size={15} /> Save attendance</>}</button>
+            {missingReasons.length ? <span className="text-xs text-magenta">{missingReasons.length} exemption{missingReasons.length === 1 ? "" : "s"} still need a recorded reason.</span> : null}
             {msg ? <span className="text-xs text-cyan">{msg}</span> : null}
           </div>
           {!supported ? <p className="text-[11px] text-dust">This browser does not expose speech recognition. Open the portal in current Chrome or Edge, or use tap marking. Unmarked students save as absent.</p> : null}

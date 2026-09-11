@@ -2,19 +2,16 @@
  * Admin command-center helpers. SERVER-ONLY (service-role).
  *
  * These power the owner/super-admin console: full user lifecycle (create,
- * password, suspend/reactivate, delete, roles, enrolment) plus authoring of
+ * password, portal lock/restore, delete, roles, enrolment) plus authoring of
  * assignments & tests. Every mutation is service-role (bypasses RLS) but is
  * gated behind `requireAdmin()` and written to edu_audit_logs.
  */
-import { getPortalUser, isAdmin, isStaff, ROLE_LABELS, type EduRole, type PortalUser } from "@/lib/edu/auth";
+import { getPortalUser, isAdmin, canAccessGlobalStaffData, ROLE_LABELS, type EduRole, type PortalUser } from "@/lib/edu/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendMail } from "@/lib/portal/mail";
 
 export const ALL_ROLES = Object.keys(ROLE_LABELS) as EduRole[];
 export const STUDENT_STATUSES = ["active", "archived", "invited"] as const;
-
-/** Long ban == suspended (GoTrue blocks new logins & token refresh). */
-export const SUSPEND_DURATION = "876000h"; // ~100 years
 
 export async function requireAdmin(): Promise<PortalUser | null> {
   const u = await getPortalUser();
@@ -26,7 +23,7 @@ export async function requireAdmin(): Promise<PortalUser | null> {
  * like analytics, rankings and presence that all staff may view. */
 export async function requireStaff(): Promise<PortalUser | null> {
   const u = await getPortalUser();
-  if (!u || !isStaff(u.roles)) return null;
+  if (!u || !canAccessGlobalStaffData(u.roles)) return null;
   return u;
 }
 

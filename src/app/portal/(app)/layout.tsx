@@ -1,18 +1,21 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { LogOut, GraduationCap, Settings } from "lucide-react";
-import { getPortalUser, ROLE_LABELS, isAdmin, isStaff, type EduRole } from "@/lib/edu/auth";
+import { Eye, GraduationCap, LockKeyhole, LogOut, Settings } from "lucide-react";
+import { getPortalUser, ROLE_LABELS, isAdmin, isStaff, isRegistrarOnly, isCoordinatorOnly, type EduRole } from "@/lib/edu/auth";
+import { getPortalRestriction } from "@/lib/portal/access-control";
 import { isOnboardingComplete } from "@/lib/portal/onboarding";
 import { effectiveRoles } from "@/lib/portal/view-as";
+import { AccessLockMonitor } from "./access-lock-monitor";
 import { PresenceBeacon } from "./presence-beacon";
+import { PortalAccessBlocked } from "./portal-access-blocked";
+import { PwaPortal } from "./pwa-portal";
 import { RolePreviewSwitcher } from "./role-preview";
 import { NotificationBell } from "./notification-bell";
-import { Eye } from "lucide-react";
 
 export const metadata = { robots: { index: false } };
 
-type NavItem = { href: string; label: string };
+type NavItem = { href: string; label: string; hardNavigate?: boolean };
 type NavSection = { title?: string; items: NavItem[] };
 
 /**
@@ -28,17 +31,49 @@ function navFor(roles: EduRole[]): NavSection[] {
   const isParent = roles.includes("parent");
   const sections: NavSection[] = [];
 
+  // --- Attendance Registrar (school-scoped, view-only) ---
+  // A registrar with no fuller staff role gets a deliberately minimal nav:
+  // just the Dashboard and the read-only daily attendance view for their school.
+  if (isRegistrarOnly(roles)) {
+    return [
+      {
+        title: "Attendance",
+        items: [
+          { href: "/portal", label: "Dashboard" },
+          { href: "/portal/admin/attendance-view", label: "Daily attendance" },
+          { href: "/portal/timetable", label: "Physics timetable" },
+        ],
+      },
+    ];
+  }
+  if (isCoordinatorOnly(roles)) {
+    return [{ title: "Assigned class", items: [
+      { href: "/portal/coordinator", label: "Class staff desk" },
+      { href: "/portal/timetable", label: "Physics timetable" },
+      { href: "/portal/admin/attendance-view", label: "Daily attendance" },
+      { href: "/portal/library", label: "Resource Library" },
+      { href: "/portal/resources", label: "Physics Resources" },
+      { href: "/portal/notifications", label: "Notifications" },
+    ] }];
+  }
+
   // --- Administration (staff / owner) ---
   const adminItems: NavItem[] = [{ href: "/portal", label: "Dashboard" }];
   if (staff) {
+    adminItems.push({ href: "/portal/timetable", label: "Physics timetable" });
     adminItems.push({ href: "/portal/admin/users", label: "Users & activity" });
+    if (roles.includes("super_admin")) adminItems.push({ href: "/portal/admin/access", label: "Access locks" });
     adminItems.push({ href: "/portal/admin/analytics", label: "Rankings & analytics" });
     adminItems.push({ href: "/portal/admin/institutions", label: "Institutions" });
     adminItems.push({ href: "/portal/admin/assign", label: "Post / Tests" });
     adminItems.push({ href: "/portal/admin/attendance", label: "Attendance" });
+    adminItems.push({ href: "/portal/admin/attendance-view", label: "Daily attendance" });
     adminItems.push({ href: "/portal/admin/proctoring", label: "Proctoring & Locks" });
     adminItems.push({ href: "/portal/admin/mail", label: "Email" });
+    adminItems.push({ href: "/portal/notifications", label: "Notifications" });
   }
+  if (roles.includes("coordinator")) adminItems.push({ href: "/portal/coordinator", label: "Coordinator desk" });
+  if (admin) adminItems.push({ href: "/portal/admin/notify", label: "Announcements" });
   if (admin) {
     adminItems.push({ href: "/portal/admin/academics", label: "Academics" });
     adminItems.push({ href: "/portal/admin/finance", label: "Fees & Finance" });
@@ -56,12 +91,24 @@ function navFor(roles: EduRole[]): NavSection[] {
   // --- Learning (students only) + parents ---
   const learnItems: NavItem[] = [];
   if (isStudent) {
+    learnItems.push({ href: "/portal/timetable", label: "Physics timetable" });
+    // This route was added after some students already had a long-lived PWA /
+    // App Router session. A hard navigation avoids replaying a stale client-side
+    // 404 cached before the route existed; the server response itself is always
+    // private/no-store and remains protected by the portal middleware.
+    learnItems.push({ href: "/portal/study-plan", label: "My study plan", hardNavigate: true });
     learnItems.push({ href: "/portal/exam-lab", label: "Exam Lab" });
+    learnItems.push({ href: "/portal/exam-lab/review", label: "My answer scripts" });
     learnItems.push({ href: "/portal/learn", label: "My Learning" });
     learnItems.push({ href: "/portal/progress", label: "My Progress" });
+    learnItems.push({ href: "/portal/my-ranking", label: "My Ranking" });
     learnItems.push({ href: "/portal/leaderboard", label: "Leaderboard" });
+    learnItems.push({ href: "/portal/notifications", label: "Notifications" });
   }
-  if (isParent) learnItems.push({ href: "/portal/family", label: "My Children" });
+  if (isParent) {
+    learnItems.push({ href: "/portal/family", label: "My Children" });
+    learnItems.push({ href: "/portal/timetable", label: "Physics timetable" });
+  }
   if (learnItems.length) sections.push({ title: staff ? "Learning" : undefined, items: learnItems });
 
   return sections;
@@ -70,6 +117,12 @@ function navFor(roles: EduRole[]): NavSection[] {
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const user = await getPortalUser();
   if (!user) redirect("/portal/login");
+
+  // Application-level restrictions deliberately keep Supabase authentication
+  // alive: the user signs in successfully, then sees the configured lock
+  // message instead of any portal activity. Super admins always bypass this.
+  const restriction = await getPortalRestriction(user);
+  if (restriction) return <PortalAccessBlocked restriction={restriction} />;
 
   // Suspended accounts: block all portal activity immediately (in addition to
   // the GoTrue ban that stops new sign-ins / token refresh).
@@ -95,6 +148,27 @@ export default async function PortalLayout({ children }: { children: React.React
     redirect("/portal/onboarding");
   }
 
+  // Attendance Registrar hard-scope: this restricted role may ONLY reach the
+  // dashboard and the read-only daily attendance view. Since the role passes
+  // isStaff() (so it can read attendance), we must fence it out of every other
+  // staff surface here rather than page-by-page.
+  if (isRegistrarOnly(user.roles) && pathname) {
+    const allowed = [
+      "/portal",
+      "/portal/admin/attendance-view",
+      "/portal/timetable",
+      "/portal/settings",
+      "/portal/auth",
+      "/portal/onboarding",
+    ];
+    const ok = allowed.some((a) => pathname === a || pathname.startsWith(a + "/"));
+    if (!ok) redirect("/portal/admin/attendance-view");
+  }
+  if (isCoordinatorOnly(user.roles) && pathname) {
+    const allowed = ["/portal", "/portal/coordinator", "/portal/admin/attendance-view", "/portal/timetable", "/portal/library", "/portal/resources", "/portal/notifications", "/portal/settings", "/portal/auth"];
+    if (!allowed.some((a) => pathname === a || pathname.startsWith(a + "/"))) redirect("/portal/coordinator");
+  }
+
   const { roles: navRoles, previewing } = await effectiveRoles(user);
   const navSections = navFor(navRoles);
   const realAdmin = isAdmin(user.roles);
@@ -104,7 +178,9 @@ export default async function PortalLayout({ children }: { children: React.React
 
   return (
     <div className="container-x py-8">
+      <AccessLockMonitor />
       <PresenceBeacon />
+      <PwaPortal />
       {previewing ? (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/30 bg-amber-300/[0.06] px-4 py-2.5">
           <p className="flex items-center gap-2 text-xs text-amber-300">
@@ -155,12 +231,21 @@ export default async function PortalLayout({ children }: { children: React.React
                 <ul className="flex flex-wrap gap-2 lg:flex-col">
                   {section.items.map((item) => (
                     <li key={item.href}>
-                      <Link
-                        href={item.href}
-                        className="block rounded-xl border border-white/10 bg-space/60 px-3.5 py-2 text-sm text-fog transition hover:border-cyan/40 hover:text-ice"
-                      >
-                        {item.label}
-                      </Link>
+                      {item.hardNavigate ? (
+                        <a
+                          href={item.href}
+                          className="block rounded-xl border border-white/10 bg-space/60 px-3.5 py-2 text-sm text-fog transition hover:border-cyan/40 hover:text-ice"
+                        >
+                          {item.label}
+                        </a>
+                      ) : (
+                        <Link
+                          href={item.href}
+                          className="block rounded-xl border border-white/10 bg-space/60 px-3.5 py-2 text-sm text-fog transition hover:border-cyan/40 hover:text-ice"
+                        >
+                          {item.label}
+                        </Link>
+                      )}
                     </li>
                   ))}
                 </ul>

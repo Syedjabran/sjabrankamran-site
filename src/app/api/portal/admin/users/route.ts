@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin, audit, genPassword, isEmail, ALL_ROLES, emailCredentials } from "@/lib/portal/admin";
+import { getAccessControlDocument } from "@/lib/portal/access-control";
+import { isRestrictionActive } from "@/lib/portal/access-shared";
 import type { EduRole } from "@/lib/edu/auth";
 
 export const runtime = "nodejs";
@@ -23,10 +25,13 @@ export async function GET(req: Request) {
     .limit(limit);
   if (q) query = query.or(`full_name.ilike.%${q}%,email.ilike.%${q}%`);
 
-  const { data, error } = await query;
+  const [{ data, error }, accessDoc] = await Promise.all([query, getAccessControlDocument()]);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   type Row = { id: string; full_name: string | null; email: string | null; status: string; created_at: string; edu_user_roles?: { role: EduRole }[] };
+  const directlyLocked = new Set(accessDoc.restrictions
+    .filter((r) => r.scopeType === "user" && isRestrictionActive(r))
+    .map((r) => r.scopeKey));
   let users = (data as unknown as Row[]).map((p) => ({
     id: p.id,
     full_name: p.full_name || "",
@@ -34,6 +39,7 @@ export async function GET(req: Request) {
     status: p.status,
     created_at: p.created_at,
     roles: (p.edu_user_roles || []).map((r) => r.role),
+    locked: directlyLocked.has(p.id),
   }));
   if (roleFilter) users = users.filter((u) => u.roles.includes(roleFilter as EduRole));
 
@@ -41,7 +47,7 @@ export async function GET(req: Request) {
     total: users.length,
     students: users.filter((u) => u.roles.includes("student")).length,
     staff: users.filter((u) => u.roles.some((r) => r !== "student" && r !== "parent")).length,
-    suspended: users.filter((u) => u.status === "archived").length,
+    suspended: users.filter((u) => u.status === "archived" || u.locked).length,
     noRole: users.filter((u) => u.roles.length === 0).length,
   };
   return NextResponse.json({ users, counts }, { status: 200 });

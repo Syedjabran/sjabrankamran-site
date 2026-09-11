@@ -1,6 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
+import { attendancePercent, countedStatuses, isExcludedFromAttendance } from "@/lib/edu/attendance";
 
-export type AttendanceSummary = { total: number; present: number; late: number; online: number; absent: number; pct: number };
+/** `total` counts only lessons that affect the percentage; `excluded` is the
+ * count of authorised excused/leave/exempt marks held outside that total. */
+export type AttendanceSummary = { total: number; present: number; late: number; online: number; absent: number; excluded: number; pct: number };
 export type AttendanceLogRow = { date: string | null; status: string; title: string | null };
 export type ResultRow = { title: string; kind: string; score: number | null; total: number | null; grade: string | null; pct: number | null; date: string | null };
 export type EduPerformance = {
@@ -43,13 +46,18 @@ export async function getMyPerformance(): Promise<EduPerformance> {
 
     let attendance: AttendanceSummary | null = null;
     let attendanceLog: AttendanceLogRow[] = [];
-    if (att && att.length) {
-      const present = att.filter((r) => r.status === "present").length;
-      const late = att.filter((r) => r.status === "late").length;
-      const online = att.filter((r) => r.status === "online").length;
-      const absent = att.filter((r) => r.status === "absent" || r.status === "excused").length;
-      const total = att.length;
-      attendance = { total, present, late, online, absent, pct: total ? Math.round(((present + late + online) / total) * 100) : 0 };
+    // Authorised non-attendance (excused / leave / exempt) is removed from the
+    // denominator instead of being counted as an absence, so a student on
+    // approved leave is not shown as having missed class.
+    const counted = countedStatuses((att || []).map((r) => r.status as string));
+    const excludedCount = (att || []).filter((r) => isExcludedFromAttendance(r.status as string)).length;
+    if (att && att.length && counted.length) {
+      const present = counted.filter((s) => s === "present").length;
+      const late = counted.filter((s) => s === "late").length;
+      const online = counted.filter((s) => s === "online").length;
+      const absent = counted.filter((s) => s === "absent").length;
+      const total = counted.length;
+      attendance = { total, present, late, online, absent, excluded: excludedCount, pct: attendancePercent(counted) ?? 0 };
       attendanceLog = att.map((r) => {
         const l = (r as { edu_lessons?: { lesson_date?: string; title?: string } }).edu_lessons || {};
         return { date: l.lesson_date || (r as { recorded_at?: string }).recorded_at || null, status: r.status as string, title: l.title || null };

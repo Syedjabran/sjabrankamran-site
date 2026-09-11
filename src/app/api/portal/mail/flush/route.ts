@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getPortalUser, isStaff } from "@/lib/edu/auth";
+import { getPortalUser, canAccessGlobalStaffData } from "@/lib/edu/auth";
 import { flushQueued, mailConfigured } from "@/lib/portal/mail";
 
 export const runtime = "nodejs";
@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   const isSystem = !!keyHeader && !!process.env.SUPABASE_SERVICE_ROLE_KEY && keyHeader === process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!isSystem) {
     const user = await getPortalUser();
-    if (!user || !isStaff(user.roles)) return NextResponse.json({ error: "Staff only." }, { status: 403 });
+    if (!user || !canAccessGlobalStaffData(user.roles)) return NextResponse.json({ error: "Not permitted." }, { status: 403 });
   }
   if (!mailConfigured()) {
     return NextResponse.json({ ok: true, mailConfigured: false, note: "Relay not connected — nothing sent.", attempted: 0, sent: 0 }, { status: 200 });

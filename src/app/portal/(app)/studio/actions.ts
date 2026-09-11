@@ -2,14 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getPortalUser, isStaff } from "@/lib/edu/auth";
+import { getPortalUser, canAccessGlobalStaffData } from "@/lib/edu/auth";
 import { studioSlug } from "@/lib/edu/studio";
 
 type ActionResult = { ok: boolean; error?: string };
 
 async function requireStaff() {
   const user = await getPortalUser();
-  if (!user || !isStaff(user.roles)) return null;
+  if (!user || !canAccessGlobalStaffData(user.roles)) return null;
   return user;
 }
 

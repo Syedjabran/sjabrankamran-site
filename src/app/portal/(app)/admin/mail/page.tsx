@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { Mail } from "lucide-react";
-import { getPortalUser, isStaff } from "@/lib/edu/auth";
+import { getPortalUser, canAccessGlobalStaffData } from "@/lib/edu/auth";
 import { getRegistry } from "@/lib/portal/institutions";
 import { getTemplates, listMail, mailConfigured } from "@/lib/portal/mail";
 import { MailComposer } from "./mail-composer";
@@ -10,7 +10,7 @@ export const metadata = { title: "Email — Physics portal", robots: { index: fa
 export default async function MailPage() {
   const user = await getPortalUser();
   if (!user) redirect("/portal/login");
-  if (!isStaff(user.roles)) redirect("/portal");
+  if (!canAccessGlobalStaffData(user.roles)) redirect("/portal");
 
   const [reg, templates, log] = await Promise.all([getRegistry(), getTemplates(), listMail(200)]);
   const classes = reg.classes.map((c) => ({ id: c.id, label: `${c.school} — ${c.year}${c.section ? " · " + c.section : ""}` }));

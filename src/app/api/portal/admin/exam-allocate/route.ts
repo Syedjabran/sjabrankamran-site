@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireStaff, audit } from "@/lib/portal/admin";
 import { allocateToStudents, newAllocId, type AllocMode, type AllocContent } from "@/lib/exam-lab/allocations";
+import { notify } from "@/lib/portal/notifications";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -87,11 +88,15 @@ export async function POST(req: Request) {
   if (b.notify) {
     try {
       const kindLabel = mode === "test" ? "test" : "assignment";
-      await sb.from("edu_notifications").insert(uids.map((u) => ({
-        user_id: u, kind: kindLabel, title: b.title!.trim(),
+      const dueTxt = b.due_at
+        ? `, due ${new Date(b.due_at).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}`
+        : "";
+      await notify({ uids }, {
+        type: kindLabel,
+        title: `New ${kindLabel}: ${b.title!.trim()}${dueTxt}`,
         body: mode === "test" ? "A proctored test has been set in Exam Lab." : "A new Exam Lab assignment has been set.",
-        link: "/portal/exam-lab",
-      })));
+        href: "/portal/exam-lab",
+      });
     } catch { /* best-effort */ }
   }
 

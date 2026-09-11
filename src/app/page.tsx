@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, GraduationCap, Building2, Cpu } from "lucide-react";
 import { HeroVideo } from "@/components/hero-video";
+import { GuidedTourPopup } from "@/components/guided-tour-popup";
 import { PhysicsField } from "@/components/physics-field";
 import { SchoolLogo } from "@/components/school-logo";
 import { Section, SectionHeading } from "@/components/ui/section";
@@ -29,6 +30,7 @@ const ECO_ACCENT = {
 export default function HomePage() {
   return (
     <>
+      <GuidedTourPopup />
       {/* ============ HERO ============ */}
       <section className="relative overflow-hidden">
         <HeroVideo src="/videos/hero-home.mp4" poster="/videos/hero-home-poster.jpg" />

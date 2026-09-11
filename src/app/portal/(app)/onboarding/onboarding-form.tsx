@@ -170,9 +170,9 @@ export function OnboardingForm() {
           <div><label className={labelCls}>Address</label><input className={inputCls} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></div>
         </div>
 
-        {/* optional student photo */}
+        {/* required student photo */}
         <div className="mt-4">
-          <label className={labelCls}>Student photo (optional)</label>
+          <label className={labelCls}>Student photo *</label>
           <div className="flex items-center gap-4">
             <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-2xl border border-white/15 bg-void">
               {photoUrl ? (
@@ -197,7 +197,7 @@ export function OnboardingForm() {
                   </button>
                 ) : null}
               </div>
-              <p className="mt-1.5 text-[11px] leading-relaxed text-dust">JPG, PNG or WebP · up to 5 MB. This is optional and can be added later.</p>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-dust">Required before portal access · JPG, PNG or WebP · up to 5 MB.</p>
               {photoErr ? <p className="mt-1 text-[11px] text-signal">{photoErr}</p> : null}
             </div>
           </div>
@@ -207,7 +207,7 @@ export function OnboardingForm() {
       {/* guardians */}
       <section className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
         <p className="mb-1 flex items-center gap-2 font-display text-sm text-ice"><Users size={16} className="text-cyan" /> Parent / guardian contact</p>
-        <p className="mb-4 text-xs text-dust">A valid parent email is required — your progress reports are sent there. Mark one as the primary contact.</p>
+        <p className="mb-4 text-xs text-dust">At least one parent/guardian name, email and WhatsApp number is required. Weekly progress reports are addressed personally and sent every Saturday.</p>
         <div className="space-y-4">
           {guardians.map((g, i) => (
             <div key={i} className="rounded-xl border border-white/10 bg-void/50 p-4">
@@ -225,7 +225,7 @@ export function OnboardingForm() {
                 </div>
                 <div><label className={labelCls}>Name {i === 0 ? "*" : ""}</label><input className={inputCls} value={g.name} onChange={(e) => setG(i, { name: e.target.value })} /></div>
                 <div><label className={labelCls}>Email {i === 0 ? "*" : ""}</label><input type="email" className={inputCls} placeholder="parent@email.com" value={g.email} onChange={(e) => setG(i, { email: e.target.value })} /></div>
-                <div><label className={labelCls}>Phone {i === 0 ? "*" : ""}</label><input className={inputCls} placeholder="+92…" value={g.phone} onChange={(e) => setG(i, { phone: e.target.value })} /></div>
+                <div><label className={labelCls}>WhatsApp {i === 0 ? "*" : ""}</label><input className={inputCls} placeholder="+92…" value={g.phone} onChange={(e) => setG(i, { phone: e.target.value })} /></div>
               </div>
             </div>
           ))}

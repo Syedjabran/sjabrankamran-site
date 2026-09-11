@@ -15,6 +15,9 @@ export type AttemptQuestion = {
   correct: boolean | null; // MCQ only
   spentSec?: number | null; // actual time on this question (viewport-timed)
   expectedSec?: number; // recommended time (paper + difficulty)
+  /** The submitted response, retained so the learner can review this script. */
+  response?: string | null;
+  feedback?: string | null;
 };
 
 /**
@@ -41,6 +44,8 @@ export type AttemptContext = {
 };
 
 export type Attempt = {
+  /** Stable, shareable-in-the-portal identifier for the review HTML page. */
+  id: string;
   ts: number;
   mode: "paper" | "drill";
   paperType: "P1" | "P2" | "P4" | "mixed";

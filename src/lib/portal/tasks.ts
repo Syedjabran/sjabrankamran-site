@@ -32,6 +32,12 @@ export type PersonalTask = {
   updatedAt: number;
   completedAt: number | null;
   studentNote: string | null;
+  mandatory?: boolean;
+  topic?: string | null;
+  activityType?: "study_material" | "video" | "simulation" | "assignment" | "daily_challenge" | "short_test";
+  expectedMinutes?: number | null;
+  generatedKey?: string | null;
+  sourceId?: string | null;
 };
 
 type Store = { tasks: PersonalTask[] };
@@ -58,9 +64,17 @@ export async function listTasks(uid: string): Promise<PersonalTask[]> {
   return [...store.tasks].sort((a, b) => b.createdAt - a.createdAt);
 }
 
+/** One task owned by the signed-in user. */
+export async function getTask(uid: string, taskId: string): Promise<PersonalTask | null> {
+  const store = await readStore(uid);
+  return store.tasks.find((t) => t.id === taskId) || null;
+}
+
 export async function assignTask(uid: string, input: {
   title: string; details?: string; kind?: TaskKind; dueAt?: string | null;
   points?: number | null; resourceUrl?: string | null; createdBy: string; createdByName: string;
+  mandatory?: boolean; topic?: string | null; activityType?: PersonalTask["activityType"];
+  expectedMinutes?: number | null; generatedKey?: string | null; sourceId?: string | null;
 }): Promise<PersonalTask> {
   const now = Date.now();
   const task: PersonalTask = {
@@ -78,6 +92,12 @@ export async function assignTask(uid: string, input: {
     updatedAt: now,
     completedAt: null,
     studentNote: null,
+    mandatory: !!input.mandatory,
+    topic: (input.topic || "").slice(0, 120) || null,
+    activityType: input.activityType,
+    expectedMinutes: input.expectedMinutes != null ? Math.max(1, Math.min(240, Math.round(input.expectedMinutes))) : null,
+    generatedKey: (input.generatedKey || "").slice(0, 160) || null,
+    sourceId: (input.sourceId || "").slice(0, 100) || null,
   };
   const store = await readStore(uid);
   store.tasks.unshift(task);
@@ -121,6 +141,18 @@ export async function setTaskStatus(uid: string, taskId: string, status: TaskSta
   t.updatedAt = Date.now();
   await writeStore(uid, store);
   return t;
+}
+
+/** Completing an Exam Lab allocation also completes its linked personal task. */
+export async function completeTaskBySource(uid: string, sourceId: string): Promise<PersonalTask | null> {
+  const store = await readStore(uid);
+  const task = store.tasks.find((t) => t.sourceId === sourceId);
+  if (!task) return null;
+  task.status = "done";
+  task.completedAt = Date.now();
+  task.updatedAt = Date.now();
+  await writeStore(uid, store);
+  return task;
 }
 
 /** Lightweight counts for dashboards. */

@@ -57,6 +57,10 @@ export async function GET() {
     .sort((a, b) => a.rankInClass - b.rankInClass)
     .map((s) => pub(s, false));
 
+  // Staff assigned to the caller's class — shown in the class header, never ranked.
+  const myClass = data.classes.find((c) => c.school === me.school && c.name === me.className);
+  const classStaff = (myClass?.staff || []).map((s) => ({ name: s.name, roleLabel: s.roleLabel }));
+
   const schoolBoard = data.students
     .filter((s) => s.school === me.school)
     .sort((a, b) => a.rankInSchool - b.rankInSchool)
@@ -77,6 +81,7 @@ export async function GET() {
       rankInSchool: me.rankInSchool, outOfSchool: me.outOfSchool,
       rankOverall: me.rankOverall, outOfOverall: me.outOfOverall,
     },
+    classStaff,
     classBoard, schoolBoard, overallBoard,
   }, { status: 200 });
 }

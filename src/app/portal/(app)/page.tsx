@@ -1,15 +1,19 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   Users, School, BookOpen, Receipt, AlertTriangle, Hourglass, GraduationCap,
   UserPlus, ClipboardList, Mail, BarChart3, Activity, ShieldCheck, KeyRound,
   Ban, RotateCcw, Trash2, UserCog, FileText, Paperclip, ArrowRight, Building2,
+  BrainCircuit, CheckCircle2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { getPortalUser, isAdmin, isStaff, ROLE_LABELS, type EduRole } from "@/lib/edu/auth";
+import { getPortalUser, isAdmin, isStaff, isSchoolScopedStaff, ROLE_LABELS, type EduRole } from "@/lib/edu/auth";
 import { getRegistry } from "@/lib/portal/institutions";
 import { effectiveRoles } from "@/lib/portal/view-as";
 import { AdminUserSearch } from "./admin-user-search";
 import { OnlineNow } from "./online-now";
+import { ensureStudyPlan } from "@/lib/portal/study-plan";
+import { DEMO_STUDENT_UID } from "@/lib/portal/demo-student";
 
 export const metadata = { title: "Portal Dashboard" };
 
@@ -53,7 +57,11 @@ const ACTION_META: Record<string, { icon: React.ComponentType<{ size?: number; c
   "user.password_reset": { icon: KeyRound, verb: "reset password for", color: "text-cyan" },
   "user.email_credentials": { icon: Mail, verb: "emailed credentials to", color: "text-cyan" },
   "user.suspend": { icon: Ban, verb: "suspended", color: "text-signal" },
+  "user.lock": { icon: Ban, verb: "locked portal access for", color: "text-signal" },
   "user.reactivate": { icon: RotateCcw, verb: "reactivated", color: "text-emerald2" },
+  "access.locked": { icon: Ban, verb: "activated an access lock", color: "text-signal" },
+  "access.suspended": { icon: Hourglass, verb: "started an access suspension", color: "text-amber-300" },
+  "access.release": { icon: RotateCcw, verb: "released an access restriction", color: "text-emerald2" },
   "role.grant": { icon: ShieldCheck, verb: "granted a role to", color: "text-cyan" },
   "role.revoke": { icon: ShieldCheck, verb: "revoked a role from", color: "text-dust" },
   "enrolment.add": { icon: GraduationCap, verb: "enrolled", color: "text-emerald2" },
@@ -116,6 +124,10 @@ async function recentActivity(): Promise<{ id: string; actor: string; action: st
 export default async function PortalDashboard() {
   const user = await getPortalUser();
   if (!user) return null;
+  if (isSchoolScopedStaff(user.roles)) {
+    if (user.roles.includes("coordinator") || user.roles.includes("facilitator")) redirect("/portal/coordinator");
+    redirect("/portal/admin/attendance-view");
+  }
   const { roles: effRoles } = await effectiveRoles(user);
 
   if (user.roles.length === 0) {
@@ -225,7 +237,7 @@ export default async function PortalDashboard() {
             <OnlineNow />
             <h2 className="flex items-center gap-2 text-sm font-semibold text-ice"><BarChart3 size={16} className="text-cyan" /> Quick actions</h2>
             {[
-              { href: "/portal/admin/users", icon: Users, title: "Users & activity", desc: "Create, suspend, reset, view any user's activity" },
+              { href: "/portal/admin/users", icon: Users, title: "Users & activity", desc: "Create, restrict, reset, view any user's activity" },
               { href: "/portal/admin/assign", icon: ClipboardList, title: "Post assignment / test", desc: "With attachments & per-question timers" },
               { href: "/portal/admin/analytics", icon: BarChart3, title: "Rankings & analytics", desc: "Leaderboards, levels & performance charts" },
               { href: "/portal/admin/institutions", icon: Building2, title: "Institutions", desc: "Per-school & per-class analytics" },
@@ -256,7 +268,12 @@ export default async function PortalDashboard() {
     );
   }
 
-  // Non-staff (student / parent) home.
+  // Non-staff (student / parent) home. In Super Admin's Student preview, use
+  // the private QA student's plan so the preview is representative and does
+  // not create student tasks against the administrator's own account.
+  const studentPlan = effRoles.includes("student")
+    ? await ensureStudyPlan(user.roles.includes("student") ? user.id : DEMO_STUDENT_UID)
+    : null;
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold text-ice">Welcome{user.fullName ? `, ${user.fullName.split(" ")[0]}` : ""}</h1>
@@ -269,6 +286,19 @@ export default async function PortalDashboard() {
             : "Your account and access rights are active."}
         </p>
       </div>
+      {studentPlan ? (
+        <a href="/portal/study-plan" className="group block rounded-2xl border border-cyan/25 bg-gradient-to-br from-cyan/[0.08] to-space/60 p-6 transition hover:border-cyan/50 hover:bg-cyan/[0.1]">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="flex items-center gap-2 text-lg font-semibold text-ice"><BrainCircuit size={19} className="text-cyan" /> Personalised weekly study plan</p>
+              <p className="mt-2 max-w-2xl text-sm text-fog">A gradual plan based on your ranking, weak topics and Exam Lab evidence: targeted reading, video, simulation, assignment, short test and daily challenge.</p>
+              <p className="mt-3 text-xs text-cyan">Priority: {studentPlan.focusTopics.join(" · ")}</p>
+            </div>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/35 px-3 py-1.5 text-xs text-amber-300"><CheckCircle2 size={13} /> {studentPlan.openMandatory} mandatory outstanding</span>
+          </div>
+          <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-cyan">Open my plan <ArrowRight size={14} className="transition group-hover:translate-x-1" /></span>
+        </a>
+      ) : null}
     </div>
   );
 }

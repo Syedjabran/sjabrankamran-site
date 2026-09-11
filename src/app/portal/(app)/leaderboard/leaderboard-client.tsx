@@ -1,11 +1,29 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Trophy, Medal, School, Users, Globe, Crown, Flame, VenetianMask } from "lucide-react";
+import { Trophy, Medal, School, Users, Globe, Crown, Flame, VenetianMask, ShieldCheck } from "lucide-react";
 
 type Row = { name: string; isMe: boolean; anon?: boolean; score: number; accuracy: number | null; level: number; attempts: number; rankInClass: number; rankInSchool: number; rankOverall: number; hasData: boolean };
 type Me = { name: string; school: string; className: string; section: string | null; score: number; accuracy: number | null; level: number; attempts: number; rankInClass: number; outOfClass: number; rankInSchool: number; outOfSchool: number; rankOverall: number; outOfOverall: number };
-type Data = { hasData: boolean; message?: string; me?: Me; classBoard?: Row[]; schoolBoard?: Row[]; overallBoard?: Row[] };
+type Staff = { name: string; roleLabel: string };
+type Data = { hasData: boolean; message?: string; me?: Me; classStaff?: Staff[]; classBoard?: Row[]; schoolBoard?: Row[]; overallBoard?: Row[] };
+
+function ClassStaffHeader({ staff, className }: { staff: Staff[]; className: string }) {
+  if (!staff.length) return null;
+  return (
+    <section className="rounded-2xl border border-cyan/25 bg-cyan/[0.05] p-4">
+      <h2 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-cyan"><ShieldCheck size={14} /> Class staff · {className}</h2>
+      <ul className="flex flex-wrap gap-2">
+        {staff.map((s, i) => (
+          <li key={i} className="flex items-center gap-2 rounded-full border border-white/10 bg-space/60 px-3 py-1.5 text-sm">
+            <span className="font-medium text-ice">{s.name}</span>
+            <span className="rounded-full border border-cyan/30 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-cyan">{s.roleLabel}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 function medal(rank: number) {
   if (rank === 1) return { icon: "🥇", cls: "text-amber-300" };
@@ -103,6 +121,7 @@ export function LeaderboardClient() {
             </div>
           </div>
 
+          <ClassStaffHeader staff={data.classStaff || []} className={data.me?.className || ""} />
           <Board title="My class" icon={<Users size={15} className="text-cyan" />} rows={data.classBoard || []} rankKey="rankInClass" />
           <div className="grid gap-6 lg:grid-cols-2">
             <Board title="Across my school (all sections)" icon={<School size={15} className="text-emerald2" />} rows={data.schoolBoard || []} rankKey="rankInSchool" />

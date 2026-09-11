@@ -7,9 +7,11 @@
  * each student's Exam Lab attempts (exam-data bucket) + attendance/results.
  */
 import { createAdminClient } from "@/lib/supabase/admin";
+import { ROLE_LABELS, type EduRole } from "@/lib/edu/auth";
 import { getAttempts } from "@/lib/exam-lab/attempts";
 import { analyse } from "@/lib/exam-lab/analytics";
 import { PORTAL_BUCKET } from "@/lib/portal/onboarding";
+import { attendancePercent } from "@/lib/edu/attendance";
 
 export type ClassMeta = {
   id: string; key: string; school: string; year: string;
@@ -35,8 +37,19 @@ export type StudentProgress = {
   lastActive: number | null;
 };
 
+/**
+ * A staff member assigned to a class (coordinator / facilitator / attendance
+ * registrar / teacher …). They are enrolled against the class for access but are
+ * NEVER counted or ranked as students; they surface in the class header instead.
+ */
+export type ClassStaff = { uid: string; name: string; roles: EduRole[]; roleLabel: string };
+
+/** Roles that mean "not a student in this class". */
+const NON_STUDENT_ROLES: EduRole[] = ["super_admin", "admin", "teacher", "teaching_assistant", "counsellor", "content_manager", "finance_manager", "coordinator", "facilitator", "attendance_registrar"];
+
 export type ClassReport = ClassMeta & {
   students: StudentProgress[];
+  staff: ClassStaff[];
   activeStudents: number;
   avgAccuracy: number | null;
   totalAttempts: number;
@@ -118,6 +131,32 @@ function avg(nums: (number | null)[]): number | null {
   return v.length ? Math.round(v.reduce((s, x) => s + x, 0) / v.length) : null;
 }
 
+/**
+ * Map each uid to the staff roles it holds (empty when the user is a pure
+ * student). One shared query keeps assigned staff out of student rosters.
+ */
+export async function staffRoleMap(uids: string[]): Promise<Map<string, EduRole[]>> {
+  const out = new Map<string, EduRole[]>();
+  if (!uids.length) return out;
+  const { data } = await createAdminClient()
+    .from("edu_user_roles")
+    .select("user_id, role")
+    .in("user_id", uids);
+  for (const r of (data || []) as { user_id: string; role: EduRole }[]) {
+    if (!NON_STUDENT_ROLES.includes(r.role)) continue;
+    const arr = out.get(r.user_id) || [];
+    if (!arr.includes(r.role)) arr.push(r.role);
+    out.set(r.user_id, arr);
+  }
+  return out;
+}
+
+const ROLE_RANK: EduRole[] = ["super_admin", "admin", "coordinator", "teacher", "facilitator", "teaching_assistant", "counsellor", "attendance_registrar", "content_manager", "finance_manager"];
+function primaryRoleLabel(roles: EduRole[]): string {
+  const primary = ROLE_RANK.find((r) => roles.includes(r)) || roles[0];
+  return primary ? ROLE_LABELS[primary] : "Staff";
+}
+
 /** Roster + per-student progress for one class. */
 export async function getClassReport(meta: ClassMeta): Promise<ClassReport> {
   const supabase = createAdminClient();
@@ -129,12 +168,22 @@ export async function getClassReport(meta: ClassMeta): Promise<ClassReport> {
 
   type Row = { student_id: string; edu_students?: { id: string; student_no: string | null; profile_id: string; edu_profiles?: { full_name?: string; email?: string } } };
   const rows = (enr || []) as unknown as Row[];
-  const uids = rows.map((r) => r.edu_students?.profile_id).filter((x): x is string => !!x);
+  const allUids = rows.map((r) => r.edu_students?.profile_id).filter((x): x is string => !!x);
+  const roleMap = await staffRoleMap(allUids);
+  const studentRows = rows.filter((r) => { const u = r.edu_students?.profile_id; return !!u && !roleMap.has(u); });
+  const staff: ClassStaff[] = rows
+    .filter((r) => { const u = r.edu_students?.profile_id; return !!u && roleMap.has(u); })
+    .map((r) => {
+      const roles = roleMap.get(r.edu_students!.profile_id) || [];
+      return { uid: r.edu_students!.profile_id, name: r.edu_students?.edu_profiles?.full_name || r.edu_students?.edu_profiles?.email || "Staff", roles, roleLabel: primaryRoleLabel(roles) };
+    })
+    .sort((a, b) => ROLE_RANK.indexOf(a.roles[0]) - ROLE_RANK.indexOf(b.roles[0]) || a.name.localeCompare(b.name));
+  const uids = studentRows.map((r) => r.edu_students!.profile_id);
   const info = await onboardingInfo(uids);
   const photos = await signPhotos(info);
 
   const students: StudentProgress[] = await Promise.all(
-    rows.map(async (r) => {
+    studentRows.map(async (r) => {
       const s = r.edu_students;
       const uid = s?.profile_id || "";
       const attempts = uid ? await getAttempts(uid) : [];
@@ -143,10 +192,8 @@ export async function getClassReport(meta: ClassMeta): Promise<ClassReport> {
       let attendancePct: number | null = null;
       if (s?.id) {
         const { data: att } = await supabase.from("edu_attendance").select("status").eq("student_id", s.id);
-        if (att && att.length) {
-          const good = att.filter((x) => x.status === "present" || x.status === "late").length;
-          attendancePct = Math.round((good / att.length) * 100);
-        }
+        // excused / leave / exempt are excluded from the denominator.
+        if (att && att.length) attendancePct = attendancePercent(att.map((x) => x.status as string));
       }
       const lastActive = attempts.length ? Math.max(...attempts.map((x) => x.ts)) : null;
       return {
@@ -174,6 +221,7 @@ export async function getClassReport(meta: ClassMeta): Promise<ClassReport> {
   return {
     ...meta,
     students,
+    staff,
     activeStudents: students.filter((s) => s.attempts > 0).length,
     avgAccuracy: avg(students.map((s) => s.accuracy)),
     totalAttempts,
@@ -183,9 +231,12 @@ export async function getClassReport(meta: ClassMeta): Promise<ClassReport> {
 }
 
 /** Full institutional report: schools → classes → students. */
-export async function getInstitutionReport(): Promise<SchoolReport[]> {
+/** Optional school/class arguments are authorization boundaries for scoped staff. */
+export async function getInstitutionReport(onlySchool?: string | null, onlyClassIds?: string[] | null): Promise<SchoolReport[]> {
   const reg = await getRegistry();
-  const classReports = await Promise.all(reg.classes.map((c) => getClassReport(c)));
+  const classSet = onlyClassIds ? new Set(onlyClassIds) : null;
+  const allowed = reg.classes.filter((c) => (!onlySchool || c.school === onlySchool) && (!classSet || classSet.has(c.id)));
+  const classReports = await Promise.all(allowed.map((c) => getClassReport(c)));
   const bySchool = new Map<string, ClassReport[]>();
   for (const cr of classReports) {
     const arr = bySchool.get(cr.school) || [];

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getPortalUser, isAdmin } from "@/lib/edu/auth";
-import { getThread, addPost, markHelpful, signAttachments, type Attachment } from "@/lib/portal/forum";
+import { getThread, addPost, markHelpful, react, signAttachments, type Attachment, type Reactions } from "@/lib/portal/forum";
 import { award } from "@/lib/portal/contribution";
 
 export const runtime = "nodejs";
@@ -16,19 +16,20 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const posts = await Promise.all((t.posts || []).map(async (p) => ({
     ...p, attachments: await signAttachments(p.attachments || []),
     mine: p.authorId === user.id, iMarked: (p.helpfulBy || []).includes(user.id),
+    reactions: p.reactions || { like: [], dislike: [], love: [] },
   })));
   return NextResponse.json({
-    thread: { id: t.id, title: t.title, tag: t.tag, authorName: t.authorName, authorId: t.authorId, body: t.body, ts: t.ts, attachments: opAtt, posts },
+    thread: { id: t.id, title: t.title, tag: t.tag, authorName: t.authorName, authorId: t.authorId, body: t.body, ts: t.ts, attachments: opAtt, posts, reactions: t.reactions || { like: [], dislike: [], love: [] } },
     me: user.id,
   }, { status: 200 });
 }
 
-/** POST { op:'reply', body } | { op:'helpful', postId } */
+/** POST { op:'reply', body } | { op:'helpful', postId } | { op:'reaction', postId?, reaction } */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getPortalUser();
   if (!user) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   const { id } = await params;
-  const b = (await req.json().catch(() => null)) as { op?: string; body?: string; postId?: string } | null;
+  const b = (await req.json().catch(() => null)) as { op?: string; body?: string; postId?: string; reaction?: keyof Reactions } | null;
   const name = user.fullName || user.email || "Member";
 
   if (b?.op === "helpful" && b.postId) {
@@ -36,6 +37,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!r.ok) return NextResponse.json({ error: "Not found." }, { status: 404 });
     if (r.on && r.awardedTo) await award(r.awardedTo, r.awardedName || "Member", "helpful");
     return NextResponse.json({ ok: true, helpful: r.helpful, on: r.on }, { status: 200 });
+  }
+  if (b?.op === "reaction" && b.reaction && ["like", "dislike", "love"].includes(b.reaction)) {
+    const r = await react(id, b.postId || null, b.reaction, user.id);
+    if (!r.ok) return NextResponse.json({ error: "Not found." }, { status: 404 });
+    return NextResponse.json({ ok: true, reactions: r.reactions }, { status: 200 });
   }
 
   // default: reply

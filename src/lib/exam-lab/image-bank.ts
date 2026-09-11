@@ -19,6 +19,12 @@ const CANON: Record<string, { marks: number; duration: number; name: string }> =
 // 2529 questions across 130 papers.
 export const IMAGE_BANK = rawData as ImgQuestion[];
 
+// SECURE BANK: staff-authored test questions that must NEVER surface in public
+// practice/drill pools. Resolvable only through an explicit allocation id.
+import secureData from "./secure-bank.json";
+export const SECURE_BANK = secureData as ImgQuestion[];
+export const FULL_BANK: ImgQuestion[] = [...IMAGE_BANK, ...SECURE_BANK];
+
 const SESSORD: Record<string, number> = { m: 0, s: 1, w: 2 };
 function chrono(code: string): number {
   const m = code.match(/9702_([smw])(\d\d)_(\d\d)/);

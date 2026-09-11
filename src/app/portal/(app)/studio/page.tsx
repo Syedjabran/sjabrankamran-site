@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { FlaskConical, ExternalLink } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getPortalUser, isStaff } from "@/lib/edu/auth";
+import { getPortalUser, canAccessGlobalStaffData } from "@/lib/edu/auth";
 import type { PhysicsQuestion } from "@/lib/edu/studio";
 import { ReviewPanel } from "./review-panel";
 
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function StudioReviewPage() {
   const user = await getPortalUser();
   if (!user) redirect("/portal/login");
-  if (!isStaff(user.roles)) redirect("/portal");
+  if (!canAccessGlobalStaffData(user.roles)) redirect("/portal");
 
   // physics_questions RLS only exposes approved+public rows to normal clients,
   // so the review queue must be read with the service-role admin client.

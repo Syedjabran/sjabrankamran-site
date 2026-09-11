@@ -3,6 +3,7 @@ import { requireAdmin, audit, isSuperAdmin } from "@/lib/portal/admin";
 import { addLinkResource, registerUpload, removeResource, RES_BUCKET, type ResourceKind } from "@/lib/portal/resources";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { mirrorToDrive } from "@/lib/google/drive-write";
+import { notify } from "@/lib/portal/notifications";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -35,6 +36,7 @@ export async function POST(req: Request) {
       if (blob) await mirrorToDrive("physicsResource", b.name, b.mime || blob.type || "application/octet-stream", blob);
     } catch { /* Drive mirror is optional */ }
     await audit(admin.id, "resource.publish", "physics-resources", item.id, { kind: item.kind, title: item.title, source: "upload" });
+    await notify({ audience: "students" }, { type: "resource", title: `New resource: ${item.title}`, body: "A new resource has been published in Physics Resources.", href: "/portal/resources" });
     return NextResponse.json({ ok: true, resource: item }, { status: 200 });
   }
 
@@ -44,6 +46,7 @@ export async function POST(req: Request) {
     url: b.url.trim(), kind: b.kind, createdBy: admin.id, createdByName: byName,
   });
   await audit(admin.id, "resource.publish", "physics-resources", item.id, { kind: item.kind, title: item.title, source: item.source });
+  await notify({ audience: "students" }, { type: "resource", title: `New resource: ${item.title}`, body: "A new resource has been published in Physics Resources.", href: "/portal/resources" });
   return NextResponse.json({ ok: true, resource: item }, { status: 200 });
 }
 

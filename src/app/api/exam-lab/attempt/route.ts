@@ -15,6 +15,8 @@ const qSchema = z.object({
   correct: z.boolean().nullable(),
   spentSec: z.number().int().min(0).max(20000).nullable().optional(),
   expectedSec: z.number().int().min(0).max(20000).optional(),
+  response: z.string().max(12000).nullable().optional(),
+  feedback: z.string().max(12000).nullable().optional(),
 });
 
 const contextSchema = z.object({
@@ -50,7 +52,7 @@ export async function POST(request: Request) {
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid attempt." }, { status: 400 });
 
-  const attempt: Attempt = { ts: Date.now(), ...parsed.data };
+  const attempt: Attempt = { id: parsed.data.context?.attemptId || crypto.randomUUID(), ts: Date.now(), ...parsed.data };
   const ok = await appendAttempt(user.id, attempt);
   return NextResponse.json({ ok }, { status: ok ? 200 : 500 });
 }

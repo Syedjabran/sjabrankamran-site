@@ -1,0 +1,110 @@
+f9ac0eb|2026-08-04 19:59|Pablo|feat: establish verified executive website foundation
+ad34caf|2026-08-04 23:21|Syed Jabran Ali Kamran|feat(redesign): education-first three-ecosystem site
+69ff377|2026-08-04 23:49|Syed Jabran Ali Kamran|feat(education): school logos on white chips + monogram fallback; timeline date correction (Jabran & Co 2014 informal / 2024 formalised / 2026 registered)
+6c6b5c3|2026-08-05 00:03|Syed Jabran Ali Kamran|feat(education): transparent logos direct on dark where art is light (Roots Intl); light chip only for dark-art logos; all LGS share one logo
+b48c7ef|2026-08-05 00:21|Syed Jabran Ali Kamran|fix(logos): uniform white chips for all school logos (legible + consistent on dark); add Bloomfield + Roots IVY logos; larger sizes
+8c023a4|2026-08-05 00:31|Syed Jabran Ali Kamran|fix(logos): white-art logos (LGS, Roots Intl) render directly on dark; rectangular light chips for dark-art logos; plain img to avoid raster mangling
+a94464d|2026-08-05 01:11|Syed Jabran Ali Kamran|feat(logos): ISL official gold shield logo (onDark, rounded)
+a085f57|2026-08-05 01:25|Syed Jabran Ali Kamran|feat(physics-studio): connect Gemini (gemini-flash-latest) as live AI tutor
+f05f8c5|2026-08-05 07:05|Syed Jabran Ali Kamran|feat(physics-studio): KaTeX math rendering for AI answers (remark-math + rehype-katex), LaTeX notation system rules, delimiter normalisation, provider fallback hardening
+131d71b|2026-08-05 09:20|Syed Jabran Ali Kamran|feat(physics-studio): Gemini-only public AI tutor (Claude/OpenAI reserved for admin portal); original Einstein-inspired interactive companion with rotating prompts, example questions, two-frame tongue animation, reduced-motion support
+9e5c4e4|2026-08-05 09:46|Syed Jabran Ali Kamran|feat(animations): route transitions, staggered hero entrances, animated verified-stats counters, card lift + button glow micro-interactions, skeleton answer loader, travelling-wave divider — all reduced-motion safe
+efca3d3|2026-08-05 23:52|Syed Jabran Ali Kamran|feat: hero videos (NASA/licensed, self-hosted loops) on education/enterprise/technology; SJAK monogram in header; site-wide free-roaming Einstein companion with tap-to-ask mini panel; fact corrections — Eleventh Hour founded 2020 as Eleventh Hour Services LLP (renamed), remove 2026 formal-registration line
+1a45edd|2026-08-06 00:15|Syed Jabran Ali Kamran|fix: transparent logo background; Einstein roam pause/play control; hero videos on Home (ISS Earth views, caption cropped) and Physics Studio (Phoenix prominence eruption) - NASA public-domain, licences documented
+5618580|2026-08-06 00:22|Syed Jabran Ali Kamran|feat(edu-crm): EDU-001 foundation migration - 33 tables, 9 roles, RLS helper functions, storage buckets, programme seeds, super_admin bootstrap
+00e9dfd|2026-08-06 00:42|Syed Jabran Ali Kamran|feat(einstein): drag-to-reposition - hold and drag him anywhere on the page; he parks where dropped (roaming pauses); tap still opens the ask panel
+514ad4d|2026-08-06 00:48|Syed Jabran Ali Kamran|feat(portal): authentication + portal shell - login/reset pages, session middleware protecting /portal, role-based layout, admin dashboard with live stats, Users & Roles management (grant/revoke with audit), Academics (programmes/courses/classes + create), Finance (invoice list); Portal link in site nav
+967e23f|2026-08-06 00:55|Syed Jabran Ali Kamran|feat(portal): Teacher module - My Classes list, class detail (roster, lessons + create, assignments + create with due date/marks), per-lesson attendance marking (present/absent/late/excused + notes, upsert + audit); admin pages moved into (app) layout group for portal chrome
+1cfcde8|2026-08-06 01:32|Syed Jabran Ali Kamran|fix(edu-001): qualify columns in super_admin bootstrap insert (42702 ambiguous id in Supabase SQL editor)
+26b2c62|2026-08-06 01:37|Syed Jabran Ali Kamran|fix(edu-001): qualify edu_classes.id in p_edu_classes_sel policy subquery (real cause of 42702; whole file now validated end-to-end + idempotent on Postgres 15)
+3560aa4|2026-08-06 01:46|Syed Jabran Ali Kamran|feat(portal): Student module (My Learning - classes, 7-day timetable, assignments with status, results, attendance pct, AI tutor link; assignment detail with text+file submission to private storage, late detection, resubmission) + Parent module (My Children - per-child attendance pct, recent results, outstanding fees, enrolled classes); server actions body limit 8mb
+7f8ff32|2026-08-16 22:34|Syed Jabran Ali Kamran|feat: Phase 1 site upgrade — fix stat counters, CSP+HSTS security headers, PWA manifest+icons, Vercel Analytics
+de9fd9a|2026-08-16 22:45|Syed Jabran Ali Kamran|feat(studio): teacher-reviewed public library + portal review dashboard
+f3a2733|2026-08-16 23:07|Syed Jabran Ali Kamran|fix(portal): repair password-reset flow (PKCE recovery was broken)
+667c6f3|2026-08-17 00:51|Syed Jabran Ali Kamran|fix(login): replace opaque '{}' auth errors with readable messages; explain when reset email delivery isn't configured
+0e32d4a|2026-08-24 15:28|Syedjabran|fix(tutor): pin AI physics tutor to gemini-3.1-flash-lite + 12s timeout
+bda03d3|2026-08-24 15:31|Syedjabran|fix(tutor): hard-block slow gemini *-latest aliases even when set via env
+66815d8|2026-08-26 15:06|Syedjabran|feat(exam-lab): on-demand CAIE 9702 test generator (Physics Studio)
+6bd8af7|2026-08-26 15:09|Syedjabran|fix(exam-lab): mirror proven tutor Gemini request; robust JSON extraction + header-gated diag
+81d06c2|2026-08-26 15:14|Syedjabran|fix(exam-lab): LaTeX-safe delimited generation format (no JSON escaping)
+0442bfd|2026-08-26 15:16|Syedjabran|feat(exam-lab): model emits per-question TOPIC/LEVEL so tags match content
+a29f63c|2026-08-26 16:30|Syedjabran|feat(exam-lab): Phase 2 — ingest 290 real CAIE 9702 Paper 1 MCQs into portal bank
+733f951|2026-08-26 16:49|Syedjabran|feat(exam-lab): expand past-paper bank to 966 Qs + add Paper 2 structured
+6fe5ca1|2026-08-26 18:17|Syedjabran|feat(exam-lab): image-based EXACT past papers (P1/P2/P4) with diagrams
+0b501ca|2026-08-26 18:27|Syedjabran|feat(exam-lab): Maxwell AI examiner + 377 real image questions (P1/P2/P4)
+b411522|2026-08-26 21:34|Syedjabran|feat(exam-lab): full 2022-2024 image coverage — 1064 exact questions (P1/P2/P4)
+cd9e96a|2026-08-26 22:45|Syedjabran|feat(exam-lab): coverage 2019-2024 — 2102 exact questions (1476 P1 + 222 P2 + 404 P4, 108 papers)
+443a3a3|2026-08-26 23:21|Syedjabran|fix(exam-lab): paper-type-scoped IDs (kills P1/P4 collision), canonical marks, chronological order
+ffbbd35|2026-08-26 23:25|Syedjabran|feat(exam-lab): student analytics dashboard + attempt logging
+27f4f3d|2026-08-26 23:30|Syedjabran|feat(exam-lab): premium hub — year-grouped papers, coverage summary, Daily Challenge, paper-type accents
+e84fab2|2026-08-26 23:39|Syedjabran|feat(exam-lab): full coverage incl. Feb/March — 2529 exact questions / 130 papers
+9dbb7a7|2026-08-27 04:00|Syedjabran|feat(exam-lab): Academics section on progress dashboard — real attendance % + class results
+5e77080|2026-08-27 21:11|Syedjabran|feat(exam-lab): proctored drills — timer on every drill, 15-min red pace alert, anti-cheat (minimise/tab/split-screen/blur => cancel + unethical-means alert, screenshot/print deterrent + identity watermark), URL-driven nav so Back/Exam-Lab tab exit a paper without refresh, and PDF-only answer-script upload (private answer-scripts bucket, exam-time+5min window else flagged late/malpractice) with Gemini handwriting transcription (Maxwell reads any handwriting)
+824b3a4|2026-08-27 21:37|Syedjabran|fix(exam-lab): tablet-safe integrity guard — ignore soft-keyboard viewport shrink/blur (focused answer field), width-drop => split-screen, self-correcting resize baseline; keeps minimise/tab/split-screen detection
+361768e|2026-08-27 21:50|Syedjabran|fix(exam-lab): drill/paper now opens on click — render runner off active state; ?run=1 only used to close on Back/tab nav (fixes render-vs-URL race that scrolled to top without opening)
+a409648|2026-08-27 23:16|Syedjabran|feat(portal): institutional upgrade — schools/classes/sections grouping + institutional & individual progress analytics (/portal/admin/institutions); mandatory first-login onboarding form gated in layout (blocks all activity until required fields incl. valid parent email); portal Email module (compose, class broadcast to students/parents, templates, sent/queued log; sends as physics@sjabrankamran.com via Gmail Apps Script relay, queue fallback); AI progress-report agent (Gemini-composed per-student emails to students+parents, /api/portal/progress-email, staff or service-key auth); exam paper watermark -> physics@sjabrankamran.com
+21e7cf9|2026-08-27 23:24|Syedjabran|feat(portal): mail flush (resend queued once relay connected) + progress agent auto-dry-runs when relay not yet configured (no queue backlog); /api/portal/mail/flush (staff+service-key)
+641fad4|2026-08-27 23:27|Syedjabran|fix(portal): disambiguate edu_profiles embed (edu_students has profile_id AND created_by FKs) — was silently emptying rosters in institutions, mail broadcast & progress-email; use edu_students_profile_id_fkey
+e5cb545|2026-08-28 11:51|Syedjabran|fix(portal): Portal nav tab no-op on click — disable prefetch on auth-gated /portal link (prefetch cached the 307 redirect, making the soft-nav a no-op) + never cache middleware auth redirects for RSC/prefetch
+e76b20c|2026-08-28 12:45|Syedjabran|fix(portal): Users & Roles load error — disambiguate edu_user_roles embed via edu_user_roles_user_id_fkey (edu_user_roles has 2 FKs to edu_profiles: user_id + granted_by → PGRST201); feat(portal): show/hide password toggle on login form
+34847f4|2026-08-28 23:04|Syedjabran|feat(portal): onboarding guardrail — WhatsApp now mandatory + optional student photo upload (private portal-data bucket, JPG/PNG/WebP ≤5MB, signed preview). Parent-email requirement + first-login one-time gate unchanged.
+9581bdf|2026-08-28 23:27|Syedjabran|feat(portal): show student photo (avatar) + WhatsApp per student in staff Institutions view — reads onboarding docs, batch-signs private photos, WhatsApp links to wa.me
+b9ae88c|2026-08-29 07:11|Syedjabran|feat(portal): Admin command-center — full owner control
+04757a0|2026-08-29 17:24|Syedjabran|feat(portal): attachments, per-question timers & activity 360
+dd73667|2026-08-29 17:44|Syedjabran|fix(portal): eliminate MIDDLEWARE_INVOCATION_TIMEOUT (504) on /portal
+82e2c62|2026-08-29 18:43|Syedjabran|feat(portal): professional admin command-center + fix owner/student role confusion
+97b4f37|2026-08-29 19:19|Syedjabran|feat(portal): rankings & analytics, live presence, and 'view as role' preview
+6256a72|2026-08-29 19:31|Syedjabran|fix(portal): text overflow/stretch in analytics + admin surfaces
+eae8330|2026-08-29 21:37|Syedjabran|feat(portal): faster nav, Einstein badge fixes, per-question timer, student leaderboard + attendance log
+1d7fc42|2026-08-29 21:56|Syedjabran|feat(portal): voice attendance + write-on-paper (P2/P4) + PDF/Word answer attachments
+182011d|2026-08-29 22:30|Syedjabran|fix(portal): pen-mode duplicate+countdown pause; add recovery email, profile settings
+4ad5d35|2026-08-29 22:51|Syedjabran|feat(portal): Resource Library/Forum + community contribution ranking; Einstein drag-anywhere
+6a9cdbe|2026-08-29 23:17|Syedjabran|feat(portal): fix voice attendance and add student visual reports
+a716525|2026-08-30 09:48|Syed Jabran Ali Kamran|fix(portal): allow microphone for voice attendance
+d5f7022|2026-08-30 10:29|Syed Jabran Ali Kamran|feat(portal): per-user performance + individual tasks/challenges; Physics Resources library (bucket) with Google Drive/Classroom import
+d8ad958|2026-08-30 11:41|Syed Jabran Ali Kamran|feat(google): read Drive/Classroom creds from private storage secret (fallback to env); avoids long-token paste
+c730599|2026-08-30 11:47|Syed Jabran Ali Kamran|feat(resources): prominent 'Google Drive & Classroom' button for super admin + student-visibility note
+4e01220|2026-08-30 12:07|Syed Jabran Ali Kamran|feat(portal): notification bell (all users); mirror resource/library/test/assignment uploads to Google Drive folder tree (best-effort, needs Drive write scope)
+23de68b|2026-08-30 13:16|Syed Jabran Ali Kamran|feat(resources): serve HTML applets via app route (text/html); no-cache index writes so new resources show immediately
+77eed19|2026-08-30 16:06|Syed Jabran Ali Kamran|feat(resources): Class Drive tab for all users (default-deny); super-admin shares specific Drive folders, users browse only shared subtrees via server ancestry check + file proxy
+dc4e45e|2026-08-30 16:44|Syed Jabran Ali Kamran|fix(portal): Einstein companion no longer auto-roams — parks, drag-to-place with persisted position; sidebar nav is a stable self-scrolling sticky region
+9fb356e|2026-08-30 16:45|Syed Jabran Ali Kamran|a11y(resources): close preview modal on Escape key
+8a54e1d|2026-08-31 11:53|Syedjabran|fix(portal): enforce mandatory onboarding gate in middleware (all devices)
+6a67e4e|2026-09-01 06:57|Syedjabran|feat(portal): anonymous leaderboard codes — every user competes under a stable private call-sign; real name shown only if they opt in (Profile → Leaderboard identity), code visible in their profile
+7c4714d|2026-09-01 17:05|Syedjabran|feat(exam-lab): three integrity modes (practice / assignment help|no-help / proctored test)
+81457b2|2026-09-01 17:17|Syedjabran|feat(exam-lab): staff allocation of Exam-Lab drills (assignment help/no-help + proctored test)
+1c1c2e6|2026-09-01 18:49|Syedjabran|feat(exam-lab+portal): proctor v2 (calibration, directional-turn, 2-warning->siren->lock, phone/notes detection, writing-posture whitelist) + staff Exam Lab access + attendance 'online'
+9132e20|2026-09-01 18:55|Syedjabran|feat(exam-lab): allocation targeting (class/school/whole-network/individual) + scheduling (opens/due)
+1ef768d|2026-09-01 20:19|Syedjabran|fix(exam-lab): CSP crash broke Exam Lab page + calibration — replace new Function() (needs 'unsafe-eval', blocked by CSP) with native dynamic import() for the on-device proctor model loader
+b2b538d|2026-09-01 20:40|Syedjabran|fix(exam-lab): calibration button was a silent no-op when the face model wasn't ready
+f352ff8|2026-09-01 20:53|Syedjabran|fix(exam-lab): proctored-test gate policy layout + face detection not working
+09c6bb3|2026-09-01 21:15|Syedjabran|feat+fix(exam-lab): auto-calibration (manual step eliminated) + dead-scan-loop root fix + hand-picked question allocation + AI assignment designer
+a2da675|2026-09-01 22:27|Syedjabran|feat(portal): draggable proctor camera (upper-right default, not bottom) + Einstein drag-only (no roam/play-pause) + Coordinator/Facilitator roles with school dropdown
+36aae09|2026-09-02 12:37|Syed Jabran Ali Kamran|feat(portal): Attendance Registrar role — school-scoped, view-only daily attendance
+81a9a19|2026-09-04 15:34|Syed Jabran Ali Kamran|feat(portal): Notification Centre core — general notify() lib, synthesized due-soon/marks reminders, full /portal/notifications page, bell 'See all'
+d828e74|2026-09-04 15:34|Syed Jabran Ali Kamran|feat(portal): notification emitters — test/assignment allocation with due dates, resource publishes, library resource shares, sendMail 'You've got mail', newly-absent attendance
+ebbead8|2026-09-04 15:34|Syed Jabran Ali Kamran|feat(portal): admin announcement broadcast composer (/portal/admin/notify) — everyone/students/school/class/individual, audited
+8211b84|2026-09-04 15:34|Syed Jabran Ali Kamran|feat(portal): Physics Performance Index — six-pillar KPI engine with 15-min cached snapshots, rank-change notifications, /portal/my-ranking (student gauge + staff table), self/admin KPI APIs
+29bed6d|2026-09-04 15:34|Syed Jabran Ali Kamran|feat(portal): nav — My Ranking + Notifications for students, Notifications + Announcements for staff/admin (registrar fence untouched)
+b2ef354|2026-09-04 18:12|Syed Jabran Ali Kamran|fix(ai): tutor is strictly physics-only and answers in real symbols, never raw LaTeX
+8f415de|2026-09-05 17:45|Syed Jabran Ali Kamran|security(ai): enforce Gemini-only website provider policy
+6cfed72|2026-09-07 10:59|Pablo|feat(portal): attendance — Leave + Lesson Exemption with mandatory official reason
+beeb0f1|2026-09-07 11:50|Pablo|chore: retrigger production deploy for attendance leave/exemption (6cfed72 was blocked by Vercel)
+d7b42ba|2026-09-07 13:02|Syed Jabran Ali Kamran|chore: deploy attendance leave and exemption upgrade
+a9bd5d9|2026-09-08 10:45|Syed Jabran Ali Kamran|feat(portal): self-service student registration with auto-enrollment and credential email
+36fe4f0|2026-09-08 11:14|Syed Jabran Ali Kamran|feat(portal): add self-registration for LGS Paragon A2 Physics
+4192bee|2026-09-09 20:46|Syed Jabran Ali Kamran|feat(portal): add script review and coordinator tools
+97ff2fa|2026-09-09 21:22|Syed Jabran Ali Kamran|portal: assign staff (coordinator/facilitator/registrar) to a class as class staff, not students
+ba5cfd1|2026-09-09 21:40|Syed Jabran Ali Kamran|portal: alerts upgrade — class-timing/extra-class/test/challenge reminders, Google Calendar sync feed, and PWA Web Push
+6daa7cf|2026-09-09 21:43|Syed Jabran Ali Kamran|portal: expand 'Preview interface as' to all roles (adds facilitator, coordinator, attendance registrar, content manager, admin)
+6ea4ad4|2026-09-09 22:30|Syed Jabran Ali Kamran|fix(portal): enforce class scope for school staff
+0a2b520|2026-09-09 23:49|Syed Jabran Ali Kamran|feat(portal): add all-school timetable and automated study plans
+4f62299|2026-09-10 02:13|Syed Jabran Ali Kamran|feat(portal): send automated mail through connected Gmail
+6f6e01d|2026-09-10 06:29|Syed Jabran Ali Kamran|exam-lab: secure allocation-only question bank + per-student test randomization
+ab8518d|2026-09-10 08:05|Syed Jabran Ali Kamran|exam-lab: add super-admin sealed test preview links
+6e231aa|2026-09-10 14:49|Syed Jabran Ali Kamran|fix(exam-lab): load sealed questions in admin preview
+bbdaa4c|2026-09-10 15:30|Syed Jabran Ali Kamran|exam-lab: per-question countdown timer — locks answer when time expires, auto-scrolls to next
+e6401d0|2026-09-10 18:57|Syed Jabran Ali Kamran|fix(portal): open assigned tasks and study-plan drills
+abfec84|2026-09-10 19:52|Syed Jabran Ali Kamran|feat(portal): add private demo student access
+3bf45a6|2026-09-10 20:26|Syed Jabran Ali Kamran|fix(portal): display personalised study plan for students
+2e444d2|2026-09-11 05:13|Syed Jabran Ali Kamran|fix(portal): bypass stale study-plan route cache

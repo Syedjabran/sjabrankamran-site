@@ -9,5 +9,5 @@ export default async function UsersPage() {
   const user = await getPortalUser();
   if (!user) redirect("/portal/login");
   if (!isAdmin(user.roles)) redirect("/portal");
-  return <UsersConsole />;
+  return <UsersConsole isSuper={user.roles.includes("super_admin")} />;
 }

@@ -23,9 +23,10 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: "/icons/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
     shortcuts: [
-      { name: "Physics Studio", short_name: "Studio", url: "/physics-studio" },
       { name: "Education Portal", short_name: "Portal", url: "/portal" },
-      { name: "Contact", short_name: "Contact", url: "/contact" },
+      { name: "Notifications", short_name: "Alerts", url: "/portal/notifications" },
+      { name: "Physics timetable", short_name: "Timetable", url: "/portal/timetable" },
+      { name: "Exam Lab", short_name: "Exam Lab", url: "/portal/exam-lab" },
     ],
   };
 }
