@@ -26,3 +26,12 @@ export const SITE_URL =
  * cookie name (`sb-<ref>-auth-token`) that @supabase/ssr expects server-side.
  */
 export const PROJECT_REF = SUPABASE_URL.replace(/^https?:\/\//, '').split('.')[0];
+
+/**
+ * Marker cookie telling the site a page is being rendered inside this app, so
+ * it omits its own header and sidebar — the app already provides a title bar
+ * and the full role-aware menu. Must match PORTAL_CLIENT_COOKIE /
+ * PORTAL_CLIENT_APP in the website's src/lib/portal/embed.ts.
+ */
+export const PORTAL_CLIENT_COOKIE = 'portal_client';
+export const PORTAL_CLIENT_APP = 'app';

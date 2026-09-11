@@ -109,8 +109,12 @@ export function EinsteinCompanion() {
   function parkPosition(panel: boolean) {
     const w = window.innerWidth;
     const h = window.innerHeight;
-    const width = panel ? Math.min(400, w - 16) : 250;
-    const height = panel ? Math.min(h * 0.75, 620) : 210;
+    // The collapsed footprint is the greeting bubble stacked over the avatar,
+    // and the avatar is deliberately smaller below Tailwind's sm breakpoint —
+    // reserve the matching height so it parks snugly instead of floating.
+    const compact = w < 640;
+    const width = panel ? Math.min(400, w - 16) : compact ? 220 : 250;
+    const height = panel ? Math.min(h * 0.75, 620) : compact ? 170 : 210;
     return { x: Math.max(8, w - width - 16), y: Math.max(8, h - height - 12) };
   }
 
@@ -385,7 +389,7 @@ export function EinsteinCompanion() {
           aria-label={open ? "Close the ask panel" : "Ask Einstein a physics question (left-click and drag to move him)"}
           title="Click to ask · left-click and drag to move me"
           aria-expanded={open}
-          className={`relative block h-20 w-20 rounded-full border border-cyan/20 bg-abyss/70 shadow-lg outline-none transition hover:scale-105 focus-visible:ring-2 focus-visible:ring-cyan sm:h-24 sm:w-24 ${
+          className={`relative block h-14 w-14 rounded-full border border-cyan/20 bg-abyss/70 shadow-lg outline-none transition hover:scale-105 focus-visible:ring-2 focus-visible:ring-cyan sm:h-20 sm:w-20 lg:h-24 lg:w-24 ${
             dragging ? "cursor-grabbing scale-105" : "cursor-grab"
           }`}
           style={{ touchAction: "none" }}

@@ -1,17 +1,19 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { Eye, GraduationCap, LockKeyhole, LogOut, Settings } from "lucide-react";
+import { Eye, GraduationCap, LogOut, Settings } from "lucide-react";
 import { getPortalUser, ROLE_LABELS, isAdmin, isStaff, isRegistrarOnly, isCoordinatorOnly, type EduRole } from "@/lib/edu/auth";
 import { getPortalRestriction } from "@/lib/portal/access-control";
 import { isOnboardingComplete } from "@/lib/portal/onboarding";
 import { effectiveRoles } from "@/lib/portal/view-as";
+import { isEmbeddedClient } from "@/lib/portal/embed";
 import { AccessLockMonitor } from "./access-lock-monitor";
 import { PresenceBeacon } from "./presence-beacon";
 import { PortalAccessBlocked } from "./portal-access-blocked";
 import { PwaPortal } from "./pwa-portal";
 import { RolePreviewSwitcher } from "./role-preview";
 import { NotificationBell } from "./notification-bell";
+import { PortalNav } from "./portal-nav";
 
 export const metadata = { robots: { index: false } };
 
@@ -169,6 +171,10 @@ export default async function PortalLayout({ children }: { children: React.React
     if (!allowed.some((a) => pathname === a || pathname.startsWith(a + "/"))) redirect("/portal/coordinator");
   }
 
+  // Rendered inside the mobile app's WebView, which supplies its own title
+  // bar and full role-aware menu — the portal's own header and sidebar would
+  // just be a second copy of both.
+  const embedded = await isEmbeddedClient();
   const { roles: navRoles, previewing } = await effectiveRoles(user);
   const navSections = navFor(navRoles);
   const realAdmin = isAdmin(user.roles);
@@ -177,7 +183,7 @@ export default async function PortalLayout({ children }: { children: React.React
     : "Awaiting role assignment";
 
   return (
-    <div className="container-x py-8">
+    <div className={embedded ? "px-4 py-5" : "container-x py-8"}>
       <AccessLockMonitor />
       <PresenceBeacon />
       <PwaPortal />
@@ -189,6 +195,7 @@ export default async function PortalLayout({ children }: { children: React.React
           <RolePreviewSwitcher previewing={previewing} />
         </div>
       ) : null}
+      {embedded ? null : (
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.06] pb-6">
         <div className="flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-xl border border-cyan/30 text-cyan">
@@ -219,40 +226,10 @@ export default async function PortalLayout({ children }: { children: React.React
           </form>
         </div>
       </div>
+      )}
 
-      <div className={mustOnboard ? "" : "grid gap-8 lg:grid-cols-[13rem_1fr]"}>
-        <nav aria-label="Portal navigation" className={"lg:sticky lg:top-24 lg:self-start lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto nav-scroll" + (mustOnboard ? " hidden" : "")}>
-          <div className="space-y-5">
-            {navSections.map((section, si) => (
-              <div key={si}>
-                {section.title ? (
-                  <p className="mb-2 px-1 font-mono text-[10px] uppercase tracking-widelabel text-dust/70">{section.title}</p>
-                ) : null}
-                <ul className="flex flex-wrap gap-2 lg:flex-col">
-                  {section.items.map((item) => (
-                    <li key={item.href}>
-                      {item.hardNavigate ? (
-                        <a
-                          href={item.href}
-                          className="block rounded-xl border border-white/10 bg-space/60 px-3.5 py-2 text-sm text-fog transition hover:border-cyan/40 hover:text-ice"
-                        >
-                          {item.label}
-                        </a>
-                      ) : (
-                        <Link
-                          href={item.href}
-                          className="block rounded-xl border border-white/10 bg-space/60 px-3.5 py-2 text-sm text-fog transition hover:border-cyan/40 hover:text-ice"
-                        >
-                          {item.label}
-                        </Link>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </nav>
+      <div className={mustOnboard || embedded ? "" : "grid gap-6 lg:grid-cols-[13rem_1fr] lg:gap-8"}>
+        {embedded || mustOnboard ? null : <PortalNav sections={navSections} />}
         <div className="min-w-0">{children}</div>
       </div>
     </div>

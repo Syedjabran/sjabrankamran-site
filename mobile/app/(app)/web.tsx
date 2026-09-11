@@ -4,7 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView, type WebViewNavigation } from 'react-native-webview';
 import { ArrowLeft, RotateCw } from 'lucide-react-native';
-import { SITE_URL } from '../../src/config';
+import { PORTAL_CLIENT_APP, PORTAL_CLIENT_COOKIE, SITE_URL } from '../../src/config';
 import { sessionCookiePairs, type Session } from '../../src/auth/session';
 import { useAuth } from '../../src/auth/context';
 import { ErrorNote, Screen, T } from '../../src/components/ui';
@@ -76,26 +76,42 @@ export default function WebScreen() {
     [session, isOwnOrigin]
   );
 
-  const cookieHeader = useMemo(
-    () => cookiePairs.map(([k, v]) => `${k}=${v}`).join('; '),
-    [cookiePairs]
-  );
+  /**
+   * Cookies for the FIRST request. The app marker has to travel in this header
+   * rather than only in injected JS: the injected script runs once the document
+   * is already loading, by which point the server has rendered — so without it
+   * here the first page would still come back with the site's full chrome.
+   */
+  const cookieHeader = useMemo(() => {
+    if (!isOwnOrigin) return '';
+    const pairs = cookiePairs.map(([k, v]) => `${k}=${v}`);
+    pairs.push(`${PORTAL_CLIENT_COOKIE}=${PORTAL_CLIENT_APP}`);
+    return pairs.join('; ');
+  }, [cookiePairs, isOwnOrigin]);
 
-  /** Writes the session cookie into the WebView before the page's own JS runs. */
+  /**
+   * Writes the session cookie into the WebView before the page's own JS runs,
+   * plus a marker telling the site it is being rendered inside the app.
+   *
+   * The site reads `portal_client` during SSR and drops its own header and
+   * sidebar when it is set, because the app already supplies a title bar and
+   * the full role-aware menu. A cookie rather than a query string means the
+   * marker survives the user tapping links inside the WebView.
+   */
   const injectedCookieScript = useMemo(() => {
-    if (!cookiePairs.length) return '';
+    if (!isOwnOrigin) return '';
     const host = SITE_URL.replace(/^https?:\/\//, '');
     const domain = host.startsWith('www.') ? host.slice(4) : host;
-    const statements = cookiePairs
-      .map(
-        ([name, value]) =>
-          `document.cookie = ${JSON.stringify(
-            `${name}=${value}; path=/; domain=.${domain}; max-age=3600; SameSite=Lax; Secure`
-          )};`
-      )
-      .join('\n');
+    const write = (name: string, value: string, maxAge: number) =>
+      `document.cookie = ${JSON.stringify(
+        `${name}=${value}; path=/; domain=.${domain}; max-age=${maxAge}; SameSite=Lax; Secure`
+      )};`;
+    const statements = [
+      ...cookiePairs.map(([name, value]) => write(name, value, 3600)),
+      write(PORTAL_CLIENT_COOKIE, PORTAL_CLIENT_APP, 60 * 60 * 24 * 365),
+    ].join('\n');
     return `(function(){try{${statements}}catch(e){}})(); true;`;
-  }, [cookiePairs]);
+  }, [cookiePairs, isOwnOrigin]);
 
   // Hardware back button walks the WebView's own history first.
   useEffect(() => {
