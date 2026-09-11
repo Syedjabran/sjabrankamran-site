@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, GraduationCap, Building2, Cpu } from "lucide-react";
 import { HeroVideo } from "@/components/hero-video";
-import { GuidedTourPopup } from "@/components/guided-tour-popup";
+import { LandingProductTour } from "@/components/landing-product-tour";
 import { PhysicsField } from "@/components/physics-field";
 import { SchoolLogo } from "@/components/school-logo";
 import { Section, SectionHeading } from "@/components/ui/section";
@@ -30,12 +30,12 @@ const ECO_ACCENT = {
 export default function HomePage() {
   return (
     <>
-      <GuidedTourPopup />
+      <LandingProductTour />
       {/* ============ HERO ============ */}
       <section className="relative overflow-hidden">
         <HeroVideo src="/videos/hero-home.mp4" poster="/videos/hero-home-poster.jpg" />
         <div className="container-x relative grid items-center gap-12 py-16 md:grid-cols-[1.15fr_0.85fr] md:py-24">
-          <div>
+          <div data-tour="welcome">
             <p className="hero-item hero-item-1 eyebrow mb-5">Physics Educator · Entrepreneur · AI &amp; Technology Consultant</p>
             <h1 className="hero-item hero-item-2 text-4xl font-semibold leading-[1.03] text-ice sm:text-5xl md:text-6xl">
               {positioning.headline}
@@ -44,8 +44,10 @@ export default function HomePage() {
               {positioning.subhead}
             </p>
             <div className="hero-item hero-item-4 mt-9 flex flex-wrap gap-3">
-              <CtaLink href="/education">Explore my teaching journey</CtaLink>
-              <Link href="/physics-studio" className="btn-ghost">
+              <Link href="/portal/login" data-tour="portal-entry" className="btn-primary">
+                Open Education Portal <ArrowRight size={16} />
+              </Link>
+              <Link href="/physics-studio" data-tour="physics-studio" className="btn-ghost">
                 Enter Physics Studio <ArrowRight size={16} />
               </Link>
             </div>
@@ -57,7 +59,7 @@ export default function HomePage() {
           </div>
 
           {/* Portrait */}
-          <div className="relative mx-auto w-full max-w-sm">
+          <div data-tour="educator-profile" className="relative mx-auto w-full max-w-sm">
             <div className="absolute -inset-4 rounded-[2rem] bg-gradient-to-tr from-cyan/20 via-indigo2/10 to-transparent blur-2xl" />
             <div className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-void/40">
               <Image

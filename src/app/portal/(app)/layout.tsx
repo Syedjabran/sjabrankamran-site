@@ -12,6 +12,7 @@ import { PortalAccessBlocked } from "./portal-access-blocked";
 import { PwaPortal } from "./pwa-portal";
 import { RolePreviewSwitcher } from "./role-preview";
 import { NotificationBell } from "./notification-bell";
+import { PortalProductTour } from "./portal-product-tour";
 
 export const metadata = { robots: { index: false } };
 
@@ -202,14 +203,15 @@ export default async function PortalLayout({ children }: { children: React.React
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <PortalProductTour />
           {realAdmin && !previewing ? <RolePreviewSwitcher previewing={null} /> : null}
           {isStaff(user.roles) && !previewing ? (
             <span className="rounded-full border border-emerald2/30 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-emerald2">
               Staff
             </span>
           ) : null}
-          <NotificationBell />
-          <Link href="/portal/settings" className="inline-flex items-center gap-1.5 rounded-full border border-white/15 px-3 py-1.5 text-xs text-fog transition hover:border-cyan/40 hover:text-cyan" title="My profile & settings">
+          <span data-tour="portal-alerts"><NotificationBell /></span>
+          <Link data-tour="portal-profile" href="/portal/settings" className="inline-flex items-center gap-1.5 rounded-full border border-white/15 px-3 py-1.5 text-xs text-fog transition hover:border-cyan/40 hover:text-cyan" title="My profile & settings">
             <Settings size={13} /> <span className="hidden sm:inline">Profile</span>
           </Link>
           <form action="/portal/auth/signout" method="post">
@@ -221,7 +223,7 @@ export default async function PortalLayout({ children }: { children: React.React
       </div>
 
       <div className={mustOnboard ? "" : "grid gap-8 lg:grid-cols-[13rem_1fr]"}>
-        <nav aria-label="Portal navigation" className={"lg:sticky lg:top-24 lg:self-start lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto nav-scroll" + (mustOnboard ? " hidden" : "")}>
+        <nav data-tour="portal-navigation" aria-label="Portal navigation" className={"lg:sticky lg:top-24 lg:self-start lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto nav-scroll" + (mustOnboard ? " hidden" : "")}>
           <div className="space-y-5">
             {navSections.map((section, si) => (
               <div key={si}>
@@ -234,6 +236,7 @@ export default async function PortalLayout({ children }: { children: React.React
                       {item.hardNavigate ? (
                         <a
                           href={item.href}
+                          data-portal-tour={item.label}
                           className="block rounded-xl border border-white/10 bg-space/60 px-3.5 py-2 text-sm text-fog transition hover:border-cyan/40 hover:text-ice"
                         >
                           {item.label}
@@ -241,6 +244,7 @@ export default async function PortalLayout({ children }: { children: React.React
                       ) : (
                         <Link
                           href={item.href}
+                          data-portal-tour={item.label}
                           className="block rounded-xl border border-white/10 bg-space/60 px-3.5 py-2 text-sm text-fog transition hover:border-cyan/40 hover:text-ice"
                         >
                           {item.label}

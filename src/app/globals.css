@@ -7,6 +7,42 @@
   --foreground: #eef2ff;
 }
 
+/* Live website/portal product-tour tooltips (Driver.js). */
+.driver-popover.sjak-tour-popover,
+.driver-popover {
+  border: 1px solid rgb(61 225 240 / 0.35);
+  border-radius: 14px;
+  background: #101824;
+  color: #dbe7f2;
+  box-shadow: 0 20px 70px rgb(0 0 0 / 0.6);
+  font-family: var(--font-inter), sans-serif;
+}
+
+.driver-popover .driver-popover-title {
+  color: #f1f7fb;
+  font-family: var(--font-space-grotesk), sans-serif;
+  font-size: 1rem;
+}
+
+.driver-popover .driver-popover-description,
+.driver-popover .driver-popover-progress-text {
+  color: #a7bac9;
+  line-height: 1.55;
+}
+
+.driver-popover .driver-popover-next-btn,
+.driver-popover .driver-popover-prev-btn {
+  border: 1px solid rgb(61 225 240 / 0.35);
+  border-radius: 8px;
+  background: rgb(61 225 240 / 0.1);
+  color: #3de1f0;
+  text-shadow: none;
+}
+
+.driver-popover .driver-popover-close-btn {
+  color: #a7bac9;
+}
+
 @layer base {
   html {
     scroll-behavior: smooth;
