@@ -8,6 +8,7 @@ import { getStaffSchool } from "@/lib/portal/staff-school";
 import { getAttempts } from "@/lib/exam-lab/attempts";
 import { analyse } from "@/lib/exam-lab/analytics";
 import { getRankingsCached } from "@/lib/portal/rankings";
+import { getPortalRestriction } from "@/lib/portal/access-control";
 
 export const runtime = "nodejs";
 
@@ -34,6 +35,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     bannedUntil,
     lastSignIn: au?.last_sign_in_at || null,
     emailConfirmed: !!au?.email_confirmed_at,
+    portalRestriction: await getPortalRestriction({
+      id: uid,
+      email: profile.email || "",
+      fullName: profile.full_name || "",
+      roles,
+      status: profile.status,
+    }),
   };
 
   // Student record + enrolments (+ school/section from the registry).

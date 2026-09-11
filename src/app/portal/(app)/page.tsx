@@ -57,7 +57,11 @@ const ACTION_META: Record<string, { icon: React.ComponentType<{ size?: number; c
   "user.password_reset": { icon: KeyRound, verb: "reset password for", color: "text-cyan" },
   "user.email_credentials": { icon: Mail, verb: "emailed credentials to", color: "text-cyan" },
   "user.suspend": { icon: Ban, verb: "suspended", color: "text-signal" },
+  "user.lock": { icon: Ban, verb: "locked portal access for", color: "text-signal" },
   "user.reactivate": { icon: RotateCcw, verb: "reactivated", color: "text-emerald2" },
+  "access.locked": { icon: Ban, verb: "activated an access lock", color: "text-signal" },
+  "access.suspended": { icon: Hourglass, verb: "started an access suspension", color: "text-amber-300" },
+  "access.release": { icon: RotateCcw, verb: "released an access restriction", color: "text-emerald2" },
   "role.grant": { icon: ShieldCheck, verb: "granted a role to", color: "text-cyan" },
   "role.revoke": { icon: ShieldCheck, verb: "revoked a role from", color: "text-dust" },
   "enrolment.add": { icon: GraduationCap, verb: "enrolled", color: "text-emerald2" },
@@ -233,7 +237,7 @@ export default async function PortalDashboard() {
             <OnlineNow />
             <h2 className="flex items-center gap-2 text-sm font-semibold text-ice"><BarChart3 size={16} className="text-cyan" /> Quick actions</h2>
             {[
-              { href: "/portal/admin/users", icon: Users, title: "Users & activity", desc: "Create, suspend, reset, view any user's activity" },
+              { href: "/portal/admin/users", icon: Users, title: "Users & activity", desc: "Create, restrict, reset, view any user's activity" },
               { href: "/portal/admin/assign", icon: ClipboardList, title: "Post assignment / test", desc: "With attachments & per-question timers" },
               { href: "/portal/admin/analytics", icon: BarChart3, title: "Rankings & analytics", desc: "Leaderboards, levels & performance charts" },
               { href: "/portal/admin/institutions", icon: Building2, title: "Institutions", desc: "Per-school & per-class analytics" },

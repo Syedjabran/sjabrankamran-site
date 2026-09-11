@@ -1,15 +1,17 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { LogOut, GraduationCap, Settings } from "lucide-react";
+import { Eye, GraduationCap, LockKeyhole, LogOut, Settings } from "lucide-react";
 import { getPortalUser, ROLE_LABELS, isAdmin, isStaff, isRegistrarOnly, isCoordinatorOnly, type EduRole } from "@/lib/edu/auth";
+import { getPortalRestriction } from "@/lib/portal/access-control";
 import { isOnboardingComplete } from "@/lib/portal/onboarding";
 import { effectiveRoles } from "@/lib/portal/view-as";
+import { AccessLockMonitor } from "./access-lock-monitor";
 import { PresenceBeacon } from "./presence-beacon";
+import { PortalAccessBlocked } from "./portal-access-blocked";
 import { PwaPortal } from "./pwa-portal";
 import { RolePreviewSwitcher } from "./role-preview";
 import { NotificationBell } from "./notification-bell";
-import { Eye } from "lucide-react";
 
 export const metadata = { robots: { index: false } };
 
@@ -60,6 +62,7 @@ function navFor(roles: EduRole[]): NavSection[] {
   if (staff) {
     adminItems.push({ href: "/portal/timetable", label: "Physics timetable" });
     adminItems.push({ href: "/portal/admin/users", label: "Users & activity" });
+    if (roles.includes("super_admin")) adminItems.push({ href: "/portal/admin/access", label: "Access locks" });
     adminItems.push({ href: "/portal/admin/analytics", label: "Rankings & analytics" });
     adminItems.push({ href: "/portal/admin/institutions", label: "Institutions" });
     adminItems.push({ href: "/portal/admin/assign", label: "Post / Tests" });
@@ -115,6 +118,12 @@ export default async function PortalLayout({ children }: { children: React.React
   const user = await getPortalUser();
   if (!user) redirect("/portal/login");
 
+  // Application-level restrictions deliberately keep Supabase authentication
+  // alive: the user signs in successfully, then sees the configured lock
+  // message instead of any portal activity. Super admins always bypass this.
+  const restriction = await getPortalRestriction(user);
+  if (restriction) return <PortalAccessBlocked restriction={restriction} />;
+
   // Suspended accounts: block all portal activity immediately (in addition to
   // the GoTrue ban that stops new sign-ins / token refresh).
   if (user.status === "archived") {
@@ -169,6 +178,7 @@ export default async function PortalLayout({ children }: { children: React.React
 
   return (
     <div className="container-x py-8">
+      <AccessLockMonitor />
       <PresenceBeacon />
       <PwaPortal />
       {previewing ? (

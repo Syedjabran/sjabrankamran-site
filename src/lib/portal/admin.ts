@@ -2,7 +2,7 @@
  * Admin command-center helpers. SERVER-ONLY (service-role).
  *
  * These power the owner/super-admin console: full user lifecycle (create,
- * password, suspend/reactivate, delete, roles, enrolment) plus authoring of
+ * password, portal lock/restore, delete, roles, enrolment) plus authoring of
  * assignments & tests. Every mutation is service-role (bypasses RLS) but is
  * gated behind `requireAdmin()` and written to edu_audit_logs.
  */
@@ -12,9 +12,6 @@ import { sendMail } from "@/lib/portal/mail";
 
 export const ALL_ROLES = Object.keys(ROLE_LABELS) as EduRole[];
 export const STUDENT_STATUSES = ["active", "archived", "invited"] as const;
-
-/** Long ban == suspended (GoTrue blocks new logins & token refresh). */
-export const SUSPEND_DURATION = "876000h"; // ~100 years
 
 export async function requireAdmin(): Promise<PortalUser | null> {
   const u = await getPortalUser();

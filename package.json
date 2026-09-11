@@ -10,7 +10,8 @@
     "check:ai-policy": "node scripts/check-ai-provider-policy.mjs",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:access": "node --no-warnings --experimental-strip-types scripts/test-access-control.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

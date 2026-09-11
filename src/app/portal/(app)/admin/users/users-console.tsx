@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { UserCog, Search, UserPlus, ShieldAlert, KeyRound, Ban, RotateCcw, Copy, X } from "lucide-react";
+import { UserCog, Search, UserPlus, ShieldAlert, KeyRound, Ban, RotateCcw, Copy, LockKeyhole, X } from "lucide-react";
 
 export const ROLES: [string, string][] = [
   ["super_admin", "Super Admin"], ["admin", "Admin"], ["teacher", "Teacher"],
@@ -13,7 +13,7 @@ export const ROLES: [string, string][] = [
 ];
 const LABEL = Object.fromEntries(ROLES);
 
-type U = { id: string; full_name: string; email: string; status: string; roles: string[]; created_at: string };
+type U = { id: string; full_name: string; email: string; status: string; roles: string[]; created_at: string; locked: boolean };
 type Counts = { total: number; students: number; staff: number; suspended: number; noRole: number };
 type ClassItem = { id: string; name: string; school: string; section: string | null; students: number };
 
@@ -24,7 +24,7 @@ async function api(url: string, opts?: RequestInit) {
   return j;
 }
 
-export function UsersConsole() {
+export function UsersConsole({ isSuper }: { isSuper: boolean }) {
   const [users, setUsers] = useState<U[]>([]);
   const [counts, setCounts] = useState<Counts | null>(null);
   const [q, setQ] = useState("");
@@ -66,6 +66,15 @@ export function UsersConsole() {
     } catch (e) { flash((e as Error).message); } finally { setBusy(""); }
   }
 
+  function lockUser(id: string) {
+    const message = window.prompt(
+      "Custom message shown to this user after sign-in:",
+      "Your portal access has been paused by the school administration. Please contact your teacher or school coordinator for assistance."
+    );
+    if (message == null) return;
+    void quick(id, "suspend", { message });
+  }
+
   const filtered = useMemo(() => users, [users]);
 
   return (
@@ -78,14 +87,17 @@ export function UsersConsole() {
             <p className="text-xs text-dust">Open any person for visual charts, rankings, time analytics, full activity and access controls.</p>
           </div>
         </div>
-        <button onClick={() => setShowCreate((s) => !s)} className="btn-ghost !px-3.5 !py-2 text-xs">
-          <UserPlus size={14} /> New user
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {isSuper ? <Link href="/portal/admin/access" className="btn-ghost !px-3.5 !py-2 text-xs"><LockKeyhole size={14} /> Access locks</Link> : null}
+          <button onClick={() => setShowCreate((s) => !s)} className="btn-ghost !px-3.5 !py-2 text-xs">
+            <UserPlus size={14} /> New user
+          </button>
+        </div>
       </div>
 
       {counts ? (
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-          {([["Total", counts.total], ["Students", counts.students], ["Staff", counts.staff], ["Suspended", counts.suspended], ["No role", counts.noRole]] as [string, number][]).map(([k, v]) => (
+          {([["Total", counts.total], ["Students", counts.students], ["Staff", counts.staff], ["Restricted", counts.suspended], ["No role", counts.noRole]] as [string, number][]).map(([k, v]) => (
             <div key={k} className="rounded-xl border border-white/10 bg-space/60 px-3 py-2">
               <p className="text-lg font-semibold text-ice">{v}</p>
               <p className="text-[10px] uppercase tracking-widest text-dust">{k}</p>
@@ -127,19 +139,19 @@ export function UsersConsole() {
                     {u.roles.length ? u.roles.map((r) => (
                       <span key={r} className="rounded-full border border-cyan/25 px-2 py-0.5 text-[10px] text-cyan">{LABEL[r] || r}</span>
                     )) : <span className="text-[10px] text-dust">no role</span>}
-                    {u.status === "archived" ? <span className="rounded-full border border-signal/40 px-2 py-0.5 text-[10px] text-signal">SUSPENDED</span> : null}
+                    {u.status === "archived" || u.locked ? <span className="rounded-full border border-signal/40 px-2 py-0.5 text-[10px] text-signal">RESTRICTED</span> : null}
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
                   <button disabled={!!busy} onClick={() => quick(u.id, "password")} title="Reset password"
                     className="grid h-8 w-8 place-items-center rounded-lg border border-white/10 text-fog hover:border-cyan/40 hover:text-cyan"><KeyRound size={14} /></button>
-                  {u.status === "archived" ? (
+                  {isSuper && (u.status === "archived" || u.locked) ? (
                     <button disabled={!!busy} onClick={() => quick(u.id, "reactivate")} title="Reactivate"
                       className="grid h-8 w-8 place-items-center rounded-lg border border-white/10 text-fog hover:border-emerald2/50 hover:text-emerald2"><RotateCcw size={14} /></button>
-                  ) : (
-                    <button disabled={!!busy} onClick={() => quick(u.id, "suspend")} title="Suspend access"
+                  ) : isSuper && !u.roles.includes("super_admin") ? (
+                    <button disabled={!!busy} onClick={() => lockUser(u.id)} title="Lock portal access"
                       className="grid h-8 w-8 place-items-center rounded-lg border border-white/10 text-fog hover:border-signal/50 hover:text-signal"><Ban size={14} /></button>
-                  )}
+                  ) : null}
                   <Link href={`/portal/admin/users/${u.id}`} className="rounded-lg border border-cyan/25 px-2.5 py-1.5 text-[11px] text-cyan hover:border-cyan/60 hover:bg-cyan/[0.06]">Charts &amp; manage →</Link>
                 </div>
               </div>

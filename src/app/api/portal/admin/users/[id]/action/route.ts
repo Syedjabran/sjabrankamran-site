@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireAdmin, audit, genPassword, emailCredentials, ALL_ROLES, SUSPEND_DURATION } from "@/lib/portal/admin";
+import { requireAdmin, audit, genPassword, emailCredentials, ALL_ROLES, isSuperAdmin } from "@/lib/portal/admin";
 import type { EduRole } from "@/lib/edu/auth";
+import { getAccessControlDocument, releaseDirectUserRestrictions, saveAccessControlDocument } from "@/lib/portal/access-control";
+import { isRestrictionActive, type AccessRestriction } from "@/lib/portal/access-shared";
 import { getStaffSchool, setStaffSchool } from "@/lib/portal/staff-school";
 import { SCHOOL_SCOPED_ROLES } from "@/lib/edu/auth";
 import { getRegistry } from "@/lib/portal/institutions";
@@ -20,7 +22,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!admin) return NextResponse.json({ error: "Admins only." }, { status: 403 });
   const { id: uid } = await params;
   const b = (await req.json().catch(() => null)) as {
-    op?: string; password?: string; role?: string; class_id?: string; enrolment_id?: string; send_email?: boolean; school?: string;
+    op?: string; password?: string; role?: string; class_id?: string; enrolment_id?: string; send_email?: boolean; school?: string; message?: string;
   } | null;
   if (!b?.op) return NextResponse.json({ error: "Missing op." }, { status: 400 });
   const sb = createAdminClient();
@@ -39,17 +41,54 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ ok: true, password, emailStatus }, { status: 200 });
     }
     case "suspend": {
-      const { error } = await sb.auth.admin.updateUserById(uid, { ban_duration: SUSPEND_DURATION });
-      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
-      await sb.from("edu_profiles").update({ status: "archived" }).eq("id", uid);
-      await audit(admin.id, "user.suspend", "auth.users", uid, {});
+      if (!isSuperAdmin(admin)) return NextResponse.json({ error: "Only a super-admin can restrict portal access." }, { status: 403 });
+      const message = (b.message || "").trim();
+      if (message.length < 10 || message.length > 1200) {
+        return NextResponse.json({ error: "Write a custom lock message containing 10–1,200 characters." }, { status: 400 });
+      }
+      const [{ data: profile }, { data: targetRoles }] = await Promise.all([
+        sb.from("edu_profiles").select("full_name, email").eq("id", uid).maybeSingle(),
+        sb.from("edu_user_roles").select("role").eq("user_id", uid),
+      ]);
+      if ((targetRoles || []).some((r) => r.role === "super_admin")) {
+        return NextResponse.json({ error: "Super-admin accounts are protected from portal locks." }, { status: 400 });
+      }
+      const doc = await getAccessControlDocument(true);
+      if (doc.restrictions.some((r) => r.scopeType === "user" && r.scopeKey === uid && isRestrictionActive(r))) {
+        return NextResponse.json({ error: "This user already has an active direct access restriction." }, { status: 409 });
+      }
+      const now = new Date().toISOString();
+      const restriction: AccessRestriction = {
+        id: crypto.randomUUID(),
+        scopeType: "user",
+        scopeKey: uid,
+        scopeLabel: profile?.full_name || profile?.email || "Portal user",
+        classIds: [],
+        mode: "locked",
+        message,
+        startsAt: now,
+        endsAt: null,
+        createdAt: now,
+        createdBy: admin.id,
+        releasedAt: null,
+        releasedBy: null,
+      };
+      doc.restrictions.push(restriction);
+      await saveAccessControlDocument(doc);
+      // Undo any legacy GoTrue ban/profile archive. Authentication must remain
+      // available; the application access layer now performs the restriction.
+      await sb.auth.admin.updateUserById(uid, { ban_duration: "none" });
+      await sb.from("edu_profiles").update({ status: "active" }).eq("id", uid);
+      await audit(admin.id, "user.lock", "portal_access", restriction.id, { user_id: uid });
       return NextResponse.json({ ok: true }, { status: 200 });
     }
     case "reactivate": {
+      if (!isSuperAdmin(admin)) return NextResponse.json({ error: "Only a super-admin can restore portal access." }, { status: 403 });
       const { error } = await sb.auth.admin.updateUserById(uid, { ban_duration: "none" });
       if (error) return NextResponse.json({ error: error.message }, { status: 400 });
       await sb.from("edu_profiles").update({ status: "active" }).eq("id", uid);
-      await audit(admin.id, "user.reactivate", "auth.users", uid, {});
+      const released = await releaseDirectUserRestrictions(uid, admin.id);
+      await audit(admin.id, "user.reactivate", "portal_access", uid, { released });
       return NextResponse.json({ ok: true }, { status: 200 });
     }
     case "set_school": {

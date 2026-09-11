@@ -13,7 +13,10 @@ const LABEL = Object.fromEntries(ROLES);
 
 type Detail = {
   profile: { id: string; full_name: string; email: string; phone: string; status: string; created_at: string; roles: string[] };
-  access: { banned: boolean; bannedUntil: string | null; lastSignIn: string | null; emailConfirmed: boolean };
+  access: {
+    banned: boolean; bannedUntil: string | null; lastSignIn: string | null; emailConfirmed: boolean;
+    portalRestriction: { id: string; scopeType: "user" | "school" | "class" | "group"; scopeLabel: string; mode: "locked" | "suspended"; message: string; endsAt: string | null } | null;
+  };
   staffSchool?: string | null;
   schools?: string[];
   student: { id: string; student_no: string | null; school: string | null; admission_status: string; date_of_birth: string | null } | null;
@@ -85,11 +88,20 @@ export function UserDetail({ id, isSuper, selfId }: { id: string; isSuper: boole
     catch (e) { flash((e as Error).message); setBusy(""); }
   }
 
+  function lockUser() {
+    const message = window.prompt(
+      "Custom message shown to this user after sign-in:",
+      "Your portal access has been paused by the school administration. Please contact your teacher or school coordinator for assistance."
+    );
+    if (message == null) return;
+    void act("suspend", { message });
+  }
+
   if (err) return <p className="rounded-xl border border-signal/30 bg-signal/5 p-4 text-sm text-fog">{err}</p>;
   if (!d) return <p className="text-sm text-dust">Loading…</p>;
 
   const p = d.profile;
-  const suspended = p.status === "archived" || d.access.banned;
+  const suspended = p.status === "archived" || d.access.banned || !!d.access.portalRestriction;
   const schoolScoped = p.roles.some((r) => ["coordinator", "facilitator", "attendance_registrar"].includes(r));
   const availableClasses = schoolScoped ? classes.filter((c) => !!d.staffSchool && c.school === d.staffSchool) : classes;
 
@@ -119,7 +131,7 @@ export function UserDetail({ id, isSuper, selfId }: { id: string; isSuper: boole
             )}
             <div className="mt-2 flex flex-wrap gap-1.5">
               {p.roles.length ? p.roles.map((r) => <span key={r} className="rounded-full border border-cyan/25 px-2 py-0.5 text-[10px] text-cyan">{LABEL[r] || r}</span>) : <span className="text-[10px] text-dust">no role</span>}
-              {suspended ? <span className="rounded-full border border-signal/40 px-2 py-0.5 text-[10px] text-signal">SUSPENDED</span> : <span className="rounded-full border border-emerald2/30 px-2 py-0.5 text-[10px] text-emerald2">ACTIVE</span>}
+              {suspended ? <span className="rounded-full border border-signal/40 px-2 py-0.5 text-[10px] text-signal">RESTRICTED</span> : <span className="rounded-full border border-emerald2/30 px-2 py-0.5 text-[10px] text-emerald2">ACTIVE</span>}
             </div>
             <p className="mt-2 text-[11px] text-dust">
               Last sign-in: {d.access.lastSignIn ? new Date(d.access.lastSignIn).toLocaleString() : "never"} · Email {d.access.emailConfirmed ? "confirmed" : "unconfirmed"} · Joined {new Date(p.created_at).toLocaleDateString()}
@@ -128,11 +140,13 @@ export function UserDetail({ id, isSuper, selfId }: { id: string; isSuper: boole
           <div className="flex flex-wrap gap-1.5">
             <button disabled={!!busy} onClick={() => act("password")} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-fog hover:border-cyan/40 hover:text-cyan"><KeyRound size={13} /> Reset password</button>
             <button disabled={!!busy} onClick={() => act("email_credentials")} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-fog hover:border-cyan/40 hover:text-cyan"><Mail size={13} /> Reset &amp; email</button>
-            {suspended ? (
-              <button disabled={!!busy} onClick={() => act("reactivate")} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald2/30 px-3 py-1.5 text-xs text-emerald2 hover:bg-emerald2/10"><RotateCcw size={13} /> Reactivate</button>
-            ) : (
-              <button disabled={!!busy} onClick={() => act("suspend", {}, "Suspend this user's access?")} className="inline-flex items-center gap-1.5 rounded-lg border border-signal/30 px-3 py-1.5 text-xs text-signal hover:bg-signal/10"><Ban size={13} /> Suspend</button>
-            )}
+            {isSuper && suspended && (!d.access.portalRestriction || d.access.portalRestriction.scopeType === "user") ? (
+              <button disabled={!!busy} onClick={() => act("reactivate")} className="inline-flex items-center gap-1.5 rounded-lg border border-emerald2/30 px-3 py-1.5 text-xs text-emerald2 hover:bg-emerald2/10"><RotateCcw size={13} /> Restore access</button>
+            ) : isSuper && suspended ? (
+              <Link href="/portal/admin/access" className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300/30 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-300/[0.06]"><Ban size={13} /> Managed by {d.access.portalRestriction?.scopeType} lock</Link>
+            ) : isSuper && !p.roles.includes("super_admin") ? (
+              <button disabled={!!busy} onClick={lockUser} className="inline-flex items-center gap-1.5 rounded-lg border border-signal/30 px-3 py-1.5 text-xs text-signal hover:bg-signal/10"><Ban size={13} /> Lock access</button>
+            ) : null}
             {isSuper && p.id !== selfId ? (
               <button disabled={!!busy} onClick={del} className="inline-flex items-center gap-1.5 rounded-lg border border-signal/30 px-3 py-1.5 text-xs text-signal hover:bg-signal/10"><Trash2 size={13} /> Delete</button>
             ) : null}
