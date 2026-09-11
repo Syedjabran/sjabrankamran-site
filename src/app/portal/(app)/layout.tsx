@@ -12,7 +12,7 @@ import { Eye } from "lucide-react";
 
 export const metadata = { robots: { index: false } };
 
-type NavItem = { href: string; label: string };
+type NavItem = { href: string; label: string; hardNavigate?: boolean };
 type NavSection = { title?: string; items: NavItem[] };
 
 /**
@@ -88,7 +88,11 @@ function navFor(roles: EduRole[]): NavSection[] {
   const learnItems: NavItem[] = [];
   if (isStudent) {
     learnItems.push({ href: "/portal/timetable", label: "Physics timetable" });
-    learnItems.push({ href: "/portal/study-plan", label: "My study plan" });
+    // This route was added after some students already had a long-lived PWA /
+    // App Router session. A hard navigation avoids replaying a stale client-side
+    // 404 cached before the route existed; the server response itself is always
+    // private/no-store and remains protected by the portal middleware.
+    learnItems.push({ href: "/portal/study-plan", label: "My study plan", hardNavigate: true });
     learnItems.push({ href: "/portal/exam-lab", label: "Exam Lab" });
     learnItems.push({ href: "/portal/exam-lab/review", label: "My answer scripts" });
     learnItems.push({ href: "/portal/learn", label: "My Learning" });
@@ -215,12 +219,21 @@ export default async function PortalLayout({ children }: { children: React.React
                 <ul className="flex flex-wrap gap-2 lg:flex-col">
                   {section.items.map((item) => (
                     <li key={item.href}>
-                      <Link
-                        href={item.href}
-                        className="block rounded-xl border border-white/10 bg-space/60 px-3.5 py-2 text-sm text-fog transition hover:border-cyan/40 hover:text-ice"
-                      >
-                        {item.label}
-                      </Link>
+                      {item.hardNavigate ? (
+                        <a
+                          href={item.href}
+                          className="block rounded-xl border border-white/10 bg-space/60 px-3.5 py-2 text-sm text-fog transition hover:border-cyan/40 hover:text-ice"
+                        >
+                          {item.label}
+                        </a>
+                      ) : (
+                        <Link
+                          href={item.href}
+                          className="block rounded-xl border border-white/10 bg-space/60 px-3.5 py-2 text-sm text-fog transition hover:border-cyan/40 hover:text-ice"
+                        >
+                          {item.label}
+                        </Link>
+                      )}
                     </li>
                   ))}
                 </ul>

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Clock, Target, Trophy } from "lucide-react";
 import { getPortalUser } from "@/lib/edu/auth";
@@ -23,7 +22,7 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/portal/study-plan" className="text-xs text-cyan hover:underline">← Back to my study plan</Link>
+        <a href="/portal/study-plan" className="text-xs text-cyan hover:underline">← Back to my study plan</a>
         <h1 className="mt-3 flex items-center gap-2 text-2xl font-semibold text-ice">
           {task.kind === "challenge" ? <Trophy size={21} className="text-amber-300" /> : <Target size={21} className="text-cyan" />}
           {task.title}

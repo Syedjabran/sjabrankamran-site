@@ -283,7 +283,7 @@ export default async function PortalDashboard() {
         </p>
       </div>
       {studentPlan ? (
-        <Link href="/portal/study-plan" className="group block rounded-2xl border border-cyan/25 bg-gradient-to-br from-cyan/[0.08] to-space/60 p-6 transition hover:border-cyan/50 hover:bg-cyan/[0.1]">
+        <a href="/portal/study-plan" className="group block rounded-2xl border border-cyan/25 bg-gradient-to-br from-cyan/[0.08] to-space/60 p-6 transition hover:border-cyan/50 hover:bg-cyan/[0.1]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="flex items-center gap-2 text-lg font-semibold text-ice"><BrainCircuit size={19} className="text-cyan" /> Personalised weekly study plan</p>
@@ -293,7 +293,7 @@ export default async function PortalDashboard() {
             <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/35 px-3 py-1.5 text-xs text-amber-300"><CheckCircle2 size={13} /> {studentPlan.openMandatory} mandatory outstanding</span>
           </div>
           <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-cyan">Open my plan <ArrowRight size={14} className="transition group-hover:translate-x-1" /></span>
-        </Link>
+        </a>
       ) : null}
     </div>
   );
