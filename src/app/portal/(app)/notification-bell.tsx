@@ -45,7 +45,14 @@ export function NotificationBell() {
     } catch { /* ignore */ }
   }, []);
 
-  useEffect(() => { load(); const t = setInterval(load, 60_000); return () => clearInterval(t); }, [load]);
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 60_000);
+    // Refresh immediately when the PWA layer detects new alerts.
+    const onAlerts = () => load();
+    window.addEventListener("sjak:alerts", onAlerts);
+    return () => { clearInterval(t); window.removeEventListener("sjak:alerts", onAlerts); };
+  }, [load]);
   useEffect(() => {
     function onDoc(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); }
     document.addEventListener("mousedown", onDoc); return () => document.removeEventListener("mousedown", onDoc);

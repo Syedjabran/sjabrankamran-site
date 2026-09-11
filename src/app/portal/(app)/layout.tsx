@@ -6,6 +6,7 @@ import { getPortalUser, ROLE_LABELS, isAdmin, isStaff, isRegistrarOnly, isCoordi
 import { isOnboardingComplete } from "@/lib/portal/onboarding";
 import { effectiveRoles } from "@/lib/portal/view-as";
 import { PresenceBeacon } from "./presence-beacon";
+import { PwaPortal } from "./pwa-portal";
 import { RolePreviewSwitcher } from "./role-preview";
 import { NotificationBell } from "./notification-bell";
 import { Eye } from "lucide-react";
@@ -169,6 +170,7 @@ export default async function PortalLayout({ children }: { children: React.React
   return (
     <div className="container-x py-8">
       <PresenceBeacon />
+      <PwaPortal />
       {previewing ? (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/30 bg-amber-300/[0.06] px-4 py-2.5">
           <p className="flex items-center gap-2 text-xs text-amber-300">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, LogIn, Eye, EyeOff } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
@@ -25,6 +25,18 @@ export function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  // Remember-me stores only the email + preference locally (never the password);
+  // the Supabase session cookie already keeps the device signed in.
+  const [remember, setRemember] = useState(true);
+
+  useEffect(() => {
+    try {
+      const savedRemember = localStorage.getItem("sjak_portal_remember");
+      const savedEmail = localStorage.getItem("sjak_portal_email");
+      if (savedRemember === "0") { setRemember(false); return; }
+      if (savedEmail) setEmail(savedEmail);
+    } catch { /* storage unavailable */ }
+  }, []);
   const [loading, setLoading] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [error, setError] = useState<string | null>(() => cleanError(params.get("error")));
@@ -35,6 +47,15 @@ export function LoginForm() {
     setError(null);
     setNotice(null);
     setLoading(true);
+    try {
+      if (remember) {
+        localStorage.setItem("sjak_portal_remember", "1");
+        localStorage.setItem("sjak_portal_email", email.trim());
+      } else {
+        localStorage.setItem("sjak_portal_remember", "0");
+        localStorage.removeItem("sjak_portal_email");
+      }
+    } catch { /* storage unavailable */ }
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
@@ -122,6 +143,16 @@ export function LoginForm() {
           </button>
         </div>
       </div>
+
+      <label className="flex items-center gap-2 text-xs text-fog select-none">
+        <input
+          type="checkbox"
+          checked={remember}
+          onChange={(e) => setRemember(e.target.checked)}
+          className="h-4 w-4 rounded border-white/20 bg-abyss/60 accent-cyan"
+        />
+        Remember my email on this device
+      </label>
 
       {error ? <p className="text-xs leading-relaxed text-signal">{error}</p> : null}
       {notice ? <p className="text-xs leading-relaxed text-cyan">{notice}</p> : null}
