@@ -1,0 +1,82 @@
+{
+  "loggedIn": true,
+  "results": [
+    {
+      "id": "01_welcome",
+      "route": "/",
+      "finalUrl": "https://sjabrankamran.com/",
+      "captured": true,
+      "note": ""
+    },
+    {
+      "id": "02_install",
+      "route": "/portal/login",
+      "finalUrl": "https://sjabrankamran.com/portal/login",
+      "captured": true,
+      "note": ""
+    },
+    {
+      "id": "03_dashboard",
+      "route": "/portal",
+      "finalUrl": "https://sjabrankamran.com/portal",
+      "captured": true,
+      "note": ""
+    },
+    {
+      "id": "04_timetable",
+      "route": "/portal/timetable",
+      "finalUrl": "https://sjabrankamran.com/portal/timetable",
+      "captured": true,
+      "note": ""
+    },
+    {
+      "id": "05_examlab",
+      "route": "/portal/exam-lab",
+      "finalUrl": "https://sjabrankamran.com/portal/exam-lab",
+      "captured": true,
+      "note": ""
+    },
+    {
+      "id": "06_review",
+      "route": "/portal/exam-lab/review",
+      "finalUrl": "https://sjabrankamran.com/portal/exam-lab/review",
+      "captured": true,
+      "note": ""
+    },
+    {
+      "id": "07_studyplan",
+      "route": "/portal/study-plan",
+      "finalUrl": "https://sjabrankamran.com/portal/study-plan",
+      "captured": true,
+      "note": ""
+    },
+    {
+      "id": "08_notifications",
+      "route": "/portal/notifications",
+      "finalUrl": "https://sjabrankamran.com/portal/notifications",
+      "captured": true,
+      "note": ""
+    },
+    {
+      "id": "09_library",
+      "route": "/portal/library",
+      "finalUrl": "https://sjabrankamran.com/portal/library",
+      "captured": true,
+      "note": ""
+    },
+    {
+      "id": "10_leaderboard",
+      "route": "/portal/leaderboard",
+      "finalUrl": "https://sjabrankamran.com/portal/leaderboard",
+      "captured": true,
+      "note": ""
+    },
+    {
+      "id": "11_close",
+      "route": "/portal",
+      "finalUrl": "https://sjabrankamran.com/portal",
+      "captured": true,
+      "note": ""
+    }
+  ]
+}

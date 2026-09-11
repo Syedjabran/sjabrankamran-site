@@ -1,0 +1,85 @@
+{
+  "title": "SJAK Education Portal \u2014 Guided Tour",
+  "voice_id": "ja3ZScCduPYj7KUjJf2y",
+  "voice_name": "Joe Girard - JB Voice (SJAK clone)",
+  "narrator": "Syed Jabran Ali Kamran",
+  "scenes": [
+    {
+      "id": "01_welcome",
+      "route": "/",
+      "caption": "Welcome to the Physics World",
+      "vo": "Assalam-o-alaikum, and welcome. I'm Syed Jabran Ali Kamran. This is our Physics learning ecosystem \u2014 one place where your classes, practice, progress and guidance come together. Let me walk you through it.",
+      "vo_seconds": 12.51
+    },
+    {
+      "id": "02_install",
+      "route": "/portal/login",
+      "caption": "Install the app \u00b7 Remember your login",
+      "vo": "Start by installing the portal as an app on your phone, tablet or laptop. When you open it, tap Install \u2014 and from then on it opens like any other app, with real-time alerts. On the sign-in screen you can ask your device to remember your email, so getting back in is quick and simple.",
+      "vo_seconds": 19.88
+    },
+    {
+      "id": "03_dashboard",
+      "route": "/portal",
+      "caption": "Your dashboard",
+      "vo": "This is your dashboard \u2014 your home base. At a glance you see what needs your attention today: your next class, pending tasks, new announcements, and your personalised study plan, all in one view.",
+      "vo_seconds": 11.89
+    },
+    {
+      "id": "04_timetable",
+      "route": "/portal/timetable",
+      "caption": "Physics timetable",
+      "vo": "Your Physics timetable shows every scheduled class for your own school, class, level and group \u2014 in Pakistan time. Regular classes and any extra classes appear here automatically, and you can sync them straight to your Google Calendar with reminders.",
+      "vo_seconds": 15.15
+    },
+    {
+      "id": "05_examlab",
+      "route": "/portal/exam-lab",
+      "caption": "Exam Lab",
+      "vo": "The Exam Lab is where you practise and sit tests \u2014 topical drills, full past papers, and proctored class tests. Multiple-choice papers are marked automatically the moment you submit, so you get your result instantly.",
+      "vo_seconds": 14.52
+    },
+    {
+      "id": "06_review",
+      "route": "/portal/exam-lab/review",
+      "caption": "Review your answer scripts",
+      "vo": "Every paper you attempt is saved. Open My Answer Scripts to review exactly what you answered, the correct answers, your marks and the feedback \u2014 so every attempt becomes a lesson, not just a score.",
+      "vo_seconds": 12.51
+    },
+    {
+      "id": "07_studyplan",
+      "route": "/portal/study-plan",
+      "caption": "Personalised weekly study plan",
+      "vo": "This is the heart of it \u2014 your personalised weekly study plan. Based on your ranking and your real performance, the portal identifies your weak topics and builds a gradual path for you: targeted reading, a video lesson, an interactive simulation, a short written assignment, and a diagnostic test \u2014 with a daily challenge to keep you sharp.",
+      "vo_seconds": 21.79
+    },
+    {
+      "id": "08_notifications",
+      "route": "/portal/notifications",
+      "caption": "Real-time alerts",
+      "vo": "You'll never miss anything important. Announcements, upcoming tests, scheduled classes, daily tasks and challenges all arrive as real-time alerts \u2014 in the app, and as notifications on your device even when the app is closed.",
+      "vo_seconds": 13.71
+    },
+    {
+      "id": "09_library",
+      "route": "/portal/library",
+      "caption": "Resource library",
+      "vo": "The resource library is our shared space. Download study material, and engage with what others share \u2014 like, react and comment \u2014 so we learn together as one community.",
+      "vo_seconds": 11.31
+    },
+    {
+      "id": "10_leaderboard",
+      "route": "/portal/leaderboard",
+      "caption": "Ranking & leaderboard",
+      "vo": "A little healthy competition helps. The leaderboard ranks you in your class, your school and the whole network \u2014 privately, under a call-sign, unless you choose to show your name.",
+      "vo_seconds": 10.11
+    },
+    {
+      "id": "11_close",
+      "route": "/portal",
+      "caption": "Let's begin",
+      "vo": "That's your portal \u2014 built to guide you, topic by topic, towards real results in Cambridge Physics. Install it, turn on your alerts, and let's begin. I'll see you inside.",
+      "vo_seconds": 11.39
+    }
+  ]
+}

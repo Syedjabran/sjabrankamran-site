@@ -1,0 +1,15 @@
+Scenes: 11
+clip 01_welcome  dur=12.91 frames=387
+clip 02_install  dur=20.28 frames=608
+clip 03_dashboard  dur=12.29 frames=369
+clip 04_timetable  dur=15.55 frames=466
+clip 05_examlab  dur=14.92 frames=448
+clip 06_review  dur=12.91 frames=387
+clip 07_studyplan  dur=22.19 frames=666
+clip 08_notifications  dur=14.11 frames=423
+clip 09_library  dur=11.71 frames=351
+clip 10_leaderboard  dur=10.51 frames=315
+clip 11_close  dur=11.79 frames=354
+XFADE FILTER: [0:v][1:v]xfade=transition=fade:duration=0.4:offset=12.51[vx1];[vx1][2:v]xfade=transition=fade:duration=0.4:offset=32.39[vx2];[vx2][3:v]xfade=transition=fade:duration=0.4:offset=44.28[vx3];[vx3][4:v]xfade=transition=fade:duration=0.4:offset=59.43[vx4];[vx4][5:v]xfade=transition=fade:duration=0.4:offset=73.95[vx5];[vx5][6:v]xfade=transition=fade:duration=0.4:offset=86.46[vx6];[vx6][7:v]xfade=transition=fade:duration=0.4:offset=108.25[vx7];[vx7][8:v]xfade=transition=fade:duration=0.4:offset=121.96[vx8];[vx8][9:v]xfade=transition=fade:duration=0.4:offset=133.27[vx9];[vx9][10:v]xfade=transition=fade:duration=0.4:offset=143.38[vout]
+video-noaudio built
+155.200000
