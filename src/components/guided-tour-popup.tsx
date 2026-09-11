@@ -9,7 +9,7 @@ import { Play, X, Volume2 } from "lucide-react";
  * Education Portal plays with sound (browser autoplay-policy compliant). The
  * choice is remembered per visitor so it never nags on return visits.
  */
-const SEEN_KEY = "sjak_tour_seen_v1";
+const SEEN_KEY = "sjak_tour_seen_v2";
 const VIDEO_SRC = "/portal-guided-tour.mp4";
 const POSTER_SRC = "/portal-guided-tour-poster.jpg";
 
@@ -22,8 +22,9 @@ export function GuidedTourPopup() {
     let seen = false;
     try { seen = localStorage.getItem(SEEN_KEY) === "1"; } catch { /* ignore */ }
     if (seen) return;
-    // Small delay so the hero renders first, then invite the visitor.
-    const t = setTimeout(() => setOpen(true), 1200);
+    // Reveal almost immediately after hydration so the invitation is visible
+    // in the visitor's first viewport without blocking the initial page paint.
+    const t = setTimeout(() => setOpen(true), 300);
     return () => clearTimeout(t);
   }, []);
 
@@ -56,13 +57,21 @@ export function GuidedTourPopup() {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={close} aria-hidden />
+    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto p-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:items-center sm:p-5">
+      <div className="fixed inset-0 bg-black/90 backdrop-blur-md" onClick={close} aria-hidden />
       <div role="dialog" aria-modal="true" aria-label="Education Portal guided tour"
-        className="relative w-full max-w-3xl overflow-hidden rounded-2xl border border-cyan/30 bg-abyss/95 shadow-2xl">
+        className="relative my-auto w-full max-w-5xl overflow-hidden rounded-2xl border border-cyan/40 bg-abyss/98 shadow-[0_24px_100px_rgba(0,0,0,0.8)]">
         <button onClick={close} aria-label="Close" className="absolute right-3 top-3 z-10 grid h-9 w-9 place-items-center rounded-full border border-white/15 bg-black/40 text-fog transition hover:text-ice">
           <X size={16} />
         </button>
+
+        <div className="flex items-center justify-between gap-4 border-b border-white/10 px-4 py-3 pr-14 sm:px-6">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan">First-time visitor</p>
+            <h2 className="mt-0.5 text-base font-semibold text-ice sm:text-xl">Discover the SJAK Education Portal</h2>
+          </div>
+          <span className="hidden rounded-full border border-cyan/30 bg-cyan/10 px-3 py-1 text-xs font-medium text-cyan sm:block">2 min 35 sec</span>
+        </div>
 
         <div className="relative aspect-video w-full bg-space">
           <video
@@ -84,16 +93,16 @@ export function GuidedTourPopup() {
                 <Play size={30} className="ml-1" />
               </span>
               <span className="max-w-md px-6">
-                <span className="block text-lg font-semibold text-ice">Take a quick guided tour</span>
+                <span className="block text-xl font-semibold text-ice sm:text-2xl">See how the learning ecosystem works</span>
                 <span className="mt-1 block text-sm text-fog">
-                  Meet the Physics learning ecosystem — classes, practice, personalised study plans and real-time alerts — narrated in 2 minutes.
+                  Explore classes, practice, assessments, personalised study plans and real-time alerts in one guided tour.
                 </span>
               </span>
             </button>
           ) : null}
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 px-4 py-3 sm:px-6 sm:py-4">
           <p className="flex items-center gap-2 text-xs text-dust">
             <Volume2 size={13} className="text-cyan" /> {started ? "Playing with sound" : "Starts muted — press play to begin with audio"}
           </p>
