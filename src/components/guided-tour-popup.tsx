@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Play, X, Volume2 } from "lucide-react";
+import { Loader2, Play, RefreshCw, X, Volume2 } from "lucide-react";
 
 /**
  * Landing-page guided-tour popup. On a visitor's first arrival it appears as a
@@ -18,6 +18,8 @@ export function GuidedTourPopup() {
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const [started, setStarted] = useState(false);
+  const [buffering, setBuffering] = useState(false);
+  const [mediaError, setMediaError] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
@@ -42,11 +44,20 @@ export function GuidedTourPopup() {
   async function startTour() {
     remember();
     setStarted(true);
+    setMediaError(false);
+    setBuffering(true);
     const v = videoRef.current;
     if (v) {
       v.muted = false;
-      v.currentTime = 0;
-      try { await v.play(); } catch { /* user can press play control */ }
+      if (v.ended) v.currentTime = 0;
+      try {
+        await v.play();
+      } catch {
+        // Keep native controls visible and offer a retry if the browser delays
+        // cross-origin media startup or changes its autoplay policy.
+        setBuffering(false);
+        setMediaError(true);
+      }
     }
   }
 
@@ -60,10 +71,10 @@ export function GuidedTourPopup() {
   if (!mounted || !open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto p-2 pt-[max(2.5vh,env(safe-area-inset-top))] sm:px-5 sm:pt-[6vh]">
-      <div className="fixed inset-0 bg-black/90 backdrop-blur-md" onClick={close} aria-hidden />
+    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto p-2 pt-[max(7rem,calc(env(safe-area-inset-top)+4rem))] sm:px-5 sm:pt-[12vh]">
+      <div className="fixed inset-0 bg-black/35 backdrop-blur-[2px]" onClick={close} aria-hidden />
       <div role="dialog" aria-modal="true" aria-label="Education Portal guided tour"
-        className="relative w-full max-w-6xl overflow-hidden rounded-2xl border border-cyan/40 bg-abyss/98 shadow-[0_24px_100px_rgba(0,0,0,0.8)]">
+        className="relative w-full max-w-6xl overflow-hidden rounded-2xl border border-cyan/35 bg-abyss/70 shadow-[0_24px_100px_rgba(0,0,0,0.55)] backdrop-blur-xl">
         <button onClick={close} aria-label="Close" className="absolute right-3 top-3 z-10 grid h-9 w-9 place-items-center rounded-full border border-white/15 bg-black/40 text-fog transition hover:text-ice">
           <X size={16} />
         </button>
@@ -76,18 +87,24 @@ export function GuidedTourPopup() {
           <span className="hidden rounded-full border border-cyan/30 bg-cyan/10 px-3 py-1 text-xs font-medium text-cyan sm:block">6 min 14 sec</span>
         </div>
 
-        <div className="relative aspect-video w-full bg-space">
+        <div className="relative aspect-video w-full bg-black/70">
           <video
             ref={videoRef}
-            src={VIDEO_SRC}
             poster={POSTER_SRC}
             className="h-full w-full object-cover"
             playsInline
             muted={!started}
-            controls={started}
-            preload="metadata"
+            controls
+            preload="auto"
+            onLoadStart={() => setBuffering(started)}
+            onWaiting={() => setBuffering(true)}
+            onPlaying={() => { setBuffering(false); setMediaError(false); }}
+            onCanPlay={() => setBuffering(false)}
+            onError={() => { setBuffering(false); setMediaError(true); }}
             onEnded={() => { remember(); setOpen(false); }}
-          />
+          >
+            <source src={VIDEO_SRC} type="video/mp4" />
+          </video>
           {!started ? (
             <button
               onClick={startTour}
@@ -103,6 +120,26 @@ export function GuidedTourPopup() {
                 </span>
               </span>
             </button>
+          ) : null}
+          {started && buffering && !mediaError ? (
+            <div className="pointer-events-none absolute inset-0 grid place-items-center bg-black/25" aria-live="polite">
+              <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/65 px-4 py-2 text-sm text-ice">
+                <Loader2 size={16} className="animate-spin text-cyan" /> Loading tour…
+              </span>
+            </div>
+          ) : null}
+          {started && mediaError ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/75 px-6 text-center">
+              <p className="text-sm text-ice">The video did not start automatically.</p>
+              <div className="flex flex-wrap justify-center gap-2">
+                <button onClick={startTour} className="inline-flex items-center gap-2 rounded-lg border border-cyan/50 bg-cyan/10 px-4 py-2 text-sm font-semibold text-cyan">
+                  <RefreshCw size={14} /> Retry playback
+                </button>
+                <a href={VIDEO_SRC} target="_blank" rel="noreferrer" className="rounded-lg border border-white/20 px-4 py-2 text-sm text-ice">
+                  Open video directly
+                </a>
+              </div>
+            </div>
           ) : null}
         </div>
 
