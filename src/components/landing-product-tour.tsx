@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { CircleHelp } from "lucide-react";
 import { driver, type Driver } from "driver.js";
 
@@ -73,13 +73,8 @@ export function LandingProductTour() {
     tour.drive();
   }
 
-  useEffect(() => {
-    let seen = false;
-    try { seen = localStorage.getItem(SEEN_KEY) === "1"; } catch { /* ignore */ }
-    if (seen) return;
-    const timer = window.setTimeout(startTour, 450);
-    return () => window.clearTimeout(timer);
-  }, []);
+  // The first-visit experience is the professional video tour. Keep this
+  // interactive tooltip tour available on demand without opening both at once.
 
   return (
     <button

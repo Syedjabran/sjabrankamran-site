@@ -9,9 +9,9 @@ import { Play, X, Volume2 } from "lucide-react";
  * Education Portal plays with sound (browser autoplay-policy compliant). The
  * choice is remembered per visitor so it never nags on return visits.
  */
-const SEEN_KEY = "sjak_tour_seen_v2";
-const VIDEO_SRC = "/portal-guided-tour.mp4";
-const POSTER_SRC = "/portal-guided-tour-poster.jpg";
+const SEEN_KEY = "sjak_revised_video_tour_v1";
+const VIDEO_SRC = "https://ops.sjabrankamran.com/dl/sjak-education-portal-revised-demo.mp4";
+const POSTER_SRC = "https://ops.sjabrankamran.com/dl/sjak-education-portal-revised-demo-poster.jpg";
 
 export function GuidedTourPopup() {
   const [open, setOpen] = useState(false);
@@ -24,7 +24,7 @@ export function GuidedTourPopup() {
     if (seen) return;
     // Reveal almost immediately after hydration so the invitation is visible
     // in the visitor's first viewport without blocking the initial page paint.
-    const t = setTimeout(() => setOpen(true), 300);
+    const t = setTimeout(() => setOpen(true), 250);
     return () => clearTimeout(t);
   }, []);
 
@@ -57,10 +57,10 @@ export function GuidedTourPopup() {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto p-2 pt-[max(0.5rem,env(safe-area-inset-top))] sm:items-center sm:p-5">
+    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto p-2 pt-[max(2.5vh,env(safe-area-inset-top))] sm:px-5 sm:pt-[6vh]">
       <div className="fixed inset-0 bg-black/90 backdrop-blur-md" onClick={close} aria-hidden />
       <div role="dialog" aria-modal="true" aria-label="Education Portal guided tour"
-        className="relative my-auto w-full max-w-5xl overflow-hidden rounded-2xl border border-cyan/40 bg-abyss/98 shadow-[0_24px_100px_rgba(0,0,0,0.8)]">
+        className="relative w-full max-w-6xl overflow-hidden rounded-2xl border border-cyan/40 bg-abyss/98 shadow-[0_24px_100px_rgba(0,0,0,0.8)]">
         <button onClick={close} aria-label="Close" className="absolute right-3 top-3 z-10 grid h-9 w-9 place-items-center rounded-full border border-white/15 bg-black/40 text-fog transition hover:text-ice">
           <X size={16} />
         </button>
@@ -70,7 +70,7 @@ export function GuidedTourPopup() {
             <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan">First-time visitor</p>
             <h2 className="mt-0.5 text-base font-semibold text-ice sm:text-xl">Discover the SJAK Education Portal</h2>
           </div>
-          <span className="hidden rounded-full border border-cyan/30 bg-cyan/10 px-3 py-1 text-xs font-medium text-cyan sm:block">2 min 35 sec</span>
+          <span className="hidden rounded-full border border-cyan/30 bg-cyan/10 px-3 py-1 text-xs font-medium text-cyan sm:block">6 min 14 sec</span>
         </div>
 
         <div className="relative aspect-video w-full bg-space">
@@ -83,6 +83,7 @@ export function GuidedTourPopup() {
             muted={!started}
             controls={started}
             preload="metadata"
+            onEnded={() => { remember(); setOpen(false); }}
           />
           {!started ? (
             <button
