@@ -28,8 +28,8 @@ const nextConfig = {
       // model/wasm are fetched from these hosts.
       "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://va.vercel-scripts.com https://cdn.jsdelivr.net",
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob: https://*.supabase.co",
-      "media-src 'self' blob:",
+      "img-src 'self' data: blob: https://*.supabase.co https://ops.sjabrankamran.com",
+      "media-src 'self' blob: https://ops.sjabrankamran.com",
       "font-src 'self' data:",
       "connect-src 'self' blob: https://*.supabase.co https://va.vercel-scripts.com https://cdn.jsdelivr.net https://storage.googleapis.com",
       "manifest-src 'self'",

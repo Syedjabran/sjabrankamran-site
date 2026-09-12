@@ -71,10 +71,10 @@ export function GuidedTourPopup() {
   if (!mounted || !open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto p-2 pt-[max(15vh,calc(env(safe-area-inset-top)+4rem))] sm:px-5 sm:pt-[20vh]">
+    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto p-2 pt-[max(20vh,calc(env(safe-area-inset-top)+5rem))] sm:px-5 sm:pt-[28vh]">
       <div className="fixed inset-0 bg-black/35 backdrop-blur-[2px]" onClick={close} aria-hidden />
       <div role="dialog" aria-modal="true" aria-label="Education Portal guided tour"
-        className="relative w-full max-w-6xl overflow-hidden rounded-2xl border border-cyan/35 bg-abyss/70 shadow-[0_24px_100px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+        className="relative w-full max-w-4xl overflow-hidden rounded-2xl border border-cyan/35 bg-abyss/70 shadow-[0_24px_100px_rgba(0,0,0,0.55)] backdrop-blur-xl">
         <button onClick={close} aria-label="Close" className="absolute right-3 top-3 z-10 grid h-9 w-9 place-items-center rounded-full border border-white/15 bg-black/40 text-fog transition hover:text-ice">
           <X size={16} />
         </button>
