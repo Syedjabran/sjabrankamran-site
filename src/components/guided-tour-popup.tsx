@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Play, X, Volume2 } from "lucide-react";
 
 /**
@@ -14,11 +15,13 @@ const VIDEO_SRC = "https://ops.sjabrankamran.com/dl/sjak-education-portal-revise
 const POSTER_SRC = "https://ops.sjabrankamran.com/dl/sjak-education-portal-revised-demo-poster.jpg";
 
 export function GuidedTourPopup() {
+  const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const [started, setStarted] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
+    setMounted(true);
     let seen = false;
     try { seen = localStorage.getItem(SEEN_KEY) === "1"; } catch { /* ignore */ }
     if (seen) return;
@@ -54,9 +57,9 @@ export function GuidedTourPopup() {
     return () => document.removeEventListener("keydown", onKey);
   }, [open]);
 
-  if (!open) return null;
+  if (!mounted || !open) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto p-2 pt-[max(2.5vh,env(safe-area-inset-top))] sm:px-5 sm:pt-[6vh]">
       <div className="fixed inset-0 bg-black/90 backdrop-blur-md" onClick={close} aria-hidden />
       <div role="dialog" aria-modal="true" aria-label="Education Portal guided tour"
@@ -119,6 +122,7 @@ export function GuidedTourPopup() {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
