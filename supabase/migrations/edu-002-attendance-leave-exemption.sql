@@ -15,6 +15,9 @@
 --   leave   — approved, NON-PUNITIVE absence (authorised leave).
 --   exempt  — the student is officially exempted from that lesson. An official
 --             reason is MANDATORY and is stored in edu_attendance.note.
+--   bunk    — a deliberate, UNAUTHORISED skip. Scored exactly like 'absent'
+--             (counts against attendance); a separate mark only so staff can
+--             tell wilful skipping apart from a normal absence in the register.
 --
 -- WHY NO NEW COLUMN
 --   edu_attendance.note (edu-001-foundation.sql) already exists and was unused.
@@ -23,7 +26,7 @@
 --
 -- ATTENDANCE MATHS (enforced in src/lib/edu/attendance.ts)
 --   present / late / online  → attended
---   absent                   → counts against attendance
+--   absent / bunk            → counts against attendance
 --   excused / leave / exempt → excluded from the attendance denominator; they
 --                              are never treated as a plain absence.
 -- ============================================================================
@@ -33,6 +36,8 @@ alter type public.edu_attendance_status add value if not exists 'online';
 alter type public.edu_attendance_status add value if not exists 'leave';
 
 alter type public.edu_attendance_status add value if not exists 'exempt';
+
+alter type public.edu_attendance_status add value if not exists 'bunk';
 
 -- Documentation only (this one is transaction-safe and can run with the rest).
 comment on column public.edu_attendance.note is

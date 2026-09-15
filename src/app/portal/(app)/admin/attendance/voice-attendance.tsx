@@ -1,25 +1,26 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, MicOff, Check, Save, CalendarDays, Users, CircleCheck, CircleX, Clock3, RotateCcw, Wifi, Plane, ShieldCheck, Pencil } from "lucide-react";
+import { Mic, MicOff, Check, Save, CalendarDays, Users, CircleCheck, CircleX, Clock3, RotateCcw, Wifi, Plane, ShieldCheck, Pencil, Ban } from "lucide-react";
 import { ATTENDANCE_NOTE_MAX, allowsReason, requiresReason } from "@/lib/edu/attendance";
 
 type ClassItem = { id: string; name: string; school: string; section: string | null; students: number };
 type RosterRow = { studentId: string; name: string; firstName: string };
-type Status = "present" | "absent" | "late" | "excused" | "online" | "leave" | "exempt" | "";
+type Status = "present" | "absent" | "bunk" | "late" | "excused" | "online" | "leave" | "exempt" | "";
 
 const STATUS_META: Record<string, { label: string; cls: string; icon: React.ReactNode }> = {
   present: { label: "Present", cls: "border-emerald2/50 text-emerald2 bg-emerald2/10", icon: <CircleCheck size={13} /> },
   late: { label: "Late", cls: "border-signal/50 text-signal bg-signal/10", icon: <Clock3 size={13} /> },
   online: { label: "Online", cls: "border-cyan/50 text-cyan bg-cyan/10", icon: <Wifi size={13} /> },
   absent: { label: "Absent", cls: "border-magenta/50 text-magenta bg-magenta/10", icon: <CircleX size={13} /> },
+  bunk: { label: "Bunk", cls: "border-orange-400/50 text-orange-300 bg-orange-400/10", icon: <Ban size={13} /> },
   excused: { label: "Excused", cls: "border-white/20 text-dust bg-white/[0.04]", icon: <Check size={13} /> },
   leave: { label: "Leave", cls: "border-ultraviolet/50 text-ultraviolet bg-ultraviolet/10", icon: <Plane size={13} /> },
   exempt: { label: "Exempt", cls: "border-lime2/50 text-lime2 bg-lime2/10", icon: <ShieldCheck size={13} /> },
 };
-const CYCLE: Status[] = ["present", "late", "online", "absent", "excused", "leave", "exempt", ""];
+const CYCLE: Status[] = ["present", "late", "online", "absent", "bunk", "excused", "leave", "exempt", ""];
 /** Quick-tap buttons on every student row (excused stays on the tap-to-cycle). */
-const QUICK: Status[] = ["present", "late", "online", "absent", "leave", "exempt"];
+const QUICK: Status[] = ["present", "late", "online", "absent", "bunk", "leave", "exempt"];
 
 async function api(url: string, opts?: RequestInit) {
   const r = await fetch(url, { ...opts, headers: { "content-type": "application/json", ...(opts?.headers || {}) } });
@@ -31,6 +32,9 @@ async function api(url: string, opts?: RequestInit) {
 function norm(s: string) { return s.toLowerCase().normalize("NFKD").replace(/[^a-z]/g, ""); }
 function statusFromWords(text: string): Status | null {
   const t = " " + text.toLowerCase() + " ";
+  // "bunk" before "absent": a bunk is a deliberate skip, a stronger claim than
+  // a plain absence, so it wins when both could match.
+  if (/\b(bunk|bunked|bunking|skip|skipped|skipping|ditch|ditched)\b/.test(t)) return "bunk";
   if (/\b(absent|away|missing|not here|nope|no)\b/.test(t)) return "absent";
   if (/\b(late|tardy)\b/.test(t)) return "late";
   if (/\b(online|remote|zoom|virtual)\b/.test(t)) return "online";
@@ -361,7 +365,7 @@ export function VoiceAttendance() {
   }
 
   const counts = useMemo(() => {
-    const c = { present: 0, late: 0, online: 0, absent: 0, excused: 0, leave: 0, exempt: 0, unset: 0 };
+    const c = { present: 0, late: 0, online: 0, absent: 0, bunk: 0, excused: 0, leave: 0, exempt: 0, unset: 0 };
     for (const r of roster) { const s = marks[r.studentId] || ""; if (s) c[s as keyof typeof c]++; else c.unset++; }
     return c;
   }, [roster, marks]);
@@ -429,6 +433,7 @@ export function VoiceAttendance() {
             <span className="text-signal">{counts.late} late</span> ·
             <span className="text-cyan">{counts.online} online</span> ·
             <span className="text-magenta">{counts.absent} absent</span> ·
+            <span className="text-orange-300">{counts.bunk} bunk</span> ·
             <span className="text-dust">{counts.excused} excused</span> ·
             <span className="text-ultraviolet">{counts.leave} leave</span> ·
             <span className="text-lime2">{counts.exempt} exempt</span> ·

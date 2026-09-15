@@ -16,8 +16,8 @@ export const runtime = "nodejs";
  *
  * GET ?date=YYYY-MM-DD[&school=<name>][&classId=<id>]
  *   → { date, school, schools, classes:[{id,name,section,year}],
- *       register:[{ classId, className, present, late, online, absent, excused,
- *                   leave, exempt, total, marked,
+ *       register:[{ classId, className, present, late, online, absent, bunk,
+ *                   excused, leave, exempt, total, marked,
  *                   students:[{name,status,reason}] }] }
  *
  * `reason` replays the official lesson-exemption reason recorded by staff
@@ -59,7 +59,7 @@ export async function GET(req: Request) {
   const targetClasses = onlyClassId ? classesForSchool.filter((c) => c.id === onlyClassId) : classesForSchool;
 
   const sb = createAdminClient();
-  const STATUS_KEYS = ["present", "late", "online", "absent", "excused", "leave", "exempt"] as const;
+  const STATUS_KEYS = ["present", "late", "online", "absent", "bunk", "excused", "leave", "exempt"] as const;
 
   const register = await Promise.all(
     targetClasses.map(async (cl) => {
@@ -100,7 +100,7 @@ export async function GET(req: Request) {
         }
       }
 
-      const counts: Record<string, number> = { present: 0, late: 0, online: 0, absent: 0, excused: 0, leave: 0, exempt: 0 };
+      const counts: Record<string, number> = { present: 0, late: 0, online: 0, absent: 0, bunk: 0, excused: 0, leave: 0, exempt: 0 };
       const students = roster
         .map((s) => {
           const status = marks[s.studentId] || "unmarked";
@@ -121,6 +121,7 @@ export async function GET(req: Request) {
         late: counts.late,
         online: counts.online,
         absent: counts.absent,
+        bunk: counts.bunk,
         excused: counts.excused,
         leave: counts.leave,
         exempt: counts.exempt,

@@ -15,6 +15,7 @@ type ClassRow = {
   late: number;
   online: number;
   absent: number;
+  bunk: number;
   excused: number;
   leave: number;
   exempt: number;
@@ -37,10 +38,11 @@ const STATUS_STYLE: Record<string, string> = {
   leave: "border-ultraviolet/40 bg-ultraviolet/10 text-ultraviolet",
   exempt: "border-lime2/40 bg-lime2/10 text-lime2",
   absent: "border-signal/40 bg-signal/10 text-signal",
+  bunk: "border-orange-400/40 bg-orange-400/10 text-orange-300",
   unmarked: "border-white/10 bg-white/[0.02] text-dust",
 };
 const STATUS_LABEL: Record<string, string> = {
-  present: "Present", online: "Online", late: "Late", excused: "Excused", leave: "Leave", exempt: "Exempt", absent: "Absent", unmarked: "Not marked",
+  present: "Present", online: "Online", late: "Late", excused: "Excused", leave: "Leave", exempt: "Exempt", absent: "Absent", bunk: "Bunk", unmarked: "Not marked",
 };
 
 function todayISO() {
@@ -81,11 +83,12 @@ export function AttendanceView() {
       present: t.present + c.present + c.online,
       late: t.late + c.late,
       absent: t.absent + c.absent,
+      bunk: t.bunk + (c.bunk || 0),
       leave: t.leave + (c.leave || 0),
       exempt: t.exempt + (c.exempt || 0),
       total: t.total + c.total,
     }),
-    { present: 0, late: 0, absent: 0, leave: 0, exempt: 0, total: 0 }
+    { present: 0, late: 0, absent: 0, bunk: 0, leave: 0, exempt: 0, total: 0 }
   );
 
   return (
@@ -126,8 +129,9 @@ export function AttendanceView() {
 
       {data && !err ? (
         <>
-          <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            {([["Attended", totals.present, "#12D48C"], ["Late", totals.late, "#F5C451"], ["Absent", totals.absent, "#F03Dce"], ["Leave", totals.leave, "#A78BFA"], ["Exempt", totals.exempt, "#B6FF3D"], ["On roster", totals.total, "#E9EEF5"]] as [string, number, string][]).map(([k, v, c]) => (
+          <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+            {([["Attended", totals.present, "#12D48C"], ["Late", totals.late, "#F5C451"], ["Absent", totals.absent, "#F03Dce"], ["Bunk", totals.bunk, "#FB923C"], ["Leave", totals.leave, "#A78BFA"], ["Exempt", totals.exempt, "#B6FF3D"], ["On roster", totals.total, "#E9EEF5"]] as [string, number, string][]).map(([k, v, c]) => (
+
               <div key={k} className="rounded-xl border border-white/10 bg-white/[0.02] px-3.5 py-2.5">
                 <div className="font-mono text-[10px] uppercase tracking-widest text-dust">{k}</div>
                 <div className="mt-0.5 font-display text-lg" style={{ color: c }}>{v}</div>
@@ -149,6 +153,7 @@ export function AttendanceView() {
                       <span className="rounded-full border border-emerald2/30 px-2.5 py-0.5 text-emerald2">{cl.present + cl.online} attended</span>
                       {cl.late ? <span className="rounded-full border border-amber-400/30 px-2.5 py-0.5 text-amber-300">{cl.late} late</span> : null}
                       {cl.absent ? <span className="rounded-full border border-signal/30 px-2.5 py-0.5 text-signal">{cl.absent} absent</span> : null}
+                      {cl.bunk ? <span className="rounded-full border border-orange-400/30 px-2.5 py-0.5 text-orange-300">{cl.bunk} bunk</span> : null}
                       {cl.leave ? <span className="rounded-full border border-ultraviolet/30 px-2.5 py-0.5 text-ultraviolet">{cl.leave} leave</span> : null}
                       {cl.exempt ? <span className="rounded-full border border-lime2/30 px-2.5 py-0.5 text-lime2">{cl.exempt} exempt</span> : null}
                       <span className="rounded-full border border-white/10 px-2.5 py-0.5 text-dust">{cl.marked}/{cl.total} marked</span>
