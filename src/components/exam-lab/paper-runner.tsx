@@ -46,6 +46,11 @@ export function PaperRunner({
   attemptId?: string;               // stable forensic id (allocations use alloc-<id>)
 }) {
   const strict = integrity === "strict";
+  // Open Practice is intentionally untimed at the session level: the per-
+  // question figure remains a pacing guide, but it must never lock an answer
+  // or auto-submit the session. Exam self-tests and teacher assignments keep
+  // their existing timed/locked behaviour.
+  const openPractice = integrity === "off" && kind === "practice";
   const attemptIdRef = useRef<string>(attemptId || newId());
 
   const [urls, setUrls] = useState<UrlMap>({});
@@ -87,18 +92,18 @@ export function PaperRunner({
   const isMcq = (q: ImgQuestion) => q.paperType === "P1";
   const totalMarks = useMemo(() => questions.reduce((s, q) => s + (q.marks || 0), 0), [questions]);
 
-  // Per-question time budget (seconds). In timed mode every question gets its
-  // own countdown; when it reaches zero the question locks and the runner
-  // auto-scrolls to the next unanswered question.
+  // Per-question time budget (seconds). In open Practice this is guidance only:
+  // the counter continues into overtime so returning to/editing a question is
+  // always possible and the extra time is recorded.
   const qBudget = useMemo(() => {
     const m: Record<string, number> = {};
     for (const q of questions) m[q.id] = questionSeconds({ paper: q.paperType, difficulty: q.level, marks: q.marks });
     return m;
   }, [questions]);
   const qLocked = useCallback((id: string) => {
-    if (!timed || !begun || submitted) return false;
+    if (openPractice || !timed || !begun || submitted) return false;
     return (perQ[id] || 0) >= (qBudget[id] || 90);
-  }, [timed, begun, submitted, perQ, qBudget]);
+  }, [openPractice, timed, begun, submitted, perQ, qBudget]);
 
   // load exact past-paper images
   useEffect(() => {
@@ -130,7 +135,8 @@ export function PaperRunner({
     if (!loading && !err && begun && startedAt === null) setStartedAt(Date.now());
   }, [loading, err, begun, startedAt]);
 
-  const running = timed && begun && startedAt !== null && !submitted && !voided && remaining > 0;
+  const running = timed && begun && startedAt !== null && !submitted && !voided && (openPractice || remaining > 0);
+  const clockRunning = running && !openPractice;
 
   // ---- forensic event pipeline (strict tests stream to the proctor log) ----
   const postProctor = useCallback((body: Record<string, unknown>) => {
@@ -205,7 +211,7 @@ export function PaperRunner({
 
   // tick the countdown
   useEffect(() => {
-    if (!running) return;
+    if (!clockRunning) return;
     const iv = setInterval(() => {
       setRemaining((s) => {
         const n = s - 1;
@@ -219,12 +225,12 @@ export function PaperRunner({
       });
     }, 1000);
     return () => clearInterval(iv);
-  }, [running, totalSec]);
+  }, [clockRunning, totalSec]);
 
   // auto-submit when time is up
   useEffect(() => {
-    if (timed && begun && startedAt !== null && remaining <= 0 && !submitted && !voided) submit(true);
-  }, [remaining, timed, begun, startedAt, submitted, voided, submit]);
+    if (!openPractice && timed && begun && startedAt !== null && remaining <= 0 && !submitted && !voided) submit(true);
+  }, [openPractice, remaining, timed, begun, startedAt, submitted, voided, submit]);
 
   // Active question = the one at the viewport centre.
   useEffect(() => {
@@ -253,7 +259,8 @@ export function PaperRunner({
     return () => { window.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); clearInterval(iv); cancelAnimationFrame(raf); };
   }, [loading, submitted, begun, questions]);
 
-  // Accumulate time on the active question; auto-advance when per-Q budget expires.
+  // Accumulate time on the active question. Open Practice deliberately does
+  // not auto-advance or lock at the recommended budget.
   useEffect(() => {
     if (!running) return;
     const iv = setInterval(() => {
@@ -262,7 +269,7 @@ export function PaperRunner({
       setPerQ((prev) => {
         const next = { ...prev, [id]: (prev[id] || 0) + 1 };
         const budget = qBudget[id] || 90;
-        if (next[id] >= budget) {
+        if (!openPractice && next[id] >= budget) {
           // Question just expired — auto-scroll to the next unanswered, unlocked question.
           requestAnimationFrame(() => {
             const idx = questions.findIndex((q) => q.id === id);
@@ -279,7 +286,7 @@ export function PaperRunner({
       });
     }, 1000);
     return () => clearInterval(iv);
-  }, [running, questions, qBudget]);
+  }, [running, openPractice, questions, qBudget]);
 
   async function beginStrict() {
     if (!consent || !camStatus?.calibrated) return;
@@ -434,7 +441,7 @@ export function PaperRunner({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {timed && startedAt !== null && !submitted && <ClockPill left={remaining} warn={remaining <= 15 * 60} />}
+          {openPractice ? <span className="rounded-xl border border-emerald2/30 px-3 py-1.5 font-mono text-xs text-emerald2">Practice · no deadline</span> : timed && startedAt !== null && !submitted && <ClockPill left={remaining} warn={remaining <= 15 * 60} />}
           {submitted && <button onClick={() => window.print()} className="btn-ghost !px-3 !py-1.5 text-xs el-noprint"><Printer size={13} /> PDF</button>}
         </div>
       </div>
@@ -495,7 +502,7 @@ export function PaperRunner({
                 <span className="rounded-full border border-white/15 px-2.5 py-0.5 font-mono text-[10px] text-fog">{q.paperType}</span>
                 <span title="Time budget for this question" className="inline-flex items-center gap-1 rounded-full border border-white/15 px-2.5 py-0.5 font-mono text-[10px] text-dust"><Timer size={10} /> {formatDuration(expSec)}</span>
                 {!submitted ? (
-                  <span title={qLocked(q.id) ? "Time expired — answer locked" : isActive ? "Counting down" : "Countdown starts when this question is on screen"}
+                  <span title={openPractice ? (overTime ? "Recommended time passed — keep working; overtime is recorded" : isActive ? "Recommended time; keep working if needed" : "Recommended time starts when this question is on screen") : qLocked(q.id) ? "Time expired — answer locked" : isActive ? "Counting down" : "Countdown starts when this question is on screen"}
                     className={"inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-[10px] " + (qLocked(q.id) ? "border-signal/60 bg-signal/10 text-signal" : overTime ? "border-signal/50 text-signal" : isActive ? "border-cyan/60 text-cyan" : "border-white/10 text-fog")}>
                     {qLocked(q.id) ? <Lock size={10} /> : isActive ? <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" /> : null}
                     {qLocked(q.id) ? "Locked" : overTime ? `+${formatDuration(spentSec - expSec)}` : formatDuration(Math.max(0, expSec - spentSec))}

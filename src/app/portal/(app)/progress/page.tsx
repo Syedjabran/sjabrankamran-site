@@ -172,7 +172,10 @@ export default async function ProgressPage() {
 
       {/* Recent attempts */}
       <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.02] p-5">
-        <p className="mb-3 font-mono text-[11px] uppercase tracking-widest text-fog">Recent attempts</p>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="font-mono text-[11px] uppercase tracking-widest text-fog">Recent attempts</p>
+          <Link href="/portal/exam-lab/review" className="inline-flex items-center gap-1.5 text-xs text-cyan hover:underline">Open question records <ArrowRight size={12} /></Link>
+        </div>
         <div className="space-y-1.5">
           {a.recentAttempts.map((at, i) => {
             const pct = at.total ? Math.round((at.score / at.total) * 100) : null;
@@ -181,7 +184,7 @@ export default async function ProgressPage() {
               <div key={i} className="flex flex-wrap items-center gap-3 rounded-lg border border-white/[0.05] px-3 py-2 text-sm">
                 <span className="font-mono text-xs text-dust">{new Date(at.ts).toLocaleDateString("en-GB")}</span>
                 <span className="rounded-full border border-white/15 px-2 py-0.5 font-mono text-[10px] text-fog">{at.paperType}</span>
-                <span className="text-fog">{at.ref || (at.mode === "drill" ? "Topic drill" : "Paper")}</span>
+                <Link href={`/portal/exam-lab/review#${at.id}`} className="text-fog hover:text-cyan hover:underline">{at.ref || (at.mode === "drill" ? "Topic drill" : "Paper")}</Link>
                 {ctx ? (
                   <span className="flex flex-wrap items-center gap-1">
                     {ctx.kind !== "practice" ? <span className="rounded-full border border-cyan/25 px-1.5 py-0.5 font-mono text-[9px] uppercase text-cyan">{ctx.kind}</span> : null}
