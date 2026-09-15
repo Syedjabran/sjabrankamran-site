@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getPortalUser, isStaff, isAdmin, isAttendanceRegistrar, isSchoolScopedStaff } from "@/lib/edu/auth";
 import { getStaffScope } from "@/lib/portal/staff-school";
-import { getRegistry, staffRoleMap } from "@/lib/portal/institutions";
+import { getRegistry, staffRoleMap, isDemoStudentName } from "@/lib/portal/institutions";
 import { allowsReason, normaliseReason } from "@/lib/edu/attendance";
 
 export const runtime = "nodejs";
@@ -81,7 +81,7 @@ export async function GET(req: Request) {
       type ERow = { student_id: string; edu_students?: { profile_id?: string; edu_profiles?: { full_name?: string } } };
       const enrolments = (enr || []) as unknown as ERow[];
       const roleMap = await staffRoleMap(enrolments.map((r) => r.edu_students?.profile_id).filter((x): x is string => !!x));
-      const roster = enrolments.filter((r) => !r.edu_students?.profile_id || !roleMap.has(r.edu_students.profile_id)).map((r) => ({
+      const roster = enrolments.filter((r) => (!r.edu_students?.profile_id || !roleMap.has(r.edu_students.profile_id)) && !isDemoStudentName(r.edu_students?.edu_profiles?.full_name)).map((r) => ({
         studentId: r.student_id,
         name: r.edu_students?.edu_profiles?.full_name || "Student",
       }));

@@ -154,7 +154,10 @@ export function PaperRunner({
       response: mcq ? (answers[q.id] == null ? null : "ABCD"[answers[q.id]]) : (structAnswers[q.id] || null),
       feedback: maxwell[q.id]?.feedback || null,
     };
-  }), [questions, answers, maxwell, perQ]);
+    // structAnswers MUST stay in the dep list: without it the closure captured a
+    // stale (often empty) answer map, so typed self-test / proctored responses
+    // could be saved blank. Every submitted response is now recorded.
+  }), [questions, answers, maxwell, perQ, structAnswers]);
 
   const postAttempt = useCallback((cancelled: boolean, lockedReason: string | null) => {
     if (!logMeta || attemptPostedRef.current) return;

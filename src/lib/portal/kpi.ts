@@ -37,7 +37,7 @@
  */
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAttempts, type Attempt } from "@/lib/exam-lab/attempts";
-import { getRegistry, staffRoleMap } from "@/lib/portal/institutions";
+import { getRegistry, staffRoleMap, isDemoStudentName } from "@/lib/portal/institutions";
 import { listAllocations, type ExamAllocation } from "@/lib/exam-lab/allocations";
 import { listTasks, type PersonalTask } from "@/lib/portal/tasks";
 import { getContrib } from "@/lib/portal/contribution";
@@ -353,7 +353,7 @@ export async function buildKpiTable(prev: KpiTable | null): Promise<KpiTable> {
     await Promise.all(rows.map(async (r) => {
       const st = r.edu_students;
       const uid = st?.profile_id;
-      if (!st?.id || !uid || roleMap.has(uid)) return;
+      if (!st?.id || !uid || roleMap.has(uid) || isDemoStudentName(st?.edu_profiles?.full_name)) return;
 
       const [attempts, attRows, subRows, allocs, tasks, contrib] = await Promise.all([
         getAttempts(uid).catch(() => [] as Attempt[]),

@@ -11,6 +11,7 @@ import {
   normaliseReason,
   requiresReason,
 } from "@/lib/edu/attendance";
+import { staffRoleMap, isDemoStudentName } from "@/lib/portal/institutions";
 
 export const runtime = "nodejs";
 
@@ -68,11 +69,20 @@ export async function GET(req: Request) {
 
   const { data: enr } = await sb
     .from("edu_enrolments")
-    .select("student_id, edu_students(id, edu_profiles!edu_students_profile_id_fkey(full_name))")
+    .select("student_id, edu_students(id, profile_id, edu_profiles!edu_students_profile_id_fkey(full_name))")
     .eq("class_id", classId)
     .eq("status", "active");
-  type Row = { student_id: string; edu_students?: { edu_profiles?: { full_name?: string } } };
-  const roster = ((enr || []) as unknown as Row[])
+  type Row = { student_id: string; edu_students?: { profile_id?: string; edu_profiles?: { full_name?: string } } };
+  const rows = (enr || []) as unknown as Row[];
+  // Only real students belong on an attendance register: strip any enrolled
+  // staff (coordinator / facilitator / attendance_registrar / teacher / admin)
+  // and any placeholder demo accounts created during testing.
+  const roleMap = await staffRoleMap(rows.map((r) => r.edu_students?.profile_id).filter((x): x is string => !!x));
+  const roster = rows
+    .filter((r) => {
+      const u = r.edu_students?.profile_id;
+      return (!u || !roleMap.has(u)) && !isDemoStudentName(r.edu_students?.edu_profiles?.full_name);
+    })
     .map((r) => {
       const name = r.edu_students?.edu_profiles?.full_name || "Student";
       return { studentId: r.student_id, name, firstName: name.trim().split(/\s+/)[0] || name };

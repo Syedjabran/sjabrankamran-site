@@ -151,6 +151,19 @@ export async function staffRoleMap(uids: string[]): Promise<Map<string, EduRole[
   return out;
 }
 
+/**
+ * Placeholder / demo accounts accidentally enrolled while testing (e.g.
+ * "Student", "Demo …", "Portal …", "Test …") must never appear on a class
+ * roster. Real students always carry a proper name, so this matches only
+ * leading placeholder tokens on a word boundary; a MISSING name is treated as
+ * a real (un-named) student and kept, never filtered.
+ */
+export function isDemoStudentName(name: string | null | undefined): boolean {
+  const n = (name || "").trim();
+  if (!n) return false;
+  return /^(student|demo|portal|test|sample|example|dummy)\b/i.test(n);
+}
+
 const ROLE_RANK: EduRole[] = ["super_admin", "admin", "coordinator", "teacher", "facilitator", "teaching_assistant", "counsellor", "attendance_registrar", "content_manager", "finance_manager"];
 function primaryRoleLabel(roles: EduRole[]): string {
   const primary = ROLE_RANK.find((r) => roles.includes(r)) || roles[0];
@@ -170,7 +183,7 @@ export async function getClassReport(meta: ClassMeta): Promise<ClassReport> {
   const rows = (enr || []) as unknown as Row[];
   const allUids = rows.map((r) => r.edu_students?.profile_id).filter((x): x is string => !!x);
   const roleMap = await staffRoleMap(allUids);
-  const studentRows = rows.filter((r) => { const u = r.edu_students?.profile_id; return !!u && !roleMap.has(u); });
+  const studentRows = rows.filter((r) => { const u = r.edu_students?.profile_id; return !!u && !roleMap.has(u) && !isDemoStudentName(r.edu_students?.edu_profiles?.full_name); });
   const staff: ClassStaff[] = rows
     .filter((r) => { const u = r.edu_students?.profile_id; return !!u && roleMap.has(u); })
     .map((r) => {

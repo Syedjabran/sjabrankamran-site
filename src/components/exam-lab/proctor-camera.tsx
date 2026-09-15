@@ -84,7 +84,7 @@ export function ProctorCamera({
   const audioRef = useRef<any>(null);
 
   const [status, setStatus] = useState<Status>({ ready: false, faceOk: false, faces: 0, message: "Starting camera…", degraded: false, calibrated: false });
-  const [warnBanner, setWarnBanner] = useState<{ n: number; msg: string } | null>(null);
+  const [warnBanner, setWarnBanner] = useState<{ kind: "notice" | "warn" | "lock"; n: number; msg: string } | null>(null);
 
   // ---- draggable window position (stays on-screen, remembered per browser) ----
   const CAM_W = 176, CAM_H = 150;
@@ -173,22 +173,36 @@ export function ProctorCamera({
     if (url) { try { snapCb.current?.(url, reason); } catch { /* ignore */ } }
   }, [grabFrame]);
 
-  // A sustained malpractice episode → escalate.
-  const escalate = useCallback((type: string, reason: string) => {
+  // Warn-only signal. Shows on-screen guidance + soft beep and is logged to the
+  // forensic timeline, but NEVER locks the test. Per the brief, turning the
+  // face away, a second face, or a device in frame only ever WARN the student.
+  const warn = useCallback((type: string, reason: string) => {
+    snap(reason);
+    tone("beep");
+    setWarnBanner({ kind: "notice", n: 0, msg: reason });
+    emit(type, reason, false);
+    setTimeout(() => setWarnBanner((b) => (b && b.kind === "notice" ? null : b)), 4500);
+  }, [emit, snap, tone]);
+
+  // Lockable signal — ONLY the two conditions the brief allows to end a test:
+  // the camera is off, or the student's face is not in the video frame. Even
+  // then the lock lands only AFTER two warnings.
+  const escalateLock = useCallback((type: string, reason: string) => {
     warningsRef.current += 1;
     const n = warningsRef.current;
     snap(reason);
     if (n >= MAX_WARNINGS) {
       tone("siren");
-      setWarnBanner({ n, msg: reason });
+      setWarnBanner({ kind: "lock", n, msg: reason });
       emit(type, `${reason} (final warning — test locked after ${n} warnings).`, true);
     } else {
       tone("beep");
-      setWarnBanner({ n, msg: reason });
+      setWarnBanner({ kind: "warn", n, msg: reason });
       emit(type, `${reason} (warning ${n} of ${MAX_WARNINGS}).`, false);
-      setTimeout(() => setWarnBanner((b) => (b && b.n === n ? null : b)), 4500);
+      setTimeout(() => setWarnBanner((b) => (b && b.kind === "warn" && b.n === n ? null : b)), 4500);
     }
   }, [emit, snap, tone]);
+  const escalateLockRef = useRef(escalateLock); escalateLockRef.current = escalateLock;
 
   const setBaselineFrom = useCallback((pts: { x: number; y: number }[]) => {
     let mnX = 1, mxX = 0, mnY = 1, mxY = 0;
@@ -264,6 +278,14 @@ export function ProctorCamera({
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
         if (!alive) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
+        // If the camera is turned off / unplugged / revoked mid-test, the track
+        // ends. That is one of the two lock conditions in the brief, so it goes
+        // through the two-warning lock path (only while the test is live).
+        stream.getVideoTracks().forEach((t) => {
+          t.addEventListener("ended", () => {
+            if (phaseRef.current === "live") escalateLockRef.current("camera_off", "Your camera turned off during the test.");
+          });
+        });
         const v = videoRef.current;
         if (v) { v.srcObject = stream; await v.play().catch(() => {}); }
         push({ ready: true, message: "Camera on — centre your face, then calibrate." });
@@ -392,14 +414,14 @@ export function ProctorCamera({
       // helping material (phone / laptop / TV)
       if (matPresent) {
         if (!matSince) matSince = t;
-        if (live && t - matSince > 1500 && !latch.material) { latch.material = true; escalate("material", `Possible helping material detected in frame (${matLabel}).`); }
+        if (live && t - matSince > 1500 && !latch.material) { latch.material = true; warn("material", `Possible helping material detected in frame (${matLabel}).`); }
         push({ message: `Put away any ${matLabel || "devices/notes"}.` });
       } else { matSince = 0; latch.material = false; }
 
       // multiple faces
       if (faces > 1) {
         if (!multiSince) multiSince = t;
-        if (live && t - multiSince > 1600 && !latch.multi) { latch.multi = true; escalate("multiface", "Another person appeared in the camera."); }
+        if (live && t - multiSince > 1600 && !latch.multi) { latch.multi = true; warn("multiface", "Another person appeared in the camera."); }
         push({ faces, faceOk: false, message: "More than one face detected." });
         absentSince = 0; turnSince = 0; return;
       }
@@ -409,7 +431,7 @@ export function ProctorCamera({
       if (faces === 0) {
         if (!absentSince) absentSince = t;
         push({ faces: 0, faceOk: false, message: "No face detected — stay in view." });
-        if (live && t - absentSince > 4500 && !latch.absent) { latch.absent = true; escalate("absence", "Your face left the camera view."); }
+        if (live && t - absentSince > 4500 && !latch.absent) { latch.absent = true; escalateLock("absence", "Your face is not in the camera frame."); }
         return;
       }
       absentSince = 0; latch.absent = false;
@@ -435,7 +457,7 @@ export function ProctorCamera({
       if (off) {
         if (!turnSince) turnSince = t;
         push({ faces: 1, faceOk: false, message: sideways ? "Face forward — don't turn away." : "Eyes on the screen." });
-        if (live && t - turnSince > 3500 && !latch.turn) { latch.turn = true; escalate("headturn", sideways ? "You turned your head away from the screen." : "You looked up/away from the screen."); }
+        if (live && t - turnSince > 3500 && !latch.turn) { latch.turn = true; warn("headturn", sideways ? "Please face the screen — you turned your head away." : "Please keep your eyes on the screen."); }
       } else {
         turnSince = 0; latch.turn = false;
         push({ faces: 1, faceOk: true, message: baselineRef.current ? "Face in view — good." : "Centre your face, then calibrate." });
@@ -444,7 +466,7 @@ export function ProctorCamera({
 
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [phase, escalate, push, healthCheckFace]);
+  }, [phase, warn, escalateLock, push, healthCheckFace]);
 
   if (phase === "off") return null;
 
@@ -453,8 +475,8 @@ export function ProctorCamera({
   return (
     <>
       {warnBanner && (
-        <div className={"fixed inset-x-0 top-0 z-[70] flex items-center justify-center gap-2 px-4 py-2.5 text-center text-sm font-semibold " + (warnBanner.n >= MAX_WARNINGS ? "bg-red-600 text-white" : "bg-amber-500 text-black")}>
-          <ShieldAlert size={16} /> {warnBanner.n >= MAX_WARNINGS ? "TEST LOCKED — " : `WARNING ${warnBanner.n}/${MAX_WARNINGS} — `}{warnBanner.msg}
+        <div className={"fixed inset-x-0 top-0 z-[70] flex items-center justify-center gap-2 px-4 py-2.5 text-center text-sm font-semibold " + (warnBanner.kind === "lock" ? "bg-red-600 text-white" : warnBanner.kind === "warn" ? "bg-amber-500 text-black" : "bg-sky-500 text-black")}>
+          <ShieldAlert size={16} /> {warnBanner.kind === "lock" ? "TEST LOCKED — " : warnBanner.kind === "warn" ? `WARNING ${warnBanner.n}/${MAX_WARNINGS} — ` : "NOTICE — "}{warnBanner.msg}
         </div>
       )}
 
