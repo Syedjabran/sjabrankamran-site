@@ -9,14 +9,15 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const user = await getPortalUser();
   if (!user) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
-  return NextResponse.json({ enabled: pushEnabled(), publicKey: vapidPublicKey() }, { status: 200 });
+  const [enabled, publicKey] = await Promise.all([pushEnabled(), vapidPublicKey()]);
+  return NextResponse.json({ enabled, publicKey }, { status: 200 });
 }
 
 /** POST { op:'subscribe', subscription } | { op:'unsubscribe', endpoint }. */
 export async function POST(req: Request) {
   const user = await getPortalUser();
   if (!user) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
-  if (!pushEnabled()) return NextResponse.json({ error: "Push notifications are not enabled on this server yet." }, { status: 503 });
+  if (!(await pushEnabled())) return NextResponse.json({ error: "Push notifications are not enabled on this server yet." }, { status: 503 });
   const b = (await req.json().catch(() => null)) as { op?: string; subscription?: { endpoint: string; keys: { p256dh: string; auth: string } }; endpoint?: string } | null;
   if (b?.op === "subscribe" && b.subscription?.endpoint) {
     await saveSubscription(user.id, b.subscription as never);
