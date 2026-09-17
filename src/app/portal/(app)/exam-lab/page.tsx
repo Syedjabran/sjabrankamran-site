@@ -9,6 +9,7 @@ export default async function PortalExamLabPage() {
   const user = await getPortalUser();
   const first = (user?.fullName || user?.email || "").split(" ")[0];
   const canTest = !!user && isStaff(user.roles);
+  const canPause = !!user && user.roles.includes("super_admin");
 
   return (
     <div>
@@ -28,7 +29,7 @@ export default async function PortalExamLabPage() {
       </div>
 
       <Suspense fallback={<div className="text-sm text-dust">Loading Exam Lab…</div>}>
-        <PapersHub canTest={canTest} />
+        <PapersHub canTest={canTest} canPause={canPause} />
       </Suspense>
     </div>
   );

@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireStaff, audit } from "@/lib/portal/admin";
 import { allocateToStudents, newAllocId, type AllocMode, type AllocContent } from "@/lib/exam-lab/allocations";
 import { notify } from "@/lib/portal/notifications";
+import { saveDrillRecord, resolveSnapshot, newDrillId, type DrillTargetType } from "@/lib/exam-lab/drill-records";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -50,7 +51,11 @@ export async function POST(req: Request) {
 
   const sb = createAdminClient();
   const tt = b.target_type || "class";
+  if (!["class", "school", "network", "individual", "group"].includes(tt)) {
+    return NextResponse.json({ error: "Invalid target." }, { status: 400 });
+  }
   let uids: string[] = [];
+  const classIds: string[] = tt === "individual" ? [] : (b.class_ids || []).filter(Boolean);
 
   if (tt === "individual") {
     const email = (b.student_email || "").trim().toLowerCase();
@@ -100,6 +105,23 @@ export async function POST(req: Request) {
     } catch { /* best-effort */ }
   }
 
-  await audit(staff.id, "exam.allocate", "exam_allocation", id, { target: tt, mode, students: uids.length, title: b.title.trim() });
-  return NextResponse.json({ ok: true, id, students: uids.length, mode, target: tt }, { status: 200 });
+  // Permanent, viewable-after Drill Record with a frozen snapshot of the exact
+  // question paper + which class/group it was conducted for.
+  let drillId: string | null = null;
+  try {
+    drillId = newDrillId();
+    await saveDrillRecord({
+      id: drillId, allocationId: id, name: b.title.trim().slice(0, 160), mode, content: c,
+      snapshotQs: resolveSnapshot(c),
+      targetType: tt as DrillTargetType,
+      scopeLabel: (b.scope_label || "").slice(0, 120) || null,
+      classId: tt === "class" ? (classIds[0] || null) : null,
+      className: tt === "class" ? ((b.scope_label || "").slice(0, 120) || null) : null,
+      classIds, studentCount: uids.length,
+      createdBy: staff.id, createdByName: staff.fullName || staff.email,
+    });
+  } catch { /* record is best-effort; never blocks the allocation */ }
+
+  await audit(staff.id, "exam.allocate", "exam_allocation", id, { target: tt, mode, students: uids.length, title: b.title.trim(), drillId });
+  return NextResponse.json({ ok: true, id, drillId, students: uids.length, mode, target: tt }, { status: 200 });
 }

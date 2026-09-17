@@ -67,6 +67,7 @@ function navFor(roles: EduRole[]): NavSection[] {
     adminItems.push({ href: "/portal/admin/analytics", label: "Rankings & analytics" });
     adminItems.push({ href: "/portal/admin/institutions", label: "Institutions" });
     adminItems.push({ href: "/portal/admin/assign", label: "Post / Tests" });
+    if (roles.includes("super_admin")) adminItems.push({ href: "/portal/admin/drills", label: "Drill Records" });
     adminItems.push({ href: "/portal/admin/attendance", label: "Attendance" });
     adminItems.push({ href: "/portal/admin/attendance-view", label: "Daily attendance" });
     adminItems.push({ href: "/portal/admin/proctoring", label: "Proctoring & Locks" });

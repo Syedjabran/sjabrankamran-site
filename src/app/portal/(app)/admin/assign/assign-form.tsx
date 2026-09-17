@@ -67,10 +67,13 @@ export function AssignForm({ canTest = false }: { canTest?: boolean }) {
   const [exDue, setExDue] = useState("");
   const [exStarts, setExStarts] = useState("");
   const [exInstructions, setExInstructions] = useState("");
-  const [exTarget, setExTarget] = useState<"class" | "school" | "network" | "individual">("class");
+  const [exTarget, setExTarget] = useState<"class" | "school" | "network" | "individual" | "group">("class");
   const [exClassId, setExClassId] = useState("");
   const [exSchool, setExSchool] = useState("");
   const [exStudentEmail, setExStudentEmail] = useState("");
+  const [exGroupClasses, setExGroupClasses] = useState<Set<string>>(new Set());
+  const [exGroupName, setExGroupName] = useState("");
+  const toggleGroupClass = (id: string) => setExGroupClasses((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [classId, setClassId] = useState("");
   const [title, setTitle] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -103,6 +106,7 @@ export function AssignForm({ canTest = false }: { canTest?: boolean }) {
         if (exTarget === "class") { class_ids = exClassId ? [exClassId] : []; scope_label = classes.find((c) => c.id === exClassId)?.name || "Class"; }
         else if (exTarget === "school") { class_ids = classes.filter((c) => c.school === exSchool).map((c) => c.id); scope_label = exSchool; }
         else if (exTarget === "network") { class_ids = classes.map((c) => c.id); scope_label = "Whole network"; }
+        else if (exTarget === "group") { class_ids = [...exGroupClasses]; scope_label = exGroupName.trim() || "Group"; }
         else { student_email = exStudentEmail.trim(); scope_label = exStudentEmail.trim(); }
         const content = exContentType === "paper" ? { type: "paper", code: exPaperCode }
           : exContentType === "drill" ? { type: "drill", paperType: exDPaper, topics: [...exTopics], levels: [...exLevels], count: exCount }
@@ -182,8 +186,8 @@ export function AssignForm({ canTest = false }: { canTest?: boolean }) {
             <div>
               <label className="mb-1 block text-[11px] uppercase tracking-widest text-dust">Assign to</label>
               <div className="flex flex-wrap gap-2">
-                {(["class", "school", "network", "individual"] as const).map((tt) => (
-                  <button key={tt} onClick={() => setExTarget(tt)} className={"rounded-full border px-3 py-1.5 text-xs " + (exTarget === tt ? "border-cyan bg-cyan text-space font-semibold" : "border-white/15 text-fog hover:border-cyan")}>{tt === "class" ? "A class" : tt === "school" ? "Whole school" : tt === "network" ? "Whole network" : "Individual"}</button>
+                {(["class", "group", "school", "network", "individual"] as const).map((tt) => (
+                  <button key={tt} onClick={() => setExTarget(tt)} className={"rounded-full border px-3 py-1.5 text-xs " + (exTarget === tt ? "border-cyan bg-cyan text-space font-semibold" : "border-white/15 text-fog hover:border-cyan")}>{tt === "class" ? "A class" : tt === "group" ? "A group" : tt === "school" ? "Whole school" : tt === "network" ? "Whole network" : "Individual"}</button>
                 ))}
               </div>
               <div className="mt-2">
@@ -197,6 +201,19 @@ export function AssignForm({ canTest = false }: { canTest?: boolean }) {
                     <option value="">Choose a school…</option>
                     {[...new Set(classes.map((c) => c.school))].filter((s) => s && s !== "—").map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
+                ) : exTarget === "group" ? (
+                  <div className="space-y-2">
+                    <input value={exGroupName} onChange={(e) => setExGroupName(e.target.value)} placeholder="Group name (e.g. Board revision group)" className={input} />
+                    <div className="max-h-44 space-y-1 overflow-auto rounded-lg border border-white/10 bg-abyss/40 p-2">
+                      {classes.map((c) => (
+                        <label key={c.id} className="flex items-center gap-2 rounded px-1.5 py-1 text-xs text-fog hover:bg-white/[0.03]">
+                          <input type="checkbox" checked={exGroupClasses.has(c.id)} onChange={() => toggleGroupClass(c.id)} className="accent-cyan" />
+                          {c.school} — {c.name}{c.section ? ` (${c.section})` : ""} · {c.students}
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-dust">{exGroupClasses.size} class{exGroupClasses.size === 1 ? "" : "es"} selected for this group.</p>
+                  </div>
                 ) : exTarget === "individual" ? (
                   <input value={exStudentEmail} onChange={(e) => setExStudentEmail(e.target.value)} placeholder="student@email.com" className={input} />
                 ) : (

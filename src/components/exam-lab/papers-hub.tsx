@@ -98,7 +98,7 @@ function AssignedBoard({ allocations, onStart }: { allocations: Allocation[]; on
   );
 }
 
-export function PapersHub({ canTest = false }: { canTest?: boolean }) {
+export function PapersHub({ canTest = false, canPause = false }: { canTest?: boolean; canPause?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -253,7 +253,7 @@ export function PapersHub({ canTest = false }: { canTest?: boolean }) {
     enter({ questions: p1, title: "Daily Challenge", subtitle: "10 mixed Paper-1 questions · 15 min", duration: 15, timed: true, logMeta: { mode: "drill", paperType: "P1" }, ...modeCfg(sitMode) });
   }
 
-  if (active) return <PaperRunner {...active} onExit={exit} />;
+  if (active) return <PaperRunner {...active} canPause={canPause} onExit={exit} />;
 
   const availTopics = pType === "P4" ? TOPICS_A2 : TOPICS_AS;
 
