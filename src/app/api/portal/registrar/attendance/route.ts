@@ -81,7 +81,7 @@ export async function GET(req: Request) {
       type ERow = { student_id: string; edu_students?: { profile_id?: string; edu_profiles?: { full_name?: string } } };
       const enrolments = (enr || []) as unknown as ERow[];
       const roleMap = await staffRoleMap(enrolments.map((r) => r.edu_students?.profile_id).filter((x): x is string => !!x));
-      const roster = enrolments.filter((r) => (!r.edu_students?.profile_id || !roleMap.has(r.edu_students.profile_id)) && !isDemoStudentName(r.edu_students?.edu_profiles?.full_name)).map((r) => ({
+      const roster = enrolments.filter((r) => !!r.edu_students?.profile_id && !roleMap.has(r.edu_students.profile_id) && !isDemoStudentName(r.edu_students?.edu_profiles?.full_name)).map((r) => ({
         studentId: r.student_id,
         name: r.edu_students?.edu_profiles?.full_name || "Student",
       }));

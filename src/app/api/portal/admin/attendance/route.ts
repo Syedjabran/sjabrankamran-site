@@ -81,7 +81,9 @@ export async function GET(req: Request) {
   const roster = rows
     .filter((r) => {
       const u = r.edu_students?.profile_id;
-      return (!u || !roleMap.has(u)) && !isDemoStudentName(r.edu_students?.edu_profiles?.full_name);
+      // Require a linked profile: orphan edu_students rows (profile_id NULL) are
+      // ghost/seed entries that render as "Student" — never on a real roster.
+      return !!u && !roleMap.has(u) && !isDemoStudentName(r.edu_students?.edu_profiles?.full_name);
     })
     .map((r) => {
       const name = r.edu_students?.edu_profiles?.full_name || "Student";
