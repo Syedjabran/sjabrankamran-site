@@ -104,6 +104,8 @@ export function PapersHub({ canTest = false, canPause = false }: { canTest?: boo
   const searchParams = useSearchParams();
   const runParam = searchParams.get("run") === "1";
   const allocationParam = searchParams.get("allocation");
+  const focusParam = searchParams.get("focus");
+  const focusHandled = useRef<string | null>(null);
 
   const [tab, setTab] = useState<"papers" | "drill">("papers");
   const [sitMode, setSitMode] = useState<SitMode>("practice");
@@ -238,6 +240,30 @@ export function PapersHub({ canTest = false, canPause = false }: { canTest?: boo
     const meta = IMAGE_PAPERS.find((p) => p.code === code)!;
     enter({ questions: qs, title: PAPER_NAME[meta.paperType], subtitle: `${meta.ref} · ${label(code)}`, duration: meta.duration, timed: true, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType }, ...modeCfg(sitMode) });
   }
+
+  // Focus Drill deep-link: /portal/exam-lab?focus=<topic,topic> launches a
+  // relaxed practice drill built from the student's weak topics across ANY
+  // paper (P1/P2/P4). One tap from My Progress → targeted revision.
+  useEffect(() => {
+    if (!focusParam || active || focusHandled.current === focusParam) return;
+    focusHandled.current = focusParam;
+    const want = new Set(focusParam.split(",").map((s) => s.trim()).filter(Boolean));
+    if (!want.size) return;
+    const pool = IMAGE_BANK.filter((q) => q.topic && want.has(q.topic));
+    if (!pool.length) { setLaunchError("No practice questions are available for those topics yet."); router.replace(pathname, { scroll: false }); return; }
+    const qs = shuffle([...pool]).slice(0, 10);
+    const kinds = new Set(qs.map((q) => q.paperType));
+    const pt = (kinds.size === 1 ? [...kinds][0] : "mixed") as ActiveMeta["paperType"];
+    const mins = Math.max(5, Math.round(qs.length * (pt === "P1" ? 1.5 : 6)));
+    const names = [...want];
+    enter({
+      questions: qs,
+      title: "Focus drill · your weak topics",
+      subtitle: `${qs.length} questions on ${names.slice(0, 3).join(", ")}${names.length > 3 ? "…" : ""}`,
+      duration: mins, timed: true, logMeta: { mode: "drill", paperType: pt }, ...modeCfg("practice"),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusParam, active]);
 
   const drillPool = useMemo(() => IMAGE_BANK.filter((q) => q.paperType === pType && (!topics.size || (q.topic && topics.has(q.topic))) && levels.has(q.level)), [pType, topics, levels]);
 

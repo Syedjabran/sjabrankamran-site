@@ -134,7 +134,28 @@ export default async function ProgressPage() {
         </div>
         <div className="rounded-2xl border border-magenta/20 bg-magenta/[0.03] p-5">
           <p className="mb-3 font-mono text-[11px] uppercase tracking-widest text-magenta">🎯 Focus areas</p>
-          {a.weaknesses.length ? <div className="space-y-2.5">{a.weaknesses.map((s) => <Bar key={s.topic} s={s} />)}</div> : <p className="text-sm text-dust">No weak spots yet — nice.</p>}
+          {a.weaknesses.length ? (
+            <>
+              <div className="space-y-2.5">{a.weaknesses.map((s) => <Bar key={s.topic} s={s} />)}</div>
+              <div className="mt-4 border-t border-white/10 pt-4">
+                <Link
+                  href={`/portal/exam-lab?focus=${encodeURIComponent(a.weaknesses.map((s) => s.topic).filter((t) => t && t !== "Unclassified").join(","))}`}
+                  className="inline-flex items-center gap-2 rounded-xl bg-magenta/90 px-4 py-2.5 text-sm font-semibold text-space transition hover:bg-magenta"
+                >
+                  <Target size={15} /> Practise my weak topics
+                </Link>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {a.weaknesses.filter((s) => s.topic && s.topic !== "Unclassified").map((s) => (
+                    <Link key={s.topic} href={`/portal/exam-lab?focus=${encodeURIComponent(s.topic)}`}
+                      className="inline-flex items-center gap-1 rounded-full border border-magenta/30 px-2.5 py-1 text-[11px] text-magenta transition hover:bg-magenta/10">
+                      {s.topic} <ArrowRight size={11} />
+                    </Link>
+                  ))}
+                </div>
+                <p className="mt-2 text-[11px] text-dust">One tap builds a quick, no-pressure practice drill from these topics.</p>
+              </div>
+            </>
+          ) : <p className="text-sm text-dust">No weak spots yet — nice.</p>}
         </div>
       </div>
 
