@@ -45,7 +45,7 @@ export function PaperRunner({
   help?: boolean;                   // help (mark scheme / Maxwell) permitted
   allocationId?: string | null;     // staff allocation this attempt belongs to
   attemptId?: string;               // stable forensic id (allocations use alloc-<id>)
-  canPause?: boolean;               // super-admin: freeze the clock during an interruption
+  canPause?: boolean;               // super-admin: pause individual question timers
 }) {
   const strict = integrity === "strict";
   // Open Practice is intentionally untimed at the session level: the per-
@@ -76,21 +76,6 @@ export function PaperRunner({
   const [voided, setVoided] = useState<string | null>(null);
   const voidedRef = useRef(false);
   const totalSec = duration * 60;
-  // Super-admin timer pause: freezes the countdown and per-question timers for a
-  // genuine interruption (fire drill, power cut, invigilator decision). Only a
-  // super-admin sees the control (canPause). Paused wall-clock time is tracked
-  // so the recorded attempt duration excludes it.
-  const [paused, setPaused] = useState(false);
-  const pausedAtRef = useRef<number | null>(null);
-  const pausedAccumRef = useRef(0);
-  const togglePause = useCallback(() => {
-    setPaused((p) => {
-      if (!p) { pausedAtRef.current = Date.now(); }
-      else if (pausedAtRef.current) { pausedAccumRef.current += Date.now() - pausedAtRef.current; pausedAtRef.current = null; }
-      return !p;
-    });
-  }, []);
-
   // ---- integrity / forensic state ----
   const revealsRef = useRef(0);
   const flagsRef = useRef(0);
@@ -100,10 +85,19 @@ export function PaperRunner({
 
   // ---- per-question time tracking ----
   const [perQ, setPerQ] = useState<Record<string, number>>({});
+  const [pausedQuestions, setPausedQuestions] = useState<Set<string>>(() => new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const activeIdRef = useRef<string | null>(null);
   const liRefs = useRef<Record<string, HTMLLIElement | null>>({});
   const [answerMode, setAnswerMode] = useState<Record<string, string>>({});
+  const toggleQuestionPause = useCallback((id: string) => {
+    setPausedQuestions((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   const isMcq = (q: ImgQuestion) => q.paperType === "P1";
   const totalMarks = useMemo(() => questions.reduce((s, q) => s + (q.marks || 0), 0), [questions]);
@@ -152,7 +146,7 @@ export function PaperRunner({
   }, [loading, err, begun, startedAt]);
 
   const running = timed && begun && startedAt !== null && !submitted && !voided && (openPractice || remaining > 0);
-  const clockRunning = running && !openPractice && !paused;
+  const clockRunning = running && !openPractice;
 
   // ---- forensic event pipeline (strict tests stream to the proctor log) ----
   const postProctor = useCallback((body: Record<string, unknown>) => {
@@ -187,7 +181,7 @@ export function PaperRunner({
       body: JSON.stringify({
         mode: logMeta.mode, paperType: logMeta.paperType, code: logMeta.code, ref: logMeta.ref,
         score, total: totalScored, qCount: questions.length, scoredCount: scored.length,
-        durationSec: startedAt ? Math.max(0, Math.round((Date.now() - startedAt - pausedAccumRef.current - (pausedAtRef.current ? Date.now() - pausedAtRef.current : 0)) / 1000)) : undefined, questions: qlog,
+        durationSec: startedAt ? Math.max(0, Math.round((Date.now() - startedAt) / 1000)) : undefined, questions: qlog,
         context: { integrity, kind, help, revealsUsed: revealsRef.current, proctored: strict, cancelled, lockedReason, flags: flagsRef.current, allocationId, attemptId: attemptIdRef.current },
       }),
     }).catch(() => {});
@@ -281,10 +275,10 @@ export function PaperRunner({
   // Accumulate time on the active question. Open Practice deliberately does
   // not auto-advance or lock at the recommended budget.
   useEffect(() => {
-    if (!running || paused) return;
+    if (!running) return;
     const iv = setInterval(() => {
       const id = activeIdRef.current;
-      if (!id || document.visibilityState === "hidden") return;
+      if (!id || pausedQuestions.has(id) || document.visibilityState === "hidden") return;
       setPerQ((prev) => {
         const next = { ...prev, [id]: (prev[id] || 0) + 1 };
         const budget = qBudget[id] || 90;
@@ -305,7 +299,7 @@ export function PaperRunner({
       });
     }, 1000);
     return () => clearInterval(iv);
-  }, [running, paused, openPractice, questions, qBudget]);
+  }, [running, pausedQuestions, openPractice, questions, qBudget]);
 
   async function beginStrict() {
     if (!consent || !camStatus?.calibrated) return;
@@ -460,27 +454,10 @@ export function PaperRunner({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {openPractice ? <span className="rounded-xl border border-emerald2/30 px-3 py-1.5 font-mono text-xs text-emerald2">Practice · no deadline</span> : timed && startedAt !== null && !submitted && <ClockPill left={remaining} warn={remaining <= 15 * 60} paused={paused} />}
-          {canPause && timed && !openPractice && startedAt !== null && !submitted && !voided && (
-            <button onClick={togglePause} title="Super-admin: pause or resume the exam clock"
-              className={"el-noprint inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold " + (paused ? "border-emerald2/50 bg-emerald2/10 text-emerald2" : "border-amber-400/50 bg-amber-400/10 text-amber-300")}>
-              {paused ? <><Play size={13} /> Resume</> : <><Pause size={13} /> Pause</>}
-            </button>
-          )}
+          {openPractice ? <span className="rounded-xl border border-emerald2/30 px-3 py-1.5 font-mono text-xs text-emerald2">Practice · no deadline</span> : timed && startedAt !== null && !submitted && <ClockPill left={remaining} warn={remaining <= 15 * 60} />}
           {submitted && <button onClick={() => window.print()} className="btn-ghost !px-3 !py-1.5 text-xs el-noprint"><Printer size={13} /> PDF</button>}
         </div>
       </div>
-
-      {paused && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm el-noprint">
-          <div className="mx-4 max-w-sm rounded-2xl border border-amber-400/30 bg-space p-6 text-center shadow-2xl">
-            <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-amber-400/15"><Pause size={22} className="text-amber-300" /></div>
-            <h3 className="font-display text-lg text-ice">Exam paused</h3>
-            <p className="mt-2 text-sm text-fog">The clock is frozen by a super-admin. Your remaining time and answers are safe. The exam resumes when the super-admin taps Resume.</p>
-            {canPause && <button onClick={togglePause} className="btn-primary mt-4 !px-5"><Play size={15} /> Resume exam</button>}
-          </div>
-        </div>
-      )}
 
       {running && integrity !== "off" && (
         <div className={"el-noprint mb-4 flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs " + (strict ? "border-red-400/30 bg-red-400/[0.05] text-red-200/90" : "border-amber-400/25 bg-amber-400/[0.05] text-amber-200/90")}>
@@ -529,6 +506,7 @@ export function PaperRunner({
           const spentSec = perQ[q.id] || 0;
           const overTime = spentSec > expSec;
           const isActive = !submitted && activeId === q.id;
+          const questionPaused = pausedQuestions.has(q.id);
           return (
             <li key={q.id} ref={(el) => { liRefs.current[q.id] = el; }} data-qid={q.id} className={"pr-q rounded-2xl border p-4 md:p-5 transition-colors " + (isActive ? "border-cyan/45 bg-cyan/[0.04]" : "border-white/[0.08] bg-white/[0.015]")}>
               <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -539,12 +517,21 @@ export function PaperRunner({
                 <span title="Time budget for this question" className="inline-flex items-center gap-1 rounded-full border border-white/15 px-2.5 py-0.5 font-mono text-[10px] text-dust"><Timer size={10} /> {formatDuration(expSec)}</span>
                 {!submitted ? (
                   <span title={openPractice ? (overTime ? "Recommended time passed — keep working; overtime is recorded" : isActive ? "Recommended time; keep working if needed" : "Recommended time starts when this question is on screen") : qLocked(q.id) ? "Time expired — answer locked" : isActive ? "Counting down" : "Countdown starts when this question is on screen"}
-                    className={"inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-[10px] " + (qLocked(q.id) ? "border-signal/60 bg-signal/10 text-signal" : overTime ? "border-signal/50 text-signal" : isActive ? "border-cyan/60 text-cyan" : "border-white/10 text-fog")}>
-                    {qLocked(q.id) ? <Lock size={10} /> : isActive ? <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" /> : null}
-                    {qLocked(q.id) ? "Locked" : overTime ? `+${formatDuration(spentSec - expSec)}` : formatDuration(Math.max(0, expSec - spentSec))}
+                    className={"inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-[10px] " + (questionPaused ? "border-amber-400/60 bg-amber-400/10 text-amber-300" : qLocked(q.id) ? "border-signal/60 bg-signal/10 text-signal" : overTime ? "border-signal/50 text-signal" : isActive ? "border-cyan/60 text-cyan" : "border-white/10 text-fog")}>
+                    {questionPaused ? <Pause size={10} /> : qLocked(q.id) ? <Lock size={10} /> : isActive ? <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" /> : null}
+                    {questionPaused ? `Paused · ${formatDuration(Math.max(0, expSec - spentSec))}` : qLocked(q.id) ? "Locked" : overTime ? `+${formatDuration(spentSec - expSec)}` : formatDuration(Math.max(0, expSec - spentSec))}
                   </span>
                 ) : (
                   <span title="Time you spent vs expected" className={"inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-[10px] " + (overTime ? "border-signal/40 text-signal" : "border-emerald2/40 text-emerald2")}>{formatDuration(spentSec)} / {formatDuration(expSec)}</span>
+                )}
+                {canPause && startedAt !== null && !submitted && !voided && !qLocked(q.id) && (
+                  <button
+                    type="button"
+                    onClick={() => toggleQuestionPause(q.id)}
+                    title={questionPaused ? `Resume the timer for question ${i + 1}` : `Pause only the timer for question ${i + 1}`}
+                    className={"el-noprint inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-semibold transition " + (questionPaused ? "border-emerald2/50 bg-emerald2/10 text-emerald2" : "border-amber-400/40 bg-amber-400/[0.06] text-amber-300 hover:border-amber-300")}>
+                    {questionPaused ? <><Play size={10} /> Resume Q{i + 1}</> : <><Pause size={10} /> Pause Q{i + 1}</>}
+                  </button>
                 )}
                 {q.marks != null && <span className="ml-auto font-mono text-xs text-dust">[{q.marks}]</span>}
               </div>
@@ -690,8 +677,7 @@ function TestLocked({ reason, attemptId, onExit }: { reason: string; attemptId: 
   );
 }
 
-function ClockPill({ left, warn, paused }: { left: number; warn?: boolean; paused?: boolean }) {
-  if (paused) return <span className="inline-flex items-center gap-1.5 rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-1.5 font-mono text-xs text-amber-300"><Pause size={12} /> Paused</span>;
+function ClockPill({ left, warn }: { left: number; warn?: boolean }) {
   const h = Math.floor(left / 3600);
   const m = Math.floor((left % 3600) / 60);
   const s = left % 60;

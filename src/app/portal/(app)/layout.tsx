@@ -159,6 +159,7 @@ export default async function PortalLayout({ children }: { children: React.React
       "/portal",
       "/portal/admin/attendance-view",
       "/portal/timetable",
+      "/portal/install",
       "/portal/settings",
       "/portal/auth",
       "/portal/onboarding",
@@ -167,12 +168,13 @@ export default async function PortalLayout({ children }: { children: React.React
     if (!ok) redirect("/portal/admin/attendance-view");
   }
   if (isCoordinatorOnly(user.roles) && pathname) {
-    const allowed = ["/portal", "/portal/coordinator", "/portal/admin/attendance-view", "/portal/timetable", "/portal/library", "/portal/resources", "/portal/notifications", "/portal/settings", "/portal/auth"];
+    const allowed = ["/portal", "/portal/coordinator", "/portal/admin/attendance-view", "/portal/timetable", "/portal/library", "/portal/resources", "/portal/notifications", "/portal/install", "/portal/settings", "/portal/auth"];
     if (!allowed.some((a) => pathname === a || pathname.startsWith(a + "/"))) redirect("/portal/coordinator");
   }
 
   const { roles: navRoles, previewing } = await effectiveRoles(user);
   const navSections = navFor(navRoles);
+  navSections.push({ title: "Portal App", items: [{ href: "/portal/install", label: "Install App" }] });
   const realAdmin = isAdmin(user.roles);
   const roleBadges = user.roles.length
     ? user.roles.map((r) => ROLE_LABELS[r]).join(" · ")

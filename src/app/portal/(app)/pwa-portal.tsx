@@ -42,6 +42,12 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
 
+declare global {
+  interface Window {
+    __sjakInstallPrompt?: BeforeInstallPromptEvent;
+  }
+}
+
 export function PwaPortal() {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
   const [showCard, setShowCard] = useState(false);
@@ -67,13 +73,32 @@ export function PwaPortal() {
 
     const onBip = (e: Event) => {
       e.preventDefault();
-      setDeferred(e as BeforeInstallPromptEvent);
+      const prompt = e as BeforeInstallPromptEvent;
+      window.__sjakInstallPrompt = prompt;
+      window.dispatchEvent(new Event("sjak:install-ready"));
+      setDeferred(prompt);
       setShowCard(true);
     };
     window.addEventListener("beforeinstallprompt", onBip);
     // iOS never fires beforeinstallprompt — show the manual card there.
     if (isIos()) { setShowCard(true); setIosHelp(true); }
     return () => window.removeEventListener("beforeinstallprompt", onBip);
+  }, []);
+
+  // The permanent /portal/install page can complete installation too. Keep the
+  // floating card in sync so it disappears immediately after acceptance.
+  useEffect(() => {
+    const onInstalled = () => {
+      setShowCard(false);
+      setDeferred(null);
+      window.__sjakInstallPrompt = undefined;
+    };
+    window.addEventListener("sjak:installed", onInstalled);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("sjak:installed", onInstalled);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
   }, []);
 
   const dismiss = useCallback(() => {
@@ -108,6 +133,8 @@ export function PwaPortal() {
     await deferred.prompt();
     const choice = await deferred.userChoice.catch(() => ({ outcome: "dismissed" as const }));
     if (choice.outcome === "accepted") { await enableAlerts(); setShowCard(false); }
+    if (choice.outcome === "accepted") window.dispatchEvent(new Event("sjak:installed"));
+    window.__sjakInstallPrompt = undefined;
     setDeferred(null);
   }
 

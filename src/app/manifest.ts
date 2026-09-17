@@ -6,11 +6,11 @@ import type { MetadataRoute } from "next";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Syed Jabran Ali Kamran — Physics Educator & Education Portal",
-    short_name: "SJAK",
+    name: "SJAK Physics Portal",
+    short_name: "Physics Portal",
     description:
       "Cambridge Physics educator, entrepreneur and AI consultant. Physics Studio tutor and the Education Portal for students, parents, teachers and staff.",
-    start_url: "/",
+    start_url: "/portal",
     scope: "/",
     display: "standalone",
     background_color: "#0B0F14",
