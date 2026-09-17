@@ -83,6 +83,9 @@ function AlertsSetup() {
       const reg = await navigator.serviceWorker.register("/sw.js");
       await navigator.serviceWorker.ready;
       const { publicKey } = await (await fetch("/api/portal/push")).json();
+      // Drop any stale/rotated subscription first so a key change can't throw.
+      const old = await reg.pushManager.getSubscription();
+      if (old) { try { await old.unsubscribe(); } catch { /* ignore */ } }
       const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(publicKey) });
       await fetch("/api/portal/push", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ op: "subscribe", subscription: sub.toJSON() }) });
       setPushState("on");

@@ -37,6 +37,37 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
   return out;
 }
 
+function sameKey(a: ArrayBuffer | null | undefined, b: Uint8Array): boolean {
+  if (!a) return false;
+  const u = new Uint8Array(a);
+  if (u.length !== b.length) return false;
+  for (let i = 0; i < u.length; i++) if (u[i] !== b[i]) return false;
+  return true;
+}
+
+/**
+ * Return a live PushSubscription that matches the current VAPID key. If an
+ * existing subscription was made with a different key (rotation) it is dropped
+ * and re-created; otherwise the existing one is reused. Never throws.
+ */
+async function ensureFreshSubscription(
+  reg: ServiceWorkerRegistration,
+  publicKey: string,
+): Promise<PushSubscription | null> {
+  try {
+    const appKey = urlBase64ToUint8Array(publicKey);
+    let sub = await reg.pushManager.getSubscription();
+    if (sub && !sameKey(sub.options?.applicationServerKey ?? null, appKey)) {
+      try { await sub.unsubscribe(); } catch { /* ignore */ }
+      sub = null;
+    }
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: appKey });
+    }
+    return sub;
+  } catch { return null; }
+}
+
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
@@ -54,10 +85,36 @@ export function PwaPortal() {
   const [iosHelp, setIosHelp] = useState(false);
   const swRef = useRef<ServiceWorkerRegistration | null>(null);
 
-  // 1) Register the service worker once.
+  // 1) Register the service worker once, then keep the push subscription FRESH.
   useEffect(() => {
     if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
     navigator.serviceWorker.register("/sw.js").then((reg) => { swRef.current = reg; }).catch(() => {});
+  }, []);
+
+  // 1b) Self-heal push: on every load, if the user has already granted
+  // notification permission, make sure a LIVE subscription exists and re-sync
+  // it to the server. This replaces subscriptions the push service has expired
+  // (HTTP 410) or rotated — the top cause of "push stopped arriving" — and
+  // re-subscribes with the current VAPID key if it changed.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+        if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+        const reg = await navigator.serviceWorker.ready;
+        swRef.current = reg;
+        const info = await fetch("/api/portal/push").then((r) => r.json()).catch(() => null);
+        if (cancelled || !info?.enabled || !info.publicKey || !reg.pushManager) return;
+        const sub = await ensureFreshSubscription(reg, info.publicKey);
+        if (cancelled || !sub) return;
+        await fetch("/api/portal/push", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ op: "subscribe", subscription: sub.toJSON() }),
+        }).catch(() => {});
+      } catch { /* best effort */ }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // 2) Install prompt wiring.
@@ -114,12 +171,8 @@ export function PwaPortal() {
       const reg = swRef.current || (await navigator.serviceWorker.ready);
       const info = await fetch("/api/portal/push").then((r) => r.json()).catch(() => null);
       if (info?.enabled && info.publicKey && reg?.pushManager) {
-        const existing = await reg.pushManager.getSubscription();
-        const sub = existing || await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(info.publicKey),
-        });
-        await fetch("/api/portal/push", {
+        const sub = await ensureFreshSubscription(reg, info.publicKey);
+        if (sub) await fetch("/api/portal/push", {
           method: "POST", headers: { "content-type": "application/json" },
           body: JSON.stringify({ op: "subscribe", subscription: sub.toJSON() }),
         }).catch(() => {});
