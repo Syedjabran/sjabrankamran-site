@@ -86,6 +86,12 @@ export function PaperRunner({
   // ---- per-question time tracking ----
   const [perQ, setPerQ] = useState<Record<string, number>>({});
   const [pausedQuestions, setPausedQuestions] = useState<Set<string>>(() => new Set());
+  // "Task completed" phase: the student has finished writing and wants to upload
+  // an attachment. Time stops, answers freeze, and — crucially — the anti-cheat
+  // guard + camera proctor stand down so switching tabs / opening the file
+  // picker to grab the file does NOT lock the test. The attempt is recorded on
+  // entry so responses are safe even if they navigate away to upload.
+  const [taskCompleted, setTaskCompleted] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const activeIdRef = useRef<string | null>(null);
   const liRefs = useRef<Record<string, HTMLLIElement | null>>({});
@@ -145,7 +151,7 @@ export function PaperRunner({
     if (!loading && !err && begun && startedAt === null) setStartedAt(Date.now());
   }, [loading, err, begun, startedAt]);
 
-  const running = timed && begun && startedAt !== null && !submitted && !voided && (openPractice || remaining > 0);
+  const running = timed && begun && startedAt !== null && !submitted && !voided && !taskCompleted && (openPractice || remaining > 0);
   const clockRunning = running && !openPractice;
 
   // ---- forensic event pipeline (strict tests stream to the proctor log) ----
@@ -210,6 +216,15 @@ export function PaperRunner({
     onViolation: () => { /* handled via onEvent funnel */ },
     onEvent: (ev) => handleEvent(ev, "guard"),
   });
+
+  // Finish answering to upload safely: stop the clock, freeze answers, disarm
+  // the guard + camera (running becomes false), and record responses now.
+  const completeTask = useCallback(() => {
+    if (taskCompleted || submitted || voided) return;
+    setTaskCompleted(true);
+    postAttempt(false, null);
+    if (strict) postProctor({ action: "end", status: "task_completed" });
+  }, [taskCompleted, submitted, voided, postAttempt, postProctor, strict]);
 
   const submit = useCallback((timeUp = false) => {
     setSubmitted(true);
@@ -349,7 +364,7 @@ export function PaperRunner({
     return `url("data:image/svg+xml,${svg}")`;
   }, []);
 
-  const camPhase: "preview" | "live" | "off" = !strict ? "off" : voided || submitted ? "off" : begun ? "live" : "preview";
+  const camPhase: "preview" | "live" | "off" = !strict ? "off" : voided || submitted || taskCompleted ? "off" : begun ? "live" : "preview";
 
   if (loading) {
     return (
@@ -494,7 +509,14 @@ export function PaperRunner({
         </div>
       )}
 
-      {submitted && logMeta && startedAt !== null && (
+      {taskCompleted && !submitted && (
+        <div className="el-noprint mb-4 flex items-start gap-2 rounded-xl border border-emerald2/30 bg-emerald2/[0.06] px-4 py-3 text-sm text-emerald2">
+          <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
+          <span><b>Task completed — time stopped.</b> You can now switch tabs or open other apps to pick your file, and upload it below <b>without your test locking</b>. Your answers are locked from further changes. Tap <b>Submit</b> when you’ve finished uploading.</span>
+        </div>
+      )}
+
+      {(submitted || taskCompleted) && logMeta && startedAt !== null && (
         <ScriptUpload logMeta={logMeta} startedAt={startedAt} durationSec={totalSec} />
       )}
 
@@ -549,8 +571,8 @@ export function PaperRunner({
                     return (
                       <button
                         key={L}
-                        disabled={submitted || qLocked(q.id)}
-                        onClick={() => { if (!qLocked(q.id)) setAnswers((a) => ({ ...a, [q.id]: k })); }}
+                        disabled={submitted || taskCompleted || qLocked(q.id)}
+                        onClick={() => { if (!qLocked(q.id) && !taskCompleted) setAnswers((a) => ({ ...a, [q.id]: k })); }}
                         className={
                           "h-10 w-12 rounded-lg border font-display text-base font-bold transition " +
                           (isCorrect ? "border-emerald2 bg-emerald2 text-space" :
@@ -574,7 +596,7 @@ export function PaperRunner({
                     imageUrl={urls[q.img]}
                     qid={q.id}
                     code={logMeta?.code || logMeta?.ref || "exam"}
-                    disabled={submitted}
+                    disabled={submitted || taskCompleted}
                     onModeChange={(m) => setAnswerMode((s) => ({ ...s, [q.id]: m }))}
                   />
                   {strict ? (
@@ -622,9 +644,19 @@ export function PaperRunner({
         })}
       </ol>
 
-      <div className="mt-6 flex flex-wrap justify-center gap-3 el-noprint">
+      <div className="mt-6 flex flex-col items-center gap-2 el-noprint">
         {!submitted ? (
-          <button onClick={() => submit(false)} className="btn-primary"><CheckCircle2 size={16} /> {strict ? "Submit test" : "Submit & mark"}</button>
+          <>
+            <div className="flex flex-wrap justify-center gap-3">
+              {integrity !== "off" && !taskCompleted && (
+                <button onClick={completeTask} className="btn-ghost !border-emerald2/50 !text-emerald2"><CheckCircle2 size={16} /> Task completed — let me upload</button>
+              )}
+              <button onClick={() => submit(false)} className="btn-primary"><CheckCircle2 size={16} /> {strict ? "Submit test" : "Submit & mark"}</button>
+            </div>
+            {integrity !== "off" && !taskCompleted && (
+              <p className="max-w-md text-center text-[11px] text-dust">To upload any attachment without your task being locked, click <b className="text-emerald2">Task completed</b> first — the timer stops and you can safely switch tabs to pick your file.</p>
+            )}
+          </>
         ) : onExit ? (
           <button onClick={onExit} className="btn-ghost"><RotateCcw size={16} /> Choose another</button>
         ) : null}
@@ -708,12 +740,15 @@ function ScriptUpload({ logMeta, startedAt, durationSec }: { logMeta: LogMeta; s
   }, []);
   const windowLeft = Math.max(0, Math.round((deadline - now) / 1000));
 
+  const EXT_CT: Record<string, string> = { pdf: "application/pdf", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", heic: "image/heic", heif: "image/heif", doc: "application/msword", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" };
   async function upload() {
     if (!file) return;
-    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-      setMsg("Answer scripts must be a single PDF file.");
+    const ext = (file.name.split(".").pop() || "").toLowerCase();
+    if (!EXT_CT[ext]) {
+      setMsg("Attach a PDF, image (JPG/PNG/WebP/HEIC) or Word document.");
       return;
     }
+    const contentType = file.type || EXT_CT[ext];
     setBusy(true);
     setMsg(null);
     try {
@@ -722,12 +757,12 @@ function ScriptUpload({ logMeta, startedAt, durationSec }: { logMeta: LogMeta; s
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           mode: logMeta.mode, paperType: logMeta.paperType, code: logMeta.code, ref: logMeta.ref,
-          startedAt, durationSec,
+          startedAt, durationSec, ext,
         }),
       });
       const j = await sign.json();
       if (!sign.ok) throw new Error(j.error || "Upload not authorised.");
-      const put = await fetch(j.signedUrl, { method: "PUT", headers: { "content-type": "application/pdf" }, body: file });
+      const put = await fetch(j.signedUrl, { method: "PUT", headers: { "content-type": contentType }, body: file });
       if (!put.ok) throw new Error("Upload failed — please retry.");
       setResult({ status: j.status, path: j.path });
       setMsg(
@@ -765,18 +800,18 @@ function ScriptUpload({ logMeta, startedAt, durationSec }: { logMeta: LogMeta; s
   return (
     <div className="el-noprint mb-6 rounded-2xl border border-cyan/20 bg-cyan/[0.03] p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="flex items-center gap-2 font-display text-sm text-ice"><Upload size={15} className="text-cyan" /> Upload your written answer script (PDF)</p>
+        <p className="flex items-center gap-2 font-display text-sm text-ice"><Upload size={15} className="text-cyan" /> Upload your answer script or attachment</p>
         <span className={"flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[11px] " + (windowLeft > 0 ? "border-emerald2/40 text-emerald2" : "border-signal/50 text-signal")}>
           <TimerReset size={12} /> {windowLeft > 0 ? `window closes in ${Math.floor(windowLeft / 60)}:${String(windowLeft % 60).padStart(2, "0")}` : "upload window closed"}
         </span>
       </div>
       <p className="mt-1 text-xs text-dust">
-        Scan or photograph your handwritten answers as one PDF and upload within the window (exam time + 5 minutes). Later uploads are accepted but flagged <b className="text-signal">late / malpractice</b>.
+        Attach your answers as a PDF, a photo (JPG/PNG/WebP/HEIC) or a Word document, within the window (exam time + 5 minutes). Later uploads are accepted but flagged <b className="text-signal">late / malpractice</b>.
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <label className="btn-ghost !px-3 !py-1.5 cursor-pointer text-xs">
-          <FileText size={13} /> {file ? file.name.slice(0, 28) : "Choose PDF"}
-          <input type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          <FileText size={13} /> {file ? file.name.slice(0, 28) : "Choose file"}
+          <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.heif,.doc,.docx,application/pdf,image/*" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </label>
         <button onClick={upload} disabled={!file || busy || !!result} className="btn-primary !px-3.5 !py-1.5 text-xs disabled:opacity-50">
           {busy ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} Upload script

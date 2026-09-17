@@ -19,6 +19,7 @@ const schema = z.object({
   ref: z.string().max(80).optional(),
   startedAt: z.number().int().positive(),
   durationSec: z.number().int().min(30).max(20000),
+  ext: z.enum(["pdf", "png", "jpg", "jpeg", "webp", "heic", "heif", "doc", "docx"]).optional(),
 });
 
 function stamp(d = new Date()) {
@@ -40,7 +41,8 @@ export async function POST(req: Request) {
   const status: "ontime" | "late" = late ? "late" : "ontime";
 
   const safe = (code || mode).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32) || "script";
-  const path = `${late ? "_late/" : ""}${user.id}/${stamp()}__${safe}.pdf`;
+  const ext = parsed.data.ext || "pdf";
+  const path = `${late ? "_late/" : ""}${user.id}/${stamp()}__${safe}.${ext}`;
 
   const supabase = createAdminClient();
   const { data, error } = await supabase.storage.from(BUCKET).createSignedUploadUrl(path);
