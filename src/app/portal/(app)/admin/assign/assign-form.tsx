@@ -113,7 +113,9 @@ export function AssignForm({ canTest = false }: { canTest?: boolean }) {
           : exContentType === "custom" ? { type: "custom", ids: [...pickIds] }
           : { type: "daily" };
         const j = await api("/api/portal/admin/exam-allocate", { method: "POST", body: JSON.stringify({ target_type: exTarget, class_ids, student_email, scope_label, mode: exMode, content, title, instructions: exInstructions || undefined, duration_min: exDuration ? Number(exDuration) : undefined, due_at: exDue || undefined, starts_at: exStarts || undefined, notify }) });
-        setMsg(`Allocated to ${j.students} student${j.students === 1 ? "" : "s"} · ${exMode.replace(/_/g, " ")} · ${scope_label}.`);
+        // The drill reference is the handle staff quote to find, re-view or
+        // re-open this exact paper later (Drill Records).
+        setMsg(`Allocated to ${j.students} student${j.students === 1 ? "" : "s"} · ${exMode.replace(/_/g, " ")} · ${scope_label}.${j.drillRef ? ` Ref ${j.drillRef}${j.frozen ? " — same paper for every student." : ""}` : ""}`);
         return;
       }
       const payload: Record<string, unknown> = { type: type === "test" ? "test" : "assignment", class_id: classId, title, notify };

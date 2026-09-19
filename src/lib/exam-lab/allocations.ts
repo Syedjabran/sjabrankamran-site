@@ -23,11 +23,30 @@ export function newAllocId() { return `${Date.now().toString(36)}-${Math.random(
 
 export type AllocMode = "assignment_help" | "assignment_nohelp" | "test";
 
+/**
+ * The two RANDOMISED specs. Historically these were stored on the allocation
+ * itself and re-resolved in the browser for every student and every re-open,
+ * so no two students ever sat the same paper. They are kept verbatim because
+ * allocations already saved in production carry this shape and must keep
+ * working exactly as they do today; new allocations use `drillref` instead.
+ */
+export type DrillSpecContent =
+  | { type: "drill"; paperType: "P1" | "P2" | "P4"; topics: string[]; levels: ("LOT" | "HOT")[]; count: number }
+  | { type: "daily" };
+
 export type AllocContent =
   | { type: "paper"; code: string }
-  | { type: "drill"; paperType: "P1" | "P2" | "P4"; topics: string[]; levels: ("LOT" | "HOT")[]; count: number }
+  | DrillSpecContent
   | { type: "custom"; ids: string[] } // hand-picked question ids from the bank
-  | { type: "daily" };
+  /**
+   * Deterministic drill: the paper was frozen ONCE at allocation time and the
+   * exact question ids (in their exact order) travel with the allocation, so
+   * every recipient sits the identical paper and a close-and-reopen replays
+   * it byte-for-byte. `drillId`/`ref` point at the stored DrillRecord holding
+   * the full snapshot; `spec` is the original randomised spec, retained only
+   * as a degradation path if the question bank ever loses those ids.
+   */
+  | { type: "drillref"; drillId: string; ref: string; ids: string[]; spec: DrillSpecContent };
 
 export type AllocStatus = "assigned" | "submitted" | "locked" | "unlocked" | "cancelled";
 

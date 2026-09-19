@@ -25,7 +25,11 @@ const TOPICS_A2 = ["Circular motion","Gravitational fields","Thermal physics","I
 type ActiveMeta = { mode: "paper" | "drill"; code?: string; ref?: string; paperType: "P1" | "P2" | "P4" | "mixed" };
 type Active = { questions: ImgQuestion[]; title: string; subtitle?: string; duration: number; timed: boolean; logMeta: ActiveMeta; integrity: GuardMode; kind: AttemptKind; help: boolean; attemptId?: string; allocationId?: string | null };
 
-type AllocContent = { type: "paper"; code: string } | { type: "drill"; paperType: "P1" | "P2" | "P4"; topics: string[]; levels: ("LOT" | "HOT")[]; count: number } | { type: "custom"; ids: string[] } | { type: "daily" };
+type DrillSpec = { type: "drill"; paperType: "P1" | "P2" | "P4"; topics: string[]; levels: ("LOT" | "HOT")[]; count: number } | { type: "daily" };
+// `drillref` = a drill whose paper was frozen at allocation time. `drill` and
+// `daily` are the legacy randomised specs still carried by allocations saved
+// before freezing existed; they keep their original per-sitting behaviour.
+type AllocContent = { type: "paper"; code: string } | DrillSpec | { type: "custom"; ids: string[] } | { type: "drillref"; drillId: string; ref: string; ids: string[]; spec: DrillSpec };
 type Allocation = { id: string; attemptId: string; mode: "assignment_help" | "assignment_nohelp" | "test"; content: AllocContent; title: string; instructions: string | null; durationMin: number | null; dueAt: string | null; startsAt: string | null; className: string | null; status: string };
 function allocCfg(mode: Allocation["mode"]): { integrity: GuardMode; kind: AttemptKind; help: boolean } {
   if (mode === "test") return { integrity: "strict", kind: "test", help: false };
@@ -73,6 +77,7 @@ function AssignedBoard({ allocations, onStart }: { allocations: Allocation[]; on
                 <p className="truncate text-sm font-semibold text-ice">{al.title}</p>
                 <div className="mt-0.5 flex flex-wrap items-center gap-2 font-mono text-[10px] text-dust">
                   <span className={"rounded-full border px-2 py-0.5 uppercase " + accent[al.mode]}>{ALLOC_LABEL[al.mode]}</span>
+                  {al.content?.type === "drillref" && al.content.ref ? <span className="rounded-full border border-lime2/40 px-2 py-0.5 text-lime2">{al.content.ref}</span> : null}
                   {al.className ? <span>{al.className}</span> : null}
                   {opens ? <span>opens {opens.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span> : null}
                   {due ? <span>due {due.toLocaleDateString("en-GB")}</span> : null}
@@ -152,6 +157,25 @@ export function PapersHub({ canTest = false, canPause = false }: { canTest?: boo
     return () => { alive = false; };
   }, [active]);
 
+  /**
+   * The historic per-sitting resolution of a randomised drill/daily spec.
+   * Still used verbatim by allocations stored before drills were frozen, and
+   * as the last-resort fallback when a frozen id no longer exists in the bank.
+   */
+  function legacyDrillQuestions(spec: DrillSpec): ImgQuestion[] {
+    if (spec.type === "daily") return shuffle(IMAGE_BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
+    const { paperType, topics, levels, count } = spec;
+    const tset = new Set(topics); const lset = new Set(levels);
+    // Old automated allocations may contain a retired topic label or an
+    // over-restrictive level combination. Fall back within the assigned
+    // paper instead of silently doing nothing when Start is pressed.
+    const exact = IMAGE_BANK.filter((q) => q.paperType === paperType && (!tset.size || (q.topic && tset.has(q.topic))) && lset.has(q.level));
+    const topicAnyLevel = IMAGE_BANK.filter((q) => q.paperType === paperType && (!tset.size || (q.topic && tset.has(q.topic))));
+    const paperAndLevel = IMAGE_BANK.filter((q) => q.paperType === paperType && lset.has(q.level));
+    const pool = exact.length ? exact : topicAnyLevel.length ? topicAnyLevel : paperAndLevel.length ? paperAndLevel : IMAGE_BANK.filter((q) => q.paperType === paperType);
+    return shuffle([...pool]).slice(0, count);
+  }
+
   function startAllocation(al: Allocation) {
     setLaunchError("");
     const cfg = allocCfg(al.mode);
@@ -162,21 +186,39 @@ export function PapersHub({ canTest = false, canPause = false }: { canTest?: boo
       const meta = IMAGE_PAPERS.find((p) => p.code === code);
       if (!qs.length || !meta) return;
       enter({ questions: qs, title: al.title || PAPER_NAME[meta.paperType], subtitle: `${meta.ref} · ${label(code)}`, duration: al.durationMin || meta.duration, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType }, ...common });
-    } else if (al.content.type === "drill") {
-      const { paperType, topics, levels, count } = al.content;
-      const tset = new Set(topics); const lset = new Set(levels);
-      // Old automated allocations may contain a retired topic label or an
-      // over-restrictive level combination. Fall back within the assigned
-      // paper instead of silently doing nothing when Start is pressed.
-      const exact = IMAGE_BANK.filter((q) => q.paperType === paperType && (!tset.size || (q.topic && tset.has(q.topic))) && lset.has(q.level));
-      const topicAnyLevel = IMAGE_BANK.filter((q) => q.paperType === paperType && (!tset.size || (q.topic && tset.has(q.topic))));
-      const paperAndLevel = IMAGE_BANK.filter((q) => q.paperType === paperType && lset.has(q.level));
-      const pool = exact.length ? exact : topicAnyLevel.length ? topicAnyLevel : paperAndLevel.length ? paperAndLevel : IMAGE_BANK.filter((q) => q.paperType === paperType);
-      const qs = shuffle([...pool]).slice(0, count);
+    } else if (al.content.type === "drillref") {
+      // DETERMINISTIC DRILL. The paper was frozen once, at allocation time, and
+      // its exact question ids travel with the allocation — so every student in
+      // the class sits the same paper in the same order, and closing and
+      // reopening replays that identical paper instead of reshuffling.
+      const { ids, ref, spec } = al.content;
+      const byId = new Map(FULL_BANK.map((q) => [q.id, q] as const));
+      let qs = ids.map((qid) => byId.get(qid)).filter((q): q is ImgQuestion => !!q);
+      // Only if the bank has lost every frozen id do we degrade to the original
+      // randomised spec, so a bank change can never leave a student stranded.
+      if (!qs.length) qs = legacyDrillQuestions(spec);
       if (!qs.length) {
         setLaunchError(`No questions are available for “${al.title}”. The assignment has been reported for repair.`);
         return;
       }
+      // A proctored TEST still shuffles the ORDER per student to deter copying
+      // (marking is keyed by question id, so the key follows each student's own
+      // arrangement). The question SET stays identical for the whole class.
+      if (al.mode === "test") qs = shuffle([...qs]);
+      const pts = new Set(qs.map((q) => q.paperType));
+      const pt: "P1" | "P2" | "P4" | "mixed" = pts.size === 1 ? qs[0].paperType : "mixed";
+      const mins = al.durationMin || Math.max(5, Math.round(qs.length * (pt === "P1" ? 1.5 : 9)));
+      const title = al.title || (pt === "mixed" ? "Drill" : `Topic drill · ${PAPER_NAME[pt].split(" · ")[0]}`);
+      enter({ questions: qs, title, subtitle: `${qs.length} questions · ${mins} min${ref ? ` · Ref ${ref}` : ""}`, duration: mins, logMeta: { mode: "drill", ref: ref || undefined, paperType: pt }, ...common });
+    } else if (al.content.type === "drill") {
+      // LEGACY spec-based drill (allocations saved before freezing existed).
+      // Left exactly as it was: re-resolved per sitting.
+      const qs = legacyDrillQuestions(al.content);
+      if (!qs.length) {
+        setLaunchError(`No questions are available for “${al.title}”. The assignment has been reported for repair.`);
+        return;
+      }
+      const paperType = al.content.paperType;
       const mins = al.durationMin || Math.max(5, Math.round(qs.length * (paperType === "P1" ? 1.5 : 9)));
       enter({ questions: qs, title: al.title || `Topic drill · ${PAPER_NAME[paperType].split(" · ")[0]}`, subtitle: `${qs.length} questions · ${mins} min`, duration: mins, logMeta: { mode: "drill", paperType }, ...common });
     } else if (al.content.type === "custom") {

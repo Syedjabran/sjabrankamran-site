@@ -83,6 +83,29 @@ export function isAdmin(roles: EduRole[]) {
   return roles.some((r) => ["super_admin", "admin"].includes(r));
 }
 
+/**
+ * Roles allowed to conduct an Exam Lab drill and to read back Drill Records.
+ *
+ * This is deliberately WIDER than the proctored-test permission, which stays
+ * restricted to super_admin/admin/teaching_assistant in the exam-allocate
+ * route. Coordinators and facilitators are school-scoped: they appear here,
+ * but callers must still narrow what they can touch to their own classes via
+ * `visibleClassIdsForUid`. Membership of this list is never, on its own,
+ * permission to see another school's or another class's data.
+ */
+export const DRILL_ROLES: EduRole[] = [
+  "super_admin", "admin", "teacher", "coordinator", "facilitator", "teaching_assistant",
+];
+
+export function canConductDrills(roles: EduRole[]) {
+  return roles.some((r) => DRILL_ROLES.includes(r));
+}
+
+/** Same population reads Drill Records; the ROWS are then scope-filtered. */
+export function canViewDrillRecords(roles: EduRole[]) {
+  return canConductDrills(roles);
+}
+
 /** Server-side: current signed-in portal user with roles (RLS-scoped). */
 export async function getPortalUser(): Promise<PortalUser | null> {
   const supabase = await createClient();

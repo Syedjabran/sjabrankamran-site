@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireStaff, audit } from "@/lib/portal/admin";
+import { audit } from "@/lib/portal/admin";
 import { allocateToStudents, newAllocId, type AllocMode, type AllocContent } from "@/lib/exam-lab/allocations";
 import { notify } from "@/lib/portal/notifications";
-import { saveDrillRecord, resolveSnapshot, newDrillId, type DrillTargetType } from "@/lib/exam-lab/drill-records";
+import { saveDrillRecord, resolveSnapshot, newDrillId, reserveDrillRef, type DrillTargetType } from "@/lib/exam-lab/drill-records";
+import { getPortalUser, isAdmin, isSchoolScopedStaff, canConductDrills, canAccessGlobalStaffData } from "@/lib/edu/auth";
+import { visibleClassIdsForUid } from "@/lib/portal/timetable";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -18,10 +20,22 @@ export const maxDuration = 30;
  *   mode, content, title, instructions?, duration_min?, due_at?, starts_at?, notify?
  * }
  *   mode: assignment_help | assignment_nohelp | test  (test = super_admin/admin/TA)
+ *
+ * Drills are FROZEN here: the exact question paper is resolved once, stored on
+ * the Drill Record, and the allocation fanned to students carries a reference
+ * to those exact question ids (`drillref`) rather than the randomised spec.
+ * That is what makes one class drill identical for every student and identical
+ * again on every re-open.
  */
 export async function POST(req: Request) {
-  const staff = await requireStaff();
-  if (!staff) return NextResponse.json({ error: "Staff only." }, { status: 403 });
+  const staff = await getPortalUser();
+  // Global staff keep their existing access; drill-conducting roles
+  // (teacher / coordinator / facilitator / TA / admin) are additionally
+  // allowed, including the school-scoped ones, whose reach is then narrowed
+  // to their own classes below.
+  if (!staff || !(canAccessGlobalStaffData(staff.roles) || canConductDrills(staff.roles))) {
+    return NextResponse.json({ error: "Staff only." }, { status: 403 });
+  }
 
   const b = (await req.json().catch(() => null)) as {
     target_type?: string; class_ids?: string[]; student_email?: string; scope_label?: string;
@@ -76,9 +90,51 @@ export async function POST(req: Request) {
   }
   if (!uids.length) return NextResponse.json({ error: "No active students in the selected target." }, { status: 400 });
 
+  // --- Scope enforcement -------------------------------------------------
+  // Admins reach the whole network. Everyone else may only conduct into the
+  // classes they are scoped to. School-scoped roles (coordinator/facilitator)
+  // are enforced unconditionally. Teachers/TAs are enforced only when they
+  // actually have a mapped class list, so a teacher with no `edu_teachers`
+  // row keeps exactly the access they have today rather than being locked out.
+  if (!isAdmin(staff.roles)) {
+    const scoped = isSchoolScopedStaff(staff.roles);
+    const visible = await visibleClassIdsForUid(staff.id, staff.roles);
+    if (scoped || visible.length) {
+      const allowed = new Set(visible);
+      if (tt === "individual") {
+        const { data: st } = await sb.from("edu_students").select("id").eq("profile_id", uids[0]).maybeSingle();
+        const { data: en } = st?.id
+          ? await sb.from("edu_enrolments").select("class_id").eq("student_id", st.id).eq("status", "active")
+          : { data: [] as { class_id: string | null }[] };
+        const ok = (en || []).some((r) => r.class_id && allowed.has(r.class_id as string));
+        if (!ok) return NextResponse.json({ error: "That student is not in one of your classes." }, { status: 403 });
+      } else {
+        const outside = classIds.filter((cid) => !allowed.has(cid));
+        if (outside.length) {
+          return NextResponse.json({ error: "Some of the selected classes are outside your scope." }, { status: 403 });
+        }
+      }
+    }
+  }
+
+  // --- Freeze the paper --------------------------------------------------
+  // `drill` and `daily` are the two randomised specs. Resolve them ONCE here
+  // and hand the students the resulting question ids so every recipient sits
+  // the same paper in the same order, now and on every re-open. `paper` is
+  // already deterministic (ordered by question number) and `custom` is an
+  // explicit hand-picked id list whose per-student shuffle for proctored
+  // tests is an intentional anti-copy measure — both are left untouched.
+  const drillId = newDrillId();
+  const drillRef = await reserveDrillRef();
+  const snapshotQs = resolveSnapshot(c);
+  const frozen: AllocContent =
+    (c.type === "drill" || c.type === "daily") && snapshotQs.length
+      ? { type: "drillref", drillId, ref: drillRef, ids: snapshotQs.map((q) => q.id), spec: c }
+      : c;
+
   const id = newAllocId();
   await allocateToStudents(uids, {
-    id, mode, content: c,
+    id, mode, content: frozen,
     title: b.title.trim().slice(0, 160),
     instructions: (b.instructions || "").trim().slice(0, 2000) || null,
     durationMin: b.duration_min && b.duration_min > 0 ? Math.round(b.duration_min) : null,
@@ -107,12 +163,12 @@ export async function POST(req: Request) {
 
   // Permanent, viewable-after Drill Record with a frozen snapshot of the exact
   // question paper + which class/group it was conducted for.
-  let drillId: string | null = null;
+  let savedDrillId: string | null = null;
   try {
-    drillId = newDrillId();
+    savedDrillId = drillId;
     await saveDrillRecord({
-      id: drillId, allocationId: id, name: b.title.trim().slice(0, 160), mode, content: c,
-      snapshotQs: resolveSnapshot(c),
+      id: drillId, ref: drillRef, allocationId: id, name: b.title.trim().slice(0, 160), mode, content: c,
+      snapshotQs,
       targetType: tt as DrillTargetType,
       scopeLabel: (b.scope_label || "").slice(0, 120) || null,
       classId: tt === "class" ? (classIds[0] || null) : null,
@@ -122,6 +178,6 @@ export async function POST(req: Request) {
     });
   } catch { /* record is best-effort; never blocks the allocation */ }
 
-  await audit(staff.id, "exam.allocate", "exam_allocation", id, { target: tt, mode, students: uids.length, title: b.title.trim(), drillId });
-  return NextResponse.json({ ok: true, id, drillId, students: uids.length, mode, target: tt }, { status: 200 });
+  await audit(staff.id, "exam.allocate", "exam_allocation", id, { target: tt, mode, students: uids.length, title: b.title.trim(), drillId: savedDrillId, drillRef });
+  return NextResponse.json({ ok: true, id, drillId: savedDrillId, drillRef, frozen: frozen.type === "drillref", students: uids.length, mode, target: tt }, { status: 200 });
 }

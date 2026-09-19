@@ -214,7 +214,11 @@ function assignmentsPillar(
 
 function dailyPillar(attempts: Attempt[], allocs: ExamAllocation[], tasks: PersonalTask[]): PillarScore {
   const cutoff = Date.now() - 30 * 864e5;
-  const dailyAllocs = allocs.filter((a) => a.content.type === "daily" && a.createdAt >= cutoff && a.status !== "cancelled");
+  // A daily challenge is either the legacy spec or a frozen drill whose
+  // underlying spec is "daily" — both must count towards this pillar.
+  const isDaily = (c: ExamAllocation["content"]) =>
+    c.type === "daily" || (c.type === "drillref" && c.spec.type === "daily");
+  const dailyAllocs = allocs.filter((a) => isDaily(a.content) && a.createdAt >= cutoff && a.status !== "cancelled");
   const challenges = tasks.filter((t) => t.kind === "challenge" && t.createdAt >= cutoff);
   const assigned = dailyAllocs.length + challenges.length;
   const done = dailyAllocs.filter((a) => a.completedAt != null).length + challenges.filter((t) => t.status === "done").length;
