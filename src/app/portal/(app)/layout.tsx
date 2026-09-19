@@ -1,3 +1,4 @@
+import { PortalNavigation } from "@/components/portal-navigation";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
@@ -229,41 +230,8 @@ export default async function PortalLayout({ children }: { children: React.React
       </div>
 
       <div className={mustOnboard ? "" : "grid gap-8 lg:grid-cols-[13rem_1fr]"}>
-        <nav data-tour="portal-navigation" aria-label="Portal navigation" className={"lg:sticky lg:top-24 lg:self-start lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto nav-scroll" + (mustOnboard ? " hidden" : "")}>
-          <div className="space-y-5">
-            {navSections.map((section, si) => (
-              <div key={si}>
-                {section.title ? (
-                  <p className="mb-2 px-1 font-mono text-[10px] uppercase tracking-widelabel text-dust/70">{section.title}</p>
-                ) : null}
-                <ul className="flex flex-wrap gap-2 lg:flex-col">
-                  {section.items.map((item) => (
-                    <li key={item.href}>
-                      {item.hardNavigate ? (
-                        <a
-                          href={item.href}
-                          data-portal-tour={item.label}
-                          className="block rounded-xl border border-white/10 bg-space/60 px-3.5 py-2 text-sm text-fog transition hover:border-cyan/40 hover:text-ice"
-                        >
-                          {item.label}
-                        </a>
-                      ) : (
-                        <Link
-                          href={item.href}
-                          data-portal-tour={item.label}
-                          className="block rounded-xl border border-white/10 bg-space/60 px-3.5 py-2 text-sm text-fog transition hover:border-cyan/40 hover:text-ice"
-                        >
-                          {item.label}
-                        </Link>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </nav>
-        <div className="min-w-0">{children}</div>
+        {!mustOnboard && <PortalNavigation sections={navSections} />}
+        <div id="portal-content" tabIndex={-1} className="min-w-0">{children}</div>
       </div>
     </div>
   );
