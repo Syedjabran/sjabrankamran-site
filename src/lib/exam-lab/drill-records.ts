@@ -146,7 +146,8 @@ async function readIndex(): Promise<DrillRecordSummaryRow[]> {
 }
 async function writeIndex(items: DrillRecordSummaryRow[]): Promise<void> {
   const body = new Blob([JSON.stringify({ items: items.slice(0, 2000) })], { type: "application/json" });
-  await sb().storage.from(DATA).upload(INDEX, body, { upsert: true, contentType: "application/json", cacheControl: "0" });
+  const { error } = await sb().storage.from(DATA).upload(INDEX, body, { upsert: true, contentType: "application/json", cacheControl: "0" });
+  if (error) throw new Error("Could not save drill index.");
 }
 
 /** Persist a drill record (index row + full snapshot file). Best-effort. */
@@ -164,7 +165,8 @@ export async function saveDrillRecord(
       createdByName: base.createdByName, createdAt: Date.now(),
     };
     const body = new Blob([JSON.stringify({ record })], { type: "application/json" });
-    await sb().storage.from(DATA).upload(recPath(record.id), body, { upsert: true, contentType: "application/json", cacheControl: "0" });
+    const { error } = await sb().storage.from(DATA).upload(recPath(record.id), body, { upsert: true, contentType: "application/json", cacheControl: "0" });
+    if (error) return false;
     const { snapshot: _s, content: _c, ...rest } = record;
     void _s; void _c;
     const row: DrillRecordSummaryRow = { ...rest, questionCount: snapshot.length };

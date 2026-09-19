@@ -6,6 +6,7 @@ import { FileText, Layers, Play, Zap, Library, Coffee, ShieldAlert, Video, Clipb
 import { IMAGE_BANK, IMAGE_PAPERS, FULL_BANK, type ImgQuestion } from "@/lib/exam-lab/image-bank";
 import { PaperRunner, type AttemptKind } from "./paper-runner";
 import { requestExamFullscreen } from "@/lib/exam-lab/fullscreen";
+import { ClassDrillAssign } from "./class-drill-assign";
 import type { GuardMode } from "./use-exam-guard";
 
 const SESS: Record<string, string> = { s: "May/June", w: "Oct/Nov", m: "Feb/March" };
@@ -30,7 +31,7 @@ type DrillSpec = { type: "drill"; paperType: "P1" | "P2" | "P4"; topics: string[
 // `drillref` = a drill whose paper was frozen at allocation time. `drill` and
 // `daily` are the legacy randomised specs still carried by allocations saved
 // before freezing existed; they keep their original per-sitting behaviour.
-type AllocContent = { type: "paper"; code: string } | DrillSpec | { type: "custom"; ids: string[] } | { type: "drillref"; drillId: string; ref: string; ids: string[]; spec: DrillSpec };
+type AllocContent = { type: "paper"; code: string } | DrillSpec | { type: "custom"; ids: string[] } | { type: "drillref"; drillId: string; ref: string; ids: string[]; spec: DrillSpec | { type: "paper"; code: string } | { type: "custom"; ids: string[] } };
 type Allocation = { id: string; attemptId: string; mode: "assignment_help" | "assignment_nohelp" | "test"; content: AllocContent; title: string; instructions: string | null; durationMin: number | null; dueAt: string | null; startsAt: string | null; className: string | null; status: string };
 function allocCfg(mode: Allocation["mode"]): { integrity: GuardMode; kind: AttemptKind; help: boolean } {
   if (mode === "test") return { integrity: "strict", kind: "test", help: false };
@@ -104,7 +105,7 @@ function AssignedBoard({ allocations, onStart }: { allocations: Allocation[]; on
   );
 }
 
-export function PapersHub({ canTest = false, canPause = false }: { canTest?: boolean; canPause?: boolean }) {
+export function PapersHub({ canTest = false, canPause = false, canConduct = false }: { canTest?: boolean; canPause?: boolean; canConduct?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -148,7 +149,7 @@ export function PapersHub({ canTest = false, canPause = false }: { canTest?: boo
     void requestExamFullscreen();
     runObserved.current = false;
     setActive(a);
-    router.push(`${pathname}?run=1`, { scroll: false });
+    router.push(`${pathname}?run=1${searchParams.get("class") ? `&class=${encodeURIComponent(searchParams.get("class")!)}` : ""}`, { scroll: false });
     if (typeof window !== "undefined") window.scrollTo({ top: 0 });
   }
   function exit() {
@@ -159,18 +160,20 @@ export function PapersHub({ canTest = false, canPause = false }: { canTest?: boo
   const [levels, setLevels] = useState<Set<"LOT" | "HOT">>(new Set(["LOT", "HOT"]));
   const [count, setCount] = useState(8);
 
-  // Load the student's staff-set allocations (assignments / tests).
+  // Refresh waiting students when staff conduct a new class activity.
   useEffect(() => {
     let alive = true;
-    fetch("/api/exam-lab/allocations").then((r) => r.ok ? r.json() : { items: [] }).then((j) => { if (alive) setAllocations(j.items || []); }).catch(() => {});
-    return () => { alive = false; };
+    const refresh = () => {
+      if (document.visibilityState === "hidden") return;
+      fetch("/api/exam-lab/allocations", { cache: "no-store" }).then((r) => r.ok ? r.json() : { items: [] }).then((j) => { if (alive) setAllocations(j.items || []); }).catch(() => {});
+    };
+    refresh();
+    const timer = active ? null : window.setInterval(refresh, 15000);
+    window.addEventListener("focus", refresh);
+    return () => { alive = false; if (timer) window.clearInterval(timer); window.removeEventListener("focus", refresh); };
   }, [active]);
 
-  /**
-   * The historic per-sitting resolution of a randomised drill/daily spec.
-   * Still used verbatim by allocations stored before drills were frozen, and
-   * as the last-resort fallback when a frozen id no longer exists in the bank.
-   */
+  // Compatibility for old, spec-only allocations. New papers never use this.
   function legacyDrillQuestions(spec: DrillSpec): ImgQuestion[] {
     if (spec.type === "daily") return shuffle(IMAGE_BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
     const { paperType, topics, levels, count } = spec;
@@ -200,20 +203,13 @@ export function PapersHub({ canTest = false, canPause = false }: { canTest?: boo
       // its exact question ids travel with the allocation — so every student in
       // the class sits the same paper in the same order, and closing and
       // reopening replays that identical paper instead of reshuffling.
-      const { ids, ref, spec } = al.content;
+      const { ids, ref } = al.content;
       const byId = new Map(FULL_BANK.map((q) => [q.id, q] as const));
-      let qs = ids.map((qid) => byId.get(qid)).filter((q): q is ImgQuestion => !!q);
-      // Only if the bank has lost every frozen id do we degrade to the original
-      // randomised spec, so a bank change can never leave a student stranded.
-      if (!qs.length) qs = legacyDrillQuestions(spec);
-      if (!qs.length) {
-        setLaunchError(`No questions are available for “${al.title}”. The assignment has been reported for repair.`);
+      const qs = ids.map((qid) => byId.get(qid)).filter((q): q is ImgQuestion => !!q);
+      if (!qs.length || qs.length !== ids.length) {
+        setLaunchError("This stored drill has unavailable questions. Contact the teacher; no replacement paper has been generated.");
         return;
       }
-      // A proctored TEST still shuffles the ORDER per student to deter copying
-      // (marking is keyed by question id, so the key follows each student's own
-      // arrangement). The question SET stays identical for the whole class.
-      if (al.mode === "test") qs = shuffle([...qs]);
       const pts = new Set(qs.map((q) => q.paperType));
       const pt: "P1" | "P2" | "P4" | "mixed" = pts.size === 1 ? qs[0].paperType : "mixed";
       const mins = al.durationMin || Math.max(5, Math.round(qs.length * (pt === "P1" ? 1.5 : 9)));
@@ -231,13 +227,11 @@ export function PapersHub({ canTest = false, canPause = false }: { canTest?: boo
       const mins = al.durationMin || Math.max(5, Math.round(qs.length * (paperType === "P1" ? 1.5 : 9)));
       enter({ questions: qs, title: al.title || `Topic drill · ${PAPER_NAME[paperType].split(" · ")[0]}`, subtitle: `${qs.length} questions · ${mins} min`, duration: mins, logMeta: { mode: "drill", paperType }, ...common });
     } else if (al.content.type === "custom") {
-      const idset = new Set(al.content.ids);
       // Custom allocations may reference the secure (allocation-only) bank.
-      // Tests are shuffled per student per sitting; marking is keyed by
-      // question id, so the auto-check key always follows each student's own
-      // question arrangement.
-      let qs = FULL_BANK.filter((q) => idset.has(q.id));
-      if (al.mode === "test") qs = shuffle([...qs]);
+      // Preserve staff selection order for older custom allocations too.
+      const byId = new Map(FULL_BANK.map((q) => [q.id, q] as const));
+      const qs = al.content.ids.map((id) => byId.get(id)).filter((q): q is ImgQuestion => !!q);
+
       if (!qs.length) return;
       const pts = new Set(qs.map((q) => q.paperType));
       const pt: "P1" | "P2" | "P4" | "mixed" = pts.size === 1 ? qs[0].paperType : "mixed";
@@ -330,7 +324,10 @@ export function PapersHub({ canTest = false, canPause = false }: { canTest?: boo
     enter({ questions: p1, title: "Daily Challenge", subtitle: "10 mixed Paper-1 questions · 15 min", duration: 15, timed: true, logMeta: { mode: "drill", paperType: "P1" }, ...modeCfg(sitMode) });
   }
 
-  if (active) return <PaperRunner {...active} canPause={canPause} onExit={exit} />;
+  if (active) return <>
+    {canConduct && <ClassDrillAssign questions={active.questions} title={active.title} duration={active.duration} onAssigned={(ref) => setActive((a) => a ? { ...a, subtitle: `Shared class drill · Ref ${ref}`, logMeta: { ...a.logMeta, ref } } : a)} />}
+    <PaperRunner {...active} canPause={canPause} onExit={exit} />
+  </>;
 
   const availTopics = pType === "P4" ? TOPICS_A2 : TOPICS_AS;
 

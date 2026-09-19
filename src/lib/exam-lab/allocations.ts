@@ -46,7 +46,7 @@ export type AllocContent =
    * the full snapshot; `spec` is the original randomised spec, retained only
    * as a degradation path if the question bank ever loses those ids.
    */
-  | { type: "drillref"; drillId: string; ref: string; ids: string[]; spec: DrillSpecContent };
+  | { type: "drillref"; drillId: string; ref: string; ids: string[]; spec: DrillSpecContent | { type: "paper"; code: string } | { type: "custom"; ids: string[] } };
 
 export type AllocStatus = "assigned" | "submitted" | "locked" | "unlocked" | "cancelled";
 
@@ -109,7 +109,7 @@ export async function allocateToStudents(
     // de-dupe by id
     if (!s.items.some((x) => x.id === base.id)) {
       s.items.unshift({ ...base, attemptId, createdAt: now, updatedAt: now, status: "assigned", completedAt: null });
-      await write(uid, s.items.length > 300 ? { items: s.items.slice(0, 300) } : s);
+      if (!await write(uid, s.items.length > 300 ? { items: s.items.slice(0, 300) } : s)) throw new Error("Could not save every allocation. Please retry.");
     }
   }
   return base.id;

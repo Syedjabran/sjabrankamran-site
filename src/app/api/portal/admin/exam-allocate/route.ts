@@ -4,7 +4,7 @@ import { audit } from "@/lib/portal/admin";
 import { allocateToStudents, newAllocId, type AllocMode, type AllocContent } from "@/lib/exam-lab/allocations";
 import { notify } from "@/lib/portal/notifications";
 import { saveDrillRecord, resolveSnapshot, newDrillId, reserveDrillRef, type DrillTargetType } from "@/lib/exam-lab/drill-records";
-import { getPortalUser, isAdmin, isSchoolScopedStaff, canConductDrills, canAccessGlobalStaffData } from "@/lib/edu/auth";
+import { getPortalUser, isAdmin, canConductDrills, canAccessGlobalStaffData } from "@/lib/edu/auth";
 import { visibleClassIdsForUid } from "@/lib/portal/timetable";
 
 export const runtime = "nodejs";
@@ -59,7 +59,7 @@ export async function POST(req: Request) {
   else if (c.type === "drill") { if (!c.paperType || !Array.isArray(c.topics) || !c.count) return NextResponse.json({ error: "Incomplete drill spec." }, { status: 400 }); }
   else if (c.type === "custom") {
     if (!Array.isArray(c.ids) || c.ids.length < 1) return NextResponse.json({ error: "Pick at least one question." }, { status: 400 });
-    c.ids = c.ids.slice(0, 60).map((x) => String(x).slice(0, 80));
+    if (c.ids.length > 500 || c.ids.some((id) => typeof id !== "string") || new Set(c.ids).size !== c.ids.length) return NextResponse.json({ error: "Invalid question list." }, { status: 400 });
   }
   else if (c.type !== "daily") return NextResponse.json({ error: "Invalid content type." }, { status: 400 });
 
@@ -90,16 +90,10 @@ export async function POST(req: Request) {
   }
   if (!uids.length) return NextResponse.json({ error: "No active students in the selected target." }, { status: 400 });
 
-  // --- Scope enforcement -------------------------------------------------
-  // Admins reach the whole network. Everyone else may only conduct into the
-  // classes they are scoped to. School-scoped roles (coordinator/facilitator)
-  // are enforced unconditionally. Teachers/TAs are enforced only when they
-  // actually have a mapped class list, so a teacher with no `edu_teachers`
-  // row keeps exactly the access they have today rather than being locked out.
+  // Non-admin staff may only assign to their mapped classes, including groups.
   if (!isAdmin(staff.roles)) {
-    const scoped = isSchoolScopedStaff(staff.roles);
     const visible = await visibleClassIdsForUid(staff.id, staff.roles);
-    if (scoped || visible.length) {
+    if (!isAdmin(staff.roles)) {
       const allowed = new Set(visible);
       if (tt === "individual") {
         const { data: st } = await sb.from("edu_students").select("id").eq("profile_id", uids[0]).maybeSingle();
@@ -117,23 +111,36 @@ export async function POST(req: Request) {
     }
   }
 
-  // --- Freeze the paper --------------------------------------------------
-  // `drill` and `daily` are the two randomised specs. Resolve them ONCE here
-  // and hand the students the resulting question ids so every recipient sits
-  // the same paper in the same order, now and on every re-open. `paper` is
-  // already deterministic (ordered by question number) and `custom` is an
-  // explicit hand-picked id list whose per-student shuffle for proctored
-  // tests is an intentional anti-copy measure — both are left untouched.
+  // Freeze every assigned paper once, preserving the on-screen order.
   const drillId = newDrillId();
   const drillRef = await reserveDrillRef();
   const snapshotQs = resolveSnapshot(c);
-  const frozen: AllocContent =
-    (c.type === "drill" || c.type === "daily") && snapshotQs.length
-      ? { type: "drillref", drillId, ref: drillRef, ids: snapshotQs.map((q) => q.id), spec: c }
-      : c;
+  if (!snapshotQs.length || (c.type === "custom" && snapshotQs.length !== c.ids.length)) {
+    return NextResponse.json({ error: "The selected paper contains unavailable questions. Reopen the drill and try again." }, { status: 400 });
+  }
+  const frozen: AllocContent = { type: "drillref", drillId, ref: drillRef, ids: snapshotQs.map((q) => q.id), spec: c };
 
   const id = newAllocId();
-  await allocateToStudents(uids, {
+  // Permanent, viewable-after Drill Record with a frozen snapshot of the exact
+  // question paper + which class/group it was conducted for.
+  let savedDrillId: string | null = null;
+  try {
+    savedDrillId = drillId;
+    const saved = await saveDrillRecord({
+      id: drillId, ref: drillRef, allocationId: id, name: b.title.trim().slice(0, 160), mode, content: c,
+      snapshotQs,
+      targetType: tt as DrillTargetType,
+      scopeLabel: (b.scope_label || "").slice(0, 120) || null,
+      classId: tt === "class" ? (classIds[0] || null) : null,
+      className: tt === "class" ? ((b.scope_label || "").slice(0, 120) || null) : null,
+      classIds, studentCount: uids.length,
+      createdBy: staff.id, createdByName: staff.fullName || staff.email,
+    });
+    if (!saved) throw new Error("Drill could not be saved.");
+  } catch { return NextResponse.json({ error: "Could not save the drill. Please retry." }, { status: 503 }); }
+
+  try {
+  await allocateToStudents([...new Set([...uids, staff.id])], {
     id, mode, content: frozen,
     title: b.title.trim().slice(0, 160),
     instructions: (b.instructions || "").trim().slice(0, 2000) || null,
@@ -146,6 +153,8 @@ export async function POST(req: Request) {
     createdByName: staff.fullName || staff.email,
   });
 
+  } catch { return NextResponse.json({ error: "Not every recipient could be saved. Please retry the assignment." }, { status: 503 }); }
+
   if (b.notify) {
     try {
       const kindLabel = mode === "test" ? "test" : "assignment";
@@ -156,27 +165,11 @@ export async function POST(req: Request) {
         type: kindLabel,
         title: `New ${kindLabel}: ${b.title!.trim()}${dueTxt}`,
         body: mode === "test" ? "A proctored test has been set in Exam Lab." : "A new Exam Lab assignment has been set.",
-        href: "/portal/exam-lab",
+        href: `/portal/exam-lab?allocation=${id}`,
       });
     } catch { /* best-effort */ }
   }
 
-  // Permanent, viewable-after Drill Record with a frozen snapshot of the exact
-  // question paper + which class/group it was conducted for.
-  let savedDrillId: string | null = null;
-  try {
-    savedDrillId = drillId;
-    await saveDrillRecord({
-      id: drillId, ref: drillRef, allocationId: id, name: b.title.trim().slice(0, 160), mode, content: c,
-      snapshotQs,
-      targetType: tt as DrillTargetType,
-      scopeLabel: (b.scope_label || "").slice(0, 120) || null,
-      classId: tt === "class" ? (classIds[0] || null) : null,
-      className: tt === "class" ? ((b.scope_label || "").slice(0, 120) || null) : null,
-      classIds, studentCount: uids.length,
-      createdBy: staff.id, createdByName: staff.fullName || staff.email,
-    });
-  } catch { /* record is best-effort; never blocks the allocation */ }
 
   await audit(staff.id, "exam.allocate", "exam_allocation", id, { target: tt, mode, students: uids.length, title: b.title.trim(), drillId: savedDrillId, drillRef });
   return NextResponse.json({ ok: true, id, drillId: savedDrillId, drillRef, frozen: frozen.type === "drillref", students: uids.length, mode, target: tt }, { status: 200 });

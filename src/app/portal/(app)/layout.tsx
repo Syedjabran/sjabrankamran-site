@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { Eye, GraduationCap, LockKeyhole, LogOut, Settings } from "lucide-react";
-import { getPortalUser, ROLE_LABELS, isAdmin, isStaff, isRegistrarOnly, isCoordinatorOnly, type EduRole } from "@/lib/edu/auth";
+import { getPortalUser, ROLE_LABELS, canConductDrills, isAdmin, isStaff, isRegistrarOnly, isCoordinatorOnly, type EduRole } from "@/lib/edu/auth";
 import { getPortalRestriction } from "@/lib/portal/access-control";
 import { isOnboardingComplete } from "@/lib/portal/onboarding";
 import { effectiveRoles } from "@/lib/portal/view-as";
@@ -50,6 +50,9 @@ function navFor(roles: EduRole[]): NavSection[] {
   if (isCoordinatorOnly(roles)) {
     return [{ title: "Assigned class", items: [
       { href: "/portal/coordinator", label: "Class staff desk" },
+      { href: "/portal/exam-lab", label: "Conduct class drill" },
+      { href: "/portal/admin/assign", label: "Assign drill" },
+      { href: "/portal/admin/drills", label: "Drill Records" },
       { href: "/portal/timetable", label: "Physics timetable" },
       { href: "/portal/admin/attendance-view", label: "Daily attendance" },
       { href: "/portal/library", label: "Resource Library" },
@@ -67,7 +70,7 @@ function navFor(roles: EduRole[]): NavSection[] {
     adminItems.push({ href: "/portal/admin/analytics", label: "Rankings & analytics" });
     adminItems.push({ href: "/portal/admin/institutions", label: "Institutions" });
     adminItems.push({ href: "/portal/admin/assign", label: "Post / Tests" });
-    if (roles.includes("super_admin")) adminItems.push({ href: "/portal/admin/drills", label: "Drill Records" });
+    if (canConductDrills(roles)) adminItems.push({ href: "/portal/admin/drills", label: "Drill Records" });
     adminItems.push({ href: "/portal/admin/attendance", label: "Attendance" });
     adminItems.push({ href: "/portal/admin/attendance-view", label: "Daily attendance" });
     adminItems.push({ href: "/portal/admin/proctoring", label: "Proctoring & Locks" });
@@ -83,7 +86,7 @@ function navFor(roles: EduRole[]): NavSection[] {
   if (admin || roles.includes("teacher") || roles.includes("teaching_assistant")) {
     adminItems.push({ href: "/portal/teach", label: "My Classes" });
   }
-  if (admin || roles.includes("teaching_assistant")) adminItems.push({ href: "/portal/exam-lab", label: "Exam Lab" });
+  if (canConductDrills(roles)) adminItems.push({ href: "/portal/exam-lab", label: "Exam Lab" });
   if (staff) adminItems.push({ href: "/portal/studio", label: "Physics Studio" });
   // Available to everyone.
   adminItems.push({ href: "/portal/resources", label: "Physics Resources" });

@@ -90,6 +90,7 @@ export default async function ClassPage({ params }: { params: Promise<{ classId:
 
   return (
     <div className="space-y-10">
+      <Link href={`/portal/exam-lab?class=${encodeURIComponent(classId)}`} className="btn-primary mb-4 inline-flex">Conduct class drill</Link>
       <div>
         <p className="eyebrow mb-2">
           {(cls.edu_courses as unknown as { name: string } | null)?.name ?? "Class"}
