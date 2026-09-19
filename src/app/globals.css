@@ -140,6 +140,33 @@
   a { color: #111 !important; text-decoration: none; }
 }
 
+/* Drill Records — printable question paper.
+   Staff print/download a stored drill straight from the browser ("Save as
+   PDF" in the print dialog). The view is already white-on-black-text on
+   screen, so this block only has to strip the app shell and control where the
+   page breaks fall. */
+@media print {
+  @page { margin: 14mm 12mm; }
+  html, body { background: #fff !important; }
+  .el-print-sheet {
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+  .el-print-sheet, .el-print-sheet * { background: transparent !important; color: #000 !important; }
+  .el-print-sheet img { background: #fff !important; max-width: 100% !important; height: auto !important; }
+  .el-print-sheet .el-print-rule { border-color: #bbb !important; }
+  /* A question (and its mark scheme) is never sliced across a page break. */
+  .el-print-q { break-inside: avoid; page-break-inside: avoid; }
+  /* Keep the paper header attached to the first question. */
+  .el-print-head { break-after: avoid; page-break-after: avoid; }
+  /* The mark-scheme section always starts on a fresh sheet. */
+  .el-print-newpage { break-before: page; page-break-before: always; }
+}
+
 /* Physics Studio equation rendering */
 .katex-display {
   margin: 1.25rem 0;

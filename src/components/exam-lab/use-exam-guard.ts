@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 
+import { isFullscreen, onFullscreenChange } from "@/lib/exam-lab/fullscreen";
+
 /**
  * Exam integrity guard — mode-aware.
  *
@@ -110,7 +112,24 @@ export function useExamGuard({
       // Non-terminal: useful in the forensic timeline to see how long they were away.
       if (strict) report("focus", "Returned to the exam window.", false);
     };
+    // Every attempt now starts full-screen, so the viewport legitimately jumps
+    // when full-screen is entered or left. Re-baseline on that transition —
+    // otherwise leaving full-screen looks exactly like a split-screen drop and
+    // would cancel a standard (non-strict) drill, which it must never do.
+    let lastFs = isFullscreen();
+    const rebaseline = () => { base.current = { w: window.innerWidth, h: window.innerHeight }; };
+    /** True when this resize is really a full-screen transition. */
+    const fsTransition = () => {
+      const now = isFullscreen();
+      if (now === lastFs) return false;
+      lastFs = now;
+      rebaseline();
+      return true;
+    };
+
     const onResize = () => {
+      // resize and fullscreenchange arrive in either order; this catches both.
+      if (fsTransition()) return;
       let b = base.current;
       if (!b.w) return;
       if (!fieldFocused() && (window.innerWidth > b.w || window.innerHeight > b.h)) {
@@ -146,8 +165,15 @@ export function useExamGuard({
     const onPaste = () => report("paste", "You tried to paste into the test.", false);
     const preventCtx = (e: Event) => { e.preventDefault(); report("contextmenu", "You opened the right-click menu.", false); };
     const preventDrag = (e: Event) => e.preventDefault();
-    const onFsChange = () => {
-      if (strict && !document.fullscreenElement) {
+    const onFsChange = (standardEvent: boolean) => {
+      fsTransition();
+      // The browser settles the viewport a beat after the event fires.
+      setTimeout(rebaseline, 300);
+      // Strict semantics are unchanged: a terminal fullscreen_exit is still
+      // raised only for proctored tests, and still only off the standard
+      // `fullscreenchange` event. Prefixed engines re-baseline but never gain
+      // a new way to lock a student out.
+      if (strict && standardEvent && !document.fullscreenElement) {
         report("fullscreen_exit", "You left full-screen exam mode.", true);
       }
     };
@@ -164,8 +190,10 @@ export function useExamGuard({
     document.addEventListener("copy", onCopy);
     document.addEventListener("cut", onCut);
     document.addEventListener("paste", onPaste);
+    // Registered in every mode: non-strict attempts need the re-baseline, not
+    // the penalty.
+    const offFullscreen = onFullscreenChange(onFsChange);
     if (strict) {
-      document.addEventListener("fullscreenchange", onFsChange);
       document.addEventListener("enterpictureinpicture", onPip as EventListener);
     }
 
@@ -184,7 +212,7 @@ export function useExamGuard({
       document.removeEventListener("copy", onCopy);
       document.removeEventListener("cut", onCut);
       document.removeEventListener("paste", onPaste);
-      document.removeEventListener("fullscreenchange", onFsChange);
+      offFullscreen();
       document.removeEventListener("enterpictureinpicture", onPip as EventListener);
       document.documentElement.classList.remove("el-blackout");
     };

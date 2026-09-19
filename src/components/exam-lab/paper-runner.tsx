@@ -4,11 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Loader2, CheckCircle2, Eye, RotateCcw, Printer, Clock, ArrowLeft, Sparkles,
   ShieldAlert, Upload, FileText, ScanText, TimerReset, Timer, Lock, Video, ShieldCheck, Send, Pause, Play,
+  Maximize2,
 } from "lucide-react";
 import type { ImgQuestion } from "@/lib/exam-lab/image-bank";
 import { questionSeconds, formatDuration } from "@/lib/portal/timing";
 import { AnswerPad } from "./answer-pad";
 import { useExamGuard, type GuardEvent, type GuardMode } from "./use-exam-guard";
+import { exitExamFullscreen, fullscreenSupported, isFullscreen, onFullscreenChange, requestExamFullscreen } from "@/lib/exam-lab/fullscreen";
 import { ProctorCamera } from "./proctor-camera";
 
 type UrlMap = Record<string, string>;
@@ -92,6 +94,14 @@ export function PaperRunner({
   // picker to grab the file does NOT lock the test. The attempt is recorded on
   // entry so responses are safe even if they navigate away to upload.
   const [taskCompleted, setTaskCompleted] = useState(false);
+  // ---- full-screen ----
+  // Every attempt is sat full-screen. The request itself is fired from the
+  // click that opened the paper (see `enter()` in papers-hub) because browsers
+  // only honour it under a user gesture; this state just tracks the result so
+  // a student whose request was refused — or who arrived via a task deep-link,
+  // where there is no gesture at all — can still go full-screen with one tap.
+  const [fsOn, setFsOn] = useState(false);
+  const [fsAvailable, setFsAvailable] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const activeIdRef = useRef<string | null>(null);
   const liRefs = useRef<Record<string, HTMLLIElement | null>>({});
@@ -120,6 +130,15 @@ export function PaperRunner({
     if (openPractice || !timed || !begun || submitted) return false;
     return (perQ[id] || 0) >= (qBudget[id] || 90);
   }, [openPractice, timed, begun, submitted, perQ, qBudget]);
+
+  // Track full-screen, and always leave it behind when the runner unmounts
+  // (Back, or a cancelled/locked attempt) so the rest of the portal is normal.
+  useEffect(() => {
+    setFsAvailable(fullscreenSupported());
+    setFsOn(isFullscreen());
+    const off = onFullscreenChange(() => setFsOn(isFullscreen()));
+    return () => { off(); void exitExamFullscreen(); };
+  }, []);
 
   // load exact past-paper images
   useEffect(() => {
@@ -197,6 +216,9 @@ export function PaperRunner({
     if (voidedRef.current) return;
     voidedRef.current = true;
     setVoided(reason);
+    // The attempt is over: hand the screen back rather than leaving the student
+    // pinned in a full-screen dead end.
+    void exitExamFullscreen();
     postAttempt(true, reason);
     if (strict) postProctor({ action: "end", status: "submitted" }); // server keeps the locked state; this just closes the clock
   }, [postAttempt, postProctor, strict]);
@@ -222,12 +244,16 @@ export function PaperRunner({
   const completeTask = useCallback(() => {
     if (taskCompleted || submitted || voided) return;
     setTaskCompleted(true);
+    // They are about to go and find a file: drop full-screen along with the
+    // guard so the file picker and other apps are reachable.
+    void exitExamFullscreen();
     postAttempt(false, null);
     if (strict) postProctor({ action: "end", status: "task_completed" });
   }, [taskCompleted, submitted, voided, postAttempt, postProctor, strict]);
 
   const submit = useCallback((timeUp = false) => {
     setSubmitted(true);
+    void exitExamFullscreen();
     const rev: Record<string, boolean> = {};
     questions.forEach((q) => { if (!isMcq(q) && !strict) rev[q.id] = true; });
     setRevealed((r) => ({ ...r, ...rev }));
@@ -320,7 +346,9 @@ export function PaperRunner({
     if (!consent || !camStatus?.calibrated) return;
     // Open the forensic session, then start the clock.
     postProctor({ action: "start", kind, integrity, cameraConsent: true, meta: { title, subtitle, code: logMeta?.code, ref: logMeta?.ref, paperType: logMeta?.paperType } });
-    try { await document.documentElement.requestFullscreen?.(); } catch { /* optional */ }
+    // Refusal is survivable — a proctored test still starts, and the guard's
+    // existing fullscreen_exit rule only bites once full-screen was granted.
+    await requestExamFullscreen();
     setBegun(true);
   }
 
@@ -470,6 +498,11 @@ export function PaperRunner({
         </div>
         <div className="flex items-center gap-2">
           {openPractice ? <span className="rounded-xl border border-emerald2/30 px-3 py-1.5 font-mono text-xs text-emerald2">Practice · no deadline</span> : timed && startedAt !== null && !submitted && <ClockPill left={remaining} warn={remaining <= 15 * 60} />}
+          {fsAvailable && !fsOn && !submitted && !taskCompleted && (
+            <button onClick={() => { void requestExamFullscreen(); }} className="btn-ghost !px-3 !py-1.5 text-xs el-noprint" title="Sit this paper full-screen">
+              <Maximize2 size={13} /> Full screen
+            </button>
+          )}
           {submitted && <button onClick={() => window.print()} className="btn-ghost !px-3 !py-1.5 text-xs el-noprint"><Printer size={13} /> PDF</button>}
         </div>
       </div>

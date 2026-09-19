@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Layers, Users, School, Clock3, FileText, ChevronLeft, Loader2, Hash } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Layers, Users, School, Clock3, FileText, ChevronLeft, Loader2, Hash, Printer, Search } from "lucide-react";
 
 type Row = {
   id: string; ref?: string; allocationId: string; name: string; mode: string;
@@ -15,10 +17,14 @@ type DrillFull = Row & { snapshot: SnapQ[] };
 function when(ts: number) { return new Date(ts).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }); }
 /** Records written before reference numbers existed simply show no chip. */
 function refOf(r: { ref?: string }) { return typeof r.ref === "string" && r.ref ? r.ref : ""; }
+/** The printable view is addressable by reference when there is one. */
+function printHref(r: { id: string; ref?: string }) { return `/portal/admin/drills/${encodeURIComponent(refOf(r) || r.id)}/print`; }
 const MODE_LABEL: Record<string, string> = { assignment_help: "Assignment · help", assignment_nohelp: "Assignment · no help", test: "Proctored test" };
 const TARGET_ICON: Record<string, ReactNode> = { class: <Users size={12} />, group: <Users size={12} />, school: <School size={12} />, network: <School size={12} />, individual: <Users size={12} /> };
 
 export function DrillRecordsClient({ scoped = false }: { scoped?: boolean }) {
+  const router = useRouter();
+  const [lookup, setLookup] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<DrillFull | null>(null);
@@ -47,7 +53,10 @@ export function DrillRecordsClient({ scoped = false }: { scoped?: boolean }) {
   if (open) {
     return (
       <div className="space-y-5">
-        <button onClick={() => setOpen(null)} className="inline-flex items-center gap-1.5 text-sm text-cyan hover:underline"><ChevronLeft size={15} /> All drill records</button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <button onClick={() => setOpen(null)} className="inline-flex items-center gap-1.5 text-sm text-cyan hover:underline"><ChevronLeft size={15} /> All drill records</button>
+          <Link href={printHref(open)} className="btn-ghost !px-4 !py-2 text-xs"><Printer size={14} /> Print / Save as PDF</Link>
+        </div>
         <div className="rounded-2xl border border-white/10 bg-space/60 p-5">
           <h1 className="font-display text-2xl text-ice">{open.name}</h1>
           <div className="mt-2 flex flex-wrap gap-2 font-mono text-[11px]">
@@ -99,24 +108,45 @@ export function DrillRecordsClient({ scoped = false }: { scoped?: boolean }) {
           </p>
         </div>
       </div>
+      <form
+        onSubmit={(e) => { e.preventDefault(); const v = lookup.trim().toUpperCase(); if (v) router.push(`/portal/admin/drills/${encodeURIComponent(v)}/print`); }}
+        className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-space/60 p-3"
+      >
+        <Search size={14} className="ml-1 text-dust" />
+        <input
+          value={lookup}
+          onChange={(e) => setLookup(e.target.value)}
+          placeholder="DR-2609-K7QM"
+          aria-label="Open a drill by its reference number"
+          className="min-w-[10rem] flex-1 bg-transparent font-mono text-sm uppercase text-ice placeholder:text-dust/60 focus:outline-none"
+        />
+        <button type="submit" className="btn-ghost !px-4 !py-1.5 text-xs"><Printer size={13} /> Open paper by reference</button>
+      </form>
       {loading ? <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading…</p>
         : !rows.length ? <div className="rounded-2xl border border-white/10 bg-space/60 p-6 text-sm text-dust">No drills recorded yet. Allot a drill or paper from <b className="text-fog">Post / Tests → Exam Lab</b> and it will be stored here with its paper.</div>
         : (
           <div className="grid gap-3 sm:grid-cols-2">
             {rows.map((r) => (
-              <button key={r.id} onClick={() => view(r.id)} className="rounded-2xl border border-white/10 bg-space/60 p-4 text-left transition hover:border-cyan/40">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="font-display text-base text-ice">{r.name}</p>
-                  <span className="rounded-full border border-cyan/25 px-2 py-0.5 font-mono text-[10px] text-cyan">{MODE_LABEL[r.mode] || r.mode}</span>
+              // The print link is a sibling of the open-button, not a child:
+              // an anchor nested inside a button is invalid markup.
+              <div key={r.id} className="flex flex-col rounded-2xl border border-white/10 bg-space/60 transition hover:border-cyan/40">
+                <button onClick={() => view(r.id)} className="flex-1 p-4 text-left">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-display text-base text-ice">{r.name}</p>
+                    <span className="rounded-full border border-cyan/25 px-2 py-0.5 font-mono text-[10px] text-cyan">{MODE_LABEL[r.mode] || r.mode}</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5 font-mono text-[10px] text-dust">
+                    {refOf(r) ? <span className="inline-flex items-center gap-1 rounded-full border border-lime2/40 px-2 py-0.5 text-lime2"><Hash size={10} /> {refOf(r)}</span> : null}
+                    <span className="inline-flex items-center gap-1 rounded-full border border-white/15 px-2 py-0.5">{TARGET_ICON[r.targetType]} {r.scopeLabel || r.targetType}</span>
+                    <span className="rounded-full border border-white/15 px-2 py-0.5">{r.questionCount} Qs · {r.totalMarks} marks</span>
+                    <span className="inline-flex items-center gap-1 rounded-full border border-white/15 px-2 py-0.5"><Users size={10} /> {r.studentCount}</span>
+                  </div>
+                  <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-dust"><FileText size={11} /> View stored paper · {when(r.createdAt)}</p>
+                </button>
+                <div className="flex justify-end border-t border-white/10 px-4 py-2">
+                  <Link href={printHref(r)} className="inline-flex items-center gap-1.5 text-[11px] text-fog transition hover:text-cyan"><Printer size={11} /> Print / Save as PDF</Link>
                 </div>
-                <div className="mt-2 flex flex-wrap gap-1.5 font-mono text-[10px] text-dust">
-                  {refOf(r) ? <span className="inline-flex items-center gap-1 rounded-full border border-lime2/40 px-2 py-0.5 text-lime2"><Hash size={10} /> {refOf(r)}</span> : null}
-                  <span className="inline-flex items-center gap-1 rounded-full border border-white/15 px-2 py-0.5">{TARGET_ICON[r.targetType]} {r.scopeLabel || r.targetType}</span>
-                  <span className="rounded-full border border-white/15 px-2 py-0.5">{r.questionCount} Qs · {r.totalMarks} marks</span>
-                  <span className="inline-flex items-center gap-1 rounded-full border border-white/15 px-2 py-0.5"><Users size={10} /> {r.studentCount}</span>
-                </div>
-                <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-dust"><FileText size={11} /> View stored paper · {when(r.createdAt)}</p>
-              </button>
+              </div>
             ))}
           </div>
         )}

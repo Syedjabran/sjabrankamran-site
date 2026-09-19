@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FileText, Layers, Play, Zap, Library, Coffee, ShieldAlert, Video, ClipboardList, Lock, CheckCircle2, Send, Loader2, Clock } from "lucide-react";
 import { IMAGE_BANK, IMAGE_PAPERS, FULL_BANK, type ImgQuestion } from "@/lib/exam-lab/image-bank";
 import { PaperRunner, type AttemptKind } from "./paper-runner";
+import { requestExamFullscreen } from "@/lib/exam-lab/fullscreen";
 import type { GuardMode } from "./use-exam-guard";
 
 const SESS: Record<string, string> = { s: "May/June", w: "Oct/Nov", m: "Feb/March" };
@@ -137,6 +138,14 @@ export function PapersHub({ canTest = false, canPause = false }: { canTest?: boo
   }, [runParam, active, pathname, router]);
 
   function enter(a: Active) {
+    // Full-screen for EVERY attempt — practice drill, daily challenge, paper,
+    // assignment or proctored test. It has to be asked for here, synchronously
+    // inside the click that opens the paper, because a browser only grants
+    // full-screen while a user gesture is live. Deep links (a task
+    // notification, ?allocation=/?focus=) reach `enter` from an effect with no
+    // gesture, so the request is simply refused there; the runner then shows a
+    // one-tap "Full screen" control instead. Nothing blocks on the result.
+    void requestExamFullscreen();
     runObserved.current = false;
     setActive(a);
     router.push(`${pathname}?run=1`, { scroll: false });

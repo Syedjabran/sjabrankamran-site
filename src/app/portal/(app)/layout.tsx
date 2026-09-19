@@ -186,14 +186,14 @@ export default async function PortalLayout({ children }: { children: React.React
       <PresenceBeacon />
       <PwaPortal />
       {previewing ? (
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/30 bg-amber-300/[0.06] px-4 py-2.5">
+        <div className="el-noprint mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/30 bg-amber-300/[0.06] px-4 py-2.5">
           <p className="flex items-center gap-2 text-xs text-amber-300">
             <Eye size={14} /> Preview mode — viewing the portal as a <b>{ROLE_LABELS[previewing]}</b>. Data is limited to your own account.
           </p>
           <RolePreviewSwitcher previewing={previewing} />
         </div>
       ) : null}
-      <div className="mb-8 flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.06] pb-6">
+      <div className="el-noprint mb-8 flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.06] pb-6">
         <div className="flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-xl border border-cyan/30 text-cyan">
             <GraduationCap size={18} />
