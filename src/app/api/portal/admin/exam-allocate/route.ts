@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   }
 
   const b = (await req.json().catch(() => null)) as {
-    target_type?: string; class_ids?: string[]; student_email?: string; scope_label?: string;
+    target_type?: string; class_ids?: string[]; student_email?: string; student_ids?: string[]; scope_label?: string;
     mode?: string; content?: AllocContent; title?: string;
     instructions?: string; duration_min?: number; due_at?: string; starts_at?: string; notify?: boolean;
   } | null;
@@ -72,11 +72,21 @@ export async function POST(req: Request) {
   const classIds: string[] = tt === "individual" ? [] : (b.class_ids || []).filter(Boolean);
 
   if (tt === "individual") {
-    const email = (b.student_email || "").trim().toLowerCase();
-    if (!email) return NextResponse.json({ error: "Enter the student's email." }, { status: 400 });
-    const { data: prof } = await sb.from("edu_profiles").select("id").ilike("email", email).maybeSingle();
-    if (!prof?.id) return NextResponse.json({ error: "No student found with that email." }, { status: 400 });
-    uids = [prof.id as string];
+    // Preferred: a set of student profile ids chosen from the roster picker.
+    // Fallback: a single student email (kept for the assign-form flow).
+    const pickedIds = Array.isArray(b.student_ids) ? [...new Set(b.student_ids.filter((x): x is string => typeof x === "string" && !!x))] : [];
+    if (pickedIds.length) {
+      if (pickedIds.length > 200) return NextResponse.json({ error: "Select 200 students or fewer." }, { status: 400 });
+      const { data: profs } = await sb.from("edu_profiles").select("id").in("id", pickedIds);
+      uids = [...new Set((profs || []).map((p) => p.id as string).filter(Boolean))];
+      if (!uids.length) return NextResponse.json({ error: "None of the selected students were found." }, { status: 400 });
+    } else {
+      const email = (b.student_email || "").trim().toLowerCase();
+      if (!email) return NextResponse.json({ error: "Choose at least one student." }, { status: 400 });
+      const { data: prof } = await sb.from("edu_profiles").select("id").ilike("email", email).maybeSingle();
+      if (!prof?.id) return NextResponse.json({ error: "No student found with that email." }, { status: 400 });
+      uids = [prof.id as string];
+    }
   } else {
     const ids = (b.class_ids || []).filter(Boolean);
     if (!ids.length) return NextResponse.json({ error: "No classes in the selected target." }, { status: 400 });
@@ -96,12 +106,20 @@ export async function POST(req: Request) {
     if (!isAdmin(staff.roles)) {
       const allowed = new Set(visible);
       if (tt === "individual") {
-        const { data: st } = await sb.from("edu_students").select("id").eq("profile_id", uids[0]).maybeSingle();
-        const { data: en } = st?.id
-          ? await sb.from("edu_enrolments").select("class_id").eq("student_id", st.id).eq("status", "active")
-          : { data: [] as { class_id: string | null }[] };
-        const ok = (en || []).some((r) => r.class_id && allowed.has(r.class_id as string));
-        if (!ok) return NextResponse.json({ error: "That student is not in one of your classes." }, { status: 403 });
+        // Every selected student must sit in one of the staff member's classes.
+        const { data: sts } = await sb.from("edu_students").select("id, profile_id").in("profile_id", uids);
+        const stById = (sts || []) as { id: string; profile_id: string }[];
+        const { data: en } = stById.length
+          ? await sb.from("edu_enrolments").select("student_id, class_id").in("student_id", stById.map((s) => s.id)).eq("status", "active")
+          : { data: [] as { student_id: string; class_id: string | null }[] };
+        const inScope = new Set(
+          (en || [])
+            .filter((r) => r.class_id && allowed.has(r.class_id as string))
+            .map((r) => stById.find((s) => s.id === r.student_id)?.profile_id)
+            .filter((x): x is string => !!x),
+        );
+        const blocked = uids.filter((u) => !inScope.has(u));
+        if (blocked.length) return NextResponse.json({ error: blocked.length === uids.length ? "Those students are not in one of your classes." : "Some selected students are not in one of your classes." }, { status: 403 });
       } else {
         const outside = classIds.filter((cid) => !allowed.has(cid));
         if (outside.length) {
