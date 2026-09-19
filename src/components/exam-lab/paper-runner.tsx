@@ -25,6 +25,7 @@ export function PaperRunner({
   title,
   subtitle,
   timed = true,
+  lockOnExpiry = true,
   duration = 60,
   onExit,
   logMeta,
@@ -39,6 +40,7 @@ export function PaperRunner({
   title: string;
   subtitle?: string;
   timed?: boolean;
+  lockOnExpiry?: boolean;            // false: countdown shows but never auto-submits or locks answers
   duration?: number; // minutes
   onExit?: () => void;
   logMeta?: LogMeta;
@@ -127,9 +129,9 @@ export function PaperRunner({
     return m;
   }, [questions]);
   const qLocked = useCallback((id: string) => {
-    if (openPractice || !timed || !begun || submitted) return false;
+    if (openPractice || !timed || !lockOnExpiry || !begun || submitted) return false;
     return (perQ[id] || 0) >= (qBudget[id] || 90);
-  }, [openPractice, timed, begun, submitted, perQ, qBudget]);
+  }, [openPractice, timed, lockOnExpiry, begun, submitted, perQ, qBudget]);
 
   // Track full-screen, and always leave it behind when the runner unmounts
   // (Back, or a cancelled/locked attempt) so the rest of the portal is normal.
@@ -283,8 +285,8 @@ export function PaperRunner({
 
   // auto-submit when time is up
   useEffect(() => {
-    if (!openPractice && timed && begun && startedAt !== null && remaining <= 0 && !submitted && !voided) submit(true);
-  }, [openPractice, remaining, timed, begun, startedAt, submitted, voided, submit]);
+    if (!openPractice && timed && lockOnExpiry && begun && startedAt !== null && remaining <= 0 && !submitted && !voided) submit(true);
+  }, [openPractice, remaining, timed, lockOnExpiry, begun, startedAt, submitted, voided, submit]);
 
   // Active question = the one at the viewport centre.
   useEffect(() => {

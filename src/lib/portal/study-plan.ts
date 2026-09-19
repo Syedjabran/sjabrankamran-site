@@ -35,6 +35,10 @@ const A2_TOPICS = [
   "Nuclear physics", "Astronomy & cosmology",
 ];
 const CANONICAL_TOPICS = [...AS_TOPICS, ...A2_TOPICS];
+// Coverage frontier for Year 1 (AS): students have only covered chapter 1 so
+// far, so every auto-generated task/challenge must stay within it. Widen this
+// slice as the cohort progresses through the syllabus.
+const AS_COVERED_TOPICS = AS_TOPICS.slice(0, 1); // ["Physical quantities & units"]
 function safeTopic(topic: string) { return TOPIC_MAP[topic] || topic; }
 function searchUrl(kind: "resources" | "video" | "simulation", topic: string) {
   const q = encodeURIComponent(`CAIE 9702 Physics ${topic}`);
@@ -73,7 +77,9 @@ async function courseStage(uid: string): Promise<"AS" | "A2"> {
 export async function ensureStudyPlan(uid: string): Promise<StudyPlanSummary> {
   const [attempts, stage] = await Promise.all([getAttempts(uid).catch(() => []), courseStage(uid)]);
   const a = analyse(attempts);
-  const stageTopics = stage === "A2" ? A2_TOPICS : AS_TOPICS;
+  // Year 1 (AS) is scoped to covered chapters only; anything a weakness analysis
+  // surfaces from a later, not-yet-taught topic is filtered out below.
+  const stageTopics = stage === "A2" ? A2_TOPICS : AS_COVERED_TOPICS;
   const paperType = stage === "A2" ? "P4" : "P2";
   const rawFocus = a.weaknesses.length ? a.weaknesses.map((x) => safeTopic(x.topic)) : stageTopics.slice(0, 3);
   // De-duplicate and ensure every topic exists in the image bank.
@@ -107,7 +113,7 @@ export async function ensureStudyPlan(uid: string): Promise<StudyPlanSummary> {
     const testId = newAllocId();
     await allocateToStudents([uid], {
       id: testId, mode: "assignment_nohelp", content: { type: "drill", paperType, topics: [topic], levels: a.level >= 5 ? ["LOT", "HOT"] : ["LOT"], count: 10 },
-      title: `Weekly short test · ${topic}`, instructions: "Mandatory diagnostic check. Complete and submit before the deadline.", durationMin: 25,
+      title: `Weekly short test · ${topic}`, instructions: "Diagnostic check. The timer is a pacing guide only — it will not lock your answers.", durationMin: 25, lockOnExpiry: false,
       dueAt: duePk(5, 20), startsAt: null, classId: null, className: "Automated study plan", createdBy: OWNER_ID, createdByName: OWNER_NAME,
     });
     const shortTestTask = await assignTask(uid, {
@@ -123,7 +129,7 @@ export async function ensureStudyPlan(uid: string): Promise<StudyPlanSummary> {
     const allocationId = newAllocId();
     await allocateToStudents([uid], {
       id: allocationId, mode: "assignment_nohelp", content: { type: "drill", paperType, topics: [topic], levels: ["LOT", "HOT"], count: 5 },
-      title: `Daily challenge · ${topic}`, instructions: "Mandatory daily targeted practice. Complete and submit today.", durationMin: 15,
+      title: `Daily challenge · ${topic}`, instructions: "Targeted practice. The timer is a pacing guide only — it will not lock your answers.", durationMin: 15, lockOnExpiry: false,
       dueAt: duePk(0, 20), startsAt: null, classId: null, className: "Automated study plan", createdBy: OWNER_ID, createdByName: OWNER_NAME,
     });
     const dailyTask = await assignTask(uid, {

@@ -58,6 +58,7 @@ export type ExamAllocation = {
   title: string;
   instructions: string | null;
   durationMin: number | null;   // optional override
+  lockOnExpiry?: boolean;       // when false: countdown is shown but never auto-submits/locks (default: locking)
   dueAt: string | null;
   startsAt: string | null;
   classId: string | null;

@@ -305,80 +305,79 @@ function WriteCanvas({ imageUrl, qid, code, onSaved }: { imageUrl: string; qid: 
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }, [qid, code, onSaved]);
 
-  const toolBtn = (t: Tool, label: string, icon: React.ReactNode) => (
-    <button type="button" onClick={() => setTool(t)}
-      className={"inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs " + (tool === t ? "border-cyan/60 text-cyan" : "border-white/10 text-dust hover:text-ice")}>
-      {icon} {label}
+  const railBtn = (t: Tool, label: string, icon: React.ReactNode) => (
+    <button type="button" onClick={() => setTool(t)} title={label} aria-label={label}
+      className={"grid h-9 w-9 place-items-center rounded-lg border " + (tool === t ? "border-cyan/60 bg-cyan/10 text-cyan" : "border-white/10 text-dust hover:text-ice")}>
+      {icon}
     </button>
   );
 
   return (
     <div className="el-noprint">
-      <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-        {toolBtn("pen", "Pen", <PenLine size={12} />)}
-        {toolBtn("highlighter", "Highlighter", <Highlighter size={12} />)}
-        {toolBtn("eraser", "Eraser", <Eraser size={12} />)}
-        {toolBtn("pan", "Pan", <Hand size={12} />)}
-        <span className="mx-1 h-4 w-px bg-white/10" />
-        <button type="button" onClick={undo} disabled={!canUndo} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2 py-1 text-xs text-dust hover:text-ice disabled:opacity-30"><Undo2 size={12} /></button>
-        <button type="button" onClick={doRedo} disabled={!canRedo} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2 py-1 text-xs text-dust hover:text-ice disabled:opacity-30"><Redo2 size={12} /></button>
-        <button type="button" onClick={clearInk} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs text-dust hover:text-signal"><Trash2 size={12} /> Clear</button>
-        <button type="button" onClick={save} disabled={busy || !ready} className="btn-primary ml-auto !px-3 !py-1.5 text-xs">{busy ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save answer sheet</button>
-      </div>
+      {/* Canvas on the left, the writing tools as a vertical rail on the right edge of the question. */}
+      <div className="flex items-start gap-2">
+        <div ref={viewportRef} className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-white/15 bg-white" style={{ maxHeight: 640 }}>
+          <div style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "0 0" }}>
+            <div ref={wrapRef} className="relative w-full">
+              <canvas ref={baseRef} className="block w-full" />
+              <canvas ref={hlRef} className="pointer-events-none absolute left-0 top-0" />
+              <canvas ref={inkRef} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up} onPointerCancel={up}
+                className="absolute left-0 top-0 touch-none"
+                style={{ cursor: tool === "eraser" ? "cell" : tool === "pan" ? "grab" : "crosshair" }} />
+            </div>
+          </div>
+          {!ready ? <div className="grid h-40 place-items-center text-xs text-dust">Loading paper…</div> : null}
+        </div>
 
-      <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-        {tool === "highlighter" ? (
-          <>
-            {HL_COLORS.map((c) => (
+        <div className="flex w-11 shrink-0 flex-col items-center gap-1.5 rounded-lg border border-white/10 bg-abyss/40 p-1.5">
+          {railBtn("pen", "Pen", <PenLine size={15} />)}
+          {railBtn("highlighter", "Highlighter", <Highlighter size={15} />)}
+          {railBtn("eraser", "Eraser", <Eraser size={15} />)}
+          {railBtn("pan", "Pan", <Hand size={15} />)}
+          <span className="my-0.5 h-px w-6 bg-white/10" />
+
+          {/* contextual options for the active tool */}
+          {tool === "highlighter" ? (
+            HL_COLORS.map((c) => (
               <button key={c} type="button" onClick={() => setHlColor(c)} aria-label={"highlighter " + c}
                 className={"h-6 w-6 rounded-full border-2 " + (hlColor === c ? "border-cyan" : "border-white/20")} style={{ background: c }} />
-            ))}
-          </>
-        ) : tool === "eraser" ? (
-          <>
-            <span className="text-[11px] text-dust">Size</span>
-            {ERASER_SIZES.map((s) => (
-              <button key={s} type="button" onClick={() => setEraserSize(s)}
-                className={"inline-flex h-6 items-center rounded-lg border px-2 text-[11px] " + (eraserSize === s ? "border-cyan/60 text-cyan" : "border-white/10 text-dust hover:text-ice")}>{s}px</button>
-            ))}
-          </>
-        ) : tool === "pan" ? (
-          <span className="text-[11px] text-dust">Drag to pan the view</span>
-        ) : (
-          <>
-            {PEN_COLORS.map((c) => (
-              <button key={c} type="button" onClick={() => setColor(c)} aria-label={"ink " + c}
-                className={"h-6 w-6 rounded-full border-2 " + (color === c ? "border-cyan" : "border-white/20")} style={{ background: c }} />
-            ))}
-            <span className="mx-1 h-4 w-px bg-white/10" />
-            <span className="text-[11px] text-dust">Width</span>
-            {PEN_WIDTHS.map((w) => (
-              <button key={w} type="button" onClick={() => setWidth(w)}
-                className={"inline-flex h-6 items-center rounded-lg border px-2 text-[11px] " + (width === w ? "border-cyan/60 text-cyan" : "border-white/10 text-dust hover:text-ice")}>{w}px</button>
-            ))}
-          </>
-        )}
-        <span className="mx-1 h-4 w-px bg-white/10" />
-        <button type="button" onClick={zoomOut} disabled={zoom <= ZOOM_STEPS[0]} className="inline-flex items-center rounded-lg border border-white/10 px-2 py-1 text-xs text-dust hover:text-ice disabled:opacity-30"><ZoomOut size={12} /></button>
-        <span className="text-[11px] tabular-nums text-dust">{Math.round(zoom * 100)}%</span>
-        <button type="button" onClick={zoomIn} disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]} className="inline-flex items-center rounded-lg border border-white/10 px-2 py-1 text-xs text-dust hover:text-ice disabled:opacity-30"><ZoomIn size={12} /></button>
-        <button type="button" onClick={resetView} className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2 py-1 text-[11px] text-dust hover:text-ice"><RotateCcw size={11} /> Reset view</button>
-      </div>
+            ))
+          ) : tool === "eraser" ? (
+            ERASER_SIZES.map((s) => (
+              <button key={s} type="button" onClick={() => setEraserSize(s)} title={s + "px eraser"}
+                className={"h-7 w-8 rounded-lg border text-[10px] " + (eraserSize === s ? "border-cyan/60 text-cyan" : "border-white/10 text-dust hover:text-ice")}>{s}</button>
+            ))
+          ) : tool === "pan" ? null : (
+            <>
+              {PEN_COLORS.map((c) => (
+                <button key={c} type="button" onClick={() => setColor(c)} aria-label={"ink " + c}
+                  className={"h-6 w-6 rounded-full border-2 " + (color === c ? "border-cyan" : "border-white/20")} style={{ background: c }} />
+              ))}
+              <span className="my-0.5 h-px w-6 bg-white/10" />
+              {PEN_WIDTHS.map((w) => (
+                <button key={w} type="button" onClick={() => setWidth(w)} title={w + "px pen"}
+                  className={"grid h-7 w-8 place-items-center rounded-lg border " + (width === w ? "border-cyan/60 text-cyan" : "border-white/10 text-dust hover:text-ice")}>
+                  <span className="rounded-full bg-current" style={{ width: Math.min(10, w + 1), height: Math.min(10, w + 1) }} />
+                </button>
+              ))}
+            </>
+          )}
 
-      <div ref={viewportRef} className="relative w-full overflow-hidden rounded-lg border border-white/15 bg-white" style={{ maxHeight: 640 }}>
-        <div style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "0 0" }}>
-          <div ref={wrapRef} className="relative w-full">
-            <canvas ref={baseRef} className="block w-full" />
-            <canvas ref={hlRef} className="pointer-events-none absolute left-0 top-0" />
-            <canvas ref={inkRef} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up} onPointerCancel={up}
-              className="absolute left-0 top-0 touch-none"
-              style={{ cursor: tool === "eraser" ? "cell" : tool === "pan" ? "grab" : "crosshair" }} />
-          </div>
+          <span className="my-0.5 h-px w-6 bg-white/10" />
+          <button type="button" onClick={undo} disabled={!canUndo} title="Undo" className="grid h-9 w-9 place-items-center rounded-lg border border-white/10 text-dust hover:text-ice disabled:opacity-30"><Undo2 size={15} /></button>
+          <button type="button" onClick={doRedo} disabled={!canRedo} title="Redo" className="grid h-9 w-9 place-items-center rounded-lg border border-white/10 text-dust hover:text-ice disabled:opacity-30"><Redo2 size={15} /></button>
+          <button type="button" onClick={clearInk} title="Clear" className="grid h-9 w-9 place-items-center rounded-lg border border-white/10 text-dust hover:text-signal"><Trash2 size={15} /></button>
+          <span className="my-0.5 h-px w-6 bg-white/10" />
+          <button type="button" onClick={zoomIn} disabled={zoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]} title="Zoom in" className="grid h-9 w-9 place-items-center rounded-lg border border-white/10 text-dust hover:text-ice disabled:opacity-30"><ZoomIn size={15} /></button>
+          <span className="text-[9px] tabular-nums text-dust">{Math.round(zoom * 100)}%</span>
+          <button type="button" onClick={zoomOut} disabled={zoom <= ZOOM_STEPS[0]} title="Zoom out" className="grid h-9 w-9 place-items-center rounded-lg border border-white/10 text-dust hover:text-ice disabled:opacity-30"><ZoomOut size={15} /></button>
+          <button type="button" onClick={resetView} title="Reset view" className="grid h-9 w-9 place-items-center rounded-lg border border-white/10 text-dust hover:text-ice"><RotateCcw size={14} /></button>
+          <span className="my-0.5 h-px w-6 bg-white/10" />
+          <button type="button" onClick={save} disabled={busy || !ready} title="Save answer sheet" className="grid h-9 w-9 place-items-center rounded-lg bg-cyan text-abyss disabled:opacity-40">{busy ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}</button>
         </div>
-        {!ready ? <div className="grid h-40 place-items-center text-xs text-dust">Loading paper…</div> : null}
       </div>
       {err ? <p className="mt-1 text-xs text-signal">{err}</p> : null}
-      <p className="mt-1 text-[11px] text-dust">Write your answer directly in the paper&apos;s answer spaces, then <b>Save answer sheet</b>. Pressure-sensitive stylus input, an S&nbsp;Pen/Wacom eraser button, and pinch-free zoom/pan are all supported. It&apos;s stored for your teacher.</p>
+      <p className="mt-1 text-[11px] text-dust">Write directly in the paper&apos;s answer spaces using the tool rail on the right, then <b>Save</b> (disk icon). Pressure-sensitive stylus, an S&nbsp;Pen/Wacom eraser button, and zoom/pan are all supported. It&apos;s stored for your teacher.</p>
     </div>
   );
 }

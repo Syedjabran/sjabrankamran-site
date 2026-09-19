@@ -25,14 +25,14 @@ const TOPICS_AS = ["Physical quantities & units","Kinematics","Dynamics","Forces
 const TOPICS_A2 = ["Circular motion","Gravitational fields","Thermal physics","Ideal gases","Oscillations","Electric fields","Capacitance","Magnetic fields","Alternating currents","Quantum physics","Nuclear physics","Astronomy & cosmology"];
 
 type ActiveMeta = { mode: "paper" | "drill"; code?: string; ref?: string; paperType: "P1" | "P2" | "P4" | "mixed" };
-type Active = { questions: ImgQuestion[]; title: string; subtitle?: string; duration: number; timed: boolean; logMeta: ActiveMeta; integrity: GuardMode; kind: AttemptKind; help: boolean; attemptId?: string; allocationId?: string | null };
+type Active = { questions: ImgQuestion[]; title: string; subtitle?: string; duration: number; timed: boolean; lockOnExpiry?: boolean; logMeta: ActiveMeta; integrity: GuardMode; kind: AttemptKind; help: boolean; attemptId?: string; allocationId?: string | null };
 
 type DrillSpec = { type: "drill"; paperType: "P1" | "P2" | "P4"; topics: string[]; levels: ("LOT" | "HOT")[]; count: number } | { type: "daily" };
 // `drillref` = a drill whose paper was frozen at allocation time. `drill` and
 // `daily` are the legacy randomised specs still carried by allocations saved
 // before freezing existed; they keep their original per-sitting behaviour.
 type AllocContent = { type: "paper"; code: string } | DrillSpec | { type: "custom"; ids: string[] } | { type: "drillref"; drillId: string; ref: string; ids: string[]; spec: DrillSpec | { type: "paper"; code: string } | { type: "custom"; ids: string[] } };
-type Allocation = { id: string; attemptId: string; mode: "assignment_help" | "assignment_nohelp" | "test"; content: AllocContent; title: string; instructions: string | null; durationMin: number | null; dueAt: string | null; startsAt: string | null; className: string | null; status: string };
+type Allocation = { id: string; attemptId: string; mode: "assignment_help" | "assignment_nohelp" | "test"; content: AllocContent; title: string; instructions: string | null; durationMin: number | null; lockOnExpiry?: boolean; dueAt: string | null; startsAt: string | null; className: string | null; status: string };
 function allocCfg(mode: Allocation["mode"]): { integrity: GuardMode; kind: AttemptKind; help: boolean } {
   if (mode === "test") return { integrity: "strict", kind: "test", help: false };
   if (mode === "assignment_nohelp") return { integrity: "standard", kind: "assignment", help: false };
@@ -191,7 +191,9 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
   function startAllocation(al: Allocation) {
     setLaunchError("");
     const cfg = allocCfg(al.mode);
-    const common = { ...cfg, timed: true, attemptId: al.attemptId, allocationId: al.id };
+    // A lifted time lock keeps the countdown visible but never auto-submits or
+    // locks answers. Absent/true => the historical locking behaviour.
+    const common = { ...cfg, timed: true, lockOnExpiry: al.lockOnExpiry !== false, attemptId: al.attemptId, allocationId: al.id };
     if (al.content.type === "paper") {
       const code = al.content.code;
       const qs = IMAGE_BANK.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
