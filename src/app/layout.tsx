@@ -101,13 +101,43 @@ const personSchema = {
   sameAs: ["https://www.linkedin.com/company/jabran-co/", "https://x.com/Syed_Jabran"],
 };
 
+// Entity/GEO clarity: a stable WebSite + EducationalOrganization identity so
+// answer engines resolve one consistent entity for the site and its teaching.
+// Only verifiable facts — no ratings, awards, affiliations or outcomes.
+const websiteSchema = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: SITE.name,
+  url: SITE.url,
+  inLanguage: "en",
+  publisher: { "@type": "Person", name: SITE.name, url: SITE.url },
+};
+
+const orgSchema = {
+  "@context": "https://schema.org",
+  "@type": "EducationalOrganization",
+  name: "Syed Jabran Ali Kamran — Physics",
+  url: SITE.url,
+  logo: `${SITE.url}/icon.png`,
+  image: `${SITE.url}/jb-portrait.jpg`,
+  founder: { "@type": "Person", name: SITE.name, url: SITE.url },
+  email: "physics@sjabrankamran.com",
+  areaServed: "Global",
+  knowsAbout: [
+    "Cambridge International AS & A Level Physics (9702)",
+    "Cambridge O Level Physics (5054)",
+    "IB Physics",
+  ],
+  sameAs: ["https://www.linkedin.com/company/jabran-co/", "https://x.com/Syed_Jabran"],
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable} ${mono.variable}`}>
       <body>
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(personSchema) }}
+          dangerouslySetInnerHTML={{ __html: JSON.stringify([websiteSchema, orgSchema, personSchema]) }}
         />
         <SiteHeader />
         <main>{children}</main>
