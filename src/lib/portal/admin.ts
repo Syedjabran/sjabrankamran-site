@@ -84,7 +84,7 @@ On your first sign-in you will be asked to complete a short profile form (about 
 `}Please keep your password private. You can change it any time using "Forgot password?" on the login page.
 
 NEED HELP?
-For anything at all, reply to this email (physics@sjabrankamran.com) or visit https://www.sjabrankamran.com .
+For anything at all, reply to this email (physics@sjabrankamran.com) or visit https://sjabrankamran.com .
 
 Warm regards,
 Syed Jabran Ali Kamran
