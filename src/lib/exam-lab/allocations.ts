@@ -59,6 +59,7 @@ export type ExamAllocation = {
   instructions: string | null;
   durationMin: number | null;   // optional override
   lockOnExpiry?: boolean;       // when false: countdown is shown but never auto-submits/locks (default: locking)
+  integrity?: "off" | "standard" | "strict"; // override the proctoring guard; "off" never cancels on tab-switch/blur (default: derived from mode)
   dueAt: string | null;
   startsAt: string | null;
   classId: string | null;

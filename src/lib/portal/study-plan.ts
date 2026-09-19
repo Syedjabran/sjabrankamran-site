@@ -113,7 +113,7 @@ export async function ensureStudyPlan(uid: string): Promise<StudyPlanSummary> {
     const testId = newAllocId();
     await allocateToStudents([uid], {
       id: testId, mode: "assignment_nohelp", content: { type: "drill", paperType, topics: [topic], levels: a.level >= 5 ? ["LOT", "HOT"] : ["LOT"], count: 10 },
-      title: `Weekly short test · ${topic}`, instructions: "Diagnostic check. The timer is a pacing guide only — it will not lock your answers.", durationMin: 25, lockOnExpiry: false,
+      title: `Weekly short test · ${topic}`, instructions: "Diagnostic check. The timer is a pacing guide only — it will not lock your answers, and you may switch tabs freely.", durationMin: 25, lockOnExpiry: false, integrity: "off",
       dueAt: duePk(5, 20), startsAt: null, classId: null, className: "Automated study plan", createdBy: OWNER_ID, createdByName: OWNER_NAME,
     });
     const shortTestTask = await assignTask(uid, {
@@ -129,7 +129,7 @@ export async function ensureStudyPlan(uid: string): Promise<StudyPlanSummary> {
     const allocationId = newAllocId();
     await allocateToStudents([uid], {
       id: allocationId, mode: "assignment_nohelp", content: { type: "drill", paperType, topics: [topic], levels: ["LOT", "HOT"], count: 5 },
-      title: `Daily challenge · ${topic}`, instructions: "Targeted practice. The timer is a pacing guide only — it will not lock your answers.", durationMin: 15, lockOnExpiry: false,
+      title: `Daily challenge · ${topic}`, instructions: "Targeted practice. The timer is a pacing guide only — it will not lock your answers, and you may switch tabs freely.", durationMin: 15, lockOnExpiry: false, integrity: "off",
       dueAt: duePk(0, 20), startsAt: null, classId: null, className: "Automated study plan", createdBy: OWNER_ID, createdByName: OWNER_NAME,
     });
     const dailyTask = await assignTask(uid, {

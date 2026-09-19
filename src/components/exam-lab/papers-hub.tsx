@@ -32,7 +32,7 @@ type DrillSpec = { type: "drill"; paperType: "P1" | "P2" | "P4"; topics: string[
 // `daily` are the legacy randomised specs still carried by allocations saved
 // before freezing existed; they keep their original per-sitting behaviour.
 type AllocContent = { type: "paper"; code: string } | DrillSpec | { type: "custom"; ids: string[] } | { type: "drillref"; drillId: string; ref: string; ids: string[]; spec: DrillSpec | { type: "paper"; code: string } | { type: "custom"; ids: string[] } };
-type Allocation = { id: string; attemptId: string; mode: "assignment_help" | "assignment_nohelp" | "test"; content: AllocContent; title: string; instructions: string | null; durationMin: number | null; lockOnExpiry?: boolean; dueAt: string | null; startsAt: string | null; className: string | null; status: string };
+type Allocation = { id: string; attemptId: string; mode: "assignment_help" | "assignment_nohelp" | "test"; content: AllocContent; title: string; instructions: string | null; durationMin: number | null; lockOnExpiry?: boolean; integrity?: GuardMode; dueAt: string | null; startsAt: string | null; className: string | null; status: string };
 function allocCfg(mode: Allocation["mode"]): { integrity: GuardMode; kind: AttemptKind; help: boolean } {
   if (mode === "test") return { integrity: "strict", kind: "test", help: false };
   if (mode === "assignment_nohelp") return { integrity: "standard", kind: "assignment", help: false };
@@ -193,7 +193,9 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
     const cfg = allocCfg(al.mode);
     // A lifted time lock keeps the countdown visible but never auto-submits or
     // locks answers. Absent/true => the historical locking behaviour.
-    const common = { ...cfg, timed: true, lockOnExpiry: al.lockOnExpiry !== false, attemptId: al.attemptId, allocationId: al.id };
+    // An allocation may override the proctoring guard ("off" => never cancels on
+    // tab-switch/blur). Absent => the mode's default guard.
+    const common = { ...cfg, integrity: al.integrity ?? cfg.integrity, timed: true, lockOnExpiry: al.lockOnExpiry !== false, attemptId: al.attemptId, allocationId: al.id };
     if (al.content.type === "paper") {
       const code = al.content.code;
       const qs = IMAGE_BANK.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
