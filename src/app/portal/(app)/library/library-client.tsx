@@ -8,7 +8,7 @@ type ThreadMeta = { id: string; title: string; tag: Tag; authorName: string; ts:
 type Att = { path: string; name: string; size: number; url: string | null };
 type Reactions = { like: string[]; dislike: string[]; love: string[] };
 type Post = { id: string; authorName: string; authorId: string; body: string; attachments: Att[]; ts: number; helpful: number; mine: boolean; iMarked: boolean; reactions: Reactions };
-type Thread = { id: string; title: string; tag: Tag; authorName: string; authorId: string; body: string; ts: number; attachments: Att[]; posts: Post[]; reactions: Reactions };
+type Thread = { id: string; title: string; tag: Tag; authorName: string; authorId: string; body: string; ts: number; attachments: Att[]; posts: Post[]; reactions: Reactions; resources: number };
 type Row = { uid: string; name: string; total: number; monthPoints: number; rank: number; isMe: boolean };
 type Community = { month: string; monthlyTop5: Row[]; allTime: Row[]; me: { total: number; monthPoints: number }; guide: { kind: string; label: string; pts: number }[] };
 
@@ -42,9 +42,11 @@ export function LibraryClient({ isAdmin }: { isAdmin: boolean }) {
   useEffect(() => { loadList(); }, [loadList]);
   useEffect(() => { loadCommunity(); }, [loadCommunity]);
 
-  const openThread = async (id: string) => { try { const j = await api(`/api/portal/library/${id}`); setOpen(j.thread); } catch (e) { setErr((e as Error).message); } };
+  const [me, setMe] = useState("");
+  const [meName, setMeName] = useState("You");
+  const openThread = async (id: string) => { try { const j = await api(`/api/portal/library/${id}`); setOpen(j.thread); setMe(j.me || ""); setMeName(j.meName || "You"); } catch (e) { setErr((e as Error).message); } };
 
-  if (open) return <ThreadView thread={open} isAdmin={isAdmin} onBack={() => { setOpen(null); loadList(); loadCommunity(); }} onReload={() => openThread(open.id)} />;
+  if (open) return <ThreadView thread={open} me={me} meName={meName} isAdmin={isAdmin} onBack={() => { setOpen(null); loadList(); loadCommunity(); }} />;
 
   return (
     <div className="space-y-5">
@@ -170,21 +172,99 @@ function NewThread({ onCreated }: { onCreated: (id: string) => void }) {
   );
 }
 
-function ThreadView({ thread, isAdmin, onBack, onReload }: { thread: Thread; isAdmin: boolean; onBack: () => void; onReload: () => void }) {
+function ThreadView({ thread: initialThread, me, meName, isAdmin, onBack }: { thread: Thread; me: string; meName: string; isAdmin: boolean; onBack: () => void }) {
+  const [t, setT] = useState(initialThread);
+  // A prop refresh can carry a CDN-stale doc (Storage-as-DB has read-after-write lag):
+  // never let an older/shorter version clobber locally-confirmed state.
+  useEffect(() => {
+    setT((prev) => (initialThread.posts.length >= prev.posts.length && initialThread.attachments.length >= prev.attachments.length ? initialThread : prev));
+  }, [initialThread]);
   const [reply, setReply] = useState(""); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
-  const [file, setFile] = useState<File | null>(null);
+  const [threadFile, setThreadFile] = useState<File | null>(null);
+  const [replyFile, setReplyFile] = useState<File | null>(null);
+
+  // Optimistically apply a reaction toggle locally; server response re-verifies.
+  function applyReactionLocal(target: "thread" | string, kind: keyof Reactions, uid: string): "on" | "off" {
+    let result: "on" | "off" = "on";
+    const patch = (r?: Reactions): Reactions => {
+      const reactions: Reactions = { like: [...(r?.like || [])], dislike: [...(r?.dislike || [])], love: [...(r?.love || [])] };
+      const had = reactions[kind].includes(uid);
+      for (const key of Object.keys(reactions) as (keyof Reactions)[]) reactions[key] = reactions[key].filter((id) => id !== uid);
+      if (!had) { reactions[kind].push(uid); result = "on"; } else { result = "off"; }
+      return reactions;
+    };
+    setT((prev) => {
+      if (target === "thread") return { ...prev, reactions: patch(prev.reactions) };
+      return { ...prev, posts: prev.posts.map((p) => (p.id === target ? { ...p, reactions: patch(p.reactions) } : p)) };
+    });
+    return result;
+  }
+
+  async function reaction(kind: keyof Reactions, postId?: string) {
+    setErr("");
+    const target = postId || "thread";
+    const before: Reactions = target === "thread" ? t.reactions : (t.posts.find((p) => p.id === target)?.reactions || { like: [], dislike: [], love: [] });
+    applyReactionLocal(target, kind, me);
+    try {
+      const j = await api(`/api/portal/library/${t.id}`, { method: "POST", body: JSON.stringify({ op: "reaction", postId, reaction: kind }) });
+      // Re-verify from the authoritative server response.
+      if (j?.reactions) setT((prev) => (target === "thread" ? { ...prev, reactions: j.reactions } : { ...prev, posts: prev.posts.map((p) => (p.id === target ? { ...p, reactions: j.reactions } : p)) }));
+    } catch (e) {
+      setT((prev) => (target === "thread" ? { ...prev, reactions: before } : { ...prev, posts: prev.posts.map((p) => (p.id === target ? { ...p, reactions: before } : p)) }));
+      setErr((e as Error).message || "Reaction failed — try again.");
+    }
+  }
+
+  async function helpful(postId: string) {
+    setErr("");
+    const post = t.posts.find((p) => p.id === postId);
+    if (!post) return;
+    const before = { helpful: post.helpful, iMarked: post.iMarked };
+    const turningOn = !post.iMarked;
+    setT((prev) => ({ ...prev, posts: prev.posts.map((p) => (p.id === postId ? { ...p, iMarked: turningOn, helpful: Math.max(0, p.helpful + (turningOn ? 1 : -1)) } : p)) }));
+    try {
+      const j = await api(`/api/portal/library/${t.id}`, { method: "POST", body: JSON.stringify({ op: "helpful", postId }) });
+      if (typeof j?.helpful === "number") setT((prev) => ({ ...prev, posts: prev.posts.map((p) => (p.id === postId ? { ...p, helpful: j.helpful, iMarked: !!j.on } : p)) }));
+    } catch (e) {
+      setT((prev) => ({ ...prev, posts: prev.posts.map((p) => (p.id === postId ? { ...p, ...before } : p)) }));
+      setErr((e as Error).message || "Could not update Helpful — try again.");
+    }
+  }
+
   async function sendReply() {
     setBusy(true); setErr("");
     try {
-      await api(`/api/portal/library/${thread.id}`, { method: "POST", body: JSON.stringify({ op: "reply", body: reply }) });
-      if (file) { const fd = new FormData(); fd.append("file", file); fd.append("postId", ""); await fetch(`/api/portal/library/${thread.id}/upload`, { method: "POST", body: fd }); }
-      setReply(""); setFile(null); onReload();
+      const j = await api(`/api/portal/library/${t.id}`, { method: "POST", body: JSON.stringify({ op: "reply", body: reply }) });
+      let attachment: Att | null = null;
+      if (replyFile) {
+        const fd = new FormData(); fd.append("file", replyFile); if (j.postId) fd.append("postId", j.postId);
+        const r = await fetch(`/api/portal/library/${t.id}/upload`, { method: "POST", body: fd });
+        const uj = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(uj.error || `Attachment upload failed (HTTP ${r.status}).`);
+        attachment = uj.attachment || null;
+      }
+      const post: Post = j.post || { id: j.postId, authorName: meName, authorId: me, body: reply, attachments: attachment ? [attachment] : [], ts: Date.now(), helpful: 0, mine: true, iMarked: false, reactions: { like: [], dislike: [], love: [] } };
+      if (attachment && !post.attachments.length) post.attachments = [attachment];
+      setT((prev) => ({ ...prev, posts: [...prev.posts, post], replies: prev.posts.length + 1 }));
+      setReply(""); setReplyFile(null);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   }
-  async function helpful(postId: string) { try { await api(`/api/portal/library/${thread.id}`, { method: "POST", body: JSON.stringify({ op: "helpful", postId }) }); onReload(); } catch { /* */ } }
-  async function reaction(reaction: keyof Reactions, postId?: string) { try { await api(`/api/portal/library/${thread.id}`, { method: "POST", body: JSON.stringify({ op: "reaction", postId, reaction }) }); onReload(); } catch { /* ignore */ } }
-  async function del() { if (!confirm("Delete this thread?")) return; try { await api(`/api/portal/library/${thread.id}`, { method: "DELETE" }); onBack(); } catch (e) { setErr((e as Error).message); } }
-  async function addResource() { if (!file) return; setBusy(true); try { const fd = new FormData(); fd.append("file", file); await fetch(`/api/portal/library/${thread.id}/upload`, { method: "POST", body: fd }); setFile(null); onReload(); } finally { setBusy(false); } }
+
+  async function del() { if (!confirm("Delete this thread?")) return; try { await api(`/api/portal/library/${t.id}`, { method: "DELETE" }); onBack(); } catch (e) { setErr((e as Error).message); } }
+
+  async function addResource() {
+    if (!threadFile) return;
+    setBusy(true); setErr("");
+    try {
+      const fd = new FormData(); fd.append("file", threadFile);
+      const r = await fetch(`/api/portal/library/${t.id}/upload`, { method: "POST", body: fd });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `Upload failed (HTTP ${r.status}).`);
+      const att = j.attachment as Att;
+      if (att) setT((prev) => ({ ...prev, attachments: [...prev.attachments, att], resources: prev.resources + 1 }));
+      setThreadFile(null);
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  }
 
   const AttList = ({ atts }: { atts: Att[] }) => atts.length ? (
     <ul className="mt-2 space-y-1">
@@ -195,27 +275,37 @@ function ThreadView({ thread, isAdmin, onBack, onReload }: { thread: Thread; isA
   return (
     <div className="space-y-4">
       <button onClick={onBack} className="inline-flex items-center gap-1 text-xs text-dust hover:text-cyan"><ArrowLeft size={13} /> Library</button>
+      {err ? (
+        <p className="flex items-center justify-between rounded-xl border border-signal/40 bg-signal/10 px-3 py-2 text-xs text-signal">
+          <span>{err}</span>
+          <button onClick={() => setErr("")} className="ml-2 text-signal/70 hover:text-signal">✕</button>
+        </p>
+      ) : null}
       <div className="rounded-2xl border border-white/10 bg-space/60 p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <span className={"inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] " + TAG_META[thread.tag].cls}>{TAG_META[thread.tag].icon} {TAG_META[thread.tag].label}</span>
-            <h1 className="mt-2 text-xl font-semibold text-ice">{thread.title}</h1>
-            <p className="text-[11px] text-dust">{thread.authorName} · {rel(thread.ts)}</p>
+            <span className={"inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] " + TAG_META[t.tag].cls}>{TAG_META[t.tag].icon} {TAG_META[t.tag].label}</span>
+            <h1 className="mt-2 text-xl font-semibold text-ice">{t.title}</h1>
+            <p className="text-[11px] text-dust">{t.authorName} · {rel(t.ts)}</p>
           </div>
           {isAdmin ? <button onClick={del} className="text-signal hover:text-signal/70" title="Delete (admin)"><Trash2 size={15} /></button> : null}
         </div>
-        {thread.body ? <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-fog">{thread.body}</p> : null}
-        <ReactionBar reactions={thread.reactions} onReact={(r) => reaction(r)} />
-        <AttList atts={thread.attachments} />
+        {t.body ? <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-fog">{t.body}</p> : null}
+        <ReactionBar reactions={t.reactions} me={me} onReact={(r) => reaction(r)} />
+        <AttList atts={t.attachments} />
         <label className="mt-3 inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-dust hover:text-cyan">
-          <Paperclip size={12} /> {file ? file.name : "Add a resource to this thread"}
-          <input type="file" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.txt,.zip" />
+          <Paperclip size={12} /> {threadFile ? threadFile.name : "Add a resource to this thread"}
+          <input type="file" className="hidden" onChange={(e) => setThreadFile(e.target.files?.[0] || null)} accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg,.webp,.txt,.zip" />
         </label>
-        {file ? <button onClick={addResource} disabled={busy} className="ml-2 text-[11px] text-cyan hover:underline">upload</button> : null}
+        {threadFile ? (
+          <button onClick={addResource} disabled={busy} className="ml-2 inline-flex items-center gap-1 text-[11px] text-cyan hover:underline disabled:opacity-50">
+            {busy ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />} upload
+          </button>
+        ) : null}
       </div>
 
       <div className="space-y-2">
-        {thread.posts.map((p) => (
+        {t.posts.map((p) => (
           <div key={p.id} className="rounded-2xl border border-white/10 bg-space/60 p-4">
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-ice">{p.authorName}</p>
@@ -226,7 +316,7 @@ function ThreadView({ thread, isAdmin, onBack, onReload }: { thread: Thread; isA
             <button onClick={() => helpful(p.id)} className={"mt-2 inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] " + (p.iMarked ? "border-emerald2/50 text-emerald2 bg-emerald2/10" : "border-white/10 text-dust hover:text-emerald2")}>
               <ThumbsUp size={11} /> Helpful {p.helpful ? p.helpful : ""}
             </button>
-            <ReactionBar reactions={p.reactions} onReact={(r) => reaction(r, p.id)} />
+            <ReactionBar reactions={p.reactions} me={me} onReact={(r) => reaction(r, p.id)} />
           </div>
         ))}
       </div>
@@ -234,16 +324,31 @@ function ThreadView({ thread, isAdmin, onBack, onReload }: { thread: Thread; isA
       <div className="rounded-2xl border border-white/10 bg-space/60 p-4">
         <textarea value={reply} onChange={(e) => setReply(e.target.value)} rows={2} placeholder="Write a reply / help out…" className="w-full resize-none rounded-lg border border-white/10 bg-abyss/60 px-3 py-2 text-sm text-ice placeholder:text-dust focus:border-cyan focus:outline-none" />
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-dust hover:text-cyan"><Paperclip size={12} /> {file ? file.name : "attach"}<input type="file" className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} /></label>
+          <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-dust hover:text-cyan"><Paperclip size={12} /> {replyFile ? replyFile.name : "attach"}<input type="file" className="hidden" onChange={(e) => setReplyFile(e.target.files?.[0] || null)} /></label>
           <button onClick={sendReply} disabled={busy || reply.trim().length < 1} className="btn-primary ml-auto !px-4 !py-1.5 text-xs">{busy ? <Loader2 size={13} className="animate-spin" /> : <MessageSquare size={13} />} Reply</button>
         </div>
-        {err ? <p className="mt-1 text-xs text-signal">{err}</p> : null}
       </div>
     </div>
   );
 }
 
-function ReactionBar({ reactions, onReact }: { reactions: Reactions; onReact: (r: keyof Reactions) => void }) {
+function ReactionBar({ reactions, me, onReact }: { reactions: Reactions; me: string; onReact: (r: keyof Reactions) => void }) {
   const items: [keyof Reactions, string, string][] = [["like", "👍", "Like"], ["love", "❤️", "Love"], ["dislike", "👎", "Dislike"]];
-  return <div className="mt-2 flex flex-wrap gap-1.5">{items.map(([key, emoji, label]) => <button key={key} onClick={() => onReact(key)} title={label} className="rounded-full border border-white/10 px-2 py-0.5 text-[11px] text-dust hover:border-cyan/40 hover:text-ice">{emoji} {reactions?.[key]?.length || ""}</button>)}</div>;
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {items.map(([key, emoji, label]) => {
+        const mine = !!me && !!reactions?.[key]?.includes(me);
+        return (
+          <button
+            key={key}
+            onClick={() => onReact(key)}
+            title={label}
+            className={"rounded-full border px-2 py-0.5 text-[11px] transition " + (mine ? "border-cyan/60 bg-cyan/10 text-cyan" : "border-white/10 text-dust hover:border-cyan/40 hover:text-ice")}
+          >
+            {emoji} {reactions?.[key]?.length || ""}
+          </button>
+        );
+      })}
+    </div>
+  );
 }

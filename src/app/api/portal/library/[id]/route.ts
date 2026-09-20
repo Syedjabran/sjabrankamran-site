@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getPortalUser, isAdmin } from "@/lib/edu/auth";
-import { getThread, addPost, markHelpful, react, signAttachments, type Attachment, type Reactions } from "@/lib/portal/forum";
+import { getThread, addPost, markHelpful, react, normReactions, signAttachments, type Attachment, type Reactions } from "@/lib/portal/forum";
 import { award } from "@/lib/portal/contribution";
 
 export const runtime = "nodejs";
@@ -16,11 +16,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const posts = await Promise.all((t.posts || []).map(async (p) => ({
     ...p, attachments: await signAttachments(p.attachments || []),
     mine: p.authorId === user.id, iMarked: (p.helpfulBy || []).includes(user.id),
-    reactions: p.reactions || { like: [], dislike: [], love: [] },
+    reactions: normReactions(p.reactions),
   })));
   return NextResponse.json({
-    thread: { id: t.id, title: t.title, tag: t.tag, authorName: t.authorName, authorId: t.authorId, body: t.body, ts: t.ts, attachments: opAtt, posts, reactions: t.reactions || { like: [], dislike: [], love: [] } },
-    me: user.id,
+    thread: { id: t.id, title: t.title, tag: t.tag, authorName: t.authorName, authorId: t.authorId, body: t.body, ts: t.ts, attachments: opAtt, posts, reactions: normReactions(t.reactions), resources: t.resources ?? 0 },
+    me: user.id, meName: user.fullName || user.email || "Member",
   }, { status: 200 });
 }
 
@@ -50,7 +50,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const post = await addPost(id, { authorId: user.id, authorName: name, body, attachments: [] as Attachment[] });
   if (!post) return NextResponse.json({ error: "Not found." }, { status: 404 });
   await award(user.id, name, "answer");
-  return NextResponse.json({ ok: true, postId: post.id }, { status: 200 });
+  return NextResponse.json({ ok: true, postId: post.id, post: { id: post.id, authorId: user.id, authorName: name, body: post.body, attachments: [], ts: post.ts, helpful: 0, mine: true, iMarked: false, reactions: { like: [], dislike: [], love: [] } } }, { status: 200 });
 }
 
 /** DELETE — remove a thread (author or admin). */

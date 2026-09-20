@@ -24,6 +24,11 @@ export type Thread = ThreadMeta & { body: string; attachments: Attachment[]; pos
 
 const emptyReactions = (): Reactions => ({ like: [], dislike: [], love: [] });
 
+/** Old thread docs may carry a partial/missing reactions object — always normalize. */
+export function normReactions(r?: Partial<Reactions> | null): Reactions {
+  return { like: r?.like ?? [], dislike: r?.dislike ?? [], love: r?.love ?? [] };
+}
+
 function newId() { return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }
 function tpath(id: string) { return `forum/threads/${id}.json`; }
 
@@ -109,7 +114,7 @@ export async function react(threadId: string, targetId: string | null, kind: key
   if (!thread || !["like", "dislike", "love"].includes(kind)) return { ok: false };
   const target = targetId ? thread.posts.find((p) => p.id === targetId) : thread;
   if (!target) return { ok: false };
-  const reactions = target.reactions || emptyReactions();
+  const reactions = normReactions(target.reactions);
   const already = reactions[kind].includes(byUid);
   for (const key of Object.keys(reactions) as (keyof Reactions)[]) reactions[key] = reactions[key].filter((id) => id !== byUid);
   if (!already) reactions[kind].push(byUid);
