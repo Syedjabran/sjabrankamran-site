@@ -36,8 +36,18 @@ function path(uid: string) { return `${DIR}/${uid}.json`; }
 
 async function read(uid: string): Promise<Contrib | null> {
   try {
-    const { data } = await createAdminClient().storage.from(BUCKET).download(path(uid));
-    if (data) return JSON.parse(await data.text()) as Contrib;
+    // Cache-busted read — see src/lib/portal/forum.ts readJson for why.
+    const enc = `${DIR}/${uid}.json`.split("/").map(encodeURIComponent).join("/");
+    const cb = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/${BUCKET}/${enc}?cb=${cb}`;
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: {
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}`,
+      },
+    });
+    if (res.ok) return (await res.json()) as Contrib;
   } catch { /* none */ }
   return null;
 }

@@ -34,8 +34,21 @@ function tpath(id: string) { return `forum/threads/${id}.json`; }
 
 async function readJson<T>(bucket: string, path: string, fallback: T): Promise<T> {
   try {
-    const { data } = await createAdminClient().storage.from(bucket).download(path);
-    if (data) return JSON.parse(await data.text()) as T;
+    // The storage CDN caches plain object reads for many seconds even with
+    // cacheControl "0" on writes, which broke read-after-write (reactions and
+    // replies appeared to do nothing). A unique cache-buster query forces a
+    // CDN miss and returns the just-written object immediately (verified live).
+    const enc = path.split("/").map(encodeURIComponent).join("/");
+    const cb = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/${bucket}/${enc}?cb=${cb}`;
+    const res = await fetch(url, {
+      cache: "no-store",
+      headers: {
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}`,
+      },
+    });
+    if (res.ok) return (await res.json()) as T;
   } catch { /* none */ }
   return fallback;
 }
