@@ -6,6 +6,7 @@ import { assignTask, listTasks, type PersonalTask } from "@/lib/portal/tasks";
 import { notify } from "@/lib/portal/notifications";
 import { getRegistry } from "@/lib/portal/institutions";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { classesForUids, coveredTopicsForClasses, DEFAULT_COURSE } from "@/lib/exam-lab/syllabus-coverage";
 
 const OWNER_ID = "a9ed04e6-5386-41c7-8713-fa557431a309";
 const OWNER_NAME = "Syed Jabran Ali Kamran · Head of Physics World";
@@ -35,10 +36,6 @@ const A2_TOPICS = [
   "Nuclear physics", "Astronomy & cosmology",
 ];
 const CANONICAL_TOPICS = [...AS_TOPICS, ...A2_TOPICS];
-// Coverage frontier for Year 1 (AS): students have only covered chapter 1 so
-// far, so every auto-generated task/challenge must stay within it. Widen this
-// slice as the cohort progresses through the syllabus.
-const AS_COVERED_TOPICS = AS_TOPICS.slice(0, 1); // ["Physical quantities & units"]
 function safeTopic(topic: string) { return TOPIC_MAP[topic] || topic; }
 function searchUrl(kind: "resources" | "video" | "simulation", topic: string) {
   const q = encodeURIComponent(`CAIE 9702 Physics ${topic}`);
@@ -73,16 +70,24 @@ async function courseStage(uid: string): Promise<"AS" | "A2"> {
  * Idempotently creates one weekly preparation sequence plus today's targeted
  * daily challenge. All generated work is stored in the normal task/allocation
  * records, so completion and submission remain auditable.
+ *
+ * SYLLABUS GATING (owner rule): question-drawing work is generated ONLY from
+ * topics confirmed completed on the Syllabus coverage page for the student's
+ * class/school. If nothing is marked complete, no drill/test/challenge is
+ * created at all — never random uncovered syllabus.
  */
 export async function ensureStudyPlan(uid: string): Promise<StudyPlanSummary> {
-  const [attempts, stage] = await Promise.all([getAttempts(uid).catch(() => []), courseStage(uid)]);
+  const [attempts, stage, covered] = await Promise.all([
+    getAttempts(uid).catch(() => []),
+    courseStage(uid),
+    coveredTopicsForClasses(DEFAULT_COURSE, await classesForUids([uid])).catch(() => new Set<string>()),
+  ]);
   const a = analyse(attempts);
-  // Year 1 (AS) is scoped to covered chapters only; anything a weakness analysis
-  // surfaces from a later, not-yet-taught topic is filtered out below.
-  const stageTopics = stage === "A2" ? A2_TOPICS : AS_COVERED_TOPICS;
+  // The teachable frontier = the course stage filtered to covered topics only.
+  const stageTopics = (stage === "A2" ? A2_TOPICS : AS_TOPICS).filter((t) => covered.has(t));
   const paperType = stage === "A2" ? "P4" : "P2";
   const rawFocus = a.weaknesses.length ? a.weaknesses.map((x) => safeTopic(x.topic)) : stageTopics.slice(0, 3);
-  // De-duplicate and ensure every topic exists in the image bank.
+  // De-duplicate and keep only covered, canonical topics.
   const seen = new Set<string>();
   const focus = rawFocus.filter((t) => stageTopics.includes(t) && CANONICAL_TOPICS.includes(t) && !seen.has(t) && (seen.add(t), true)).slice(0, 3);
   if (!focus.length) focus.push(...stageTopics.slice(0, 3));
@@ -95,6 +100,18 @@ export async function ensureStudyPlan(uid: string): Promise<StudyPlanSummary> {
   const weeklyKey = `auto-plan:${monday}`;
   const dailyKey = `auto-daily:${today}`;
   let tasks = await listTasks(uid);
+
+  if (!focus.length) {
+    // Nothing is marked complete for this student's class yet: per the owner
+    // rule we refuse to generate question work from uncovered syllabus.
+    // Non-question plan steps are skipped too — the whole plan keys off the
+    // covered-topic frontier. Staff see the nudge in the summary.
+    const generatedNone = tasks.filter((t) => t.generatedKey?.startsWith("auto-")).slice(0, 30);
+    return {
+      generatedFor: today, level: a.level, levelLabel: a.levelLabel, focusTopics: [],
+      tasks: generatedNone, openMandatory: generatedNone.filter((t) => t.mandatory && t.status !== "done").length,
+    };
+  }
 
   if (!tasks.some((t) => t.generatedKey === weeklyKey)) {
     const topic = focus[0];
@@ -115,8 +132,7 @@ export async function ensureStudyPlan(uid: string): Promise<StudyPlanSummary> {
       id: testId, mode: "assignment_nohelp", content: { type: "drill", paperType, topics: [topic], levels: a.level >= 5 ? ["LOT", "HOT"] : ["LOT"], count: 10 },
       title: `Weekly short test · ${topic}`, instructions: "Diagnostic check. The timer is a pacing guide only — it will not lock your answers, and you may switch tabs freely.", durationMin: 25, lockOnExpiry: false, integrity: "off",
       dueAt: duePk(5, 20), startsAt: null, classId: null, className: "Automated study plan", createdBy: OWNER_ID, createdByName: OWNER_NAME,
-    });
-    const shortTestTask = await assignTask(uid, {
+    });    const shortTestTask = await assignTask(uid, {
       title: `Mandatory short test · ${topic}`, details: "Complete the assigned 10-question diagnostic in Exam Lab and submit it.", kind: "challenge", dueAt: duePk(5, 20), points: 20,
       resourceUrl: `/portal/exam-lab?allocation=${encodeURIComponent(testId)}`, createdBy: OWNER_ID, createdByName: OWNER_NAME, mandatory: true, topic, activityType: "short_test", expectedMinutes: 25, generatedKey: weeklyKey, sourceId: testId,
     });
@@ -130,7 +146,7 @@ export async function ensureStudyPlan(uid: string): Promise<StudyPlanSummary> {
     await allocateToStudents([uid], {
       id: allocationId, mode: "assignment_nohelp", content: { type: "drill", paperType, topics: [topic], levels: ["LOT", "HOT"], count: 5 },
       title: `Daily challenge · ${topic}`, instructions: "Targeted practice. The timer is a pacing guide only — it will not lock your answers, and you may switch tabs freely.", durationMin: 15, lockOnExpiry: false, integrity: "off",
-      dueAt: duePk(0, 20), startsAt: null, classId: null, className: "Automated study plan", createdBy: OWNER_ID, createdByName: OWNER_NAME,
+      dueAt: duePk(0, 20), startsAt: null, classId: null, className: "Automated study plan", createdBy: OWNER_ID, createdByName: OWNER_NAME, daily: true,
     });
     const dailyTask = await assignTask(uid, {
       title: `Daily mandatory challenge · ${topic}`, details: "Complete today’s five targeted questions in Exam Lab and submit them.", kind: "challenge", dueAt: duePk(0, 20), points: 10,

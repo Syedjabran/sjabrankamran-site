@@ -103,8 +103,13 @@ export type DrillRecordSummaryRow = Omit<DrillRecord, "snapshot" | "content"> & 
  * Resolve an allocation content spec to the exact list of questions — the
  * frozen "question paper". For a random drill this fixes ONE concrete set so
  * the stored paper is deterministic and viewable afterwards.
+ *
+ * allowedTopics (optional): syllabus-coverage gate — randomized draws (drill /
+ * daily) keep ONLY questions whose topic is confirmed completed for the
+ * target. Undefined = no gating (historical behaviour, e.g. re-resolving an
+ * already-staff-chosen paper).
  */
-export function resolveSnapshot(content: AllocContent): ImgQuestion[] {
+export function resolveSnapshot(content: AllocContent, allowedTopics?: Set<string>): ImgQuestion[] {
   if (content.type === "paper") {
     return FULL_BANK.filter((q) => q.code === content.code).sort((a, b) => a.qnum - b.qnum);
   }
@@ -113,11 +118,13 @@ export function resolveSnapshot(content: AllocContent): ImgQuestion[] {
     const byId = new Map(FULL_BANK.map((q) => [q.id, q] as const));
     return content.ids.map((id) => byId.get(id)).filter((q): q is ImgQuestion => !!q);
   }
+  const topicAllowed = (q: ImgQuestion) => !allowedTopics || (!!q.topic && allowedTopics.has(q.topic));
   if (content.type === "drill") {
     const pool = FULL_BANK.filter(
       (q) => q.paperType === content.paperType &&
         (!content.topics.length || (q.topic && content.topics.includes(q.topic))) &&
-        content.levels.includes(q.level),
+        content.levels.includes(q.level) &&
+        topicAllowed(q),
     );
     // Deterministic-enough: shuffle once here so the stored paper is a single fixed set.
     const a = [...pool];
@@ -125,7 +132,7 @@ export function resolveSnapshot(content: AllocContent): ImgQuestion[] {
     return a.slice(0, content.count);
   }
   // daily: 10 mixed Paper-1 questions
-  const p1 = FULL_BANK.filter((q) => q.paperType === "P1");
+  const p1 = FULL_BANK.filter((q) => q.paperType === "P1" && topicAllowed(q));
   const a = [...p1];
   for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
   return a.slice(0, 10);

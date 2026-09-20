@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { Eye, GraduationCap, LockKeyhole, LogOut, Settings } from "lucide-react";
-import { getPortalUser, ROLE_LABELS, canConductDrills, isAdmin, isStaff, isRegistrarOnly, isCoordinatorOnly, type EduRole } from "@/lib/edu/auth";
+import { getPortalUser, ROLE_LABELS, canConductDrills, isAdmin, isStaff, isRegistrarOnly, isCoordinatorOnly, isExamLabStaff, type EduRole } from "@/lib/edu/auth";
 import { getPortalRestriction } from "@/lib/portal/access-control";
 import { isOnboardingComplete } from "@/lib/portal/onboarding";
 import { effectiveRoles } from "@/lib/portal/view-as";
@@ -88,6 +88,7 @@ function navFor(roles: EduRole[]): NavSection[] {
     adminItems.push({ href: "/portal/teach", label: "My Classes" });
   }
   if (canConductDrills(roles)) adminItems.push({ href: "/portal/exam-lab", label: "Exam Lab" });
+  if (isExamLabStaff(roles)) adminItems.push({ href: "/portal/teach/syllabus", label: "Syllabus coverage" });
   if (staff) adminItems.push({ href: "/portal/studio", label: "Physics Studio" });
   // Available to everyone.
   adminItems.push({ href: "/portal/resources", label: "Physics Resources" });

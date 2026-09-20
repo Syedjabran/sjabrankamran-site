@@ -6,6 +6,7 @@ import { notify } from "@/lib/portal/notifications";
 import { saveDrillRecord, resolveSnapshot, newDrillId, reserveDrillRef, type DrillTargetType } from "@/lib/exam-lab/drill-records";
 import { getPortalUser, isAdmin, isExamLabStaff } from "@/lib/edu/auth";
 import { visibleClassIdsForUid } from "@/lib/portal/timetable";
+import { coveredTopicsForTarget, DEFAULT_COURSE } from "@/lib/exam-lab/syllabus-coverage";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "You are not allowed to allocate a proctored test." }, { status: 403 });
   }
 
-  const c = b.content;
+  let c = b.content;
   if (c.type === "paper") { if (!c.code) return NextResponse.json({ error: "Choose a past paper." }, { status: 400 }); }
   else if (c.type === "drill") { if (!c.paperType || !Array.isArray(c.topics) || !c.count) return NextResponse.json({ error: "Incomplete drill spec." }, { status: 400 }); }
   else if (c.type === "custom") {
@@ -130,10 +131,36 @@ export async function POST(req: Request) {
     }
   }
 
+  // ---- SYLLABUS-SCOPED ASSIGNMENT (owner rule) ----
+  // Randomized draws (topic drills + daily challenges) may ONLY contain
+  // topics confirmed COMPLETED for the target class(es)/school. If nothing is
+  // marked complete we refuse outright — never random uncovered syllabus.
+  // Full past papers and hand-picked custom sets are deliberate staff choices
+  // and are not gated.
+  let coveredForSnapshot: Set<string> | undefined;
+  if (c.type === "drill" || c.type === "daily") {
+    const covered = await coveredTopicsForTarget(DEFAULT_COURSE, uids, classIds);
+    if (covered.size === 0) {
+      return NextResponse.json({
+        error: "No syllabus topics are marked complete for the selected class(es) yet. Record coverage first (My Classes → Syllabus coverage). Refusing to assign questions from uncovered syllabus.",
+      }, { status: 400 });
+    }
+    if (c.type === "drill" && c.topics.length) {
+      const kept = c.topics.filter((t) => covered.has(t));
+      if (!kept.length) {
+        return NextResponse.json({
+          error: `None of the selected topics have been marked complete for this class yet. Covered so far: ${[...covered].slice(0, 8).join(", ")}${covered.size > 8 ? "…" : ""}. Record coverage on the Syllabus coverage page first.`,
+        }, { status: 400 });
+      }
+      if (kept.length !== c.topics.length) c = { ...c, topics: kept };
+    }
+    coveredForSnapshot = covered;
+  }
+
   // Freeze every assigned paper once, preserving the on-screen order.
   const drillId = newDrillId();
   const drillRef = await reserveDrillRef();
-  const snapshotQs = resolveSnapshot(c);
+  const snapshotQs = resolveSnapshot(c, coveredForSnapshot);
   if (!snapshotQs.length || (c.type === "custom" && snapshotQs.length !== c.ids.length)) {
     return NextResponse.json({ error: "The selected paper contains unavailable questions. Reopen the drill and try again." }, { status: 400 });
   }

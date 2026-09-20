@@ -25,7 +25,7 @@ Updated: 2026-09-19 · Lead agent single-scan snapshot (Phase A1). Sources: repo
 - `src/app/api/…` ~75 route handlers (see ROUTE_API_DATA_MAP)
 - `src/components/exam-lab/` runner, papers-hub, answer-pad (stylus), proctor-camera, use-exam-guard, class-drill-assign
 - `src/lib/edu/auth.ts` roles/RBAC helpers; `src/lib/portal/*` domain libs; `src/lib/exam-lab/*` banks/allocations/drill-records/fullscreen
-- `supabase/migrations/` 6 SQL files: initial+redesign schema, `edu-001-foundation` (edu_* tables), attendance/leave, coordinator role, `el-001-exam-lab` (el_* tables)
+- `supabase/migrations/` 7 SQL files: initial+redesign schema, `edu-001-foundation` (edu_* tables), attendance/leave, coordinator role, `el-001-exam-lab` (el_* tables), `el-002-syllabus-coverage` (el_syllabus_coverage — assignment topic gating; applied by JB in the Supabase SQL Editor)
 
 ## Auth & session (verified in code)
 - Supabase cookie session; `src/middleware.ts` protects `/portal`, cheap cookie-presence check, **fails open** deferring to per-page `getPortalUser()`; RLS is the backstop claim (RLS audit itself = pending, see backlog).
