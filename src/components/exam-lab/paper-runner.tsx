@@ -173,7 +173,11 @@ export function PaperRunner({
   }, [loading, err, begun, startedAt]);
 
   const running = timed && begun && startedAt !== null && !submitted && !voided && !taskCompleted && (openPractice || remaining > 0);
-  const clockRunning = running && !openPractice;
+  // A super-admin pause is a real pause: while ANY question is paused the
+  // overall countdown freezes too, otherwise the paper still auto-submits
+  // mid-intervention and "pause" only cosmetically stops one budget counter.
+  const anyPaused = pausedQuestions.size > 0;
+  const clockRunning = running && !openPractice && !anyPaused;
 
   // ---- forensic event pipeline (strict tests stream to the proctor log) ----
   const postProctor = useCallback((body: Record<string, unknown>) => {
@@ -499,7 +503,7 @@ export function PaperRunner({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {openPractice ? <span className="rounded-xl border border-emerald2/30 px-3 py-1.5 font-mono text-xs text-emerald2">Practice · no deadline</span> : timed && startedAt !== null && !submitted && <ClockPill left={remaining} warn={remaining <= 15 * 60} />}
+          {openPractice ? <span className="rounded-xl border border-emerald2/30 px-3 py-1.5 font-mono text-xs text-emerald2">Practice · no deadline</span> : timed && startedAt !== null && !submitted && <ClockPill left={remaining} warn={remaining <= 15 * 60} paused={anyPaused} />}
           {fsAvailable && !fsOn && !submitted && !taskCompleted && (
             <button onClick={() => { void requestExamFullscreen(); }} className="btn-ghost !px-3 !py-1.5 text-xs el-noprint" title="Sit this paper full-screen">
               <Maximize2 size={13} /> Full screen
@@ -744,17 +748,18 @@ function TestLocked({ reason, attemptId, onExit }: { reason: string; attemptId: 
   );
 }
 
-function ClockPill({ left, warn }: { left: number; warn?: boolean }) {
+function ClockPill({ left, warn, paused }: { left: number; warn?: boolean; paused?: boolean }) {
   const h = Math.floor(left / 3600);
   const m = Math.floor((left % 3600) / 60);
   const s = left % 60;
   return (
     <div
       className="flex items-center gap-1.5 rounded-xl border px-3 py-1.5 font-mono text-sm"
-      style={{ color: left === 0 ? "#FF7A2F" : warn ? "#FF4D4D" : "#3DE1F0", borderColor: warn ? "rgba(255,77,77,.5)" : "rgba(255,255,255,.15)" }}
+      style={{ color: paused ? "#FBBF24" : left === 0 ? "#FF7A2F" : warn ? "#FF4D4D" : "#3DE1F0", borderColor: paused ? "rgba(251,191,36,.5)" : warn ? "rgba(255,77,77,.5)" : "rgba(255,255,255,.15)" }}
     >
-      <Clock size={13} />
+      {paused ? <Pause size={13} /> : <Clock size={13} />}
       {h > 0 ? `${h}:` : ""}{String(m).padStart(2, "0")}:{String(s).padStart(2, "0")}
+      {paused ? <span className="text-[10px] font-semibold tracking-wide">PAUSED</span> : null}
     </div>
   );
 }
