@@ -1,6 +1,19 @@
 # UX_EVIDENCE_LOG — sjabrankamran.com
 Rule: only verified observations get a Verified label. External-audit claims stay **Pending** until reproduced (their session never reached the site).
 
+## Evidence corrections and current status — 2026-09-19
+
+This section supersedes conflicting conclusions in the historical table below.
+
+- **E1:** Both hosts serving content with the same www canonical does not establish split ranking signals, an indexing failure, or the cause of weak search visibility. Consolidating redirects is a consistency improvement; ranking impact remains unmeasured without Search Console evidence. P0 severity was not justified by the observations. The apex configuration is now present in source (commits `fc54857`, `01cf6f1`); earlier live verification is recorded in DECISIONS.md. No new production verification is claimed by this correction.
+- The former assertion that `NEXT_PUBLIC_SITE_URL` was unset was an unsupported inference; rendered canonical output alone cannot determine environment configuration.
+- **E3:** A login noindex tag proves only that response's indexing directive, not privacy or authorization for the entire portal. Robots disallow is not access control and can prevent crawlers from observing noindex.
+- **E4:** CSP presence is observed, but policy effectiveness, inline-script allowances, authorization and storage controls need separate testing. Do not label the portal secure based on this header.
+- **E5:** Current `src/app/sitemap.ts` contains nine static entries and a query for approved/public library slugs, capped at 1,000. A response without dynamic entries does not prove missing generation code; record publication eligibility or query failures before diagnosing it. Static lastModified values use request-time dates rather than evidenced content-update dates (code-verified follow-up).
+- **E6:** Current root layout emits WebSite, EducationalOrganization and Person schemas. Their presence alone does not prove eligibility or factual validation; nested Organization types are not evidence of a separate validated organization graph.
+- **Authentication:** Protected-store metadata checked this turn contains no demo login/password entries. Authenticated journeys remain untested. Repeated masked-dialog requests have not resolved entry; do not infer client-wide lack of support solely from these interrupted requests.
+- **Release status:** The complete redesign, authenticated accessibility audit, performance targets and assessment recovery acceptance criteria are not complete. TypeScript/build success is not end-to-end or hardware verification.
+
 ## Verified — live technical evidence (2026-09-19, Europe/Berlin, curl from gateway host)
 
 | ID | Observation | Evidence | Severity |
