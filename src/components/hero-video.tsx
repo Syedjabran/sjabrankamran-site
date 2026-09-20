@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ResilientImg } from "@/components/ui/resilient-image";
 
 /**
  * HeroVideo — cinematic, licence-safe background video.
@@ -44,9 +45,10 @@ export function HeroVideo({ src, poster }: { src: string; poster: string }) {
 
   return (
     <div ref={wrapRef} className="absolute inset-0 overflow-hidden" aria-hidden="true">
-      {/* Poster underlay — always present as fallback */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={poster} alt="" className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
+      {/* Poster underlay — always present as fallback (self-heals if the
+          first-visit edge challenge blocks it; the retry fires after the
+          clearance cookie from the HTML request exists). */}
+      <ResilientImg src={poster} alt="" className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
       {active ? (
         <video
           ref={videoRef}

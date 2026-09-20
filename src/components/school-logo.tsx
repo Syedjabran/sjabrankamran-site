@@ -1,4 +1,5 @@
-/* eslint-disable @next/next/no-img-element */
+
+import { ResilientImg } from "@/components/ui/resilient-image";
 
 /**
  * SchoolLogo — official institution logos, unmodified.
@@ -10,7 +11,8 @@
  *              chip so it stays legible on the dark background.
  *
  * Wide logos get a rectangular frame (never crushed into squares).
- * Plain <img> is used to avoid raster re-processing of gray+alpha PNGs.
+ * Plain <img> is used to avoid raster re-processing of gray+alpha PNGs,
+ * wrapped in ResilientImg so a first-visit edge challenge self-heals.
  * When no reliable official logo exists, a typographic monogram is shown.
  *
  * Logos are third-party trademarks shown solely to describe teaching
@@ -33,7 +35,7 @@ export function SchoolLogo({
     if (onDark) {
       return (
         <span className="flex shrink-0 items-center overflow-hidden rounded-lg" style={{ height }}>
-          <img
+          <ResilientImg
             src={logo}
             alt={`${name} logo`}
             className="rounded-lg"
@@ -48,7 +50,7 @@ export function SchoolLogo({
         className="flex shrink-0 items-center justify-center rounded-lg bg-white px-2 py-1.5 shadow-sm ring-1 ring-black/5"
         style={{ height, minWidth: height, maxWidth: height * 2.6 }}
       >
-        <img
+        <ResilientImg
           src={logo}
           alt={`${name} logo`}
           style={{ height: "100%", width: "auto", maxWidth: height * 2.3, objectFit: "contain" }}

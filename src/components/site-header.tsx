@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SJAK_MONOGRAM_DATA_URI } from "@/lib/sjak-monogram";
 
 const NAV = [
   { href: "/profile", label: "Profile" },
@@ -22,9 +23,11 @@ export function SiteHeader() {
     <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-abyss/80 backdrop-blur-xl">
       <div className="container-x flex h-16 items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5" aria-label="Home">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {/* Inlined data URI: the monogram renders on every public page, so it
+              must survive the edge bot-challenge that can block first-visit
+              subresource requests before the clearance cookie exists. */}
           <img
-            src="/brand/sjak-monogram.webp"
+            src={SJAK_MONOGRAM_DATA_URI}
             alt="SJAK monogram"
             className="h-10 w-auto"
           />

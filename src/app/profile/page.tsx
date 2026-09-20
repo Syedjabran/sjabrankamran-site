@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
+import { ResilientImage } from "@/components/ui/resilient-image";
 import { ArrowRight } from "lucide-react";
 import { Section, SectionHeading } from "@/components/ui/section";
 import { Reveal } from "@/components/ui/reveal";
@@ -22,7 +22,7 @@ export default function ProfilePage() {
           <div className="relative mx-auto w-full max-w-xs">
             <div className="absolute -inset-4 rounded-[2rem] bg-gradient-to-tr from-cyan/20 via-indigo2/10 to-transparent blur-2xl" />
             <div className="relative overflow-hidden rounded-[1.5rem] border border-white/10">
-              <Image
+              <ResilientImage
                 src="/jb-portrait.jpg"
                 alt="Portrait of Syed Jabran Ali Kamran"
                 width={741}
