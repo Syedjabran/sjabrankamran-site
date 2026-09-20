@@ -180,7 +180,7 @@ export default async function PortalLayout({ children }: { children: React.React
   const navSections = navFor(navRoles);
   // Global search is available to every signed-in role; the API only
   // aggregates content the caller could already open.
-  navSections.unshift({ items: [{ href: "/portal/search", label: "Search" }] });
+  if (!isRegistrarOnly(navRoles)) navSections.unshift({ items: [{ href: "/portal/search", label: "Search" }] });
   navSections.push({ title: "Portal App", items: [{ href: "/portal/install", label: "Install App" }] });
   const realAdmin = isAdmin(user.roles);
   const roleBadges = user.roles.length

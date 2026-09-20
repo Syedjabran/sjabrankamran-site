@@ -25,24 +25,31 @@ export function PortalSearchClient({ initialQuery }: { initialQuery: string }) {
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [error, setError] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
+    let current = true;
+    setError(""); setNote(null); setHits([]); setSearched(false); setBusy(false);
     if (timer.current) clearTimeout(timer.current);
     if (q.trim().length < 2) { setHits([]); setSearched(false); return; }
     timer.current = setTimeout(async () => {
       setBusy(true);
       try {
         const t = [...types].join(",");
-        const r = await fetch(`/api/portal/search?q=${encodeURIComponent(q)}${t ? `&types=${t}` : ""}`);
+        const r = await fetch(`/api/portal/search?q=${encodeURIComponent(q)}${t ? `&types=${t}` : ""}`, { signal: controller.signal, cache: "no-store" });
         const j = await r.json();
-        if (r.ok) { setHits(j.results || []); setNote(j.note || null); setSearched(true); }
-      } finally { setBusy(false); }
+        if (!r.ok) throw new Error(r.status === 401 ? "Your session expired. Sign in again to search." : "Search is temporarily unavailable. Please try again.");
+        if (current) { setHits(j.results || []); setNote(j.note || null); setSearched(true); }
+      } catch (e) {
+        if (current && !controller.signal.aborted) setError(e instanceof Error ? e.message : "Could not search. Check your connection and try again.");
+      } finally { if (current) setBusy(false); }
     }, 250);
-    return () => { if (timer.current) clearTimeout(timer.current); };
+    return () => { current = false; controller.abort(); if (timer.current) clearTimeout(timer.current); };
   }, [q, types]);
 
   const toggleType = (t: string) =>
@@ -76,6 +83,8 @@ export function PortalSearchClient({ initialQuery }: { initialQuery: string }) {
       </div>
 
       {note ? <p className="text-xs text-dust">{note}</p> : null}
+      {error && <p role="alert" className="rounded-xl border border-signal/40 p-4 text-sm text-signal">{error}</p>}
+      <p role="status" aria-live="polite" className="text-sm text-fog">{busy ? "Searching…" : searched ? `${hits.length} results` : "Enter at least two characters to search."}</p>
 
       {searched && !hits.length ? (
         <div className="rounded-2xl border border-white/10 bg-space/60 p-6">
