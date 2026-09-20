@@ -101,6 +101,18 @@ export function canConductDrills(roles: EduRole[]) {
   return roles.some((r) => DRILL_ROLES.includes(r));
 }
 
+/**
+ * The owner-defined staff set for Exam Lab privileges: pausing timers and
+ * assigning / sharing drills. Deliberately excludes students, parents,
+ * attendance_registrar and the wider office roles — only these five roles may
+ * conduct, assign or share Exam Lab work.
+ */
+export const EXAM_LAB_STAFF_ROLES: EduRole[] = ["super_admin", "admin", "teacher", "coordinator", "facilitator"];
+
+export function isExamLabStaff(roles: EduRole[]) {
+  return roles.some((r) => EXAM_LAB_STAFF_ROLES.includes(r));
+}
+
 /** Same population reads Drill Records; the ROWS are then scope-filtered. */
 export function canViewDrillRecords(roles: EduRole[]) {
   return canConductDrills(roles);

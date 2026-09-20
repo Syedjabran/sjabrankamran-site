@@ -4,7 +4,7 @@ import { audit } from "@/lib/portal/admin";
 import { allocateToStudents, newAllocId, type AllocMode, type AllocContent } from "@/lib/exam-lab/allocations";
 import { notify } from "@/lib/portal/notifications";
 import { saveDrillRecord, resolveSnapshot, newDrillId, reserveDrillRef, type DrillTargetType } from "@/lib/exam-lab/drill-records";
-import { getPortalUser, isAdmin, canConductDrills, canAccessGlobalStaffData } from "@/lib/edu/auth";
+import { getPortalUser, isAdmin, isExamLabStaff } from "@/lib/edu/auth";
 import { visibleClassIdsForUid } from "@/lib/portal/timetable";
 
 export const runtime = "nodejs";
@@ -29,11 +29,12 @@ export const maxDuration = 30;
  */
 export async function POST(req: Request) {
   const staff = await getPortalUser();
-  // Global staff keep their existing access; drill-conducting roles
-  // (teacher / coordinator / facilitator / TA / admin) are additionally
-  // allowed, including the school-scoped ones, whose reach is then narrowed
-  // to their own classes below.
-  if (!staff || !(canAccessGlobalStaffData(staff.roles) || canConductDrills(staff.roles))) {
+  // Owner-defined staff set for Exam Lab assignment/sharing:
+  // super_admin / admin / teacher / coordinator / facilitator ONLY.
+  // Students (and every other role) are rejected with 403 — the assign/share
+  // surface is staff-only in every mode, enforced here server-side regardless
+  // of what any client renders.
+  if (!staff || !isExamLabStaff(staff.roles)) {
     return NextResponse.json({ error: "Staff only." }, { status: 403 });
   }
 

@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { FlaskConical, ShieldCheck } from "lucide-react";
-import { getPortalUser, isStaff, canConductDrills } from "@/lib/edu/auth";
+import { getPortalUser, isExamLabStaff } from "@/lib/edu/auth";
 import { PapersHub } from "@/components/exam-lab/papers-hub";
 
 export const metadata = { title: "Exam Lab — Real CAIE 9702 Past Papers", robots: { index: false } };
@@ -8,8 +8,13 @@ export const metadata = { title: "Exam Lab — Real CAIE 9702 Past Papers", robo
 export default async function PortalExamLabPage() {
   const user = await getPortalUser();
   const first = (user?.fullName || user?.email || "").split(" ")[0];
-  const canTest = !!user && isStaff(user.roles);
-  const canPause = !!user && user.roles.includes("super_admin");
+  // Owner-defined staff set (super_admin / admin / teacher / coordinator /
+  // facilitator): the only roles that may conduct, assign/share, or pause.
+  // Students NEVER see the assign/share panel or the pause buttons, in any
+  // sit mode; the server re-checks on every assign/share API call.
+  const canConduct = !!user && isExamLabStaff(user.roles);
+  const canTest = canConduct;
+  const canPause = canConduct;
 
   return (
     <div>
@@ -29,7 +34,7 @@ export default async function PortalExamLabPage() {
       </div>
 
       <Suspense fallback={<div className="text-sm text-dust">Loading Exam Lab…</div>}>
-        <PapersHub canConduct={!!user && canConductDrills(user.roles)} canTest={canTest} canPause={canPause} />
+        <PapersHub canConduct={canConduct} canTest={canTest} canPause={canPause} />
       </Suspense>
     </div>
   );
