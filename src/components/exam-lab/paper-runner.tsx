@@ -178,6 +178,23 @@ export function PaperRunner({
   // mid-intervention and "pause" only cosmetically stops one budget counter.
   const anyPaused = pausedQuestions.size > 0;
   const clockRunning = running && !openPractice && !anyPaused;
+  // The script-upload window is wall-clock (startedAt + duration + grace), so
+  // every millisecond the countdown spends frozen by a pause must be credited
+  // back, or a paused exam gets its upload wrongly marked late.
+  const [pausedMs, setPausedMs] = useState(0);
+  const pauseStartRef = useRef<number | null>(null);
+  const clockFrozenByPause = running && !openPractice && anyPaused;
+  useEffect(() => {
+    if (!clockFrozenByPause) return;
+    pauseStartRef.current = Date.now();
+    return () => {
+      if (pauseStartRef.current !== null) {
+        const start = pauseStartRef.current;
+        pauseStartRef.current = null;
+        setPausedMs((t) => t + Math.max(0, Date.now() - start));
+      }
+    };
+  }, [clockFrozenByPause]);
 
   // ---- forensic event pipeline (strict tests stream to the proctor log) ----
   const postProctor = useCallback((body: Record<string, unknown>) => {
@@ -556,7 +573,7 @@ export function PaperRunner({
       )}
 
       {(submitted || taskCompleted) && logMeta && startedAt !== null && (
-        <ScriptUpload logMeta={logMeta} startedAt={startedAt} durationSec={totalSec} />
+        <ScriptUpload logMeta={logMeta} startedAt={startedAt} durationSec={totalSec} pausedMs={pausedMs} />
       )}
 
       <ol className="space-y-8">
@@ -764,7 +781,7 @@ function ClockPill({ left, warn, paused }: { left: number; warn?: boolean; pause
   );
 }
 
-function ScriptUpload({ logMeta, startedAt, durationSec }: { logMeta: LogMeta; startedAt: number; durationSec: number }) {
+function ScriptUpload({ logMeta, startedAt, durationSec, pausedMs }: { logMeta: LogMeta; startedAt: number; durationSec: number; pausedMs: number }) {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -772,7 +789,11 @@ function ScriptUpload({ logMeta, startedAt, durationSec }: { logMeta: LogMeta; s
   const [reading, setReading] = useState(false);
   const [transcript, setTranscript] = useState<string | null>(null);
 
-  const deadline = startedAt + (durationSec + 300) * 1000;
+  // Time the clock spent frozen by a super-admin pause extends the window; the
+  // server judges late from startedAt + durationSec, so the paused seconds are
+  // folded into the durationSec it is sent (clamped to its schema max).
+  const allowedSec = Math.min(20000, durationSec + Math.round(pausedMs / 1000));
+  const deadline = startedAt + (allowedSec + 300) * 1000;
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const iv = setInterval(() => setNow(Date.now()), 1000);
@@ -797,7 +818,7 @@ function ScriptUpload({ logMeta, startedAt, durationSec }: { logMeta: LogMeta; s
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           mode: logMeta.mode, paperType: logMeta.paperType, code: logMeta.code, ref: logMeta.ref,
-          startedAt, durationSec, ext,
+          startedAt, durationSec: allowedSec, ext,
         }),
       });
       const j = await sign.json();
