@@ -1,25 +1,4 @@
 {
-  "firewall": {
-    "rules": [
-      {
-        "action": "bypass",
-        "name": "allow human browsers",
-        "active": true,
-        "conditionGroup": [
-          {
-            "conditions": [
-              {
-                "type": "header",
-                "key": "user-agent",
-                "op": "re",
-                "value": "(?i)(chrome|firefox|safari|edge|crios|fxios|gsa)/"
-              }
-            ]
-          }
-        ]
-      }
-    ]
-  },
   "redirects": [
     {
       "source": "/:path*",
