@@ -172,12 +172,15 @@ export default async function PortalLayout({ children }: { children: React.React
     if (!ok) redirect("/portal/admin/attendance-view");
   }
   if (isCoordinatorOnly(user.roles) && pathname) {
-    const allowed = ["/portal", "/portal/coordinator", "/portal/admin/attendance-view", "/portal/timetable", "/portal/library", "/portal/resources", "/portal/notifications", "/portal/install", "/portal/settings", "/portal/auth"];
+    const allowed = ["/portal", "/portal/search", "/portal/coordinator", "/portal/admin/attendance-view", "/portal/timetable", "/portal/library", "/portal/resources", "/portal/notifications", "/portal/install", "/portal/settings", "/portal/auth"];
     if (!allowed.some((a) => pathname === a || pathname.startsWith(a + "/"))) redirect("/portal/coordinator");
   }
 
   const { roles: navRoles, previewing } = await effectiveRoles(user);
   const navSections = navFor(navRoles);
+  // Global search is available to every signed-in role; the API only
+  // aggregates content the caller could already open.
+  navSections.unshift({ items: [{ href: "/portal/search", label: "Search" }] });
   navSections.push({ title: "Portal App", items: [{ href: "/portal/install", label: "Install App" }] });
   const realAdmin = isAdmin(user.roles);
   const roleBadges = user.roles.length
