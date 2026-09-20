@@ -14,6 +14,19 @@ This section supersedes conflicting conclusions in the historical table below.
 - **Authentication:** Protected-store metadata checked this turn contains no demo login/password entries. Authenticated journeys remain untested. Repeated masked-dialog requests have not resolved entry; do not infer client-wide lack of support solely from these interrupted requests.
 - **Release status:** The complete redesign, authenticated accessibility audit, performance targets and assessment recovery acceptance criteria are not complete. TypeScript/build success is not end-to-end or hardware verification.
 
+## Verified — authenticated portal audit, session 1 (2026-09-20 ≈14:50–15:15 CEST, demo account, managed Chromium 1440×900)
+
+| ID | Observation | Evidence | Severity |
+|---|---|---|---|
+| A1 | Login → dashboard works; demo account lands on the Admin Command Center: KPI row (378 students / 249 active / 10 classes / 4 schools / 129 enquiries / 0 unpaid), live recent-activity feed with correct relative times. | body text read + `auth-dashboard-1440.png` | OK |
+| A2 | New role-preview switcher works: “View as → Student” switches instantly with a clear “Preview mode — viewing as Student” banner. | body text read | OK |
+| A3 | **New student priority dashboard renders as designed** (release `3d1c0cb`): dominant “CONTINUE YOUR WORK” hero (Daily challenge · Kinematics, overdue flagged, Start now), “Coming up” list with kind chips + overdue dates, study-plan card showing Priority: Physical quantities & units — confirming the Year-1 chapter-1 scoping is in effect in production data. | body text read + `auth-student-dashboard-1440.png` | OK |
+| A4 | New Search nav entry appears for both Admin and Student roles (release `69adfd1`/`6b01b15`). | body text read | OK |
+| A5 | Zero page errors reported by the browser error log across dashboard + role switch. | `browser errors` → “No page errors” | OK |
+| A6 | **Vercel Security Checkpoint (Code 29) blocks fresh document loads from the automated session** (`/portal/search?q=…` and subsequent `/portal` reloads). Same-session client-side navigation was unaffected. This is bot protection doing its job against automation, not an app defect; note that privacy-hardened real browsers could conceivably meet the same interstitial. Search-page live behaviour therefore **not yet verified in-browser**; its API auth gate (401 signed-out) was verified separately. | body text: “Failed to verify your browser / Code 29 / Vercel Security Checkpoint” | Env note |
+
+Pending from this session: live search interaction, Exam Lab attempt UI, mobile (390×844) pass — resume after checkpoint clearance.
+
 ## Verified — live technical evidence (2026-09-19, Europe/Berlin, curl from gateway host)
 
 | ID | Observation | Evidence | Severity |
