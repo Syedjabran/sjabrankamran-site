@@ -81,6 +81,10 @@ export function PaperRunner({
   const topRef = useRef<HTMLDivElement>(null);
 
   // ---- exam clock / integrity ----
+  // Countdown kept on wall-clock time (not interval ticks): the interval is
+  // only a 1s display refresh. Mount-loading and any other pre-start time
+  // (asset fetch, camera consent, tab hidden) no longer eat into the budget,
+  // so the clock always reads the full duration at go.
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [begun, setBegun] = useState(!strict); // strict tests wait behind the camera gate
   const [remaining, setRemaining] = useState(duration * 60);
@@ -322,26 +326,30 @@ export function PaperRunner({
     if (!timeUp) setTimeout(() => topRef.current?.querySelector(".pr-result")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
   }, [questions, strict, postAttempt, postProctor, allocationId]);
 
-  // tick the countdown. Relaxed attempts keep ticking into negative time
-  // (overtime) so the student can simply continue; formal attempts clamp at 0
-  // and auto-submit from the separate effect below.
+  const remainingRef = useRef(remaining);
+  useEffect(() => { remainingRef.current = remaining; }, [remaining]);
+
+  // tick the countdown display off the wall clock. Relaxed attempts run into
+  // negative time (overtime) so the student can simply continue; formal
+  // attempts clamp at 0 and auto-submit from the separate effect below.
   useEffect(() => {
     if (!clockRunning) return;
-    const iv = setInterval(() => {
-      setRemaining((s) => {
-        const n = s - 1;
-        if (!paceFired.current && totalSec > 15 * 60 && n <= 15 * 60) {
-          paceFired.current = true;
-          setPaceAlert(true);
-          setTimeout(() => setPaceAlert(false), 3000);
-        }
-        if (canGoLate && !lateRef.current && n <= 0 && s > 0) markLate();
-        if (n <= 0 && !relaxed) return 0;
-        return n;
-      });
-    }, 1000);
+    const tick = () => {
+      if (startedAt === null) return;
+      const spentSec = (Date.now() - startedAt - pausedMs) / 1000;
+      const n = Math.round(totalSec - spentSec);
+      if (!paceFired.current && totalSec > 15 * 60 && n <= 15 * 60) {
+        paceFired.current = true;
+        setPaceAlert(true);
+        setTimeout(() => setPaceAlert(false), 3000);
+      }
+      if (canGoLate && !lateRef.current && n <= 0 && remainingRef.current > 0) markLate();
+      setRemaining(n <= 0 && !relaxed ? 0 : n);
+    };
+    tick();
+    const iv = setInterval(tick, 1000);
     return () => clearInterval(iv);
-  }, [clockRunning, totalSec, canGoLate, relaxed, markLate]);
+  }, [clockRunning, totalSec, canGoLate, relaxed, markLate, startedAt, pausedMs]);
 
   // auto-submit when time is up — formal attempts only. Practice & daily tasks
   // never get a hard cutoff; they continue into overtime and are recorded late.
