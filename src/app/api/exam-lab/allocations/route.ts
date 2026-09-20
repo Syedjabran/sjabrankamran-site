@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPortalUser } from "@/lib/edu/auth";
 import { listAllocations, getAllocation, markSubmitted } from "@/lib/exam-lab/allocations";
+import { getAttempts } from "@/lib/exam-lab/attempts";
 import { getSession, requestUnlock } from "@/lib/exam-lab/proctor";
 import { completeTaskBySource } from "@/lib/portal/tasks";
 
@@ -31,8 +32,28 @@ export async function POST(req: Request) {
   if (!b?.id || !b.action) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
 
   if (b.action === "submitted") {
-    const ok = await markSubmitted(user.id, b.id);
-    if (ok) await completeTaskBySource(user.id, b.id);
+    // Score-integrity gate (owner rule): a submission only counts — and only
+    // completes its linked task/challenge — when the stored attempt for this
+    // allocation actually contains at least one attempted answer. Blank
+    // submissions are still marked submitted (the record is kept) but flagged
+    // "unattempted" and earn zero points/credit. A genuine submission that ran
+    // past the countdown is flagged "late submission".
+    let flags: { late?: boolean; unattempted?: boolean } | undefined;
+    try {
+      const attempts = await getAttempts(user.id);
+      const linked = attempts.filter((a) => a.context?.allocationId === b.id);
+      const last = linked[linked.length - 1];
+      if (last) {
+        const attempted = typeof last.attemptedCount === "number"
+          ? last.attemptedCount
+          : last.questions.filter((q) => (q.response && q.response.trim()) || q.correct !== null || q.earned !== null).length;
+        if (attempted === 0) flags = { ...(flags || {}), unattempted: true };
+        else if (last.context?.late) flags = { ...(flags || {}), late: true };
+      }
+    } catch { /* flags unknown — keep historical behaviour */ }
+    const ok = await markSubmitted(user.id, b.id, flags);
+    // Blank submissions do NOT auto-complete the linked personal task/challenge.
+    if (ok && !flags?.unattempted) await completeTaskBySource(user.id, b.id);
     return NextResponse.json({ ok }, { status: ok ? 200 : 404 });
   }
   if (b.action === "unlock-request") {

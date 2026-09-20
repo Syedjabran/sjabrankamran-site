@@ -70,6 +70,12 @@ export type ExamAllocation = {
   updatedAt: number;
   status: AllocStatus;
   completedAt: number | null;
+  /** The submission finished past the countdown (daily task) — recorded, never blocked. */
+  lateSubmission?: boolean;
+  /** The submission contained zero attempted answers — earns no points/credit. */
+  unattempted?: boolean;
+  /** Automated daily study-plan challenge (relaxed, late-submission recording). */
+  daily?: boolean;
 };
 
 type Store = { items: ExamAllocation[] };
@@ -117,13 +123,17 @@ export async function allocateToStudents(
   return base.id;
 }
 
-/** Student marks their own allocation submitted (non-strict flows). */
-export async function markSubmitted(uid: string, id: string): Promise<boolean> {
+/** Student marks their own allocation submitted (non-strict flows). Optional
+ * integrity flags come from the just-stored attempt record so staff can see
+ * late / empty submissions on the allocation itself. */
+export async function markSubmitted(uid: string, id: string, flags?: { late?: boolean; unattempted?: boolean }): Promise<boolean> {
   const s = await read(uid);
   const it = s.items.find((x) => x.id === id);
   if (!it) return false;
   it.status = "submitted";
   it.completedAt = Date.now();
   it.updatedAt = Date.now();
+  if (flags?.late) it.lateSubmission = true;
+  if (flags?.unattempted) it.unattempted = true;
   return write(uid, s);
 }

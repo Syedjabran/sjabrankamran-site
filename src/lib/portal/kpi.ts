@@ -36,7 +36,7 @@
  * /portal/my-ranking and the KPI APIs.
  */
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getAttempts, type Attempt } from "@/lib/exam-lab/attempts";
+import { getAttempts, isGenuineAttempt, type Attempt } from "@/lib/exam-lab/attempts";
 import { getRegistry, staffRoleMap, isDemoStudentName } from "@/lib/portal/institutions";
 import { listAllocations, type ExamAllocation } from "@/lib/exam-lab/allocations";
 import { listTasks, type PersonalTask } from "@/lib/portal/tasks";
@@ -140,7 +140,10 @@ function masteryPillar(attempts: Attempt[]): PillarScore {
   };
 }
 
-function practicePillar(attempts: Attempt[]): { pillar: PillarScore; activeDays30: number; attempts30: number } {
+function practicePillar(genuineAttempts: Attempt[]): { pillar: PillarScore; activeDays30: number; attempts30: number } {
+  // Owner rule: blank submissions (zero attempted answers) earn NO practice
+  // credit — no volume, no active-day, nothing. Only genuine attempts count.
+  const attempts = genuineAttempts;
   const cutoff = Date.now() - 30 * 864e5;
   const recent = attempts.filter((a) => a.ts >= cutoff);
   const days = new Set(recent.map((a) => new Date(a.ts).toISOString().slice(0, 10))).size;
@@ -165,6 +168,9 @@ function assignmentsPillar(
   subs: SubRow[],
   allocs: ExamAllocation[],
   tasks: PersonalTask[],
+  /** Allocation ids with a stored attempt containing ≥1 attempted answer.
+   *  Blank submissions stay visible as submitted but earn no completion credit. */
+  genuineAllocIds: Set<string>,
 ): { pillar: PillarScore; overdue: number; open: number } {
   type Item = { done: boolean; onTime: boolean; overdue: boolean };
   const now = Date.now();
@@ -179,7 +185,11 @@ function assignmentsPillar(
   }
   for (const a of allocs) {
     if (a.status === "cancelled") continue;
-    const done = a.status === "submitted" || a.status === "locked" || a.status === "unlocked" ? a.completedAt != null : false;
+    // An Exam Lab allocation only counts as completed when the stored attempt
+    // shows real work; a blank submission (status submitted, zero answers) is
+    // kept on record but earns no completion/on-time credit.
+    const done = (a.status === "submitted" || a.status === "locked" || a.status === "unlocked" ? a.completedAt != null : false)
+      && genuineAllocIds.has(a.id);
     const onTime = done && (!a.dueAt || (a.completedAt || 0) <= new Date(a.dueAt).getTime());
     const overdue = !done && !!a.dueAt && new Date(a.dueAt).getTime() < now;
     items.push({ done, onTime, overdue });
@@ -218,10 +228,21 @@ function dailyPillar(attempts: Attempt[], allocs: ExamAllocation[], tasks: Perso
   // underlying spec is "daily" — both must count towards this pillar.
   const isDaily = (c: ExamAllocation["content"]) =>
     c.type === "daily" || (c.type === "drillref" && c.spec.type === "daily");
-  const dailyAllocs = allocs.filter((a) => isDaily(a.content) && a.createdAt >= cutoff && a.status !== "cancelled");
+  const dailyAllocs = allocs.filter((a) => (isDaily(a.content) || a.daily === true) && a.createdAt >= cutoff && a.status !== "cancelled");
   const challenges = tasks.filter((t) => t.kind === "challenge" && t.createdAt >= cutoff);
   const assigned = dailyAllocs.length + challenges.length;
-  const done = dailyAllocs.filter((a) => a.completedAt != null).length + challenges.filter((t) => t.status === "done").length;
+  // Participation credit requires REAL WORK: a daily allocation only counts
+  // when its stored attempt has ≥1 attempted answer; a challenge task only
+  // when its source allocation shows real work (self-marked "done" without
+  // any attempt earns nothing — owner rule: no points for blank work).
+  const genuineAllocIds = new Set(
+    attempts
+      .filter(isGenuineAttempt)
+      .map((a) => a.context?.allocationId)
+      .filter((x): x is string => !!x),
+  );
+  const done = dailyAllocs.filter((a) => a.completedAt != null && genuineAllocIds.has(a.id)).length +
+    challenges.filter((t) => t.status === "done" && (!t.sourceId || genuineAllocIds.has(t.sourceId))).length;
   if (!assigned) return { score: 50, detail: "No daily challenges set in the last 30 days — neutral 50." };
   const participation = done / assigned;
   // Performance: accuracy on attempts linked to daily allocations; fall back to recent accuracy.
@@ -373,8 +394,14 @@ export async function buildKpiTable(prev: KpiTable | null): Promise<KpiTable> {
       ]);
 
       const mastery = masteryPillar(attempts);
-      const practice = practicePillar(attempts);
-      const assignments = assignmentsPillar(subRows, allocs, tasks);
+      const practice = practicePillar(attempts.filter(isGenuineAttempt));
+      const genuineAllocIds = new Set(
+        attempts
+          .filter(isGenuineAttempt)
+          .map((a) => a.context?.allocationId)
+          .filter((x): x is string => !!x),
+      );
+      const assignments = assignmentsPillar(subRows, allocs, tasks, genuineAllocIds);
       const daily = dailyPillar(attempts, allocs, tasks);
       const attendance = attendancePillar(attRows);
       const contribution = contributionPillar(contrib);

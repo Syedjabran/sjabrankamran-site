@@ -41,6 +41,14 @@ export type AttemptContext = {
   flags: number;
   allocationId?: string | null;
   attemptId?: string | null;
+  /** Total seconds the clock was frozen by a staff pause (audit trail). */
+  pausedSec?: number;
+  /** True when the student continued past the countdown (never blocked). */
+  late?: boolean;
+  /** "late attempt" (practice) | "late submission" (daily task). */
+  lateKind?: string;
+  /** SERVER-SET scoring-integrity flag: "unattempted" | "late attempt" | "late submission". */
+  status?: string;
 };
 
 export type Attempt = {
@@ -55,10 +63,21 @@ export type Attempt = {
   total: number; // marks available among scored questions
   qCount: number;
   scoredCount: number;
+  /** SERVER-COMPUTED (attempt route): questions with a real answer recorded.
+   *  Zero = entirely blank submission → status "unattempted", zero credit.
+   *  Absent on legacy rows — consumers fall back to deriving it. */
+  attemptedCount?: number;
   durationSec?: number;
   questions: AttemptQuestion[];
   context?: AttemptContext; // integrity / mode metadata (optional)
 };
+
+/** True when an attempt contains at least one genuinely attempted question. */
+export function isGenuineAttempt(at: Attempt): boolean {
+  if (typeof at.attemptedCount === "number") return at.attemptedCount > 0;
+  // Legacy rows: derive from what was recorded.
+  return at.questions.some((q) => (q.response && q.response.trim()) || q.correct !== null || q.earned !== null);
+}
 
 const BUCKET = "exam-data";
 

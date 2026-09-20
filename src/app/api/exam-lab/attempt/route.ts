@@ -30,6 +30,9 @@ const contextSchema = z.object({
   flags: z.number().int().min(0).max(1000),
   allocationId: z.string().max(80).nullable().optional(),
   attemptId: z.string().max(80).nullable().optional(),
+  late: z.boolean().optional(),
+  lateKind: z.string().max(40).optional(),
+  pausedSec: z.number().int().min(0).max(20000).optional(),
 }).optional();
 
 const schema = z.object({
@@ -52,7 +55,40 @@ export async function POST(request: Request) {
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid attempt." }, { status: 400 });
 
-  const attempt: Attempt = { id: parsed.data.context?.attemptId || crypto.randomUUID(), ts: Date.now(), ...parsed.data };
+  const d = parsed.data;
+
+  // ---- SCORING INTEGRITY (owner rule, server-authoritative) ----
+  // Count what was ACTUALLY attempted — an answered MCQ (letter recorded) or a
+  // structured response with text. The client-supplied score is ignored for
+  // this judgement on purpose: a student tampering with the payload cannot
+  // turn a blank paper into a scored one.
+  const attemptedCount = d.questions.filter(
+    (q) => (q.response && q.response.trim().length > 0) || q.correct !== null,
+  ).length;
+
+  let score = d.score;
+  let total = d.total;
+  let status: string | undefined;
+  if (attemptedCount === 0) {
+    // Entirely blank: force zero, flag "unattempted". Unanswered questions
+    // already earn 0 per-question; here the whole submission is zeroed and
+    // flagged so it earns no points/leaderboard credit downstream.
+    score = 0;
+    status = "unattempted";
+  } else if (d.context?.late) {
+    // Finished past the countdown — allowed, recorded for staff.
+    status = d.context.lateKind === "late submission" ? "late submission" : "late attempt";
+  }
+
+  const attempt: Attempt = {
+    id: d.context?.attemptId || crypto.randomUUID(),
+    ts: Date.now(),
+    ...d,
+    score,
+    total,
+    attemptedCount,
+    context: d.context ? { ...d.context, status } : undefined,
+  };
   const ok = await appendAttempt(user.id, attempt);
   return NextResponse.json({ ok }, { status: ok ? 200 : 500 });
 }

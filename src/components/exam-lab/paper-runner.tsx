@@ -35,6 +35,7 @@ export function PaperRunner({
   allocationId = null,
   attemptId,
   canPause = false,
+  daily = false,
 }: {
   questions: ImgQuestion[];
   title: string;
@@ -49,7 +50,8 @@ export function PaperRunner({
   help?: boolean;                   // help (mark scheme / Maxwell) permitted
   allocationId?: string | null;     // staff allocation this attempt belongs to
   attemptId?: string;               // stable forensic id (allocations use alloc-<id>)
-  canPause?: boolean;               // super-admin: pause individual question timers
+  canPause?: boolean;               // STAFF ONLY (server-verified role set): pause question timers
+  daily?: boolean;                  // daily task: like practice, overtime is recorded as a "late submission"
 }) {
   const strict = integrity === "strict";
   // Open Practice is intentionally untimed at the session level: the per-
@@ -57,6 +59,13 @@ export function PaperRunner({
   // or auto-submit the session. Exam self-tests and teacher assignments keep
   // their existing timed/locked behaviour.
   const openPractice = integrity === "off" && kind === "practice";
+  // OWNER RULE (practice & daily tasks): no question-lock, no task-lock, no
+  // proctor cancellation, no tab-switch blocking and no hard cutoff. When the
+  // countdown runs out the student simply keeps working into overtime, and
+  // the stored record is flagged a "late attempt" (practice) or "late
+  // submission" (daily task) so staff can see it. Formal proctored TESTS
+  // (kind "test") are NOT relaxed — their integrity rules are unchanged.
+  const relaxed = openPractice || kind === "practice" || daily;
   const attemptIdRef = useRef<string>(attemptId || newId());
 
   const [urls, setUrls] = useState<UrlMap>({});
@@ -129,9 +138,11 @@ export function PaperRunner({
     return m;
   }, [questions]);
   const qLocked = useCallback((id: string) => {
-    if (openPractice || !timed || !lockOnExpiry || !begun || submitted) return false;
+    // Relaxed (practice / daily) attempts never lock a question — the budget
+    // stays a pacing guide and overtime is simply recorded.
+    if (relaxed || !timed || !lockOnExpiry || !begun || submitted) return false;
     return (perQ[id] || 0) >= (qBudget[id] || 90);
-  }, [openPractice, timed, lockOnExpiry, begun, submitted, perQ, qBudget]);
+  }, [relaxed, timed, lockOnExpiry, begun, submitted, perQ, qBudget]);
 
   // Track full-screen, and always leave it behind when the runner unmounts
   // (Back, or a cancelled/locked attempt) so the rest of the portal is normal.
@@ -172,7 +183,7 @@ export function PaperRunner({
     if (!loading && !err && begun && startedAt === null) setStartedAt(Date.now());
   }, [loading, err, begun, startedAt]);
 
-  const running = timed && begun && startedAt !== null && !submitted && !voided && !taskCompleted && (openPractice || remaining > 0);
+  const running = timed && begun && startedAt !== null && !submitted && !voided && !taskCompleted && (relaxed || remaining > 0);
   // A super-admin pause is a real pause: while ANY question is paused the
   // overall countdown freezes too, otherwise the paper still auto-submits
   // mid-intervention and "pause" only cosmetically stops one budget counter.
@@ -181,9 +192,22 @@ export function PaperRunner({
   // The script-upload window is wall-clock (startedAt + duration + grace), so
   // every millisecond the countdown spends frozen by a pause must be credited
   // back, or a paused exam gets its upload wrongly marked late.
+  // A submission that finishes past the countdown is never blocked — it is
+  // RECORDED. lateKind is the exact phrase staff see in the stored record.
+  const lateKind = daily ? "late submission" : "late attempt";
   const [pausedMs, setPausedMs] = useState(0);
   const pauseStartRef = useRef<number | null>(null);
   const clockFrozenByPause = running && !openPractice && anyPaused;
+  // Late is only observable when a real countdown is running (open practice
+  // has no session deadline at all).
+  const canGoLate = timed && !openPractice;
+  const lateRef = useRef(false);
+  const [late, setLate] = useState(false);
+  const markLate = useCallback(() => {
+    if (lateRef.current) return;
+    lateRef.current = true;
+    setLate(true);
+  }, []);
   useEffect(() => {
     if (!clockFrozenByPause) return;
     pauseStartRef.current = Date.now();
@@ -230,10 +254,20 @@ export function PaperRunner({
         mode: logMeta.mode, paperType: logMeta.paperType, code: logMeta.code, ref: logMeta.ref,
         score, total: totalScored, qCount: questions.length, scoredCount: scored.length,
         durationSec: startedAt ? Math.max(0, Math.round((Date.now() - startedAt) / 1000)) : undefined, questions: qlog,
-        context: { integrity, kind, help, revealsUsed: revealsRef.current, proctored: strict, cancelled, lockedReason, flags: flagsRef.current, allocationId, attemptId: attemptIdRef.current },
+        context: {
+          integrity, kind, help, revealsUsed: revealsRef.current, proctored: strict, cancelled, lockedReason, flags: flagsRef.current, allocationId, attemptId: attemptIdRef.current,
+          // Scoring integrity + staff audit trail (owner rules):
+          //  - late: finished past the countdown (practice "late attempt" /
+          //    daily task "late submission"). Never blocks the student.
+          //  - pausedSec: total staff-pause time, so a pause used during a
+          //    student drill is visible on the stored record.
+          late: lateRef.current,
+          lateKind: lateRef.current ? lateKind : undefined,
+          pausedSec: pausedMs > 0 ? Math.round(pausedMs / 1000) : undefined,
+        },
       }),
     }).catch(() => {});
-  }, [logMeta, buildQLog, questions.length, startedAt, integrity, kind, help, strict, allocationId]);
+  }, [logMeta, buildQLog, questions.length, startedAt, integrity, kind, help, strict, allocationId, daily, lateKind, pausedMs]);
 
   const seize = useCallback((reason: string) => {
     if (voidedRef.current) return;
@@ -255,8 +289,10 @@ export function PaperRunner({
     if (ev.terminal) seize(ev.reason);
   }, [strict, startedAt, postProctor, seize]);
 
+  // Practice & daily tasks run with NO proctor locks of any kind: the guard is
+  // only armed for formal work (assignments with a guard, proctored tests).
   useExamGuard({
-    active: running,
+    active: running && !relaxed,
     mode: integrity,
     onViolation: () => { /* handled via onEvent funnel */ },
     onEvent: (ev) => handleEvent(ev, "guard"),
@@ -286,7 +322,9 @@ export function PaperRunner({
     if (!timeUp) setTimeout(() => topRef.current?.querySelector(".pr-result")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
   }, [questions, strict, postAttempt, postProctor, allocationId]);
 
-  // tick the countdown
+  // tick the countdown. Relaxed attempts keep ticking into negative time
+  // (overtime) so the student can simply continue; formal attempts clamp at 0
+  // and auto-submit from the separate effect below.
   useEffect(() => {
     if (!clockRunning) return;
     const iv = setInterval(() => {
@@ -297,17 +335,19 @@ export function PaperRunner({
           setPaceAlert(true);
           setTimeout(() => setPaceAlert(false), 3000);
         }
-        if (n <= 0) return 0;
+        if (canGoLate && !lateRef.current && n <= 0 && s > 0) markLate();
+        if (n <= 0 && !relaxed) return 0;
         return n;
       });
     }, 1000);
     return () => clearInterval(iv);
-  }, [clockRunning, totalSec]);
+  }, [clockRunning, totalSec, canGoLate, relaxed, markLate]);
 
-  // auto-submit when time is up
+  // auto-submit when time is up — formal attempts only. Practice & daily tasks
+  // never get a hard cutoff; they continue into overtime and are recorded late.
   useEffect(() => {
-    if (!openPractice && timed && lockOnExpiry && begun && startedAt !== null && remaining <= 0 && !submitted && !voided) submit(true);
-  }, [openPractice, remaining, timed, lockOnExpiry, begun, startedAt, submitted, voided, submit]);
+    if (!relaxed && timed && lockOnExpiry && begun && startedAt !== null && remaining <= 0 && !submitted && !voided) submit(true);
+  }, [relaxed, remaining, timed, lockOnExpiry, begun, startedAt, submitted, voided, submit]);
 
   // Active question = the one at the viewport centre.
   useEffect(() => {
@@ -520,7 +560,7 @@ export function PaperRunner({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {openPractice ? <span className="rounded-xl border border-emerald2/30 px-3 py-1.5 font-mono text-xs text-emerald2">Practice · no deadline</span> : timed && startedAt !== null && !submitted && <ClockPill left={remaining} warn={remaining <= 15 * 60} paused={anyPaused} />}
+          {openPractice ? <span className="rounded-xl border border-emerald2/30 px-3 py-1.5 font-mono text-xs text-emerald2">Practice · no deadline</span> : timed && startedAt !== null && !submitted && <ClockPill left={remaining} warn={remaining <= 15 * 60 && remaining > 0} paused={anyPaused} />}
           {fsAvailable && !fsOn && !submitted && !taskCompleted && (
             <button onClick={() => { void requestExamFullscreen(); }} className="btn-ghost !px-3 !py-1.5 text-xs el-noprint" title="Sit this paper full-screen">
               <Maximize2 size={13} /> Full screen
@@ -530,12 +570,19 @@ export function PaperRunner({
         </div>
       </div>
 
-      {running && integrity !== "off" && (
+      {running && integrity !== "off" && !relaxed && (
         <div className={"el-noprint mb-4 flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs " + (strict ? "border-red-400/30 bg-red-400/[0.05] text-red-200/90" : "border-amber-400/25 bg-amber-400/[0.05] text-amber-200/90")}>
           <ShieldAlert size={14} className={strict ? "text-red-300" : "text-amber-300"} />
           {strict
             ? "Proctored TEST in progress — camera on. Leaving full-screen, tab-switching, split-screen, screenshots, or another face in frame will cancel & lock the test."
             : "Proctored drill in progress — do not minimise, switch tabs, split-screen or screenshot, or the drill is cancelled."}
+        </div>
+      )}
+
+      {late && !submitted && (
+        <div className="el-noprint mb-4 flex items-start gap-2 rounded-xl border border-signal/35 bg-signal/[0.06] px-3.5 py-2 text-xs text-signal">
+          <Timer size={14} className="mt-0.5 shrink-0" />
+          <span><b>You're past the countdown — keep working as long as you need.</b> Nothing is locked and you won't be kicked out; the extra time is recorded and this will be marked a <b>{lateKind}</b> for your teacher to see.</span>
         </div>
       )}
 
@@ -561,6 +608,11 @@ export function PaperRunner({
               {mcqs.length > 0 && <>Multiple choice: <b className="text-ice">{got} / {mcqs.length}</b>.</>}
               {structCount > 0 && <> &nbsp;{structCount} structured ({structMarks} marks){strict ? " — your teacher will mark these." : " — mark yourself against the official mark schemes shown under each."}</>}
             </p>
+            {late && (
+              <p className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-signal/40 bg-signal/[0.08] px-2.5 py-1 font-mono text-[11px] text-signal">
+                <Timer size={12} /> Recorded as a {lateKind} — finished past the countdown.
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -766,9 +818,22 @@ function TestLocked({ reason, attemptId, onExit }: { reason: string; attemptId: 
 }
 
 function ClockPill({ left, warn, paused }: { left: number; warn?: boolean; paused?: boolean }) {
-  const h = Math.floor(left / 3600);
-  const m = Math.floor((left % 3600) / 60);
-  const s = left % 60;
+  const over = left < 0;
+  const abs = Math.abs(left);
+  const h = Math.floor(abs / 3600);
+  const m = Math.floor((abs % 3600) / 60);
+  const s = abs % 60;
+  const digits = `${h > 0 ? `${h}:` : ""}${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  if (over) {
+    // Overtime: the student continued past the countdown (practice / daily
+    // task). Shown with a clear + sign; the attempt is recorded late.
+    return (
+      <div className="flex items-center gap-1.5 rounded-xl border px-3 py-1.5 font-mono text-sm" style={{ color: "#FF7A2F", borderColor: "rgba(255,122,47,.5)" }}>
+        <Timer size={13} />+{digits}
+        <span className="text-[10px] font-semibold tracking-wide">OVERTIME</span>
+      </div>
+    );
+  }
   return (
     <div
       className="flex items-center gap-1.5 rounded-xl border px-3 py-1.5 font-mono text-sm"

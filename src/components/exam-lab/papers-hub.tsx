@@ -25,14 +25,14 @@ const TOPICS_AS = ["Physical quantities & units","Kinematics","Dynamics","Forces
 const TOPICS_A2 = ["Circular motion","Gravitational fields","Thermal physics","Ideal gases","Oscillations","Electric fields","Capacitance","Magnetic fields","Alternating currents","Quantum physics","Nuclear physics","Astronomy & cosmology"];
 
 type ActiveMeta = { mode: "paper" | "drill"; code?: string; ref?: string; paperType: "P1" | "P2" | "P4" | "mixed" };
-type Active = { questions: ImgQuestion[]; title: string; subtitle?: string; duration: number; timed: boolean; lockOnExpiry?: boolean; logMeta: ActiveMeta; integrity: GuardMode; kind: AttemptKind; help: boolean; attemptId?: string; allocationId?: string | null };
+type Active = { questions: ImgQuestion[]; title: string; subtitle?: string; duration: number; timed: boolean; lockOnExpiry?: boolean; logMeta: ActiveMeta; integrity: GuardMode; kind: AttemptKind; help: boolean; attemptId?: string; allocationId?: string | null; daily?: boolean };
 
 type DrillSpec = { type: "drill"; paperType: "P1" | "P2" | "P4"; topics: string[]; levels: ("LOT" | "HOT")[]; count: number } | { type: "daily" };
 // `drillref` = a drill whose paper was frozen at allocation time. `drill` and
 // `daily` are the legacy randomised specs still carried by allocations saved
 // before freezing existed; they keep their original per-sitting behaviour.
 type AllocContent = { type: "paper"; code: string } | DrillSpec | { type: "custom"; ids: string[] } | { type: "drillref"; drillId: string; ref: string; ids: string[]; spec: DrillSpec | { type: "paper"; code: string } | { type: "custom"; ids: string[] } };
-type Allocation = { id: string; attemptId: string; mode: "assignment_help" | "assignment_nohelp" | "test"; content: AllocContent; title: string; instructions: string | null; durationMin: number | null; lockOnExpiry?: boolean; integrity?: GuardMode; dueAt: string | null; startsAt: string | null; className: string | null; status: string };
+type Allocation = { id: string; attemptId: string; mode: "assignment_help" | "assignment_nohelp" | "test"; content: AllocContent; title: string; instructions: string | null; durationMin: number | null; lockOnExpiry?: boolean; integrity?: GuardMode; dueAt: string | null; startsAt: string | null; className: string | null; status: string; daily?: boolean; lateSubmission?: boolean; unattempted?: boolean };
 function allocCfg(mode: Allocation["mode"]): { integrity: GuardMode; kind: AttemptKind; help: boolean } {
   if (mode === "test") return { integrity: "strict", kind: "test", help: false };
   if (mode === "assignment_nohelp") return { integrity: "standard", kind: "assignment", help: false };
@@ -86,7 +86,11 @@ function AssignedBoard({ allocations, onStart }: { allocations: Allocation[]; on
                 </div>
               </div>
               {al.status === "submitted" ? (
-                <span className="inline-flex items-center gap-1 text-xs text-emerald2"><CheckCircle2 size={14} /> Submitted</span>
+                <span className="inline-flex flex-wrap items-center gap-1.5 text-xs text-emerald2">
+                  <CheckCircle2 size={14} /> Submitted
+                  {(al as { lateSubmission?: boolean }).lateSubmission ? <span className="rounded-full border border-signal/50 px-2 py-0.5 font-mono text-[10px] text-signal">Late submission</span> : null}
+                  {(al as { unattempted?: boolean }).unattempted ? <span className="rounded-full border border-amber-400/50 px-2 py-0.5 font-mono text-[10px] text-amber-300" title="No answers were attempted in the submission">Unattempted</span> : null}
+                </span>
               ) : al.status === "locked" ? (
                 sent[al.id] ? <span className="inline-flex items-center gap-1 text-xs text-amber-300"><Lock size={13} /> Review requested</span>
                 : <button onClick={() => requestReview(al.id)} disabled={busy === al.id} className="btn-ghost !px-3 !py-1.5 text-xs">{busy === al.id ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Locked — request review</button>
@@ -191,11 +195,15 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
   function startAllocation(al: Allocation) {
     setLaunchError("");
     const cfg = allocCfg(al.mode);
+    // Daily tasks (the platform daily challenge, and automated daily study-plan
+    // challenges flagged daily) run fully relaxed: no locks, no guard, and
+    // overtime is recorded as a "late submission" instead of a cutoff.
+    const isDailyTask = al.content.type === "daily" || (al as { daily?: boolean }).daily === true;
     // A lifted time lock keeps the countdown visible but never auto-submits or
     // locks answers. Absent/true => the historical locking behaviour.
     // An allocation may override the proctoring guard ("off" => never cancels on
     // tab-switch/blur). Absent => the mode's default guard.
-    const common = { ...cfg, integrity: al.integrity ?? cfg.integrity, timed: true, lockOnExpiry: al.lockOnExpiry !== false, attemptId: al.attemptId, allocationId: al.id };
+    const common = { ...cfg, integrity: al.integrity ?? cfg.integrity, timed: true, lockOnExpiry: al.lockOnExpiry !== false, attemptId: al.attemptId, allocationId: al.id, daily: isDailyTask };
     if (al.content.type === "paper") {
       const code = al.content.code;
       const qs = IMAGE_BANK.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
@@ -325,7 +333,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
 
   function dailyChallenge() {
     const p1 = shuffle(IMAGE_BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
-    enter({ questions: p1, title: "Daily Challenge", subtitle: "10 mixed Paper-1 questions · 15 min", duration: 15, timed: true, logMeta: { mode: "drill", paperType: "P1" }, ...modeCfg(sitMode) });
+    enter({ questions: p1, title: "Daily Challenge", subtitle: "10 mixed Paper-1 questions · 15 min", duration: 15, timed: true, logMeta: { mode: "drill", paperType: "P1" }, daily: true, ...modeCfg(sitMode) });
   }
 
   if (active) return <>
@@ -337,7 +345,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
 
   const modeOpts: { id: SitMode; label: string; icon: typeof Coffee; hint: string }[] = [
     { id: "practice", label: "Practice", icon: Coffee, hint: "Relaxed — no timer lock, switch tabs freely. Nothing is cancelled." },
-    { id: "exam", label: "Exam self-test", icon: ShieldAlert, hint: "Timed & proctored — leaving the window cancels the drill (no camera)." },
+    { id: "exam", label: "Exam self-test", icon: ShieldAlert, hint: "Timed against the clock — but nothing locks or cancels. Run past the countdown and you simply continue; it's recorded as a late attempt." },
     ...(canTest ? [{ id: "test" as SitMode, label: "Proctored test", icon: Video, hint: "Strict: camera on + AI proctor. Violations lock the test (super-admin unlock). Staff preview." }] : []),
   ];
   const activeHint = modeOpts.find((o) => o.id === sitMode)?.hint || "";

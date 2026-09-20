@@ -3,6 +3,13 @@
  * and a Level 1-10 ranking. No side effects; used by the progress dashboard.
  */
 import type { Attempt } from "./attempts";
+import { isGenuineAttempt } from "./attempts";
+
+/** A question counts as attempted only when a real answer was recorded
+ * (response text, an MCQ choice, or a mark). Blank rows never count. */
+function qAttempted(q: Attempt["questions"][number]): boolean {
+  return (typeof q.response === "string" && q.response.trim().length > 0) || q.correct !== null || q.earned !== null;
+}
 
 export type TopicStat = { topic: string; attempted: number; earned: number; available: number; accuracy: number };
 export type Analytics = {
@@ -36,8 +43,14 @@ export function analyse(attempts: Attempt[]): Analytics {
   const paperMap = new Map<string, { attempts: number; e: number; a: number }>();
   let totalEarned = 0, totalAvail = 0, questionsAttempted = 0, scoredQuestions = 0;
 
-  for (const at of attempts) {
+  // Blank submissions (zero attempted answers) are excluded from EVERY
+  // aggregate: they earn no volume, no activity, no level credit, and never
+  // appear on the timeline. Owner rule: no points for blank work.
+  const genuine = attempts.filter(isGenuineAttempt);
+
+  for (const at of genuine) {
     for (const q of at.questions) {
+      if (!qAttempted(q)) continue;
       questionsAttempted++;
       if (!scored(q)) continue;
       scoredQuestions++;
@@ -62,9 +75,9 @@ export function analyse(attempts: Attempt[]): Analytics {
   const strengths = enough.slice(0, 5);
   const weaknesses = [...enough].reverse().slice(0, 5);
 
-  const papersSat = new Set(attempts.filter((a) => a.mode === "paper" && a.code).map((a) => a.code)).size;
+  const papersSat = new Set(genuine.filter((a) => a.mode === "paper" && a.code).map((a) => a.code)).size;
 
-  const timeline = attempts
+  const timeline = genuine
     .filter((a) => a.total > 0)
     .slice(-20)
     .map((a) => ({ ts: a.ts, accuracy: Math.round((a.score / a.total) * 100), label: a.ref || a.paperType }));
@@ -88,7 +101,7 @@ export function analyse(attempts: Attempt[]): Analytics {
     : `Reach Level ${level + 1} (${LEVEL_NAMES[level]}) by lifting overall accuracy and clearing your weak topics.`;
 
   return {
-    totalAttempts: attempts.length,
+    totalAttempts: genuine.length,
     papersSat,
     questionsAttempted,
     scoredQuestions,
@@ -105,7 +118,7 @@ export function analyse(attempts: Attempt[]): Analytics {
     level,
     levelLabel,
     nextLevelHint,
-    recentAttempts: attempts.slice(-8).reverse(),
+    recentAttempts: genuine.slice(-8).reverse(),
     recommendations,
   };
 }
