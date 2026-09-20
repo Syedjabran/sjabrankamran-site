@@ -68,6 +68,16 @@ export function SyllabusCoverageClient({ isAdmin }: { isAdmin: boolean }) {
     return !(row.scope_type === scope.type && row.scope_id === scope.id);
   }, [covered, scope]);
 
+  // Per-class progress at a glance: distinct topics ticked directly on each
+  // class (school/network rows do not count towards a class's own number).
+  const perClassCount = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of rows) {
+      if (r.scope_type === "class") m.set(r.scope_id, (m.get(r.scope_id) || 0) + 1);
+    }
+    return m;
+  }, [rows]);
+
   const toggle = async (topic: string, mark: boolean) => {
     if (!scope || busyTopic) return;
     setBusyTopic(topic);
@@ -120,6 +130,9 @@ export function SyllabusCoverageClient({ isAdmin }: { isAdmin: boolean }) {
               <button key={c.id} onClick={() => setScope({ type: "class", id: c.id, label: classLabel(c) })}
                 className={"inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition " + (on ? "border-cyan bg-cyan text-space font-semibold" : "border-white/15 text-fog hover:border-cyan")}>
                 <BookOpen size={12} /> {classLabel(c)}
+                <span className={"rounded-full border px-1.5 py-px font-mono text-[9px] " + (on ? "border-space/30 text-space" : "border-white/15 text-dust")}>
+                  {perClassCount.get(c.id) || 0}/{topics.length || "—"}
+                </span>
               </button>
             );
           })}
@@ -147,6 +160,7 @@ export function SyllabusCoverageClient({ isAdmin }: { isAdmin: boolean }) {
       {error ? <p className="rounded-xl border border-signal/35 bg-signal/[0.06] px-4 py-2.5 text-sm text-signal">{error}</p> : null}
 
       {/* progress */}
+      {topics.length ? (
       <div className="rounded-2xl border border-emerald2/25 bg-emerald2/[0.04] p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm text-fog">
@@ -160,6 +174,11 @@ export function SyllabusCoverageClient({ isAdmin }: { isAdmin: boolean }) {
           <div className="h-full rounded-full bg-gradient-to-r from-emerald2 to-cyan transition-all" style={{ width: `${topics.length ? Math.round((coveredCount / topics.length) * 100) : 0}%` }} />
         </div>
       </div>
+      ) : (
+        <div className="rounded-2xl border border-white/10 bg-space/60 p-5 text-sm text-dust">
+          No 9702 topics are available in the question bank yet — nothing to record coverage against. Topics appear here as the bank lands.
+        </div>
+      )}
 
       {/* topic checklist */}
       {groups.map((g) => (

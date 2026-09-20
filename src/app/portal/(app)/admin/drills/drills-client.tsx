@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Layers, Users, School, Clock3, FileText, ChevronLeft, Loader2, Hash, Printer, Search } from "lucide-react";
+import { Layers, Users, School, Clock3, FileText, ChevronLeft, Loader2, Hash, Printer, Search, CheckCircle2, AlertTriangle, Inbox } from "lucide-react";
 
 type Row = {
   id: string; ref?: string; allocationId: string; name: string; mode: string;
@@ -13,6 +13,7 @@ type Row = {
 };
 type SnapQ = { id: string; ref: string; paperType: string; code: string; qnum: number; topic: string | null; level: string; marks: number | null; img: string; ms_img: string | null; answer: string | null };
 type DrillFull = Row & { snapshot: SnapQ[] };
+type SubRow = { uid: string; name: string; status: string; lateSubmission: boolean; unattempted: boolean; daily: boolean; completedAt: number | null };
 
 function when(ts: number) { return new Date(ts).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }); }
 /** Records written before reference numbers existed simply show no chip. */
@@ -30,13 +31,21 @@ export function DrillRecordsClient({ scoped = false }: { scoped?: boolean }) {
   const [open, setOpen] = useState<DrillFull | null>(null);
   const [openLoading, setOpenLoading] = useState(false);
   const [imgs, setImgs] = useState<Record<string, string>>({});
+  const [subs, setSubs] = useState<SubRow[] | null>(null);
+  const [subsRoster, setSubsRoster] = useState(true);
 
   useEffect(() => {
     fetch("/api/portal/admin/drills").then((r) => r.json()).then((j) => setRows(j.items || [])).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   const view = useCallback(async (id: string) => {
-    setOpenLoading(true); setImgs({});
+    setOpenLoading(true); setImgs({}); setSubs(null);
+    // Per-student submission status with the late / unattempted integrity
+    // badges — fetched in parallel with the paper; failures stay silent.
+    fetch(`/api/portal/admin/drills/${encodeURIComponent(id)}/submissions`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (j) { setSubs((j.items || []) as SubRow[]); setSubsRoster(j.roster !== false); } })
+      .catch(() => {});
     try {
       const j = await (await fetch(`/api/portal/admin/drills/${id}`)).json();
       if (j.record) {
@@ -69,6 +78,47 @@ export function DrillRecordsClient({ scoped = false }: { scoped?: boolean }) {
           </div>
           <p className="mt-2 text-xs text-dust">Conducted for: <b className="text-fog">{open.className || open.scopeLabel || (open.targetType === "network" ? "Whole network" : open.targetType)}</b> · set by {open.createdByName}</p>
         </div>
+
+        {/* Per-student submission status with late / unattempted badges */}
+        {subsRoster ? (
+          <section className="rounded-2xl border border-white/10 bg-space/60 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 font-display text-lg text-ice"><Inbox size={16} className="text-cyan" /> Submissions</h2>
+              {subs ? (
+                <div className="flex flex-wrap gap-1.5 font-mono text-[10px]">
+                  <span className="rounded-full border border-white/15 px-2 py-0.5 text-fog">{subs.length} students</span>
+                  <span className="inline-flex items-center gap-1 rounded-full border border-emerald2/40 px-2 py-0.5 text-emerald2"><CheckCircle2 size={10} /> {subs.filter((s) => s.status === "submitted" && !s.lateSubmission && !s.unattempted).length} on time</span>
+                  <span className="rounded-full border border-signal/50 px-2 py-0.5 text-signal">{subs.filter((s) => s.lateSubmission).length} late</span>
+                  <span className="rounded-full border border-amber-400/50 px-2 py-0.5 text-amber-300">{subs.filter((s) => s.unattempted).length} unattempted</span>
+                  <span className="rounded-full border border-white/15 px-2 py-0.5 text-dust">{subs.filter((s) => s.status === "pending").length} pending</span>
+                </div>
+              ) : null}
+            </div>
+            {!subs ? (
+              <p className="mt-3 flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading submission statuses…</p>
+            ) : !subs.length ? (
+              <p className="mt-3 text-sm text-dust">No active students found in the target classes for this drill.</p>
+            ) : (
+              <ul className="mt-3 divide-y divide-white/[0.06]">
+                {subs.map((s) => (
+                  <li key={s.uid} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                    <span className="text-sm text-fog">{s.name}</span>
+                    <span className="flex flex-wrap items-center gap-1.5 font-mono text-[10px]">
+                      {s.lateSubmission ? <span className="rounded-full border border-signal/50 px-2 py-0.5 text-signal">Late submission</span> : null}
+                      {s.unattempted ? <span className="rounded-full border border-amber-400/50 px-2 py-0.5 text-amber-300" title="No answers were attempted — earns no points">Unattempted</span> : null}
+                      <span className={"rounded-full border px-2 py-0.5 " + (s.status === "submitted" ? "border-emerald2/40 text-emerald2" : s.status === "pending" ? "border-white/15 text-dust" : "border-white/25 text-fog")}>
+                        {s.status === "submitted" ? (s.lateSubmission ? "submitted late" : "submitted") : s.status}
+                      </span>
+                      {s.completedAt ? <span className="text-dust">{when(s.completedAt)}</span> : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ) : (
+          <p className="text-xs text-dust">Per-student submission status is available for drills assigned to classes, schools or the network.</p>
+        )}
         {openLoading ? <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading paper…</p> : null}
         <ol className="space-y-4">
           {open.snapshot.map((q, i) => (
