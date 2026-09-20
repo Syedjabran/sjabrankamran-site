@@ -14,6 +14,8 @@ import { AdminUserSearch } from "./admin-user-search";
 import { OnlineNow } from "./online-now";
 import { ensureStudyPlan } from "@/lib/portal/study-plan";
 import { DEMO_STUDENT_UID } from "@/lib/portal/demo-student";
+import { listAllocations } from "@/lib/exam-lab/allocations";
+import { listTasks } from "@/lib/portal/tasks";
 
 export const metadata = { title: "Portal Dashboard" };
 
@@ -271,21 +273,121 @@ export default async function PortalDashboard() {
   // Non-staff (student / parent) home. In Super Admin's Student preview, use
   // the private QA student's plan so the preview is representative and does
   // not create student tasks against the administrator's own account.
-  const studentPlan = effRoles.includes("student")
-    ? await ensureStudyPlan(user.roles.includes("student") ? user.id : DEMO_STUDENT_UID)
-    : null;
+  const planUid = user.roles.includes("student") ? user.id : DEMO_STUDENT_UID;
+  const isStudent = effRoles.includes("student");
+  const [studentPlan, allocations, tasks] = isStudent
+    ? await Promise.all([
+        ensureStudyPlan(planUid),
+        listAllocations(planUid).catch(() => []),
+        listTasks(planUid).catch(() => []),
+      ])
+    : [null, [], []];
+
+  // Priority model (master prompt E1): 1 dominant continue-action, then
+  // deadlines, then the plan. Open allocations sort by due date; a missing
+  // due date sorts last. Tasks fill in when no allocation is open.
+  const openAllocs = (allocations as Awaited<ReturnType<typeof listAllocations>>)
+    .filter((a) => a.status === "assigned" || a.status === "unlocked")
+    .sort((a, b) => (a.dueAt ? Date.parse(a.dueAt) : Infinity) - (b.dueAt ? Date.parse(b.dueAt) : Infinity));
+  const openTasks = (tasks as Awaited<ReturnType<typeof listTasks>>)
+    .filter((t) => t.status !== "done")
+    .sort((a, b) => (a.dueAt ? Date.parse(a.dueAt) : Infinity) - (b.dueAt ? Date.parse(b.dueAt) : Infinity));
+  const heroAlloc = openAllocs[0] || null;
+  const heroTask = heroAlloc ? null : openTasks[0] || null;
+  const fmtDue = (iso: string | null) => {
+    if (!iso) return null;
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return null;
+    const days = Math.ceil((d.getTime() - Date.now()) / 86400000);
+    const when = d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+    return days < 0 ? `${when} · overdue` : days === 0 ? `${when} · today` : `${when}`;
+  };
+  const deadlines: { key: string; label: string; kind: string; due: string | null; href: string; overdue: boolean }[] = [
+    ...openAllocs.map((a) => ({
+      key: `al-${a.id}`,
+      label: a.title,
+      kind: a.mode === "test" ? "Test" : "Assignment",
+      due: a.dueAt,
+      href: `/portal/exam-lab?allocation=${encodeURIComponent(a.id)}`,
+      overdue: !!a.dueAt && Date.parse(a.dueAt) < Date.now(),
+    })),
+    ...openTasks.map((t) => ({
+      key: `tk-${t.id}`,
+      label: t.title,
+      kind: t.kind === "challenge" ? "Challenge" : "Task",
+      due: t.dueAt,
+      href: `/portal/tasks/${encodeURIComponent(t.id)}`,
+      overdue: !!t.dueAt && Date.parse(t.dueAt) < Date.now(),
+    })),
+  ]
+    .sort((a, b) => (a.due ? Date.parse(a.due) : Infinity) - (b.due ? Date.parse(b.due) : Infinity))
+    .slice(0, 4);
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold text-ice">Welcome{user.fullName ? `, ${user.fullName.split(" ")[0]}` : ""}</h1>
-      <div className="rounded-2xl border border-white/10 bg-space/60 p-6">
-        <p className="text-sm leading-relaxed text-fog">
-          {effRoles.includes("student")
-            ? "Head to Exam Lab to sit past papers and drills, check My Learning for assignments, and track My Progress."
-            : effRoles.includes("parent")
-            ? "Open My Children to follow attendance, results and progress."
-            : "Your account and access rights are active."}
-        </p>
-      </div>
+
+      {/* 1 — dominant continue-action */}
+      {heroAlloc ? (
+        <a
+          href={`/portal/exam-lab?allocation=${encodeURIComponent(heroAlloc.id)}`}
+          className="group block rounded-3xl border-2 border-cyan/50 bg-gradient-to-br from-cyan/[0.14] to-space/70 p-6 transition hover:border-cyan md:p-8"
+          data-tour="continue-hero"
+        >
+          <p className="eyebrow mb-1">{heroAlloc.mode === "test" ? "Your next test" : "Continue your work"}</p>
+          <p className="font-display text-2xl font-semibold text-ice">{heroAlloc.title}</p>
+          <p className="mt-2 text-sm text-fog">
+            {heroAlloc.mode === "test" ? "Proctored test — read the rules before you begin." : "Assigned in Exam Lab."}
+            {fmtDue(heroAlloc.dueAt) ? <span className={heroAlloc.dueAt && Date.parse(heroAlloc.dueAt) < Date.now() ? " text-signal" : " text-amber-300"}> · Due {fmtDue(heroAlloc.dueAt)}</span> : null}
+          </p>
+          <span className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-cyan px-4 py-2 text-sm font-semibold text-abyss transition group-hover:gap-2.5">Start now <ArrowRight size={15} /></span>
+        </a>
+      ) : heroTask ? (
+        <a
+          href={heroTask.resourceUrl || `/portal/tasks/${encodeURIComponent(heroTask.id)}`}
+          className="group block rounded-3xl border-2 border-cyan/50 bg-gradient-to-br from-cyan/[0.14] to-space/70 p-6 transition hover:border-cyan md:p-8"
+          data-tour="continue-hero"
+        >
+          <p className="eyebrow mb-1">Next best action</p>
+          <p className="font-display text-2xl font-semibold text-ice">{heroTask.title}</p>
+          <p className="mt-2 text-sm text-fog">{heroTask.details?.slice(0, 140) || "Open the task for details."}{fmtDue(heroTask.dueAt) ? <span className="text-amber-300"> · Due {fmtDue(heroTask.dueAt)}</span> : null}</p>
+          <span className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-cyan px-4 py-2 text-sm font-semibold text-abyss transition group-hover:gap-2.5">Open <ArrowRight size={15} /></span>
+        </a>
+      ) : isStudent ? (
+        <div className="rounded-3xl border border-emerald2/30 bg-emerald2/5 p-6">
+          <p className="flex items-center gap-2 text-lg font-semibold text-emerald2"><CheckCircle2 size={18} /> All caught up</p>
+          <p className="mt-1 text-sm text-fog">No open assignments or tasks. Sit a practice paper in Exam Lab to stay sharp.</p>
+          <a href="/portal/exam-lab" className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-cyan">Open Exam Lab <ArrowRight size={14} /></a>
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-white/10 bg-space/60 p-6">
+          <p className="text-sm leading-relaxed text-fog">
+            {effRoles.includes("parent")
+              ? "Open My Children to follow attendance, results and progress."
+              : "Your account and access rights are active."}
+          </p>
+        </div>
+      )}
+
+      {/* 2 — upcoming deadlines */}
+      {deadlines.length > 1 ? (
+        <section className="rounded-2xl border border-white/10 bg-space/60 p-5" aria-label="Upcoming deadlines">
+          <h2 className="mb-3 text-sm font-semibold text-ice">Coming up</h2>
+          <ul className="space-y-2">
+            {deadlines.slice(1).map((d) => (
+              <li key={d.key}>
+                <a href={d.href} className="flex min-h-11 flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 px-3 py-2 text-sm transition hover:border-cyan/40">
+                  <span className="min-w-0 truncate text-fog">{d.label}</span>
+                  <span className="flex shrink-0 items-center gap-2 text-xs">
+                    <span className="rounded-full border border-white/15 px-2 py-0.5 text-dust">{d.kind}</span>
+                    {d.due ? <span className={d.overdue ? "text-signal" : "text-amber-300"}>{fmtDue(d.due)}</span> : null}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {studentPlan ? (
         <a href="/portal/study-plan" className="group block rounded-2xl border border-cyan/25 bg-gradient-to-br from-cyan/[0.08] to-space/60 p-6 transition hover:border-cyan/50 hover:bg-cyan/[0.1]">
           <div className="flex flex-wrap items-start justify-between gap-4">
