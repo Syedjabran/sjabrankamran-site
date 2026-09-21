@@ -4,6 +4,7 @@
 
 export type ELLevel = "LOT" | "HOT";
 export type ELType = "mcq" | "structured";
+export type ELCourse = "9702" | "5054" | "IB";
 export type ELQuestion = {
   id: string;
   t: string;            // topic
@@ -18,7 +19,13 @@ export type ELQuestion = {
   scheme: string[];     // marking points / model answer
   visibility?: "public" | "portal" | "both";
   source?: string;
+  course?: ELCourse;    // awarding-body course; undefined ⇒ "9702" (backward-compatible)
 };
+
+/** Course of a bank item; legacy 9702 entries omit the field. */
+export function courseOf(q: ELQuestion): ELCourse {
+  return q.course ?? "9702";
+}
 
 export const TOPICS = {
   AS: [
@@ -30,6 +37,16 @@ export const TOPICS = {
     "Circular motion","Gravitational fields","Thermal physics","Ideal gases",
     "Oscillations","Electric fields","Capacitance","Magnetic fields",
     "Alternating currents","Quantum physics","Nuclear physics","Astronomy & cosmology"
+  ],
+  // Cambridge O Level Physics (5054) — public syllabus structure. Distinct topic
+  // tags keep O-Level drills fully separate from 9702 drawing (topic-based pool).
+  OL: [
+    "Measurements & units","Kinematics","Dynamics & forces","Mass, weight & density",
+    "Turning effects & pressure","Energy, work & power","Momentum",
+    "Kinetic model & thermal properties","Transfer of thermal energy",
+    "General wave properties","Light & optics","Electromagnetic spectrum & sound",
+    "Magnetism","Electrical quantities & circuits","Practical electricity & safety",
+    "Electromagnetic effects","Radioactivity & the nuclear atom"
   ]
 };
 
@@ -242,11 +259,23 @@ const RAW: Omit<ELQuestion,"id">[] = [
    scheme:["Redshift: observed wavelength longer than emitted → spectral lines shifted toward red.","Interpreted as galaxies receding → Doppler-like shift, $\\Delta\\lambda/\\lambda \\approx v/c$.","More distant galaxies show greater redshift (Hubble's law) → space itself expanding."]}
 ];
 
-export const BANK: ELQuestion[] = RAW.map((q, i) => ({
+import { OL_RAW } from "./bank-olevel";
+
+const SEED_RAW: Omit<ELQuestion, "id">[] = [...RAW, ...OL_RAW];
+
+export const BANK: ELQuestion[] = SEED_RAW.map((q, i) => ({
   id: `seed-${String(i + 1).padStart(3, "0")}`,
   visibility: "both" as const,
   source: "authored",
   ...q,
 }));
 
+// 9702 canonical topics (unchanged for existing AS/A2 flows).
 export const ALL_TOPICS: string[] = [...TOPICS.AS, ...TOPICS.A2];
+// Full topic set including O Level 5054.
+export const ALL_TOPICS_WITH_OL: string[] = [...TOPICS.AS, ...TOPICS.A2, ...TOPICS.OL];
+
+/** Bank items for a given awarding-body course (legacy entries ⇒ 9702). */
+export function bankForCourse(course: "9702" | "5054" | "IB"): ELQuestion[] {
+  return BANK.filter((q) => (q.course ?? "9702") === course);
+}

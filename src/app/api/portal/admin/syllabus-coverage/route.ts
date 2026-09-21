@@ -3,7 +3,7 @@ import { getPortalUser, isAdmin, isExamLabStaff, type EduRole } from "@/lib/edu/
 import { visibleClassIdsForUid } from "@/lib/portal/timetable";
 import { getRegistry } from "@/lib/portal/institutions";
 import { listCoverage, markCovered, uncover, type CoverageScopeType } from "@/lib/exam-lab/syllabus-coverage";
-import { TOPICS } from "@/lib/exam-lab/bank";
+import { TOPICS, bankForCourse } from "@/lib/exam-lab/bank";
 import { IMAGE_BANK } from "@/lib/exam-lab/image-bank";
 
 export const runtime = "nodejs";
@@ -50,21 +50,26 @@ export async function GET(req: Request) {
   const scope = await callerScope(user.id, user.roles);
   const rows = (await listCoverage(course)).filter((r) => canSeeRow(r, scope));
 
-  // Canonical 9702 taxonomy + any extra topic labels present in the bank.
-  const canonical = [...TOPICS.AS, ...TOPICS.A2];
+  // Topic taxonomy is course-specific: 9702 → AS/A2; 5054 → O Level.
+  const isOLevel = course === "5054";
+  const canonical = isOLevel ? [...TOPICS.OL] : [...TOPICS.AS, ...TOPICS.A2];
   const bankTopics = new Map<string, number>();
+  // Image (past-paper) bank counts, plus seed-bank counts for the O-Level course.
   for (const q of IMAGE_BANK) if (q.topic) bankTopics.set(q.topic, (bankTopics.get(q.topic) || 0) + 1);
+  if (isOLevel) for (const q of bankForCourse("5054")) bankTopics.set(q.t, (bankTopics.get(q.t) || 0) + 1);
   const extras = [...bankTopics.keys()].filter((t) => !canonical.includes(t));
 
-  return NextResponse.json({
-    course,
-    rows,
-    topics: [
-      ...TOPICS.AS.map((t) => ({ name: t, group: "AS", bankCount: bankTopics.get(t) || 0 })),
-      ...TOPICS.A2.map((t) => ({ name: t, group: "A2", bankCount: bankTopics.get(t) || 0 })),
-      ...extras.map((t) => ({ name: t, group: "Other", bankCount: bankTopics.get(t) || 0 })),
-    ],
-  }, { status: 200 });
+  const topics = isOLevel
+    ? [
+        ...TOPICS.OL.map((t) => ({ name: t, group: "O Level", bankCount: bankTopics.get(t) || 0 })),
+      ]
+    : [
+        ...TOPICS.AS.map((t) => ({ name: t, group: "AS", bankCount: bankTopics.get(t) || 0 })),
+        ...TOPICS.A2.map((t) => ({ name: t, group: "A2", bankCount: bankTopics.get(t) || 0 })),
+        ...extras.map((t) => ({ name: t, group: "Other", bankCount: bankTopics.get(t) || 0 })),
+      ];
+
+  return NextResponse.json({ course, rows, topics }, { status: 200 });
 }
 
 export async function POST(req: Request) {

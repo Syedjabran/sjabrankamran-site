@@ -35,10 +35,19 @@ const A2_TOPICS = [
   "Electric fields", "Capacitance", "Magnetic fields", "Alternating currents", "Quantum physics",
   "Nuclear physics", "Astronomy & cosmology",
 ];
-const CANONICAL_TOPICS = [...AS_TOPICS, ...A2_TOPICS];
+// Cambridge O Level Physics (5054) topic frontier (mirrors bank TOPICS.OL).
+const OL_TOPICS = [
+  "Measurements & units", "Kinematics", "Dynamics & forces", "Mass, weight & density",
+  "Turning effects & pressure", "Energy, work & power", "Momentum",
+  "Kinetic model & thermal properties", "Transfer of thermal energy",
+  "General wave properties", "Light & optics", "Electromagnetic spectrum & sound",
+  "Magnetism", "Electrical quantities & circuits", "Practical electricity & safety",
+  "Electromagnetic effects", "Radioactivity & the nuclear atom",
+];
+const CANONICAL_TOPICS = [...AS_TOPICS, ...A2_TOPICS, ...OL_TOPICS];
 function safeTopic(topic: string) { return TOPIC_MAP[topic] || topic; }
-function searchUrl(kind: "resources" | "video" | "simulation", topic: string) {
-  const q = encodeURIComponent(`CAIE 9702 Physics ${topic}`);
+function searchUrl(kind: "resources" | "video" | "simulation", topic: string, syllabusLabel = "CAIE 9702 Physics") {
+  const q = encodeURIComponent(`${syllabusLabel} ${topic}`);
   if (kind === "resources") return `/portal/resources?search=${encodeURIComponent(topic)}`;
   if (kind === "video") return `https://www.youtube.com/results?search_query=${q}`;
   return `https://phet.colorado.edu/en/simulations/filter?subjects=physics&type=html`;
@@ -51,7 +60,7 @@ export type StudyPlanSummary = {
 
 /** Resolve the student's enrolled course stage; ranking level is performance,
  * not AS/A2 course placement, so it must never choose the paper type. */
-async function courseStage(uid: string): Promise<"AS" | "A2"> {
+async function courseStage(uid: string): Promise<"AS" | "A2" | "OL"> {
   try {
     const db = createAdminClient();
     const { data: student } = await db.from("edu_students").select("id").eq("profile_id", uid).maybeSingle();
@@ -60,6 +69,8 @@ async function courseStage(uid: string): Promise<"AS" | "A2"> {
     const ids = new Set((enrolments || []).map((e) => e.class_id as string));
     const registry = await getRegistry();
     const years = registry.classes.filter((c) => ids.has(c.id)).map((c) => c.year.toUpperCase());
+    // O Level (5054) takes precedence when the enrolled class is an O-Level cohort.
+    if (years.some((y) => y.includes("O LEVEL") || y.includes("O-LEVEL") || y.includes("OLEVEL") || y.includes("5054") || /^O[\s-]?\d/.test(y))) return "OL";
     return years.some((y) => y === "A2" || y.includes("YEAR 2")) ? "A2" : "AS";
   } catch {
     return "AS";
@@ -77,14 +88,18 @@ async function courseStage(uid: string): Promise<"AS" | "A2"> {
  * created at all — never random uncovered syllabus.
  */
 export async function ensureStudyPlan(uid: string): Promise<StudyPlanSummary> {
-  const [attempts, stage, covered] = await Promise.all([
+  const [attempts, stage, classes] = await Promise.all([
     getAttempts(uid).catch(() => []),
     courseStage(uid),
-    coveredTopicsForClasses(DEFAULT_COURSE, await classesForUids([uid])).catch(() => new Set<string>()),
+    classesForUids([uid]).catch(() => []),
   ]);
+  // O-Level cohorts track the 5054 coverage board; everyone else tracks 9702.
+  const course = stage === "OL" ? "5054" : DEFAULT_COURSE;
+  const covered = await coveredTopicsForClasses(course, classes).catch(() => new Set<string>());
+  const syllabusLabel = stage === "OL" ? "Cambridge O Level 5054 Physics" : "CAIE 9702 Physics";
   const a = analyse(attempts);
   // The teachable frontier = the course stage filtered to covered topics only.
-  const stageTopics = (stage === "A2" ? A2_TOPICS : AS_TOPICS).filter((t) => covered.has(t));
+  const stageTopics = (stage === "A2" ? A2_TOPICS : stage === "OL" ? OL_TOPICS : AS_TOPICS).filter((t) => covered.has(t));
   const paperType = stage === "A2" ? "P4" : "P2";
   const rawFocus = a.weaknesses.length ? a.weaknesses.map((x) => safeTopic(x.topic)) : stageTopics.slice(0, 3);
   // De-duplicate and keep only covered, canonical topics.
