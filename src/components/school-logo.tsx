@@ -1,6 +1,4 @@
-
-import { ResilientImg } from "@/components/ui/resilient-image";
-import { SCHOOL_LOGO_DATA_URIS } from "@/lib/inline-media";
+/* eslint-disable @next/next/no-img-element */
 
 /**
  * SchoolLogo — official institution logos, unmodified.
@@ -12,8 +10,7 @@ import { SCHOOL_LOGO_DATA_URIS } from "@/lib/inline-media";
  *              chip so it stays legible on the dark background.
  *
  * Wide logos get a rectangular frame (never crushed into squares).
- * Plain <img> is used to avoid raster re-processing of gray+alpha PNGs,
- * wrapped in ResilientImg so a first-visit edge challenge self-heals.
+ * Plain <img> is used to avoid raster re-processing of gray+alpha PNGs.
  * When no reliable official logo exists, a typographic monogram is shown.
  *
  * Logos are third-party trademarks shown solely to describe teaching
@@ -32,15 +29,12 @@ export function SchoolLogo({
   name: string;
   height?: number;
 }) {
-  // Landing-critical logos ship inline (data URI) so they render even when
-  // edge protection blocks image subresource requests.
-  const resolved = logo ? SCHOOL_LOGO_DATA_URIS[logo] || logo : logo;
   if (logo) {
     if (onDark) {
       return (
         <span className="flex shrink-0 items-center overflow-hidden rounded-lg" style={{ height }}>
-          <ResilientImg
-            src={resolved}
+          <img
+            src={logo}
             alt={`${name} logo`}
             className="rounded-lg"
             style={{ height: "100%", width: "auto", maxWidth: height * 2.6, objectFit: "contain" }}
@@ -54,8 +48,8 @@ export function SchoolLogo({
         className="flex shrink-0 items-center justify-center rounded-lg bg-white px-2 py-1.5 shadow-sm ring-1 ring-black/5"
         style={{ height, minWidth: height, maxWidth: height * 2.6 }}
       >
-        <ResilientImg
-          src={resolved}
+        <img
+          src={logo}
           alt={`${name} logo`}
           style={{ height: "100%", width: "auto", maxWidth: height * 2.3, objectFit: "contain" }}
           loading="lazy"

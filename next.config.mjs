@@ -4,13 +4,6 @@ const nextConfig = {
   poweredByHeader: false,
   experimental: {
     serverActions: { bodySizeLimit: "8mb" },
-    // Inline global CSS into the HTML document instead of a separate
-    // /_next/static/*.css request. Edge bot-mitigation (Vercel Security
-    // Checkpoint) can challenge subresource requests it cannot run JS on,
-    // which silently drops the stylesheet and renders the site unstyled for
-    // flagged visitors. Inlining removes that failure mode: if the HTML
-    // arrives, the styling arrives with it. CSP already permits inline styles.
-    inlineCss: true,
   },
   images: {
     dangerouslyAllowSVG: true,
