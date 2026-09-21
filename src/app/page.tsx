@@ -1,5 +1,5 @@
-import Image from "next/image";
 import Link from "next/link";
+import { ResilientImage } from "@/components/ui/resilient-image";
 import { ArrowRight, GraduationCap, Building2, Cpu } from "lucide-react";
 import { HeroVideo } from "@/components/hero-video";
 import { LandingProductTour } from "@/components/landing-product-tour";
@@ -64,7 +64,7 @@ export default function HomePage() {
           <div data-tour="educator-profile" className="relative mx-auto w-full max-w-sm">
             <div className="absolute -inset-4 rounded-[2rem] bg-gradient-to-tr from-cyan/20 via-indigo2/10 to-transparent blur-2xl" />
             <div className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-void/40">
-              <Image
+              <ResilientImage
                 src="/jb-portrait.jpg"
                 alt="Syed Jabran Ali Kamran, Cambridge Physics educator"
                 width={741}

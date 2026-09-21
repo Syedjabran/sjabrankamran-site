@@ -1,4 +1,4 @@
-/* eslint-disable @next/next/no-img-element */
+import { ResilientImg } from "@/components/ui/resilient-image";
 
 /**
  * SchoolLogo — official institution logos, unmodified.
@@ -33,7 +33,7 @@ export function SchoolLogo({
     if (onDark) {
       return (
         <span className="flex shrink-0 items-center overflow-hidden rounded-lg" style={{ height }}>
-          <img
+          <ResilientImg
             src={logo}
             alt={`${name} logo`}
             className="rounded-lg"
@@ -48,7 +48,7 @@ export function SchoolLogo({
         className="flex shrink-0 items-center justify-center rounded-lg bg-white px-2 py-1.5 shadow-sm ring-1 ring-black/5"
         style={{ height, minWidth: height, maxWidth: height * 2.6 }}
       >
-        <img
+        <ResilientImg
           src={logo}
           alt={`${name} logo`}
           style={{ height: "100%", width: "auto", maxWidth: height * 2.3, objectFit: "contain" }}
