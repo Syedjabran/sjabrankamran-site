@@ -128,7 +128,14 @@ export default async function PortalLayout({ children }: { children: React.React
   // Application-level restrictions deliberately keep Supabase authentication
   // alive: the user signs in successfully, then sees the configured lock
   // message instead of any portal activity. Super admins always bypass this.
-  const restriction = await getPortalRestriction(user);
+  // The onboarding check is independent, so both round-trips run concurrently
+  // — this layout re-executes on every portal tab navigation.
+  const pathname = (await headers()).get("x-pathname") || "";
+  const isStudentUser = user.roles.includes("student");
+  const [restriction, onboardingComplete] = await Promise.all([
+    getPortalRestriction(user),
+    isStudentUser ? isOnboardingComplete(user.id) : Promise.resolve(true),
+  ]);
   if (restriction) return <PortalAccessBlocked restriction={restriction} />;
 
   // Suspended accounts: block all portal activity immediately (in addition to
@@ -149,8 +156,7 @@ export default async function PortalLayout({ children }: { children: React.React
 
   // Mandatory onboarding gate: a student cannot use ANY activity until their
   // required profile (incl. a valid parent email) is complete.
-  const pathname = (await headers()).get("x-pathname") || "";
-  const mustOnboard = user.roles.includes("student") && !(await isOnboardingComplete(user.id));
+  const mustOnboard = isStudentUser && !onboardingComplete;
   if (mustOnboard && !pathname.startsWith("/portal/onboarding")) {
     redirect("/portal/onboarding");
   }
