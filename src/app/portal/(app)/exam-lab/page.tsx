@@ -1,7 +1,30 @@
 import { Suspense } from "react";
+import dynamic from "next/dynamic";
 import { FlaskConical, ShieldCheck } from "lucide-react";
 import { getPortalUser, isExamLabStaff } from "@/lib/edu/auth";
-import { PapersHub } from "@/components/exam-lab/papers-hub";
+
+// The hub bundles the full 646 KB question bank (2,529 exact past-paper
+// questions) plus the paper runner and proctor camera. Code-splitting it keeps
+// that payload out of the route's critical JS so tab-to-tab navigation paints
+// instantly and the bank chunk streams in parallel, cached long-term by the
+// browser (immutable content hash).
+const PapersHub = dynamic(() => import("@/components/exam-lab/papers-hub").then((m) => m.PapersHub), {
+  loading: () => <PapersHubSkeleton />,
+});
+
+function PapersHubSkeleton() {
+  return (
+    <div className="animate-pulse space-y-4" aria-busy="true" aria-label="Loading Exam Lab">
+      <div className="h-10 w-64 rounded-lg bg-white/[0.06]" />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="h-20 rounded-2xl border border-white/10 bg-space/60" />
+        ))}
+      </div>
+      <div className="h-40 rounded-2xl border border-white/10 bg-space/60" />
+    </div>
+  );
+}
 
 export const metadata = { title: "Exam Lab — Real CAIE 9702 Past Papers", robots: { index: false } };
 
