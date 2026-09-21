@@ -109,6 +109,11 @@
      blocking the JS chunks on a fresh visit). Pure-CSS, zero-JS guarantee. */
   animation: reveal-fallback 0.7s cubic-bezier(0.22, 1, 0.36, 1) 1.5s forwards;
 }
+/* Hydration succeeded (HydrationMarker) → JS owns the reveal: disable the
+   safety net so the classic on-scroll animations play as designed. */
+.js-hydrated .reveal {
+  animation: none;
+}
 .reveal.is-visible {
   opacity: 1;
   transform: translateY(0);

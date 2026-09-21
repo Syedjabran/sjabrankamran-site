@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * HeroVideo — cinematic, licence-safe background video.
@@ -14,14 +14,19 @@ import { useEffect, useRef } from "react";
  *   autoplay needs a post-hydration kick.
  * - Always sits behind a dark overlay so text stays readable.
  */
+const MAX_VIDEO_RETRIES = 3;
+
 export function HeroVideo({ src, poster }: { src: string; poster: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [retry, setRetry] = useState(0);
+  const stopped = useRef(false);
 
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
     const conn = (navigator as unknown as { connection?: { saveData?: boolean } }).connection;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || conn?.saveData) {
+      stopped.current = true;
       v.pause();
       v.removeAttribute("src");
       v.load(); // poster remains
@@ -30,7 +35,19 @@ export function HeroVideo({ src, poster }: { src: string; poster: string }) {
     v.play().catch(() => {
       /* autoplay blocked → poster remains */
     });
-  }, []);
+  }, [retry]);
+
+  // Edge challenge can block the media request on a fresh visit before the
+  // clearance cookie exists. Retry the same file with a cache-buster — by the
+  // first retry the cookie is set, so the video loads and plays.
+  function handleError() {
+    if (stopped.current) return;
+    if (retry < MAX_VIDEO_RETRIES) {
+      setTimeout(() => setRetry((r) => r + 1), 1200 * (retry + 1));
+    }
+  }
+
+  const videoSrc = retry > 0 ? `${src}${src.includes("?") ? "&" : "?"}r=${retry}` : src;
 
   return (
     <div className="absolute inset-0 overflow-hidden" aria-hidden="true">
@@ -38,15 +55,17 @@ export function HeroVideo({ src, poster }: { src: string; poster: string }) {
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={poster} alt="" className="absolute inset-0 h-full w-full object-cover" />
       <video
+        key={retry}
         ref={videoRef}
         className="absolute inset-0 h-full w-full object-cover"
-        src={src}
+        src={videoSrc}
         poster={poster}
         autoPlay
         muted
         loop
         playsInline
         preload="metadata"
+        onError={handleError}
       />
       {/* Readability overlays */}
       <div className="absolute inset-0 bg-abyss/72" />

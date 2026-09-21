@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2, Send, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { MarkdownRenderer } from "./markdown-renderer";
+import { ResilientImg } from "@/components/ui/resilient-image";
 
 /**
  * Einstein-inspired floating companion — site-wide "ask a physics question"
@@ -390,16 +391,14 @@ export function EinsteinCompanion() {
           }`}
           style={{ touchAction: "none" }}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+          <ResilientImg
             src="/einstein/einstein-tongue.webp"
             alt=""
             fetchPriority="high"
             className={`absolute inset-0 h-full w-full rounded-full object-cover object-top transition-opacity duration-500 ${tongueOut ? "opacity-100" : "opacity-0"}`}
             loading="eager"
           />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+          <ResilientImg
             src="/einstein/einstein-smile.webp"
             alt=""
             fetchPriority="high"
