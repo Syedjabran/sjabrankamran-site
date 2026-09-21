@@ -39,8 +39,23 @@ Pending from this session: live search interaction, Exam Lab attempt UI, mobile 
 | E6 | Homepage has exactly 1 JSON-LD block (person schema); no Course/Breadcrumb/Organization schema on key templates. | curl grep count; `layout.tsx` personSchema | P2 |
 | E7 | Exam Lab drill determinism + refs + roles verified end-to-end in code and regression-tested (2026-09-19 fixes `f829326`, `0d78091`). | repo commits + access test run | Fixed |
 
+## 2026-09-20 incident — "page is messed up" investigated (NOT a code defect)
+JB reported the site "not opening / vercel not letting start". Forensic result:
+- Server-side fetch: homepage 200 with correct `<title>`, canonical, stylesheet link; **all 32 CSS/JS/font/image assets return 200 with correct content types**; `/portal/login` 200 (Sign in + email + password present); `/physics` 200.
+- Deployed code: last app-src commit `6b01b15` (04:48), **zero uncommitted `src/` changes**, passed tsc+build gate pre-deploy. No code regression.
+- Root cause: the **managed automated Chromium browser** session was repeatedly challenged by **Vercel bot protection** ("Failed to verify your browser / Code 29 / Security Checkpoint", fra1/cdg1) on scripted portal navigations. This is a per-session IP+behaviour gate, not a public outage.
+- Unauthenticated `/portal` redirects to `/` — which read as "page is off" once the session lapsed.
+- **Fix = one human checkpoint tap in the Control UI Browser panel** (clear the "I am human" box, then demo sign-in). Scripted restarts do not satisfy the gate. Public visitors on normal browsers are unaffected.
+
 ## Pending authenticated audit (test cases, NOT findings)
 The full §8 matrix of the external spec (login→next activity, dashboard click depth, search quality, timed-test resilience, results diagnosis, mobile journeys, a11y keyboard/screen-reader passes, console/network capture at 1440×900 / 768×1024 / 390×844) requires a **demo student account via secure channel** + browser session. Blocked: no demo credentials held; the previously circulated demo password must be treated as **exposed → rotate before the audit** (external spec §3.3).
+
+## Verified — API-based audit continuation (2026-09-20 ≈18:30 CEST, no browser)
+| ID | Observation | Evidence | Severity |
+|---|---|---|---|
+| B1 | **Qualification course hubs live** at slug paths `/physics/cambridge-a-level-9702`, `/physics/o-level-5054`, `/physics/ib` — all HTTP 200, all emit `"@type":"Course"` JSON-LD. (Commit `dd5dfd5`.) Note: code-based paths (`/physics/9702`) return 404 — external spec's predicted URL pattern does not match shipped slugs. | curl status + JSON-LD grep | OK |
+| B2 | **Portal auth redirect chain correct**: unauthenticated `/portal`, `/portal/exam-lab`, `/portal/results`, `/portal/study-plan`, `/portal/search` all return 307 → `/portal/login?next=%2Fportal…`. No accidental public exposure. | curl -D Location headers | OK |
+| B3 | **No Vercel checkpoint on public routes** from server-side fetch (homepage, portal login, physics, all course hubs). Confirms the earlier Code 29 was automated-browser fingerprinting, not a public outage. | curl body grep for checkpoint strings | OK |
 
 ## Public-page heuristics (code-level, medium confidence, to confirm in browser pass)
 - Marketing IA is venture-oriented (`education/enterprise/ai-technology/insights`) rather than qualification-oriented (9702/5054/IB) → mismatch with learner search intent; no qualification hub pages, no topic pages, no past-paper guidance pages (master-prompt Phase C/G gap).

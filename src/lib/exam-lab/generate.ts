@@ -10,7 +10,7 @@
  * asked for a simple line-delimited format that needs NO escaping. Falls back to
  * the authored seed bank if the model is unavailable or returns nothing usable.
  */
-import { BANK, ALL_TOPICS, type ELQuestion, type ELLevel, type ELType } from "./bank";
+import { BANK, ALL_TOPICS_WITH_OL, TOPICS, type ELQuestion, type ELLevel, type ELType } from "./bank";
 import { PASTPAPER_BANK } from "./pastpaper-bank";
 import { groundingContext } from "@/lib/ai/web-search";
 
@@ -107,6 +107,10 @@ export async function generateQuestions(
   input: GenerateInput,
   opts: { ground?: boolean } = {}
 ): Promise<GenerateResult> {
+  // O Level (5054) requests are recognised by their distinct topic tags so the
+  // generator writes O-Level-standard questions instead of 9702 ones.
+  const olSet = new Set<string>(TOPICS.OL);
+  const isOLevel = input.topics.length > 0 && input.topics.every((t) => olSet.has(t));
   const topics = input.topics.length ? input.topics : ["any AS or A2 9702 topic"];
   const levels = input.levels.length ? input.levels : (["LOT", "HOT"] as ELLevel[]);
 
@@ -134,7 +138,9 @@ export async function generateQuestions(
     )
     .join("; ");
 
-  const system = `You are a Cambridge International examiner writing ORIGINAL practice questions for AS & A Level Physics 9702 (2025-2027 syllabus). Never copy real past-paper wording; write fresh, exam-authentic questions. Output ONLY the delimited blocks specified — no preamble, no markdown fences.`;
+  const system = isOLevel
+    ? `You are a Cambridge International examiner writing ORIGINAL practice questions for O Level Physics 5054. Match genuine O Level demand: concise stems, accessible mathematics (no calculus), Paper 1 style MCQs and Paper 2 style theory questions. Never copy real past-paper wording; write fresh, exam-authentic questions. Output ONLY the delimited blocks specified — no preamble, no markdown fences.`
+    : `You are a Cambridge International examiner writing ORIGINAL practice questions for AS & A Level Physics 9702 (2025-2027 syllabus). Never copy real past-paper wording; write fresh, exam-authentic questions. Output ONLY the delimited blocks specified — no preamble, no markdown fences.`;
 
   const prompt = `Write exactly ${input.count} question(s).
 Topics to draw from: ${topics.join(", ")}.
@@ -201,7 +207,7 @@ Start the first block with ===Q=== and keep each field on its own single line.${
       // Prefer the model's own tags when valid, so labels match the question.
       const modelLvl = g.level === "LOT" || g.level === "HOT" ? (g.level as ELLevel) : undefined;
       const lvl: ELLevel = modelLvl && levels.includes(modelLvl) ? modelLvl : levels[i % levels.length];
-      const modelTopic = g.topic && ALL_TOPICS.includes(g.topic) ? g.topic : undefined;
+      const modelTopic = g.topic && ALL_TOPICS_WITH_OL.includes(g.topic) ? g.topic : undefined;
       const tag = modelTopic || input.topics[i % Math.max(1, input.topics.length)] || (topics[0] as string);
       const ansIdx = g.answer ? "ABCD".indexOf(g.answer) : -1;
       return {
@@ -209,7 +215,7 @@ Start the first block with ===Q=== and keep each field on its own single line.${
         t: tag,
         lvl,
         type,
-        paper: isMcq ? "P1" : lvl === "HOT" ? "P4" : "P2",
+        paper: isMcq ? "P1" : isOLevel ? "P2" : lvl === "HOT" ? "P4" : "P2",
         cmd: g.command || (type === "mcq" ? "Calculate" : "Explain"),
         marks: isMcq ? 1 : g.marks && g.marks > 0 ? g.marks : 4,
         stem: g.stem as string,
@@ -218,6 +224,7 @@ Start the first block with ===Q=== and keep each field on its own single line.${
         scheme: g.scheme.length ? g.scheme : ["Award marks for correct physics and working."],
         source: "ai",
         visibility: "public",
+        ...(isOLevel ? { course: "5054" as const } : {}),
       };
     });
     return { source: "ai", questions, provider: "gemini" };

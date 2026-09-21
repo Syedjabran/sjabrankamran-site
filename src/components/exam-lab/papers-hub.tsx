@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FileText, Layers, Play, Zap, Library, Coffee, ShieldAlert, Video, ClipboardList, Lock, CheckCircle2, Send, Loader2, Clock } from "lucide-react";
 import { IMAGE_BANK, IMAGE_PAPERS, FULL_BANK, type ImgQuestion } from "@/lib/exam-lab/image-bank";
 import { PaperRunner, type AttemptKind } from "./paper-runner";
+import { ExamRunner } from "./exam-runner";
 import { requestExamFullscreen } from "@/lib/exam-lab/fullscreen";
 import { ClassDrillAssign } from "./class-drill-assign";
 import type { GuardMode } from "./use-exam-guard";
@@ -119,6 +120,9 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
   const focusHandled = useRef<string | null>(null);
 
   const [tab, setTab] = useState<"papers" | "drill">("papers");
+  // Course track: A Level 9702 (real past-paper bank) or its O Level 5054
+  // mirror (authored syllabus-aligned bank rendered by the ExamRunner).
+  const [course, setCourse] = useState<"9702" | "5054">("9702");
   const [sitMode, setSitMode] = useState<SitMode>("practice");
   const [active, setActive] = useState<Active | null>(null);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
@@ -355,6 +359,28 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
       {launchError ? <p className="mb-4 rounded-xl border border-signal/35 bg-signal/[0.06] px-4 py-3 text-sm text-signal">{launchError}</p> : null}
       {allocations.length ? <AssignedBoard allocations={allocations} onStart={startAllocation} /> : null}
 
+      {/* course track selector — O Level (5054) mirrors the A Level experience */}
+      <div className="mb-5 flex flex-wrap gap-2">
+        {([
+          { id: "9702" as const, label: "A Level · 9702" },
+          { id: "5054" as const, label: "O Level · 5054" },
+        ]).map((c) => (
+          <button key={c.id} onClick={() => setCourse(c.id)} className={"rounded-full border px-4 py-2 text-sm transition " + (course === c.id ? "border-cyan bg-cyan text-space font-semibold" : "border-white/15 text-fog hover:border-cyan")}>
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      {course === "5054" ? (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+          <div className="mb-4">
+            <p className="font-display text-lg text-ice">Cambridge O Level Physics · 5054</p>
+            <p className="mt-1 text-sm text-dust">Syllabus-aligned practice — Paper 1 multiple choice and Paper 2 theory, drawn from the authored 5054 bank. Same drill flow as A Level.</p>
+          </div>
+          <ExamRunner mode="portal" maxCount={20} showPatterns course="5054" />
+        </div>
+      ) : (
+      <>
       {/* sit-mode selector */}
       <div className="mb-5 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
         <p className="mb-2 font-mono text-[11px] uppercase tracking-widest text-fog">How do you want to sit this?</p>
@@ -465,6 +491,8 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
             </div>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );

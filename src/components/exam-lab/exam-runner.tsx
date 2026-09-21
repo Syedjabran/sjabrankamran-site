@@ -38,16 +38,19 @@ function Tex({ text, block = false }: { text: string; block?: boolean }) {
   );
 }
 
-type Pattern = { key: string; label: string; style: "mixed" | "mcq" | "structured"; group?: "AS" | "A2"; levels?: ("LOT" | "HOT")[]; count: number };
+type Pattern = { key: string; label: string; style: "mixed" | "mcq" | "structured"; group?: "AS" | "A2" | "OL"; levels?: ("LOT" | "HOT")[]; count: number };
 
 export function ExamRunner({
   mode,
   maxCount,
   showPatterns = false,
+  course = "9702",
 }: {
   mode: "public" | "portal";
   maxCount: number;
   showPatterns?: boolean;
+  /** "9702" (A Level, default) or "5054" (O Level mirror). */
+  course?: "9702" | "5054";
 }) {
   const [selTopics, setSelTopics] = useState<Set<string>>(new Set());
   const [levels, setLevels] = useState<Set<"LOT" | "HOT">>(new Set(["LOT", "HOT"]));
@@ -64,12 +67,20 @@ export function ExamRunner({
   const [score, setScore] = useState<{ got: number; total: number; structured: number } | null>(null);
   const paperRef = useRef<HTMLDivElement>(null);
 
-  const patterns: Pattern[] = [
-    { key: "drill", label: "Topical drill", style: "mixed", count: 6 },
-    { key: "as-p1", label: "AS Paper 1 · MCQ", style: "mcq", group: "AS", count: 12 },
-    { key: "as-p2", label: "AS Paper 2 · Structured", style: "structured", group: "AS", count: 6 },
-    { key: "a2-p4", label: "A2 Paper 4 · Structured", style: "structured", group: "A2", count: 6 },
-  ];
+  const isOLevel = course === "5054";
+  const patterns: Pattern[] = isOLevel
+    ? [
+        { key: "drill", label: "Topical drill", style: "mixed", count: 6 },
+        { key: "ol-p1", label: "O Level Paper 1 · MCQ", style: "mcq", group: "OL", count: 12 },
+        { key: "ol-p2", label: "O Level Paper 2 · Structured", style: "structured", group: "OL", count: 6 },
+      ]
+    : [
+        { key: "drill", label: "Topical drill", style: "mixed", count: 6 },
+        { key: "as-p1", label: "AS Paper 1 · MCQ", style: "mcq", group: "AS", count: 12 },
+        { key: "as-p2", label: "AS Paper 2 · Structured", style: "structured", group: "AS", count: 6 },
+        { key: "a2-p4", label: "A2 Paper 4 · Structured", style: "structured", group: "A2", count: 6 },
+      ];
+  const topicGroups: ("AS" | "A2" | "OL")[] = isOLevel ? ["OL"] : ["AS", "A2"];
 
   function toggleTopic(tp: string) {
     setSelTopics((s) => {
@@ -79,7 +90,7 @@ export function ExamRunner({
       return n;
     });
   }
-  function applyGroup(group: "AS" | "A2" | "clear") {
+  function applyGroup(group: "AS" | "A2" | "OL" | "clear") {
     setSelTopics((s) => {
       const n = new Set(s);
       if (group === "clear") return new Set();
@@ -211,14 +222,20 @@ export function ExamRunner({
               Topics <span className="normal-case tracking-normal text-dust">(none = all)</span>
             </p>
             <div className="mb-3 flex flex-wrap gap-2">
-              <button onClick={() => applyGroup("AS")} className="rounded-full border border-white/15 px-3 py-1 text-xs text-fog hover:border-cyan hover:text-cyan">＋ All AS</button>
-              <button onClick={() => applyGroup("A2")} className="rounded-full border border-white/15 px-3 py-1 text-xs text-fog hover:border-cyan hover:text-cyan">＋ All A2</button>
+              {isOLevel ? (
+                <button onClick={() => applyGroup("OL")} className="rounded-full border border-white/15 px-3 py-1 text-xs text-fog hover:border-cyan hover:text-cyan">＋ All O Level</button>
+              ) : (
+                <>
+                  <button onClick={() => applyGroup("AS")} className="rounded-full border border-white/15 px-3 py-1 text-xs text-fog hover:border-cyan hover:text-cyan">＋ All AS</button>
+                  <button onClick={() => applyGroup("A2")} className="rounded-full border border-white/15 px-3 py-1 text-xs text-fog hover:border-cyan hover:text-cyan">＋ All A2</button>
+                </>
+              )}
               <button onClick={() => applyGroup("clear")} className="rounded-full border border-white/15 px-3 py-1 text-xs text-fog hover:border-cyan hover:text-cyan">✕ Clear</button>
             </div>
             <div className="max-h-56 space-y-3 overflow-auto pr-1">
-              {(["AS", "A2"] as const).map((g) => (
+              {topicGroups.map((g) => (
                 <div key={g}>
-                  <p className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-dust">{g === "AS" ? "AS Level (Year 1)" : "A2 (Year 2)"}</p>
+                  <p className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-dust">{g === "AS" ? "AS Level (Year 1)" : g === "A2" ? "A2 (Year 2)" : "O Level (5054)"}</p>
                   <div className="flex flex-wrap gap-2">
                     {TOPICS[g].map((tp) => {
                       const on = selTopics.has(tp);

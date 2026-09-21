@@ -104,10 +104,18 @@
   opacity: 0;
   transform: translateY(24px);
   transition: opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  /* Safety net: content ALWAYS reveals itself even when the
+     IntersectionObserver never runs (no-JS visitors, or an edge challenge
+     blocking the JS chunks on a fresh visit). Pure-CSS, zero-JS guarantee. */
+  animation: reveal-fallback 0.7s cubic-bezier(0.22, 1, 0.36, 1) 1.5s forwards;
 }
 .reveal.is-visible {
   opacity: 1;
   transform: translateY(0);
+  animation: none;
+}
+@keyframes reveal-fallback {
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @media (prefers-reduced-motion: reduce) {
