@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 
 export type EduRole =
@@ -118,8 +119,11 @@ export function canViewDrillRecords(roles: EduRole[]) {
   return canConductDrills(roles);
 }
 
-/** Server-side: current signed-in portal user with roles (RLS-scoped). */
-export async function getPortalUser(): Promise<PortalUser | null> {
+/** Server-side: current signed-in portal user with roles (RLS-scoped).
+ *  Memoized per request via React.cache: the portal layout AND the page both
+ *  call this on every tab navigation; without dedup that doubles the Supabase
+ *  round-trips (auth.getUser + profile + roles) on each route. */
+export const getPortalUser = cache(async (): Promise<PortalUser | null> => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -141,4 +145,4 @@ export async function getPortalUser(): Promise<PortalUser | null> {
     // Schema not yet migrated — treat as role-less user.
   }
   return { id: user.id, email: user.email ?? "", fullName, roles, status };
-}
+});
