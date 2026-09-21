@@ -1,5 +1,6 @@
 "use client";
 
+import "driver.js/dist/driver.css";
 import { useEffect, useRef } from "react";
 import { CircleHelp } from "lucide-react";
 import { driver, type Driver, type DriveStep } from "driver.js";

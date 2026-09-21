@@ -1,10 +1,22 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { ArrowRight, Lock, Sparkles, ListChecks, FileDown } from "lucide-react";
 import { PageHero } from "@/components/page-hero";
 import { Section, SectionHeading } from "@/components/ui/section";
 import { Reveal } from "@/components/ui/reveal";
-import { ExamRunner } from "@/components/exam-lab/exam-runner";
+
+// ExamRunner bundles react-markdown + KaTeX (~312 KB chunk). Code-split it so
+// this page's critical JS stays light and the math stack streams in parallel.
+const ExamRunner = dynamic(() => import("@/components/exam-lab/exam-runner").then((m) => m.ExamRunner), {
+  loading: () => (
+    <div className="animate-pulse space-y-4" aria-busy="true" aria-label="Loading Exam Lab">
+      <div className="h-8 w-48 rounded-lg bg-white/[0.06]" />
+      <div className="h-28 rounded-2xl border border-white/10 bg-space/60" />
+      <div className="h-12 rounded-xl border border-white/10 bg-space/60" />
+    </div>
+  ),
+});
 
 export const metadata: Metadata = {
   title: "Exam Lab — On-demand CAIE 9702 Physics Practice Tests",

@@ -1,5 +1,6 @@
 "use client";
 
+import "katex/dist/katex.min.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
