@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, GraduationCap, Building2, Cpu } from "lucide-react";
 import { HeroVideo } from "@/components/hero-video";
-import { ResilientImage } from "@/components/ui/resilient-image";
+import { HERO_POSTER_DATA_URI, PORTRAIT_DATA_URI } from "@/lib/inline-media";
 import { LandingProductTour } from "@/components/landing-product-tour";
 import { GuidedTourPopup } from "@/components/guided-tour-popup";
 import { PhysicsField } from "@/components/physics-field";
@@ -35,7 +35,9 @@ export default function HomePage() {
       <GuidedTourPopup />
       {/* ============ HERO ============ */}
       <section className="relative overflow-hidden">
-        <HeroVideo src="/videos/hero-home.mp4" poster="/videos/hero-home-poster.jpg" />
+        {/* Poster ships inline (data URI) — hero background renders even if
+            image subresource requests are blocked at the edge. */}
+        <HeroVideo src="/videos/hero-home.mp4" poster={HERO_POSTER_DATA_URI} />
         <div className="container-x relative grid items-center gap-12 py-16 md:grid-cols-[1.15fr_0.85fr] md:py-24">
           <div data-tour="welcome">
             <p className="hero-item hero-item-1 eyebrow mb-5">Physics Educator · Entrepreneur · AI &amp; Technology Consultant</p>
@@ -64,12 +66,12 @@ export default function HomePage() {
           <div data-tour="educator-profile" className="relative mx-auto w-full max-w-sm">
             <div className="absolute -inset-4 rounded-[2rem] bg-gradient-to-tr from-cyan/20 via-indigo2/10 to-transparent blur-2xl" />
             <div className="relative overflow-hidden rounded-[1.75rem] border border-white/10 bg-void/40">
-              <ResilientImage
-                src="/jb-portrait.jpg"
+              {/* eslint-disable-next-line @next/next/no-img-element -- inline data URI must bypass the optimizer */}
+              <img
+                src={PORTRAIT_DATA_URI}
                 alt="Syed Jabran Ali Kamran, Cambridge Physics educator"
                 width={741}
                 height={1024}
-                priority
                 className="h-full w-full object-cover"
               />
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-space/90 to-transparent p-5">

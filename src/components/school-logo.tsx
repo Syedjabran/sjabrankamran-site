@@ -1,5 +1,6 @@
 
 import { ResilientImg } from "@/components/ui/resilient-image";
+import { SCHOOL_LOGO_DATA_URIS } from "@/lib/inline-media";
 
 /**
  * SchoolLogo — official institution logos, unmodified.
@@ -31,12 +32,15 @@ export function SchoolLogo({
   name: string;
   height?: number;
 }) {
+  // Landing-critical logos ship inline (data URI) so they render even when
+  // edge protection blocks image subresource requests.
+  const resolved = logo ? SCHOOL_LOGO_DATA_URIS[logo] || logo : logo;
   if (logo) {
     if (onDark) {
       return (
         <span className="flex shrink-0 items-center overflow-hidden rounded-lg" style={{ height }}>
           <ResilientImg
-            src={logo}
+            src={resolved}
             alt={`${name} logo`}
             className="rounded-lg"
             style={{ height: "100%", width: "auto", maxWidth: height * 2.6, objectFit: "contain" }}
@@ -51,7 +55,7 @@ export function SchoolLogo({
         style={{ height, minWidth: height, maxWidth: height * 2.6 }}
       >
         <ResilientImg
-          src={logo}
+          src={resolved}
           alt={`${name} logo`}
           style={{ height: "100%", width: "auto", maxWidth: height * 2.3, objectFit: "contain" }}
           loading="lazy"
