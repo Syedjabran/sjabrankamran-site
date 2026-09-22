@@ -46,10 +46,8 @@ def _version(name: str) -> tuple[str, tuple[int, int]]:
             f"{name} at {POPPLER_BIN} is the Xpdf build, not poppler. "
             "Its -bbox output differs and would corrupt crops."
         )
-    if "poppler" not in text.lower():
-        raise RuntimeError(f"{name} did not identify as poppler: {text.strip()[:120]}")
-    nums = text.split("version", 1)[1].strip().split()[0].split(".")
-    return text, (int(nums[0]), int(nums[1]))
+    # Banner doesn't match poppler or Xpdf patterns
+    raise RuntimeError(f"{name} did not identify as poppler: {text.strip()[:120]}")
 
 
 def preflight() -> None:
