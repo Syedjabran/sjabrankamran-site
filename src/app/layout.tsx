@@ -133,30 +133,10 @@ const orgSchema = {
   sameAs: ["https://www.linkedin.com/company/jabran-co/", "https://x.com/Syed_Jabran"],
 };
 
-// Inline self-heal bootstrap (runs even when external JS chunks are blocked,
-// because it travels inside the HTML). If React never hydrates — the edge
-// challenge blocked the chunk requests on a fresh visit — reload ONCE: by
-// then the clearance cookie from the HTML request exists, so the second load
-// receives every script/media asset. sessionStorage guard prevents loops.
-const SELF_HEAL = `(function(){try{
-if(sessionStorage.getItem("sjak-heal"))return;
-var done=false;
-function chk(){
-if(done)return;done=true;
-if(!document.documentElement.classList.contains("js-hydrated")){
-try{sessionStorage.setItem("sjak-heal","1")}catch(e){}
-location.reload();
-}
-}
-if(document.readyState==="complete"){setTimeout(chk,2500);}
-else{window.addEventListener("load",function(){setTimeout(chk,2500);});setTimeout(chk,12000);}
-}catch(e){}})();`;
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable} ${mono.variable}`}>
       <body>
-        <script dangerouslySetInnerHTML={{ __html: SELF_HEAL }} />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify([websiteSchema, orgSchema, personSchema]) }}
