@@ -29,6 +29,7 @@ word-stream reordering that can bleed stem text into the header in
 a bled word still lands at its true body y-position in bbox space, so it
 never gets merged into the header.
 """
+import os
 import re
 import subprocess
 import tempfile
@@ -294,5 +295,19 @@ def render_span(pdf: Path, span: dict, dest: Path, dpi: int = 150,
                 )
             box = scale_box(span, page_width_pt, dpi)
             crop = img.crop((0, box["top"], img.width, min(box["bottom"], img.height)))
-            crop.save(dest, "JPEG", quality=85, optimize=True)
+            # Write to a temp file in the same directory, then os.replace()
+            # it onto dest -- atomic on both POSIX and Windows. Task 7's
+            # resumability keys purely on dest.exists(), so a process killed
+            # mid-.save() (plausible across a many-minute cold run over the
+            # full corpus) must never leave a partial file sitting at the
+            # final path: it would look "done" to the next run and, once
+            # live, get uploaded as the actual crop. Either dest doesn't
+            # exist yet, or it is the complete file -- never in between.
+            tmp_dest = dest.with_name(f"{dest.name}.tmp-{os.getpid()}")
+            try:
+                crop.save(tmp_dest, "JPEG", quality=85, optimize=True)
+                os.replace(tmp_dest, dest)
+            except BaseException:
+                tmp_dest.unlink(missing_ok=True)
+                raise
     return dest

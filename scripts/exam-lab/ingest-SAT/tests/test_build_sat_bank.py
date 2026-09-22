@@ -54,3 +54,46 @@ def test_validate_tolerates_and_preserves_answer_source_key():
     with_source = [{**GOOD[0], "answer": {**GOOD[0]["answer"], "source": "answer-line"}}]
     validate(with_source)
     assert with_source[0]["answer"]["source"] == "answer-line"
+
+
+def test_validate_rejects_unknown_section():
+    """`section` is a closed 2-value vocabulary ("rw"/"math") -- this is a
+    deliberate independent re-check of what extract_sat.py should already
+    have gotten right, not a rule this gate invents; a typo anywhere
+    upstream must not ship silently.
+    """
+    bad = [{**GOOD[0], "section": "science"}]
+    with pytest.raises(ValueError, match="section"):
+        validate(bad)
+
+
+def test_validate_rejects_unknown_difficulty():
+    bad = [{**GOOD[0], "difficulty": "X"}]
+    with pytest.raises(ValueError, match="difficulty"):
+        validate(bad)
+
+
+def test_validate_rejects_unknown_domain():
+    bad = [{**GOOD[0], "domain": "algebrra"}]  # typo, not a real domain slug
+    with pytest.raises(ValueError, match="domain"):
+        validate(bad)
+
+
+def test_validate_rejects_non_dict_answer():
+    """A malformed `answer` (not an object at all) must fail with this
+    gate's own ValueError, not an AttributeError from calling `.get()` on
+    something that isn't a dict -- still loud, but with a confusing
+    traceback that doesn't say which row or why.
+    """
+    bad = [{**GOOD[0], "answer": "B"}]
+    with pytest.raises(ValueError, match="answer"):
+        validate(bad)
+
+
+def test_validate_rejects_boolean_as_mcq_index():
+    """`bool` is a subclass of `int` in Python, so `isinstance(True, int)`
+    is True -- `correct: true` must not silently pass as a valid MCQ index.
+    """
+    bad = [{**GOOD[0], "answer": {"kind": "mcq", "correct": True}}]
+    with pytest.raises(ValueError, match="answer"):
+        validate(bad)

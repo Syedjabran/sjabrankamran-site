@@ -3,6 +3,7 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -325,3 +326,42 @@ def test_render_span_writes_a_correctly_scaled_crop_from_a_real_page(tmp_path):
     assert img.width == round(width_pt * 150 / 72)
     expected_height = round((span["bottom"] - span["top"]) * 150 / 72)
     assert abs(img.height - expected_height) <= 1
+
+
+def test_render_span_write_is_atomic_and_leaves_no_partial_file_on_failure(tmp_path):
+    """A crop write killed mid-`.save()` (SIGKILL, power loss, an OOM-kill --
+    all plausible across a many-minute cold run over the full 3,730-question
+    corpus) must not leave a corrupt file sitting at `dest`. Task 7's
+    resumability keys purely on `dest.exists()`, so a half-written file
+    there would be silently treated as "already cropped" and, once live,
+    uploaded as the real thing. render_span writes to a temp file in the
+    same directory first and only `os.replace()`s it onto `dest` once the
+    write is known-complete, so `dest` either doesn't exist at all or is
+    the complete, correct file -- never a partial one. This forces `.save()`
+    to fail (simulating the kill) and checks both halves of that guarantee:
+    `dest` was never created, and no leftover temp file was left behind
+    either.
+    """
+    if not RAW_MATH_PDF.exists():
+        pytest.skip("raw question-bank PDFs not present on this checkout")
+
+    pdfseparate = str(poppler.POPPLER_BIN / ("pdfseparate.exe" if os.name == "nt" else "pdfseparate"))
+    sliced = tmp_path / "page.pdf"
+    subprocess.run(
+        [pdfseparate, "-f", str(_WRAPPED_DOMAIN_PAGE), "-l", str(_WRAPPED_DOMAIN_PAGE),
+         str(RAW_MATH_PDF), str(sliced)],
+        check=True,
+    )
+    a = anchors(bbox_xml(sliced))
+    span = question_span(a, "6d99b141")
+    width_pt, height_pt = a["page_size"][span["page"]]
+    dest = tmp_path / "out" / "6d99b141.jpg"
+
+    from PIL import Image
+    with patch.object(Image.Image, "save", side_effect=OSError("disk full (simulated)")):
+        with pytest.raises(OSError, match="disk full"):
+            render_span(sliced, span, dest, dpi=150, page_width_pt=width_pt, page_height_pt=height_pt)
+
+    assert not dest.exists()
+    leftovers = list(dest.parent.glob("*.tmp-*")) if dest.parent.exists() else []
+    assert leftovers == []
