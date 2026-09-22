@@ -24,16 +24,11 @@ export function HeroVideo({ src, poster }: { src: string; poster: string }) {
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    // Only accessibility (reduced motion) suppresses the video. Save-Data no
-    // longer halts it — a small muted loop is worth the cinematic hero, and
-    // the old Save-Data gate was the main cause of "video halted" reports.
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      stopped.current = true;
-      v.pause();
-      v.removeAttribute("src");
-      v.load(); // poster remains
-      return;
-    }
+    // Owner decision: the muted hero loop always plays. We intentionally do NOT
+    // gate on prefers-reduced-motion / Save-Data / Battery-Saver here — those
+    // settings (very common on laptops-on-battery and phones) were silently
+    // halting the hero for real visitors. The poster remains the fallback if a
+    // browser still refuses muted autoplay.
     const nudge = () => v.play().catch(() => {/* autoplay blocked → poster */});
     nudge();
     // Some browsers only allow play() once enough data has buffered; retry on
