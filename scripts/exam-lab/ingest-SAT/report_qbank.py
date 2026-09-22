@@ -39,12 +39,16 @@ def main() -> int:
     by_domain = collections.Counter(r["domain"] for r in all_records)
     by_diff = collections.Counter(r["difficulty"] for r in all_records)
     by_kind = collections.Counter(r["answer"]["kind"] for r in all_records)
+    by_source = collections.Counter(r["answer"]["source"] for r in all_records)
     print("\n  total:", len(all_records), " rejected:", len(all_rejected))
     print("  by domain:", dict(by_domain))
     print("  by difficulty:", dict(by_diff))
     print("  by answer kind:", dict(by_kind))
+    print("  by answer source:", dict(by_source))
     if all_rejected:
-        print("  rejected ids:", ", ".join(r["id"] for r in all_rejected[:40]))
+        print("  rejected:")
+        for r in all_rejected:
+            print(f"    {r['id']}: {r['reason']}")
 
     Path(args.out).write_text(json.dumps(all_records, indent=1), encoding="utf-8")
     print("  wrote", args.out)

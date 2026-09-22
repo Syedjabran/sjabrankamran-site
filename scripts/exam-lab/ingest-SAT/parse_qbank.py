@@ -26,6 +26,54 @@ DOMAIN_SLUGS = {
     "Geometry and Trigonometry": "geometry-trig",
 }
 
+# Skill, like domain, is a closed vocabulary -- but unlike domain there is no
+# official published list to check against, so this is hard-coded from the
+# 30 real skill names verified in a full corpus run (out/qbank-records.json),
+# not derived at runtime from the very output it is meant to validate. Two
+# capitalizations of "Cross-Text/text Connections" both appear in the real
+# exports and are both kept verbatim; that is a College Board inconsistency,
+# not a parser bug.
+SKILL_SLUGS = frozenset({
+    # Algebra
+    "Linear equations in one variable",
+    "Linear equations in two variables",
+    "Linear functions",
+    "Linear inequalities in one or two variables",
+    "Systems of two linear equations in two variables",
+    # Advanced Math
+    "Equivalent expressions",
+    "Nonlinear equations in one variable and systems of equations in two variables",
+    "Nonlinear functions",
+    # Problem-Solving and Data Analysis
+    "Evaluating statistical claims: Observational studies and experiments",
+    "Inference from sample statistics and margin of error",
+    "One-variable data: Distributions and measures of center and spread",
+    "Percentages",
+    "Probability and conditional probability",
+    "Ratios, rates, proportional relationships, and units",
+    "Two-variable data: Models and scatterplots",
+    # Geometry and Trigonometry
+    "Area and volume",
+    "Circles",
+    "Lines, angles, and triangles",
+    "Right triangles and trigonometry",
+    # Information and Ideas
+    "Central Ideas and Details",
+    "Command of Evidence",
+    "Inferences",
+    # Craft and Structure
+    "Cross-Text Connections",
+    "Cross-text Connections",
+    "Text Structure and Purpose",
+    "Words in Context",
+    # Expression of Ideas
+    "Rhetorical Synthesis",
+    "Transitions",
+    # Standard English Conventions
+    "Boundaries",
+    "Form, Structure, and Sense",
+})
+
 DIFFICULTY = {"Easy": "E", "Medium": "M", "Hard": "H"}
 LABELS = {"Assessment", "Test", "Question", "Domain", "Skill", "Difficulty", "SAT", "Rationale"}
 SECTIONS = {"Math": "math", "Reading and Writing": "rw"}
@@ -86,80 +134,140 @@ def _domain_and_skill(fragments: list[str]) -> tuple[str | None, str | None]:
     "Standard English" / "Conventions" / "Boundaries"). Rather than assume
     one fixed pattern, every subsequence of 1-3 fragments (order preserved,
     not necessarily contiguous) is checked against the closed 8-value domain
-    vocabulary. A unique match is trusted -- two different real skills never
-    collide with a domain name -- and the remaining fragments, in their
-    original order, are the skill. An empty or ambiguous (2+) match set
-    means the header can't be verified, so nothing is guessed.
+    vocabulary. All sizes are collected before any decision is made: a
+    unique match across every size is trusted -- two different real skills
+    never collide with a domain name -- and the remaining fragments, in
+    their original order, become the (not yet vocabulary-checked) skill.
+    Stopping at the first size with exactly one match, instead of checking
+    every size before deciding, would let a spurious smaller match shadow
+    the real larger one without ever registering as ambiguous -- for
+    example fragments ['Problem-Solving and', 'Algebra', 'Data Analysis']
+    contain both the correct match {0, 2} = "Problem-Solving and Data
+    Analysis" *and* the accidental single-fragment match {1} = "Algebra";
+    only checking every size first exposes that as the ambiguity it is,
+    instead of returning whichever size happens to be scanned first. An
+    empty or ambiguous (2+) match set means the header can't be verified,
+    so nothing is guessed.
     """
     n = len(fragments)
-    for size in range(1, min(n, 3) + 1):
-        matches = [
-            idxs
-            for idxs in combinations(range(n), size)
-            if " ".join(fragments[i] for i in idxs) in DOMAIN_SLUGS
-        ]
-        if len(matches) > 1:
-            return None, None
-        if len(matches) == 1:
-            domain_idxs = set(matches[0])
-            domain = DOMAIN_SLUGS[" ".join(fragments[i] for i in matches[0])]
-            skill_parts = [frag for i, frag in enumerate(fragments) if i not in domain_idxs]
-            skill = " ".join(skill_parts) if skill_parts else None
-            return domain, skill
-    return None, None
+    all_matches = [
+        idxs
+        for size in range(1, min(n, 3) + 1)
+        for idxs in combinations(range(n), size)
+        if " ".join(fragments[i] for i in idxs) in DOMAIN_SLUGS
+    ]
+    if len(all_matches) != 1:
+        return None, None
+    domain_idxs = set(all_matches[0])
+    domain = DOMAIN_SLUGS[" ".join(fragments[i] for i in all_matches[0])]
+    skill_parts = [frag for i, frag in enumerate(fragments) if i not in domain_idxs]
+    skill = " ".join(skill_parts) if skill_parts else None
+    return domain, skill
 
 
-def _answer_from(text: str) -> dict | None:
+def _resolve_skill(raw: str | None) -> str | None:
+    """Recover the closed-vocabulary skill name from a raw reconstruction.
+
+    Skill is a fixed 30-value vocabulary (`SKILL_SLUGS`) exactly like
+    domain is an 8-value one. Sometimes text from the question body leaks
+    into the header's skill fragments before the `Question` boundary is
+    reached -- an absorbed question stem, a chart axis label, a table
+    header -- so the raw reconstruction is right at the start and wrong at
+    the end. Rather than reject those outright, the longest known skill
+    that is a *prefix* of the raw string is trusted and the trailing noise
+    is dropped; `longest` matters so a skill that happens to be a prefix of
+    another (none currently are, but the vocabulary could grow) can never
+    shadow the more specific, correct one. Only when no known skill is a
+    prefix at all does this give up and return None.
+    """
+    if raw is None:
+        return None
+    candidates = [s for s in SKILL_SLUGS if raw.startswith(s)]
+    if not candidates:
+        return None
+    return max(candidates, key=len)
+
+
+def _answer_from(text: str) -> tuple[dict | None, str | None]:
+    """Returns (answer, reject_reason); exactly one is None.
+
+    `source` on the answer records which of the four paths resolved it, so
+    "how many records rest on rationale prose alone" is a one-line query on
+    the shipped data (see report_qbank.py's `by answer source` counter)
+    instead of a fact only this function knows.
+    """
     m = _ANSWER.search(text)
     if m:
         raw = m.group(1).strip()
         if len(raw) == 1 and raw.upper() in "ABCD":
-            return {"kind": "mcq", "correct": "ABCD".index(raw.upper())}
-        return {"kind": "spr", "accepted": [raw]}
+            line_letter = raw.upper()
+            # The official `Correct Answer:` line and the official rationale
+            # are two independent statements from College Board of the same
+            # fact. When they disagree, that is the source export
+            # contradicting itself, not something this parser can resolve
+            # by picking one -- shipping either risks shipping the wrong
+            # one, so both are rejected together and reported precisely
+            # enough to become a reviewed override later.
+            choice = _CHOICE_CORRECT.search(text)
+            if choice and choice.group(1) != line_letter:
+                return None, f"answer-source-conflict: line={line_letter} rationale={choice.group(1)}"
+            return {"kind": "mcq", "correct": "ABCD".index(line_letter), "source": "answer-line"}, None
+        return {"kind": "spr", "accepted": [raw], "source": "answer-line"}, None
 
     choice = _CHOICE_CORRECT.search(text)
     if choice:
-        return {"kind": "mcq", "correct": "ABCD".index(choice.group(1))}
+        return {"kind": "mcq", "correct": "ABCD".index(choice.group(1)), "source": "rationale"}, None
 
     note = _ENTRY_NOTE.search(text)
     if note:
         parts = re.split(r"\s*(?:,|and)\s*", note.group(1))
         vals = [p.strip() for p in parts if p.strip()]
         if vals:
-            return {"kind": "spr", "accepted": vals}
+            return {"kind": "spr", "accepted": vals, "source": "entry-note"}, None
 
     stated = _IN_RATIONALE.search(text)
     if stated:
-        return {"kind": "spr", "accepted": [stated.group(1)]}
+        return {"kind": "spr", "accepted": [stated.group(1)], "source": "rationale-stated"}, None
 
-    return None
+    return None, "no-answer"
 
 
-def parse_block(block: str) -> dict | None:
-    """One `Question ID:`-delimited block, or None if it cannot be verified."""
+def _parse_block_detailed(block: str) -> tuple[dict | None, str | None]:
+    """Same contract as `parse_block`, but also returns *why* when rejected.
+
+    `parse_block` stays a thin wrapper around this so its existing signature
+    (and every test written against it) is unaffected; `parse_export` calls
+    this directly so every reject in a report carries a specific, actionable
+    reason instead of a single blanket "unverifiable".
+    """
     ident = _ID.match(block)
     if not ident:
-        return None
+        return None, "no-id"
     qid = ident.group(1)
 
     header = _header_region(_lines(block))
     if header is None:
-        return None
+        return None, "no-difficulty"
 
     section = next((v for k, v in SECTIONS.items() if k in header), None)
     difficulty = next((DIFFICULTY[d] for d in DIFFICULTY if d in header), None)
-    if not (section and difficulty):
-        return None
+    if not section:
+        return None, "no-section"
+    if not difficulty:
+        return None, "no-difficulty"
 
     known = LABELS | set(SECTIONS)
     fragments = [ln for ln in header[1:] if ln not in known and ln not in DIFFICULTY]
-    domain, skill = _domain_and_skill(fragments)
-    if not (domain and skill):
-        return None
+    domain, raw_skill = _domain_and_skill(fragments)
+    if not domain:
+        return None, "no-domain-match"
+    skill = _resolve_skill(raw_skill)
+    if not skill:
+        return None, f"no-skill-match: raw={raw_skill!r}"
 
-    answer = _answer_from(block)
+    answer, reason = _answer_from(block)
     if not answer:
-        return None
+        return None, reason or "no-answer"
 
     rationale = block.split("Rationale", 1)[1].strip() if "Rationale" in block else ""
     return {
@@ -170,7 +278,12 @@ def parse_block(block: str) -> dict | None:
         "difficulty": difficulty,
         "answer": answer,
         "rationale": rationale,
-    }
+    }, None
+
+
+def parse_block(block: str) -> dict | None:
+    """One `Question ID:`-delimited block, or None if it cannot be verified."""
+    return _parse_block_detailed(block)[0]
 
 
 def parse_export(text: str) -> tuple[list[dict], list[dict]]:
@@ -179,10 +292,10 @@ def parse_export(text: str) -> tuple[list[dict], list[dict]]:
     rejected: list[dict] = []
     seen: set[str] = set()
     for block in text.split("Question ID:")[1:]:
-        rec = parse_block(block)
+        rec, reason = _parse_block_detailed(block)
         if rec is None:
             ident = _ID.match(block)
-            rejected.append({"id": ident.group(1) if ident else "?", "reason": "unverifiable"})
+            rejected.append({"id": ident.group(1) if ident else "?", "reason": reason or "unverifiable"})
             continue
         if rec["id"] in seen:
             continue
