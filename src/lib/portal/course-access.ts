@@ -49,7 +49,10 @@ export async function studentCourse(uid: string): Promise<Course | null> {
       const co = courseFromYear(c.year);
       if (co) courses.add(co);
     }
-    if (courses.size === 0) return null;
+    // Enrolled but no class year names a course => default to A Level (9702),
+    // the existing behaviour, so a real enrolment is never locked out over an
+    // unrecognised label. Only a student with NO active enrolment gets null.
+    if (courses.size === 0) return "9702";
     // O-Level precedence when a student is (unusually) in both, matching courseStage.
     if (courses.has("5054")) return "5054";
     return "9702";
