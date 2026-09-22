@@ -19,37 +19,31 @@ if wrong. It is local and gitignored — read it before re-litigating anything.
 
 ## Status
 
-**Plan 1 — question-bank ingestion: code complete.** 18 commits through `acf96ee`.
+**Plan 1 — question-bank ingestion: complete and verified.** 19 commits through `4d5832a`.
 **Plans 2 and 3: not written.**
 
-### ⚠️ Read this before touching the pipeline — there may be uncommitted work
+### The final fix wave is verified — checked 2026-09-23
 
-The final whole-branch review produced a fix wave that was still running when this session
-was paused. At pause time the working tree had **uncommitted modifications** to
-`build_sat_bank.py`, `extract_sat.py`, `parse_qbank.py`, `report_qbank.py`, `upload.py` and
-four test files, plus a new `tests/test_report_qbank.py`. The suite was green at **98 tests**
-(up from 75 at `acf96ee`), so the work was in a good state, just unlanded.
+`4d5832a` was a mid-flight snapshot the controller committed so the work would survive the
+session ending; *which* findings it had actually landed was unconfirmed. Every one was
+checked against the code on 2026-09-23. All are done:
 
-**First action on resume:** run `git status` and `python -m pytest scripts/exam-lab/ingest-SAT/tests/ -q`.
-If those changes are still uncommitted and green, review and commit them. If the tree is
-clean and `git log` shows a commit after `acf96ee`, the wave landed and nothing is pending.
-
-The fix wave was addressing these findings from the final review — check which are actually
-done rather than assuming:
-
-| | Finding | Why it matters |
+| | Finding | How it is fixed, and how that was confirmed |
 | --- | --- | --- |
-| **C1** | `build_sat_bank.py` cannot tell a dry-run `rows.json` from a live one | **Critical.** It would write a bank pointing at 3,730 bucket objects that do not exist — broken image links site-wide. Must also handle a partial live run, where `rows.json` holds only successfully-uploaded rows. |
-| I1 | `urlopen()` had no `timeout=` | A half-open connection during a 3,730-file upload hangs forever, silently. Also made the `TimeoutError` retry arm dead code. |
-| I2 | The live upload branch had zero test coverage | All `main()` tests pass `--dry-run`; upload → record → append-row has never executed. |
-| I3 | `REQUIRED` listed 9 fields; spec §5.2 has 10 | A row with no `rationale` passed the gate. |
-| I4 | Dedupe was per-export, not per-corpus | Spec rule 3. Fails the whole build *after* a multi-hour upload. |
-| I5 | Difficulty picked positionally in one place, by vocabulary order in another | A header with two difficulty words ships the wrong one. |
+| **C1** | `build_sat_bank.py` could not tell a dry-run `rows.json` from a live one | `check_provenance()` reads a `mode.json` sidecar (absent = treated as dry-run, not trusted) and cross-checks every row id against `uploaded.json`, so a partial live run builds a smaller valid bank instead of failing. Exercised against the real corpus: refused by default, and under `--allow-dry-run` all 3,730 rows pass the gate. 7 tests. |
+| I1 | `urlopen()` had no `timeout=` | `upload.REQUEST_TIMEOUT = 60`, passed at the call site; the retry handler's `TimeoutError` arm is live code again. |
+| I2 | The live upload branch had zero test coverage | 5 live-run tests: credentials checked before the first crop, upload → record → append-row ordering, no row appended without a successful upload, canonical key stored, and `mode.json` written for both dry and live runs. |
+| I3 | `REQUIRED` listed 9 fields; spec §5.2 has 10 | `rationale` added; missing and empty are both rejected. |
+| I4 | Dedupe was per-export, not per-corpus | `corpus_seen` in `extract_sat.main`, skipped as `duplicate-across-exports` *before* anything uploads. The real corpus turns out to have no overlap — 0 such skips — so the row count is unchanged. |
+| I5 | Difficulty picked positionally in one place, by vocabulary order in another | Both sides now read the exact index `_header_region` anchored the header boundary on. |
 
-Plus three cheap ones: store `_upload_with_retry`'s canonical key rather than `bucket_path`'s
-raw output; check credentials at startup instead of `KeyError` after the first crop; use one
-strict decode policy (`report_qbank.py` was lenient, `crop_qbank.py` strict, and the shipped
-`rationale` came through the lenient one).
+The three cheap ones are done as well: `_upload_with_retry`'s canonical return value is what
+lands in the row's `img`, `preflight_credentials()` runs beside `poppler.preflight()` before
+any crop is rendered, and `report_qbank.text_of` decodes strict UTF-8 like `crop_qbank`
+always did.
+
+**98 tests pass.** A warm dry-run rerun on the current code reproduces `rows.json` and
+`skipped.json` byte-identically (39s).
 
 ```
 3,770 questions in the exports

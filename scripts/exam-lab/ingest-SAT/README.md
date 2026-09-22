@@ -28,9 +28,9 @@ plan; the directory exists but nothing here reads it.
 | `report_qbank.py` | runs the parser over both raw PDFs and prints a coverage report (counts by domain/difficulty/answer kind/source, every rejected id and why). Run this first. |
 | `crop_qbank.py` | locates each question's crop region in `-bbox` coordinate space (below the full metadata header, above the answer/rationale) and rasterises + crops it. |
 | `upload.py` | uploads one crop to the `exam-assets` bucket, prefix-guarded to `sat/`. |
-| `extract_sat.py` | orchestrates parse + crop + upload for the whole corpus, resumable, and emits `rows.json` / `skipped.json` / `uploaded.json`. |
-| `build_sat_bank.py` | the last gate: re-validates every row against a hard-coded closed vocabulary (independent of `parse_qbank`'s) and writes `src/lib/sat/question-bank.json`. |
-| `tests/` | 75 tests covering all of the above, all network calls mocked. |
+| `extract_sat.py` | orchestrates parse + crop + upload for the whole corpus, resumable, and emits `rows.json` / `skipped.json` / `uploaded.json` / `mode.json`. |
+| `build_sat_bank.py` | the last gate: re-validates every row against a hard-coded closed vocabulary (independent of `parse_qbank`'s), refuses rows it can't confirm were actually uploaded, and writes `src/lib/sat/question-bank.json`. |
+| `tests/` | 98 tests covering all of the above, all network calls mocked. |
 
 ## Run
 
