@@ -61,11 +61,16 @@ export const QUALIFICATIONS: Qualification[] = [
     papers: [
       { name: "Paper 1 · Multiple Choice", focus: "Breadth across the full syllabus." },
       { name: "Paper 2 · Theory", focus: "Structured questions testing understanding and application." },
-      { name: "Practical assessment", focus: "Experimental skills and data handling." },
+      { name: "Paper 3 · Practical Test", focus: "Hands-on experimental skills." },
+      { name: "Paper 4 · Alternative to Practical", focus: "Experimental technique, measurement and data handling on paper." },
     ],
+    // Kept in lockstep with the topic vocabulary of the 5054 Exam Lab bank
+    // (scripts/exam-lab/ingest-5054/classify5054.py).
     topics: [
-      "Measurement & units", "Kinematics & dynamics", "Mass, weight & density", "Work, energy & power",
-      "Thermal physics", "Waves, light & sound", "Electricity & magnetism", "Electromagnetic effects", "Atomic physics",
+      "Measurement & units", "Kinematics & dynamics", "Mass, weight & density",
+      "Forces, moments & pressure", "Work, energy & power", "Thermal physics",
+      "Waves, light & sound", "Electricity & magnetism", "Electromagnetic effects",
+      "Atomic physics", "Space physics",
     ],
     provision: [
       "Concept-first teaching with exam technique built in",

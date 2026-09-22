@@ -1,0 +1,71 @@
+{
+  "_comment": [
+    "Cambridge O Level Physics 5054 source papers for the Exam Lab image bank.",
+    "Add a new session by appending an entry; nothing else in the pipeline is",
+    "session-specific. `ms` may be null only for papers that are deliberately",
+    "excluded (see `include`). Durations and totals are read off the papers",
+    "themselves, not assumed from the 9702 equivalents.",
+    "EXCLUDED: 5054_sp23_qp_1 (specimen Paper 1) — Cambridge publishes no mark",
+    "scheme for the specimen multiple-choice paper, so no answer key exists and",
+    "the paper cannot be shipped without inventing answers."
+  ],
+  "raw_dir": "/home/admin/.openclaw/workspace/main/projects/sanad/repo/tools/papers/raw/5054",
+  "papers": [
+    {
+      "code": "5054_s24_11",
+      "paper_type": "P1",
+      "qp": "5054_s24_qp_11.pdf",
+      "ms": "5054_s24_ms_11.pdf",
+      "ref": "5054/11/M/J/24",
+      "nmax": 40,
+      "total_marks": 40,
+      "duration": 60,
+      "include": true
+    },
+    {
+      "code": "5054_s24_21",
+      "paper_type": "P2",
+      "qp": "5054_s24_qp_21.pdf",
+      "ms": "5054_s24_ms_21.pdf",
+      "ref": "5054/21/M/J/24",
+      "nmax": 12,
+      "total_marks": 80,
+      "duration": 105,
+      "include": true
+    },
+    {
+      "code": "5054_s24_41",
+      "paper_type": "P4",
+      "qp": "5054_s24_qp_41.pdf",
+      "ms": "5054_s24_ms_41.pdf",
+      "ref": "5054/41/M/J/24",
+      "nmax": 12,
+      "total_marks": 40,
+      "duration": 60,
+      "include": true
+    },
+    {
+      "code": "5054_sp23_02",
+      "paper_type": "P2",
+      "qp": "5054_sp23_qp_2.pdf",
+      "ms": "5054_sp23_ms_2.pdf",
+      "ref": "5054/02/SP/23",
+      "nmax": 12,
+      "total_marks": 80,
+      "duration": 105,
+      "include": true
+    },
+    {
+      "code": "5054_sp23_01",
+      "paper_type": "P1",
+      "qp": "5054_sp23_qp_1.pdf",
+      "ms": null,
+      "ref": "5054/01/SP/23",
+      "nmax": 40,
+      "total_marks": 40,
+      "duration": 60,
+      "include": false,
+      "excluded_because": "No mark scheme is published for the 5054 specimen Paper 1, so no verified answer key exists."
+    }
+  ]
+}

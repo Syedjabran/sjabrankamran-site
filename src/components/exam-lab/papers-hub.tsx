@@ -2,26 +2,40 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { FileText, Layers, Play, Zap, Library, Coffee, ShieldAlert, Video, ClipboardList, Lock, CheckCircle2, Send, Loader2, Clock } from "lucide-react";
+import { FileText, Layers, Play, Zap, Library, Coffee, ShieldAlert, Video, ClipboardList, Lock, CheckCircle2, Send, Loader2, Clock, Sparkles } from "lucide-react";
 import { IMAGE_BANK, IMAGE_PAPERS, FULL_BANK, type ImgQuestion } from "@/lib/exam-lab/image-bank";
-import { OLEVEL_IMAGE_BANK, OLEVEL_IMAGE_PAPERS, OLEVEL_TOPICS, OLEVEL_PAPER_NAME } from "@/lib/exam-lab/image-bank-olevel";
+import { OLEVEL_IMAGE_BANK, OLEVEL_IMAGE_PAPERS, OLEVEL_PAPER_NAMES, olevelTopics } from "@/lib/exam-lab/image-bank-olevel";
 import { PaperRunner, type AttemptKind } from "./paper-runner";
+import { ExamRunner } from "./exam-runner";
 import { requestExamFullscreen } from "@/lib/exam-lab/fullscreen";
 import { ClassDrillAssign } from "./class-drill-assign";
 import type { GuardMode } from "./use-exam-guard";
 
 const SESS: Record<string, string> = { s: "May/June", w: "Oct/Nov", m: "Feb/March" };
-const PAPER_NAME_9702: Record<string, string> = { P1: "Paper 1 · Multiple Choice", P2: "Paper 2 · AS Structured", P4: "Paper 4 · A2 Structured" };
+const PAPER_NAME: Record<string, string> = { P1: "Paper 1 · Multiple Choice", P2: "Paper 2 · AS Structured", P4: "Paper 4 · A2 Structured" };
 const PT_ACCENT: Record<string, string> = { P1: "#3DE1F0", P2: "#12D48C", P4: "#8B5CF6" };
 
-function yearOf(code: string) { const m = code.match(/(?:9702|5054)_(?:sp|[smw])(\d\d)_/); return m ? 2000 + parseInt(m[1]) : 0; }
+function yearOf(code: string) { const m = code.match(/9702_[smw](\d\d)_/); return m ? 2000 + parseInt(m[1]) : 0; }
 function label(code: string) {
-  const sp = code.match(/5054_sp(\d\d)_(\d)/);
-  if (sp) return `Specimen 20${sp[1]}`;
-  const m = code.match(/(?:9702|5054)_([smw])(\d\d)_(\d\d?)/);
+  const m = code.match(/9702_([smw])(\d\d)_(\d\d)/);
   if (!m) return code;
   const [, s, yy, v] = m;
-  return `${SESS[s] || s} 20${yy}${v.length > 1 ? ` · variant ${v[1]}` : ""}`;
+  return `${SESS[s] || s} 20${yy} · variant ${v[1]}`;
+}
+
+// ---- Cambridge O Level 5054 -------------------------------------------------
+// Parallel to the 9702 helpers above; kept separate so nothing in the A Level
+// path has to understand 5054 paper codes. Codes look like `5054_s24_11`
+// (May/June 2024 variant 1) or `5054_sp23_02` (2023 specimen Paper 2).
+const OL_SESS: Record<string, string> = { s: "May/June", w: "Oct/Nov", m: "Feb/March" };
+function olYearOf(code: string) { const m = code.match(/5054_[a-z]+(\d\d)_/); return m ? 2000 + parseInt(m[1]) : 0; }
+function olShuffle<T>(a: T[]): T[] { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+function olLabel(code: string) {
+  const m = code.match(/5054_([a-z]+)(\d\d)_(\d\d)/);
+  if (!m) return code;
+  const [, s, yy, v] = m;
+  if (s === "sp") return `Specimen 20${yy}`;
+  return `${OL_SESS[s] || s} 20${yy} · variant ${v[1]}`;
 }
 
 const TOPICS_AS = ["Physical quantities & units","Kinematics","Dynamics","Forces, density & pressure","Work, energy & power","Deformation of solids","Waves","Superposition","Electricity","D.C. circuits","Particle physics"];
@@ -112,6 +126,189 @@ function AssignedBoard({ allocations, onStart }: { allocations: Allocation[]; on
   );
 }
 
+/**
+ * O Level 5054 track — the same three things the A Level track offers, built on
+ * the real 5054 past-paper image bank: sit a whole paper, drill a topic, and
+ * (as a fallback only) generate AI practice from the authored 5054 seed bank.
+ * Deliberately self-contained: it shares `enter` and the sit-mode semantics
+ * with the 9702 track but none of its state, so the A Level path is unchanged.
+ */
+function OLevelHub({ canTest, onStart }: { canTest: boolean; onStart: (a: Active) => void }) {
+  const [tab, setTab] = useState<"papers" | "drill" | "ai">("papers");
+  const [sitMode, setSitMode] = useState<SitMode>("practice");
+  const [pType, setPType] = useState<"P1" | "P2" | "P4">("P1");
+  const [topics, setTopics] = useState<Set<string>>(new Set());
+  const [levels, setLevels] = useState<Set<"LOT" | "HOT">>(new Set(["LOT", "HOT"]));
+  const [count, setCount] = useState(8);
+
+  const grouped = useMemo(() => {
+    const g: Record<string, typeof OLEVEL_IMAGE_PAPERS> = { P1: [], P2: [], P4: [] };
+    OLEVEL_IMAGE_PAPERS.forEach((p) => g[p.paperType]?.push(p));
+    return g;
+  }, []);
+  const stats = useMemo(() => ({
+    papers: OLEVEL_IMAGE_PAPERS.length,
+    questions: OLEVEL_IMAGE_BANK.length,
+    sessions: new Set(OLEVEL_IMAGE_PAPERS.map((p) => p.code.replace(/_\d+$/, ""))).size,
+  }), []);
+  const availTopics = useMemo(() => olevelTopics(pType), [pType]);
+  const drillPool = useMemo(
+    () => OLEVEL_IMAGE_BANK.filter((q) => q.paperType === pType && (!topics.size || (q.topic && topics.has(q.topic))) && levels.has(q.level)),
+    [pType, topics, levels]);
+
+  function startPaper(code: string) {
+    const qs = OLEVEL_IMAGE_BANK.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
+    const meta = OLEVEL_IMAGE_PAPERS.find((p) => p.code === code)!;
+    onStart({ questions: qs, title: OLEVEL_PAPER_NAMES[meta.paperType].name, subtitle: `${meta.ref} · ${olLabel(code)}`, duration: meta.duration, timed: true, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType }, ...modeCfg(sitMode) });
+  }
+
+  function startDrill() {
+    const qs = olShuffle([...drillPool]).slice(0, Math.min(count, drillPool.length));
+    // Paper 1 is 40 marks in 60 min (1.5 min/Q); the structured 5054 papers run
+    // at roughly 1.3 min per mark, so a whole question is budgeted by its marks.
+    const mins = Math.max(5, Math.round(pType === "P1" ? qs.length * 1.5 : qs.reduce((s, q) => s + (q.marks ?? 8) * 1.3, 0)));
+    onStart({ questions: qs, title: `Topic drill · ${OLEVEL_PAPER_NAMES[pType].name.split(" · ")[0]}`, subtitle: `${qs.length} questions · ${mins} min`, duration: mins, timed: true, logMeta: { mode: "drill", paperType: pType }, ...modeCfg(sitMode) });
+  }
+
+  function dailyChallenge() {
+    const p1 = olShuffle(OLEVEL_IMAGE_BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
+    onStart({ questions: p1, title: "Daily Challenge · O Level", subtitle: "10 mixed Paper-1 questions · 15 min", duration: 15, timed: true, logMeta: { mode: "drill", paperType: "P1" }, daily: true, ...modeCfg(sitMode) });
+  }
+
+  const modeOpts: { id: SitMode; label: string; icon: typeof Coffee; hint: string }[] = [
+    { id: "practice", label: "Practice", icon: Coffee, hint: "Relaxed — no timer lock, switch tabs freely. Nothing is cancelled." },
+    { id: "exam", label: "Exam self-test", icon: ShieldAlert, hint: "Timed against the clock — but nothing locks or cancels. Run past the countdown and you simply continue; it's recorded as a late attempt." },
+    ...(canTest ? [{ id: "test" as SitMode, label: "Proctored test", icon: Video, hint: "Strict: camera on + AI proctor. Violations lock the test (super-admin unlock). Staff preview." }] : []),
+  ];
+  const activeHint = modeOpts.find((o) => o.id === sitMode)?.hint || "";
+
+  return (
+    <div>
+      <div className="mb-5 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+        <p className="font-display text-lg text-ice">Cambridge O Level Physics · 5054</p>
+        <p className="mt-1 text-sm text-dust">Exact past-paper questions — Paper 1 multiple choice, Paper 2 theory and Paper 4 alternative to practical. Same flow as A Level.</p>
+      </div>
+
+      {/* sit-mode selector */}
+      <div className="mb-5 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+        <p className="mb-2 font-mono text-[11px] uppercase tracking-widest text-fog">How do you want to sit this?</p>
+        <div className="flex flex-wrap gap-2">
+          {modeOpts.map((o) => (
+            <button key={o.id} onClick={() => setSitMode(o.id)} className={"inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition " + (sitMode === o.id ? (o.id === "test" ? "border-red-400 bg-red-400/15 text-red-200 font-semibold" : o.id === "exam" ? "border-amber-400 bg-amber-400/15 text-amber-200 font-semibold" : "border-emerald2 bg-emerald2/15 text-emerald2 font-semibold") : "border-white/15 text-fog hover:border-cyan")}>
+              <o.icon size={15} /> {o.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-dust">{activeHint}</p>
+      </div>
+
+      {/* coverage summary + daily challenge */}
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-4 py-2">
+          <Library size={15} className="text-cyan" />
+          <span className="font-mono text-xs text-fog"><b className="text-ice">{stats.papers}</b> papers · <b className="text-ice">{stats.questions}</b> exact questions · <b className="text-ice">{stats.sessions}</b> sessions</span>
+        </div>
+        <button onClick={dailyChallenge} className="inline-flex items-center gap-2 rounded-xl border border-signal/30 bg-signal/[0.06] px-4 py-2 text-sm text-signal transition hover:bg-signal/[0.12]">
+          <Zap size={15} /> Daily Challenge
+        </button>
+      </div>
+
+      <div className="mb-5 flex flex-wrap gap-2">
+        <button onClick={() => setTab("papers")} className={"inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition " + (tab === "papers" ? "border-cyan bg-cyan text-space font-semibold" : "border-white/15 text-fog hover:border-cyan")}><FileText size={15} /> Sit a real paper</button>
+        <button onClick={() => setTab("drill")} className={"inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition " + (tab === "drill" ? "border-cyan bg-cyan text-space font-semibold" : "border-white/15 text-fog hover:border-cyan")}><Layers size={15} /> Topic drill</button>
+        <button onClick={() => setTab("ai")} className={"inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm transition " + (tab === "ai" ? "border-cyan bg-cyan text-space font-semibold" : "border-white/15 text-fog hover:border-cyan")}><Sparkles size={15} /> AI practice</button>
+      </div>
+
+      {tab === "papers" ? (
+        <div className="space-y-8">
+          {(["P1", "P2", "P4"] as const).map((pt) => {
+            const papers = grouped[pt];
+            const years = Array.from(new Set(papers.map((p) => olYearOf(p.code)))).sort((a, b) => b - a);
+            return (
+              <div key={pt}>
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="h-4 w-1 rounded-full" style={{ background: PT_ACCENT[pt] }} />
+                  <p className="font-display text-sm text-ice">{OLEVEL_PAPER_NAMES[pt].name}</p>
+                  <span className="font-mono text-[11px] text-dust">· {papers.length} paper{papers.length === 1 ? "" : "s"}</span>
+                </div>
+                {papers.length === 0 ? (
+                  <p className="text-xs text-dust">More {pt} papers are being added…</p>
+                ) : (
+                  <div className="space-y-4">
+                    {years.map((yr) => (
+                      <div key={yr}>
+                        <p className="mb-2 font-mono text-[11px] uppercase tracking-widest text-dust">{yr}</p>
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                          {papers.filter((p) => olYearOf(p.code) === yr).map((p) => (
+                            <button key={p.code} onClick={() => startPaper(p.code)} className="group rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4 text-left transition hover:-translate-y-0.5 hover:border-cyan/40 hover:bg-white/[0.04]">
+                              <div className="flex items-center justify-between">
+                                <span className="font-display text-sm text-ice">{olLabel(p.code).replace(` 20${String(yr).slice(2)}`, "")}</span>
+                                <span className="grid h-7 w-7 place-items-center rounded-full transition group-hover:scale-110" style={{ background: PT_ACCENT[pt] + "22" }}>
+                                  <Play size={14} style={{ color: PT_ACCENT[pt] }} />
+                                </span>
+                              </div>
+                              <p className="mt-1 font-mono text-[11px] text-dust">{p.ref}</p>
+                              <p className="mt-2 font-mono text-[11px] text-fog">{p.count} Q · {p.marks} marks · {p.duration} min</p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : tab === "drill" ? (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+          <div className="grid gap-5 md:grid-cols-2">
+            <div>
+              <p className="mb-2 font-mono text-[11px] uppercase tracking-widest text-fog">Paper</p>
+              <div className="flex gap-2">
+                {(["P1", "P2", "P4"] as const).map((pt) => (
+                  <button key={pt} onClick={() => { setPType(pt); setTopics(new Set()); }} className={"rounded-full border px-3.5 py-1.5 text-xs transition " + (pType === pt ? "border-cyan bg-cyan text-space font-semibold" : "border-white/15 text-fog hover:border-cyan")}>{pt}</button>
+                ))}
+              </div>
+              <p className="mb-2 mt-4 font-mono text-[11px] uppercase tracking-widest text-fog">Topics <span className="normal-case text-dust">(none = all)</span></p>
+              <div className="flex max-h-44 flex-wrap gap-2 overflow-auto">
+                {availTopics.map((t) => {
+                  const on = topics.has(t);
+                  return <button key={t} onClick={() => setTopics((s) => { const n = new Set(s); if (n.has(t)) n.delete(t); else n.add(t); return n; })} className={"rounded-full border px-2.5 py-1 text-xs transition " + (on ? "border-cyan bg-cyan text-space font-semibold" : "border-white/15 text-fog hover:border-cyan")}>{t}</button>;
+                })}
+              </div>
+            </div>
+            <div className="space-y-5">
+              <div>
+                <p className="mb-2 font-mono text-[11px] uppercase tracking-widest text-fog">Thinking level</p>
+                <div className="flex gap-2">
+                  {(["LOT", "HOT"] as const).map((l) => (
+                    <button key={l} onClick={() => setLevels((s) => { const n = new Set(s); if (n.has(l) && n.size === 1) return n; if (n.has(l)) n.delete(l); else n.add(l); return n; })} className={"rounded-full border px-3.5 py-1.5 text-xs transition " + (levels.has(l) ? (l === "LOT" ? "border-emerald2 bg-emerald2 text-space font-semibold" : "border-magenta bg-magenta text-space font-semibold") : "border-white/15 text-fog")}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="mb-2 font-mono text-[11px] uppercase tracking-widest text-fog">Number of questions</p>
+                <div className="flex items-center gap-4">
+                  <input type="range" min={1} max={Math.max(1, Math.min(40, drillPool.length))} value={Math.min(count, Math.max(1, drillPool.length))} onChange={(e) => setCount(+e.target.value)} className="flex-1 accent-cyan" />
+                  <span className="w-10 text-center font-display text-2xl text-cyan">{Math.min(count, Math.max(1, drillPool.length))}</span>
+                </div>
+                <p className="mt-1 text-xs text-dust">{drillPool.length} matching questions in the bank</p>
+              </div>
+              <button onClick={startDrill} disabled={drillPool.length === 0} className="btn-primary disabled:opacity-50"><Play size={16} /> Start drill</button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+          <p className="mb-4 text-sm text-dust">Extra practice generated from the authored 5054 syllabus bank — a top-up for topics the real papers above do not yet cover.</p>
+          <ExamRunner mode="portal" maxCount={20} showPatterns course="5054" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function PapersHub({ canTest = false, canPause = false, canConduct = false }: { canTest?: boolean; canPause?: boolean; canConduct?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -122,16 +319,9 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
   const focusHandled = useRef<string | null>(null);
 
   const [tab, setTab] = useState<"papers" | "drill">("papers");
-  // Course track: A Level 9702 or O Level 5054 — both are REAL past-paper image
-  // banks rendered by the identical paper-browser + topic-drill UI below.
+  // Course track: A Level 9702 or O Level 5054 — each backed by its own real
+  // past-paper image bank and rendered by the same PaperRunner.
   const [course, setCourse] = useState<"9702" | "5054">("9702");
-  const isOL = course === "5054";
-  // Bank/paper set/labels/topics selected by the active course. Everything
-  // downstream uses these so the 9702 path stays byte-identical.
-  const BANK = isOL ? OLEVEL_IMAGE_BANK : IMAGE_BANK;
-  const PAPERS = isOL ? OLEVEL_IMAGE_PAPERS : IMAGE_PAPERS;
-  const FBANK = isOL ? OLEVEL_IMAGE_BANK : FULL_BANK;
-  const PAPER_NAME = isOL ? OLEVEL_PAPER_NAME : PAPER_NAME_9702;
   const [sitMode, setSitMode] = useState<SitMode>("practice");
   const [active, setActive] = useState<Active | null>(null);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
@@ -192,16 +382,16 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
 
   // Compatibility for old, spec-only allocations. New papers never use this.
   function legacyDrillQuestions(spec: DrillSpec): ImgQuestion[] {
-    if (spec.type === "daily") return shuffle(BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
+    if (spec.type === "daily") return shuffle(IMAGE_BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
     const { paperType, topics, levels, count } = spec;
     const tset = new Set(topics); const lset = new Set(levels);
     // Old automated allocations may contain a retired topic label or an
     // over-restrictive level combination. Fall back within the assigned
     // paper instead of silently doing nothing when Start is pressed.
-    const exact = BANK.filter((q) => q.paperType === paperType && (!tset.size || (q.topic && tset.has(q.topic))) && lset.has(q.level));
-    const topicAnyLevel = BANK.filter((q) => q.paperType === paperType && (!tset.size || (q.topic && tset.has(q.topic))));
-    const paperAndLevel = BANK.filter((q) => q.paperType === paperType && lset.has(q.level));
-    const pool = exact.length ? exact : topicAnyLevel.length ? topicAnyLevel : paperAndLevel.length ? paperAndLevel : BANK.filter((q) => q.paperType === paperType);
+    const exact = IMAGE_BANK.filter((q) => q.paperType === paperType && (!tset.size || (q.topic && tset.has(q.topic))) && lset.has(q.level));
+    const topicAnyLevel = IMAGE_BANK.filter((q) => q.paperType === paperType && (!tset.size || (q.topic && tset.has(q.topic))));
+    const paperAndLevel = IMAGE_BANK.filter((q) => q.paperType === paperType && lset.has(q.level));
+    const pool = exact.length ? exact : topicAnyLevel.length ? topicAnyLevel : paperAndLevel.length ? paperAndLevel : IMAGE_BANK.filter((q) => q.paperType === paperType);
     return shuffle([...pool]).slice(0, count);
   }
 
@@ -219,8 +409,8 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
     const common = { ...cfg, integrity: al.integrity ?? cfg.integrity, timed: true, lockOnExpiry: al.lockOnExpiry !== false, attemptId: al.attemptId, allocationId: al.id, daily: isDailyTask };
     if (al.content.type === "paper") {
       const code = al.content.code;
-      const qs = BANK.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
-      const meta = PAPERS.find((p) => p.code === code);
+      const qs = IMAGE_BANK.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
+      const meta = IMAGE_PAPERS.find((p) => p.code === code);
       if (!qs.length || !meta) return;
       enter({ questions: qs, title: al.title || PAPER_NAME[meta.paperType], subtitle: `${meta.ref} · ${label(code)}`, duration: al.durationMin || meta.duration, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType }, ...common });
     } else if (al.content.type === "drillref") {
@@ -229,7 +419,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
       // the class sits the same paper in the same order, and closing and
       // reopening replays that identical paper instead of reshuffling.
       const { ids, ref } = al.content;
-      const byId = new Map(FBANK.map((q) => [q.id, q] as const));
+      const byId = new Map(FULL_BANK.map((q) => [q.id, q] as const));
       const qs = ids.map((qid) => byId.get(qid)).filter((q): q is ImgQuestion => !!q);
       if (!qs.length || qs.length !== ids.length) {
         setLaunchError("This stored drill has unavailable questions. Contact the teacher; no replacement paper has been generated.");
@@ -254,7 +444,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
     } else if (al.content.type === "custom") {
       // Custom allocations may reference the secure (allocation-only) bank.
       // Preserve staff selection order for older custom allocations too.
-      const byId = new Map(FBANK.map((q) => [q.id, q] as const));
+      const byId = new Map(FULL_BANK.map((q) => [q.id, q] as const));
       const qs = al.content.ids.map((id) => byId.get(id)).filter((q): q is ImgQuestion => !!q);
 
       if (!qs.length) return;
@@ -263,7 +453,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
       const mins = al.durationMin || Math.max(5, Math.round(qs.reduce((s, q) => s + (q.paperType === "P1" ? 1.5 : 9), 0)));
       enter({ questions: qs, title: al.title || "Selected questions", subtitle: `${qs.length} hand-picked questions · ${mins} min`, duration: mins, logMeta: { mode: "drill", paperType: pt }, ...common });
     } else {
-      const p1 = shuffle(BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
+      const p1 = shuffle(IMAGE_BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
       enter({ questions: p1, title: al.title || "Daily Challenge", subtitle: "10 mixed Paper-1 questions", duration: al.durationMin || 15, logMeta: { mode: "drill", paperType: "P1" }, ...common });
     }
   }
@@ -292,22 +482,22 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
   }, [allocationParam, allocations, active]);
 
   const grouped = useMemo(() => {
-    const g: Record<string, typeof PAPERS> = { P1: [], P2: [], P4: [] };
-    PAPERS.forEach((p) => g[p.paperType]?.push(p));
+    const g: Record<string, typeof IMAGE_PAPERS> = { P1: [], P2: [], P4: [] };
+    IMAGE_PAPERS.forEach((p) => g[p.paperType]?.push(p));
     return g;
   }, []);
 
   const stats = useMemo(() => ({
-    papers: PAPERS.length,
-    questions: BANK.length,
-    years: new Set(PAPERS.map((p) => yearOf(p.code))).size,
+    papers: IMAGE_PAPERS.length,
+    questions: IMAGE_BANK.length,
+    years: new Set(IMAGE_PAPERS.map((p) => yearOf(p.code))).size,
   }), []);
 
   function shuffle<T>(a: T[]): T[] { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 
   function startPaper(code: string) {
-    const qs = BANK.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
-    const meta = PAPERS.find((p) => p.code === code)!;
+    const qs = IMAGE_BANK.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
+    const meta = IMAGE_PAPERS.find((p) => p.code === code)!;
     enter({ questions: qs, title: PAPER_NAME[meta.paperType], subtitle: `${meta.ref} · ${label(code)}`, duration: meta.duration, timed: true, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType }, ...modeCfg(sitMode) });
   }
 
@@ -319,7 +509,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
     focusHandled.current = focusParam;
     const want = new Set(focusParam.split(",").map((s) => s.trim()).filter(Boolean));
     if (!want.size) return;
-    const pool = BANK.filter((q) => q.topic && want.has(q.topic));
+    const pool = IMAGE_BANK.filter((q) => q.topic && want.has(q.topic));
     if (!pool.length) { setLaunchError("No practice questions are available for those topics yet."); router.replace(pathname, { scroll: false }); return; }
     const qs = shuffle([...pool]).slice(0, 10);
     const kinds = new Set(qs.map((q) => q.paperType));
@@ -335,7 +525,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusParam, active]);
 
-  const drillPool = useMemo(() => BANK.filter((q) => q.paperType === pType && (!topics.size || (q.topic && topics.has(q.topic))) && levels.has(q.level)), [pType, topics, levels]);
+  const drillPool = useMemo(() => IMAGE_BANK.filter((q) => q.paperType === pType && (!topics.size || (q.topic && topics.has(q.topic))) && levels.has(q.level)), [pType, topics, levels]);
 
   function startDrill() {
     const qs = shuffle([...drillPool]).slice(0, count);
@@ -345,7 +535,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
   }
 
   function dailyChallenge() {
-    const p1 = shuffle(BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
+    const p1 = shuffle(IMAGE_BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
     enter({ questions: p1, title: "Daily Challenge", subtitle: "10 mixed Paper-1 questions · 15 min", duration: 15, timed: true, logMeta: { mode: "drill", paperType: "P1" }, daily: true, ...modeCfg(sitMode) });
   }
 
@@ -354,7 +544,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
     <PaperRunner {...active} canPause={canPause} onExit={exit} />
   </>;
 
-  const availTopics = isOL ? OLEVEL_TOPICS : pType === "P4" ? TOPICS_A2 : TOPICS_AS;
+  const availTopics = pType === "P4" ? TOPICS_A2 : TOPICS_AS;
 
   const modeOpts: { id: SitMode; label: string; icon: typeof Coffee; hint: string }[] = [
     { id: "practice", label: "Practice", icon: Coffee, hint: "Relaxed — no timer lock, switch tabs freely. Nothing is cancelled." },
@@ -380,6 +570,10 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
         ))}
       </div>
 
+      {course === "5054" ? (
+        <OLevelHub canTest={canTest} onStart={enter} />
+      ) : (
+      <>
       {/* sit-mode selector */}
       <div className="mb-5 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
         <p className="mb-2 font-mono text-[11px] uppercase tracking-widest text-fog">How do you want to sit this?</p>
@@ -490,6 +684,8 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
             </div>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );

@@ -1,0 +1,250 @@
+{
+ "5054_s24_11:1": {
+  "topic": "Measurement & units",
+  "level": "HOT"
+ },
+ "5054_s24_11:2": {
+  "topic": "Measurement & units",
+  "level": "LOT"
+ },
+ "5054_s24_11:3": {
+  "topic": "Kinematics & dynamics",
+  "level": "HOT"
+ },
+ "5054_s24_11:4": {
+  "topic": "Mass, weight & density",
+  "level": "HOT"
+ },
+ "5054_s24_11:5": {
+  "topic": "Kinematics & dynamics",
+  "level": "LOT"
+ },
+ "5054_s24_11:6": {
+  "topic": "Kinematics & dynamics",
+  "level": "HOT"
+ },
+ "5054_s24_11:7": {
+  "topic": "Forces, moments & pressure",
+  "level": "HOT"
+ },
+ "5054_s24_11:8": {
+  "topic": "Forces, moments & pressure",
+  "level": "LOT"
+ },
+ "5054_s24_11:9": {
+  "topic": "Forces, moments & pressure",
+  "level": "LOT"
+ },
+ "5054_s24_11:10": {
+  "topic": "Work, energy & power",
+  "level": "HOT"
+ },
+ "5054_s24_11:11": {
+  "topic": "Work, energy & power",
+  "level": "HOT"
+ },
+ "5054_s24_11:12": {
+  "topic": "Work, energy & power",
+  "level": "LOT"
+ },
+ "5054_s24_11:13": {
+  "topic": "Work, energy & power",
+  "level": "HOT"
+ },
+ "5054_s24_11:14": {
+  "topic": "Forces, moments & pressure",
+  "level": "HOT"
+ },
+ "5054_s24_11:15": {
+  "topic": "Thermal physics",
+  "level": "LOT"
+ },
+ "5054_s24_11:16": {
+  "topic": "Thermal physics",
+  "level": "LOT"
+ },
+ "5054_s24_11:17": {
+  "topic": "Thermal physics",
+  "level": "HOT"
+ },
+ "5054_s24_11:18": {
+  "topic": "Thermal physics",
+  "level": "LOT"
+ },
+ "5054_s24_11:19": {
+  "topic": "Thermal physics",
+  "level": "LOT"
+ },
+ "5054_s24_11:20": {
+  "topic": "Thermal physics",
+  "level": "LOT"
+ },
+ "5054_s24_11:21": {
+  "topic": "Thermal physics",
+  "level": "LOT"
+ },
+ "5054_s24_11:22": {
+  "topic": "Waves, light & sound",
+  "level": "LOT"
+ },
+ "5054_s24_11:23": {
+  "topic": "Waves, light & sound",
+  "level": "LOT"
+ },
+ "5054_s24_11:24": {
+  "topic": "Waves, light & sound",
+  "level": "HOT"
+ },
+ "5054_s24_11:25": {
+  "topic": "Waves, light & sound",
+  "level": "LOT"
+ },
+ "5054_s24_11:26": {
+  "topic": "Waves, light & sound",
+  "level": "LOT"
+ },
+ "5054_s24_11:27": {
+  "topic": "Waves, light & sound",
+  "level": "LOT"
+ },
+ "5054_s24_11:28": {
+  "topic": "Waves, light & sound",
+  "level": "HOT"
+ },
+ "5054_s24_11:29": {
+  "topic": "Electricity & magnetism",
+  "level": "LOT"
+ },
+ "5054_s24_11:30": {
+  "topic": "Electricity & magnetism",
+  "level": "LOT"
+ },
+ "5054_s24_11:31": {
+  "topic": "Electricity & magnetism",
+  "level": "LOT"
+ },
+ "5054_s24_11:32": {
+  "topic": "Electricity & magnetism",
+  "level": "HOT"
+ },
+ "5054_s24_11:33": {
+  "topic": "Electricity & magnetism",
+  "level": "HOT"
+ },
+ "5054_s24_11:34": {
+  "topic": "Electromagnetic effects",
+  "level": "LOT"
+ },
+ "5054_s24_11:35": {
+  "topic": "Electromagnetic effects",
+  "level": "LOT"
+ },
+ "5054_s24_11:36": {
+  "topic": "Electromagnetic effects",
+  "level": "HOT"
+ },
+ "5054_s24_11:37": {
+  "topic": "Atomic physics",
+  "level": "HOT"
+ },
+ "5054_s24_11:38": {
+  "topic": "Atomic physics",
+  "level": "LOT"
+ },
+ "5054_s24_11:39": {
+  "topic": "Atomic physics",
+  "level": "LOT"
+ },
+ "5054_s24_11:40": {
+  "topic": "Space physics",
+  "level": "LOT"
+ },
+ "5054_s24_21:1": {
+  "topic": "Kinematics & dynamics",
+  "level": "HOT"
+ },
+ "5054_s24_21:2": {
+  "topic": "Forces, moments & pressure",
+  "level": "HOT"
+ },
+ "5054_s24_21:3": {
+  "topic": "Thermal physics",
+  "level": "HOT"
+ },
+ "5054_s24_21:4": {
+  "topic": "Waves, light & sound",
+  "level": "LOT"
+ },
+ "5054_s24_21:5": {
+  "topic": "Electricity & magnetism",
+  "level": "HOT"
+ },
+ "5054_s24_21:6": {
+  "topic": "Electromagnetic effects",
+  "level": "HOT"
+ },
+ "5054_s24_21:7": {
+  "topic": "Atomic physics",
+  "level": "LOT"
+ },
+ "5054_s24_21:8": {
+  "topic": "Space physics",
+  "level": "HOT"
+ },
+ "5054_s24_41:1": {
+  "topic": "Practical skills",
+  "level": "LOT"
+ },
+ "5054_s24_41:2": {
+  "topic": "Practical skills",
+  "level": "LOT"
+ },
+ "5054_s24_41:3": {
+  "topic": "Practical skills",
+  "level": "HOT"
+ },
+ "5054_s24_41:4": {
+  "topic": "Practical skills",
+  "level": "HOT"
+ },
+ "5054_sp23_02:1": {
+  "topic": "Kinematics & dynamics",
+  "level": "HOT"
+ },
+ "5054_sp23_02:2": {
+  "topic": "Work, energy & power",
+  "level": "HOT"
+ },
+ "5054_sp23_02:3": {
+  "topic": "Thermal physics",
+  "level": "HOT"
+ },
+ "5054_sp23_02:4": {
+  "topic": "Work, energy & power",
+  "level": "HOT"
+ },
+ "5054_sp23_02:5": {
+  "topic": "Waves, light & sound",
+  "level": "HOT"
+ },
+ "5054_sp23_02:6": {
+  "topic": "Electricity & magnetism",
+  "level": "HOT"
+ },
+ "5054_sp23_02:7": {
+  "topic": "Electromagnetic effects",
+  "level": "HOT"
+ },
+ "5054_sp23_02:8": {
+  "topic": "Electricity & magnetism",
+  "level": "HOT"
+ },
+ "5054_sp23_02:9": {
+  "topic": "Atomic physics",
+  "level": "HOT"
+ },
+ "5054_sp23_02:10": {
+  "topic": "Space physics",
+  "level": "HOT"
+ }
+}
