@@ -2,6 +2,8 @@ import { Suspense } from "react";
 import dynamic from "next/dynamic";
 import { FlaskConical, ShieldCheck } from "lucide-react";
 import { getPortalUser, isExamLabStaff } from "@/lib/edu/auth";
+import { resolveCourseAccess, COURSE_LABEL } from "@/lib/portal/course-access";
+import { redirect } from "next/navigation";
 
 // The hub bundles the full 646 KB question bank (2,529 exact past-paper
 // questions) plus the paper runner and proctor camera. Code-splitting it keeps
@@ -39,6 +41,35 @@ export default async function PortalExamLabPage() {
   const canTest = canConduct;
   const canPause = canConduct;
 
+  if (!user) redirect("/portal/login?next=%2Fportal%2Fexam-lab");
+  // Course guardrail: a student only ever reaches their enrolled course; an
+  // unassigned user reaches none. Staff keep both tracks.
+  const access = await resolveCourseAccess(user);
+
+  if (access.allowed.length === 0) {
+    return (
+      <div>
+        <div className="mb-6 flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-xl border border-cyan/30 text-cyan">
+            <FlaskConical size={18} />
+          </span>
+          <div>
+            <h1 className="font-display text-2xl text-ice">Exam Lab</h1>
+            <p className="text-sm text-dust">Course access is assigned by your teacher.</p>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-amber-400/30 bg-amber-400/[0.05] px-6 py-8 text-center">
+          <p className="font-display text-lg text-ice">No course assigned yet</p>
+          <p className="mx-auto mt-2 max-w-md text-sm text-fog">
+            Your account isn&rsquo;t enrolled in a physics course, so the Exam Lab is locked.
+            Once your teacher assigns you to an A Level (9702) or O Level (5054) class,
+            your papers and drills will appear here automatically.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="mb-6 flex items-center gap-3">
@@ -47,7 +78,7 @@ export default async function PortalExamLabPage() {
         </span>
         <div>
           <h1 className="font-display text-2xl text-ice">Exam Lab</h1>
-          <p className="text-sm text-dust">Real CAIE 9702 past papers · exact questions with diagrams · P1 / P2 / P4{first ? ` · ${first}` : ""}</p>
+          <p className="text-sm text-dust">{access.isStaff ? "Real CAIE past papers · A Level 9702 + O Level 5054" : COURSE_LABEL[access.primary ?? access.allowed[0]]} · exact questions with diagrams{first ? ` · ${first}` : ""}</p>
         </div>
       </div>
 
@@ -57,7 +88,7 @@ export default async function PortalExamLabPage() {
       </div>
 
       <Suspense fallback={<div className="text-sm text-dust">Loading Exam Lab…</div>}>
-        <PapersHub canConduct={canConduct} canTest={canTest} canPause={canPause} />
+        <PapersHub canConduct={canConduct} canTest={canTest} canPause={canPause} allowedCourses={access.allowed} initialCourse={access.primary ?? access.allowed[0]} />
       </Suspense>
     </div>
   );

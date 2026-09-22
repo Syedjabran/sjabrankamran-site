@@ -309,7 +309,7 @@ function OLevelHub({ canTest, onStart }: { canTest: boolean; onStart: (a: Active
   );
 }
 
-export function PapersHub({ canTest = false, canPause = false, canConduct = false }: { canTest?: boolean; canPause?: boolean; canConduct?: boolean }) {
+export function PapersHub({ canTest = false, canPause = false, canConduct = false, allowedCourses = ["9702", "5054"], initialCourse }: { canTest?: boolean; canPause?: boolean; canConduct?: boolean; allowedCourses?: ("9702" | "5054")[]; initialCourse?: "9702" | "5054" }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -321,7 +321,10 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
   const [tab, setTab] = useState<"papers" | "drill">("papers");
   // Course track: A Level 9702 or O Level 5054 — each backed by its own real
   // past-paper image bank and rendered by the same PaperRunner.
-  const [course, setCourse] = useState<"9702" | "5054">("9702");
+  // Course is constrained by the guardrail: students receive a single allowed
+  // course and cannot switch; staff receive both.
+  const [course, setCourse] = useState<"9702" | "5054">(initialCourse ?? allowedCourses[0] ?? "9702");
+  function chooseCourse(c: "9702" | "5054") { if (allowedCourses.includes(c)) setCourse(c); }
   const [sitMode, setSitMode] = useState<SitMode>("practice");
   const [active, setActive] = useState<Active | null>(null);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
@@ -558,17 +561,20 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
       {launchError ? <p className="mb-4 rounded-xl border border-signal/35 bg-signal/[0.06] px-4 py-3 text-sm text-signal">{launchError}</p> : null}
       {allocations.length ? <AssignedBoard allocations={allocations} onStart={startAllocation} /> : null}
 
-      {/* course track selector — O Level (5054) mirrors the A Level experience */}
-      <div className="mb-5 flex flex-wrap gap-2">
-        {([
-          { id: "9702" as const, label: "A Level · 9702" },
-          { id: "5054" as const, label: "O Level · 5054" },
-        ]).map((c) => (
-          <button key={c.id} onClick={() => setCourse(c.id)} className={"rounded-full border px-4 py-2 text-sm transition " + (course === c.id ? "border-cyan bg-cyan text-space font-semibold" : "border-white/15 text-fog hover:border-cyan")}>
-            {c.label}
-          </button>
-        ))}
-      </div>
+      {/* Course track selector — shown only when the guardrail permits more than
+          one course (i.e. staff). A single-course student never sees a switch. */}
+      {allowedCourses.length > 1 ? (
+        <div className="mb-5 flex flex-wrap gap-2">
+          {([
+            { id: "9702" as const, label: "A Level · 9702" },
+            { id: "5054" as const, label: "O Level · 5054" },
+          ]).filter((c) => allowedCourses.includes(c.id)).map((c) => (
+            <button key={c.id} onClick={() => chooseCourse(c.id)} className={"rounded-full border px-4 py-2 text-sm transition " + (course === c.id ? "border-cyan bg-cyan text-space font-semibold" : "border-white/15 text-fog hover:border-cyan")}>
+              {c.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       {course === "5054" ? (
         <OLevelHub canTest={canTest} onStart={enter} />
