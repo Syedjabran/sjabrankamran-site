@@ -26,11 +26,11 @@ plan; the directory exists but nothing here reads it.
 | `poppler.py` | resolves `pdftotext`/`pdftoppm`/`pdfinfo` to an absolute path and preflights that the binary is actually poppler, not the Xpdf build also on PATH. |
 | `parse_qbank.py` | parses the exported text into verified records: id, section, domain, skill, difficulty, answer, rationale. Rejects anything it can't verify rather than guessing. |
 | `report_qbank.py` | runs the parser over both raw PDFs and prints a coverage report (counts by domain/difficulty/answer kind/source, every rejected id and why). Run this first. |
-| `crop_qbank.py` | locates each question's crop region in `-bbox` coordinate space (below the full metadata header, above the answer/rationale) and rasterises + crops it. |
+| `crop_qbank.py` | locates each question's crop region in `-bbox` coordinate space (below the full metadata header *table*, above the answer/rationale) and rasterises + crops it. The lower bound is the body's `Question` label, not the header's lowest text row: the difficulty rating is also drawn as a textless vector bar glyph, which has no word box to crop below. |
 | `upload.py` | uploads one crop to the `exam-assets` bucket, prefix-guarded to `sat/`. |
 | `extract_sat.py` | orchestrates parse + crop + upload for the whole corpus, resumable, and emits `rows.json` / `skipped.json` / `uploaded.json` / `mode.json`. |
 | `build_sat_bank.py` | the last gate: re-validates every row against a hard-coded closed vocabulary (independent of `parse_qbank`'s), refuses rows it can't confirm were actually uploaded, and writes `src/lib/sat/question-bank.json`. |
-| `tests/` | 98 tests covering all of the above, all network calls mocked. |
+| `tests/` | 102 tests covering all of the above, all network calls mocked. |
 
 ## Run
 

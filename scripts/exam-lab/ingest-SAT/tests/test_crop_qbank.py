@@ -12,6 +12,7 @@ from crop_qbank import (
     anchors, bbox_xml, expected_render_height, question_span,
     question_span_reason, render_span, scale_box,
 )
+import crop_qbank
 import poppler
 
 RAW_MATH_PDF = Path(__file__).resolve().parents[1] / "raw" / "question-bank" / "questionbank-export-2026-9-22 math.pdf"
@@ -35,6 +36,7 @@ BBOX = """<?xml version="1.0"?>
 <word xMin="142" yMin="100" xMax="160" yMax="112">ID:</word>
 <word xMin="162" yMin="100" xMax="220" yMax="112">ac472881</word>
 <word xMin="70" yMin="150" xMax="110" yMax="162">Hard</word>
+<word xMin="70" yMin="180" xMax="140" yMax="192">Question</word>
 <word xMin="70" yMin="200" xMax="120" yMax="212">What</word>
 <word xMin="70" yMin="400" xMax="150" yMax="412">Correct</word>
 <word xMin="152" yMin="400" xMax="210" yMax="412">Answer:</word>
@@ -92,6 +94,7 @@ BBOX_NAMESPACED = """<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//
 <word xMin="75.709736" yMin="26.625077" xMax="92.220226" yMax="35.348656">ID:</word>
 <word xMin="95.560507" yMin="26.625077" xMax="157.174196" yMax="35.348656">6d99b141</word>
 <word xMin="484.734000" yMin="86.508401" xMax="504.069440" yMax="92.312695">Hard</word>
+<word xMin="18.000000" yMin="131.008401" xMax="54.410445" yMax="137.812695">Question</word>
 <word xMin="18.000000" yMin="385.008401" xMax="25.410445" yMax="390.812695">In</word>
 <word xMin="18.000000" yMin="424.000051" xMax="48.026645" yMax="429.815771">Correct</word>
 <word xMin="50.248421" yMin="424.000051" xMax="83.076627" yMax="429.815771">Answer:</word>
@@ -114,6 +117,7 @@ BBOX_CROSS_PAGE = """<?xml version="1.0"?>
 <word xMin="142" yMin="100" xMax="160" yMax="112">ID:</word>
 <word xMin="162" yMin="100" xMax="220" yMax="112">ac472881</word>
 <word xMin="70" yMin="150" xMax="110" yMax="162">Hard</word>
+<word xMin="70" yMin="180" xMax="140" yMax="192">Question</word>
 <word xMin="70" yMin="200" xMax="120" yMax="212">What</word>
 </page>
 </body></html>
@@ -127,6 +131,24 @@ BBOX_NO_DIFFICULTY = """<?xml version="1.0"?>
 <word xMin="142" yMin="100" xMax="160" yMax="112">ID:</word>
 <word xMin="162" yMin="100" xMax="220" yMax="112">ac472881</word>
 <word xMin="70" yMin="200" xMax="120" yMax="212">What</word>
+</page>
+</body></html>
+"""
+
+
+# id and difficulty present, but no standalone "Question" body label -- the
+# anchor that puts the crop below the header TABLE (and so below the vector
+# difficulty glyph), as distinct from below the header's lowest text row.
+BBOX_NO_QUESTION_LABEL = """<?xml version="1.0"?>
+<html><body>
+<page width="612" height="792">
+<word xMin="70" yMin="100" xMax="140" yMax="112">Question</word>
+<word xMin="142" yMin="100" xMax="160" yMax="112">ID:</word>
+<word xMin="162" yMin="100" xMax="220" yMax="112">ac472881</word>
+<word xMin="70" yMin="150" xMax="110" yMax="162">Hard</word>
+<word xMin="70" yMin="200" xMax="120" yMax="212">What</word>
+<word xMin="70" yMin="400" xMax="150" yMax="412">Correct</word>
+<word xMin="152" yMin="400" xMax="210" yMax="412">Answer:</word>
 </page>
 </body></html>
 """
@@ -205,6 +227,53 @@ def test_span_starts_below_wrapped_tail_not_just_below_difficulty():
     assert span["top"] >= 103              # below the wrapped tail's yMax
     assert not (97 <= span["top"] <= 103)  # not inside the wrapped tail's row
     assert span["bottom"] <= 400
+
+
+def test_span_starts_below_the_header_table_not_just_its_lowest_text_row():
+    """Regression for the difficulty-glyph leak.
+
+    College Board draws the difficulty as a vector bar glyph in the header
+    table's last cell. It has no text, so it has no word box, so no amount
+    of reasoning over the text rows can see it -- and cropping at the
+    header's lowest text row (`Hard`'s yMax=162, + PAD = 168) left its
+    bottom sliver in 1,788 of the real corpus's 3,730 crops, where the
+    number of filled bars reads the rating straight off the image.
+
+    The body's "Question" label (yMin=180) is the first element BELOW the
+    whole table, so anchoring there clears the glyph structurally. The crop
+    must start below it, not merely below the difficulty row.
+    """
+    span = question_span(anchors(BBOX), "ac472881")
+    assert span is not None
+    assert span["top"] > 168, "crop started at the old text-row anchor, inside the glyph"
+    assert span["top"] >= 180 - crop_qbank.PAD
+
+
+def test_span_clears_the_measured_reach_of_the_textless_difficulty_glyph():
+    """The glyph reached 10.32pt below the difficulty row's own bottom in
+    the rendered corpus; GLYPH_DEPTH is the backstop for that, independent
+    of where the "Question" label happens to sit.
+    """
+    a = anchors(BBOX)
+    diff_bottom = min(d["bottom"] for d in a["diffs"])
+    span = question_span(a, "ac472881")
+    assert span["top"] >= diff_bottom + crop_qbank.GLYPH_DEPTH
+
+
+def test_question_id_token_is_not_mistaken_for_the_body_question_label():
+    """Both are the bare word "Question" in the word stream; only the
+    following token tells them apart. Counting the header's own "Question
+    ID:" as the body label would put the crop top back up inside the
+    header -- and back over the glyph.
+    """
+    labels = anchors(BBOX)["questions"]
+    assert [q["top"] for q in labels] == [180]
+
+
+def test_span_reason_distinguishes_a_missing_question_label():
+    a = anchors(BBOX_NO_QUESTION_LABEL)
+    assert question_span(a, "ac472881") is None
+    assert question_span_reason(a, "ac472881") == "no-question-label"
 
 
 def test_span_reason_is_none_when_span_succeeds():

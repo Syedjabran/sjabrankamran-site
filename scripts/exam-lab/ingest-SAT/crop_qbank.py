@@ -17,6 +17,18 @@ next to it, inside the question image (confirmed against the real corpus:
 id 6d99b141's "Trigonometry"/"triangles" tail renders at yMax=103.56, well
 below "Hard"'s own yMax=92.31).
 
+Clearing the header's *text* is necessary but not sufficient. College
+Board also draws the difficulty as a vector bar glyph (one, two or three
+filled bars) in the header table's last cell. It carries no text, so it has
+no `-bbox` word box at all and the row logic below cannot see it: cropping
+below the header's lowest text row left the glyph's bottom sliver inside
+1,788 of the corpus's 3,730 crops (47.9%), where -- measured -- it is a
+perfect read-out of the rating, exactly what this module exists to prevent.
+The body's "Question" section label sits below the whole table, glyph
+included, so the crop anchors there as well; `GLYPH_DEPTH` is a measured
+floor for the same reason, in case a future layout puts that label unusually
+tight against the table.
+
 This module works entirely in `-bbox` coordinate space, so it sidesteps
 that problem structurally rather than by pattern-matching text: it extends
 the header downward through any row that continues tightly (observed
@@ -50,6 +62,13 @@ ROW_GAP = 15.0
 # Words sharing a yMin within this tolerance are treated as the same visual
 # row; real same-row words share it near-exactly.
 ROW_EPSILON = 1.0
+# How far below the difficulty row's own bottom the vector difficulty glyph
+# can reach. It has no word box, so this cannot be derived from the text
+# layer; it was measured off the rendered corpus, where the glyph reached at
+# most 10.32pt below that row. This is only a backstop -- the "Question"
+# label anchor clears the glyph by >= 14.40pt on every question in the real
+# corpus, so this floor never binds there.
+GLYPH_DEPTH = 12.0
 
 
 def bbox_xml(pdf: Path) -> str:
@@ -103,7 +122,7 @@ def anchors(xml_text: str) -> dict:
     validate its point-to-pixel mapping.
     """
     root = _strip_namespace(ET.fromstring(xml_text))
-    ids, diffs, answers, rationales = [], [], [], []
+    ids, diffs, answers, rationales, questions = [], [], [], [], []
     pages: dict[int, list[dict]] = {}
     page_size: dict[int, tuple[float, float]] = {}
     for pageno, page in enumerate(root.iter("page"), start=1):
@@ -116,6 +135,12 @@ def anchors(xml_text: str) -> dict:
                 cand = words[i + 2]["text"]
                 if _HEX8.match(cand):
                     ids.append({"qid": cand, "page": pageno, "top": w["top"], "bottom": w["bottom"]})
+            if w["text"] == "Question" and nxt != "ID:":
+                # The body's section label, NOT the "Question ID:" token in
+                # the header -- the `nxt` check is what separates them, and
+                # it is the only thing that does: both are the bare word
+                # "Question" in the word stream.
+                questions.append({"page": pageno, "top": w["top"]})
             if w["text"] in DIFFICULTY_WORDS:
                 diffs.append({"page": pageno, "top": w["top"], "bottom": w["bottom"]})
             if w["text"] == "Correct" and nxt == "Answer:":
@@ -124,7 +149,7 @@ def anchors(xml_text: str) -> dict:
                 rationales.append({"page": pageno, "top": w["top"]})
     return {
         "ids": ids, "diffs": diffs, "answers": answers, "rationales": rationales,
-        "pages": pages, "page_size": page_size,
+        "questions": questions, "pages": pages, "page_size": page_size,
     }
 
 
@@ -175,8 +200,26 @@ def _locate(a: dict, qid: str) -> tuple[dict | None, str | None]:
         return None, "no-difficulty-anchor"
     diff_bottom = min(after)
 
+    labels = [q["top"] for q in a["questions"] if q["page"] == page and q["top"] > entry["bottom"]]
+    if not labels:
+        # Every one of the 3,730 ingestable questions in the real corpus has
+        # this label, so its absence means the page is not the shape this
+        # module understands. Cropping anyway would risk shipping the
+        # difficulty glyph, so fail the question instead of guessing.
+        return None, "no-question-label"
+
     header_bottom = _header_bottom(a["pages"][page], diff_bottom)
-    top = header_bottom + PAD
+    # Three independent lower bounds, each covering something the others
+    # cannot, so the crop top is the lowest of them:
+    #   header_bottom + PAD  -- below the header's lowest *text* row,
+    #                           including a wrapped domain/skill tail.
+    #   label_top - PAD      -- below the whole header *table*, which is the
+    #                           only way to clear the textless difficulty
+    #                           glyph; the label is the first body element.
+    #   diff_bottom + GLYPH_DEPTH -- a measured floor on the glyph's reach,
+    #                           in case that label ever sits tight against
+    #                           the table.
+    top = max(header_bottom + PAD, min(labels) - PAD, diff_bottom + GLYPH_DEPTH)
 
     ends = [x["top"] for x in a["answers"] + a["rationales"] if x["page"] == page and x["top"] > top]
     if not ends:
