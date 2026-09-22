@@ -1,6 +1,21 @@
 /* SJAK Portal service worker — Web Push for the installed PWA. */
 self.addEventListener("install", () => self.skipWaiting());
-self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
+self.addEventListener("activate", (e) =>
+  e.waitUntil(
+    (async () => {
+      // Defensive cache purge: this worker never caches pages, but clear any
+      // legacy Cache Storage entries a previous build/plugin may have left so
+      // no device can serve stale content, then take control immediately.
+      try {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      } catch (_) {
+        /* best effort */
+      }
+      await self.clients.claim();
+    })(),
+  ),
+);
 
 self.addEventListener("push", (event) => {
   let data = {};
