@@ -37,6 +37,8 @@ tmp-*/
 
 # SAT / exam-lab raw source material (copyrighted, large — never commit)
 scripts/exam-lab/ingest-*/raw/
+# SAT / exam-lab derived artifacts (cached pdftotext extractions, coverage JSON)
+scripts/exam-lab/ingest-*/out/
 
 # Python cache and bytecode (first Python subtree in this JS-first repo)
 __pycache__/
