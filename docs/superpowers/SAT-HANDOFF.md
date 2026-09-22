@@ -19,8 +19,35 @@ if wrong. It is local and gitignored — read it before re-litigating anything.
 
 ## Status
 
-**Plan 1 — question-bank ingestion: complete and verified.** 19 commits through `4d5832a`.
+**Plan 1 — question-bank ingestion: complete and verified.** 21 commits through `ebf6d68`.
 **Plans 2 and 3: not written.**
+
+### The crop sign-off found a real defect — fixed 2026-09-23, `ebf6d68`
+
+Read this before trusting any earlier statement that the crops were clean.
+
+College Board prints the difficulty **twice**: as the word `Easy`/`Medium`/`Hard`, and as a
+vector bar glyph (one, two or three filled bars) in the header table's last cell. The glyph
+carries no text, so it has no `-bbox` word box, so `_header_bottom` — which reasons entirely
+over text rows — could never see it. Cropping below the header's lowest *text* row left the
+glyph's bottom sliver inside the question image.
+
+Measured over the rendered corpus: **1,788 of 3,730 crops (47.9%) leaked the rating**, and the
+leak was a *perfect* classifier — 580 items showed one bar and all 580 were Easy, 642 showed
+two and all were Medium, 561 showed three and all were Hard. Not one ambiguous case. The clean
+52.1% were exactly the column-wrapped-header items, whose wrapped tail happens to sit below the
+glyph; that is luck, not a rule, and it is why the four crops inspected by hand in the previous
+session all looked fine.
+
+The fix anchors the crop on the body's `Question` section label — the first element below the
+whole table, glyph included, present on all 3,730 questions — rather than on a bigger pad.
+`GLYPH_DEPTH` is a measured backstop that does not bind in this corpus. All 3,730 crops were
+re-rendered and re-scanned: **zero leaks, with no qualifying ink at all**, not merely under
+threshold.
+
+The lesson for plans 2 and 3: **a text-layer anchor cannot see a vector glyph.** The practice
+tests will have their own graphics. Verify crops by scanning the rendered images, not by
+reasoning about the text layer.
 
 ### The final fix wave is verified — checked 2026-09-23
 
@@ -42,8 +69,8 @@ lands in the row's `img`, `preflight_credentials()` runs beside `poppler.preflig
 any crop is rendered, and `report_qbank.text_of` decodes strict UTF-8 like `crop_qbank`
 always did.
 
-**98 tests pass.** A warm dry-run rerun on the current code reproduces `rows.json` and
-`skipped.json` byte-identically (39s).
+**102 tests pass** (98 before the crop fix added 4 regressions). The pipeline still yields
+3,730 rows / 40 skipped, unchanged by either the fix wave or the crop fix.
 
 ```
 3,770 questions in the exports
@@ -52,9 +79,12 @@ always did.
 
 ## THE TWO THINGS BLOCKING PROGRESS — both need the user
 
-1. **Sign-off on the sample crops.** 12 rendered at `scripts/exam-lab/ingest-SAT/out/samples/`.
-   Four were inspected and are clean: `121dc44f`, `13f67ddc`, `6d99b141`, `ca50de52`. The user
-   has not yet looked.
+1. **Sign-off on the sample crops.** 12 re-rendered at
+   `scripts/exam-lab/ingest-SAT/out/samples/`, spanning both sections, all three difficulties
+   and both answer kinds. All 12 were inspected on 2026-09-23 and are clean — no difficulty
+   glyph, no domain/skill, no answer key, figures and data tables intact — and an automated
+   scan of all 3,730 crops agrees. **The user has still not looked.** That sign-off is the
+   point: the automated scan only checks for the one defect it knows about.
 2. **Supabase credentials.** The live upload has **never run**. It needs `SUPABASE_URL` and
    `SUPABASE_SERVICE_ROLE_KEY` plus the user's explicit authorisation to write to their
    production `exam-assets` bucket. Do not go looking for these; ask.
@@ -79,7 +109,7 @@ Use `python`, not `python3` — `python3` is shadowed by a Windows Store alias t
 install prompt and exits 0 with no output, so commands appear to succeed while doing nothing.
 The sibling `ingest-5054/README.md` still has this bug.
 
-Cold run ~13m25s, warm rerun ~25s (crops cached, resumable).
+Cold run ~15m20s, warm rerun ~40s (crops cached, resumable).
 
 ## Carry forward into plan 2 — real work, not nits
 
