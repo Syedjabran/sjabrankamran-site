@@ -34,3 +34,6 @@ tmp-ct1/
 # Local scratch / media build artifacts (never commit)
 tmp-tour-v2/
 tmp-*/
+
+# SAT / exam-lab raw source material (copyrighted, large — never commit)
+scripts/exam-lab/ingest-*/raw/
