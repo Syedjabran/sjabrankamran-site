@@ -31,8 +31,11 @@ never gets merged into the header.
 """
 import re
 import subprocess
+import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+from PIL import Image
 
 import poppler
 
@@ -90,13 +93,22 @@ def _words(page) -> list[dict]:
 
 
 def anchors(xml_text: str) -> dict:
-    """Extract question-id, difficulty, answer and rationale anchors per page."""
+    """Extract question-id, difficulty, answer and rationale anchors per page.
+
+    Also returns `page_size`: each page's true (width_pt, height_pt) as
+    declared on `-bbox`'s own `<page width=... height=...>` element. Callers
+    must read a page's real size from here rather than assume a constant
+    (e.g. US Letter) -- see `render_span`, which needs the true height to
+    validate its point-to-pixel mapping.
+    """
     root = _strip_namespace(ET.fromstring(xml_text))
     ids, diffs, answers, rationales = [], [], [], []
     pages: dict[int, list[dict]] = {}
+    page_size: dict[int, tuple[float, float]] = {}
     for pageno, page in enumerate(root.iter("page"), start=1):
         words = _words(page)
         pages[pageno] = words
+        page_size[pageno] = (float(page.get("width")), float(page.get("height")))
         for i, w in enumerate(words):
             nxt = words[i + 1]["text"] if i + 1 < len(words) else None
             if w["text"] == "Question" and nxt == "ID:" and i + 2 < len(words):
@@ -109,7 +121,10 @@ def anchors(xml_text: str) -> dict:
                 answers.append({"page": pageno, "top": w["top"]})
             if w["text"] == "Rationale":
                 rationales.append({"page": pageno, "top": w["top"]})
-    return {"ids": ids, "diffs": diffs, "answers": answers, "rationales": rationales, "pages": pages}
+    return {
+        "ids": ids, "diffs": diffs, "answers": answers, "rationales": rationales,
+        "pages": pages, "page_size": page_size,
+    }
 
 
 def _rows(words: list[dict]) -> list[dict]:
@@ -189,3 +204,82 @@ def question_span_reason(a: dict, qid: str) -> str | None:
     or a missing difficulty anchor, so a caller can report it separately.
     """
     return _locate(a, qid)[1]
+
+
+def scale_box(span: dict, page_width_pt: float, dpi: int = 150) -> dict:
+    """Convert a span's point-space top/bottom (and the page's point-space
+    width) into pixel-space, at the given render resolution. PDF points are
+    1/72 inch, so the factor is dpi/72.
+    """
+    f = dpi / 72.0
+    return {
+        "top": int(round(span["top"] * f)),
+        "bottom": int(round(span["bottom"] * f)),
+        "width": int(round(page_width_pt * f)),
+    }
+
+
+def expected_render_height(page_height_pt: float, dpi: int) -> int:
+    """The pixel height a full-page `pdftoppm -r <dpi>` raster should have,
+    given the page's true height in points (dpi/72 factor, same as
+    `scale_box`). `render_span` checks the actual rendered image against
+    this so a page that is rotated, has a non-zero MediaBox origin, or is
+    simply a different size than the caller assumed fails loudly instead of
+    silently producing an offset crop (confirmed empirically for this
+    corpus: every page of both real exports is 612x792pt, rotation 0,
+    MediaBox origin (0, 0) -- see task-5-report.md -- so this check is a
+    safety net for the corpus's actual shape, not a hypothetical).
+    """
+    return int(round(page_height_pt * dpi / 72.0))
+
+
+def render_span(pdf: Path, span: dict, dest: Path, dpi: int = 150,
+                page_width_pt: float = 612.0, page_height_pt: float = 792.0) -> Path:
+    """Rasterise the span's page and crop it to the question region.
+
+    `page_width_pt`/`page_height_pt` default to the US Letter size every
+    page of the real question-bank exports actually measures (confirmed via
+    `pdfinfo` and the `-bbox` output's own `<page>` element across both
+    PDFs). Callers that have already parsed a page's real size --
+    `anchors(...)["page_size"][span["page"]]` -- should pass it explicitly
+    rather than rely on the default, since a future export is not
+    guaranteed to keep this size.
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        stem = Path(tmp) / "page"
+        subprocess.run(
+            [poppler.tool("pdftoppm"), "-r", str(dpi), "-f", str(span["page"]),
+             "-l", str(span["page"]), "-jpeg", str(pdf), str(stem)],
+            check=True, capture_output=True,
+        )
+        rendered = sorted(Path(tmp).glob("page*.jpg"))
+        if not rendered:
+            raise RuntimeError(f"pdftoppm produced no page for {pdf.name} p{span['page']}")
+        # `with Image.open(...)` (not a bare Image.open call) so the file
+        # handle is always closed before the enclosing TemporaryDirectory
+        # tries to delete it -- including on the raise below, which fires
+        # before `.crop()` would otherwise trigger PIL's implicit `.load()`
+        # (and the fp-close that comes with it). On Windows, an open handle
+        # makes that delete fail with a PermissionError, masking the real
+        # RuntimeError with an unrelated cleanup crash (confirmed while
+        # developing this function's own test for that raise).
+        with Image.open(rendered[0]) as img:
+            expected_h = expected_render_height(page_height_pt, dpi)
+            if abs(img.height - expected_h) > 1:
+                # The point-to-pixel mapping below assumes the rendered
+                # raster's height matches page_height_pt*dpi/72 exactly (mod
+                # rounding). A mismatch means that assumption is wrong -- a
+                # rotated page, a non-Letter page, or a stale caller-supplied
+                # size -- and every crop from here on would be silently
+                # offset if this weren't caught.
+                raise RuntimeError(
+                    f"rendered page height {img.height}px != expected {expected_h}px "
+                    f"for page_height_pt={page_height_pt} at {dpi} dpi "
+                    f"({pdf.name} p{span['page']}); point-to-pixel mapping is wrong -- "
+                    "check for page rotation or a non-Letter page before trusting this crop"
+                )
+            box = scale_box(span, page_width_pt, dpi)
+            crop = img.crop((0, box["top"], img.width, min(box["bottom"], img.height)))
+            crop.save(dest, "JPEG", quality=85, optimize=True)
+    return dest

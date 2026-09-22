@@ -7,7 +7,10 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from crop_qbank import anchors, bbox_xml, question_span, question_span_reason
+from crop_qbank import (
+    anchors, bbox_xml, expected_render_height, question_span,
+    question_span_reason, render_span, scale_box,
+)
 import poppler
 
 RAW_MATH_PDF = Path(__file__).resolve().parents[1] / "raw" / "question-bank" / "questionbank-export-2026-9-22 math.pdf"
@@ -16,6 +19,13 @@ RAW_MATH_PDF = Path(__file__).resolve().parents[1] / "raw" / "question-bank" / "
 # (see task-4-report.md). Any real page with non-ASCII text would do; this
 # one is known to reproduce both the crash and the silent-mangling case.
 _CRASH_PAGE = 255
+# Real page carrying id 6d99b141 (Geometry and Trigonometry / Lines, angles,
+# and triangles / Hard), confirmed by slicing it out with pdfseparate and
+# running anchors()/question_span() against it during task-5 development:
+# it resolves a real, single-page span (page=1 once sliced), so it doubles
+# as a real-corpus fixture for render_span without paying the cost of
+# running bbox_xml over the whole ~2030-page export.
+_WRAPPED_DOMAIN_PAGE = 1215
 
 BBOX = """<?xml version="1.0"?>
 <html><body>
@@ -222,3 +232,73 @@ def test_span_reason_distinguishes_cross_page_from_other_failures():
     reason = question_span_reason(a, "ac472881")
     assert reason is not None
     assert reason.startswith("cross-page")
+
+
+def test_scale_box_converts_points_to_pixels():
+    # PDF points are 1/72 inch; at 150 dpi the factor is 150/72
+    box = scale_box({"top": 72.0, "bottom": 144.0}, page_width_pt=612.0, dpi=150)
+    assert box["top"] == 150
+    assert box["bottom"] == 300
+    assert box["width"] == 1275
+
+
+def test_anchors_captures_each_page_true_size_in_points():
+    """Task-5 concern: never hard-code the page size -- read it from
+    `-bbox`'s own <page width=... height=...> element. Checked against both
+    the bare fixture and the real namespaced-output shape, since a page's
+    true size is what `render_span` needs to validate its pixel mapping.
+    """
+    assert anchors(BBOX)["page_size"][1] == (612.0, 792.0)
+    assert anchors(BBOX_NAMESPACED)["page_size"][1] == (612.0, 792.0)
+
+
+def test_expected_render_height_matches_known_letter_page_pixel_geometry():
+    # 792pt / 72 * 150dpi = 1650px exactly for a US Letter page -- no
+    # rounding slop to account for at this resolution.
+    assert expected_render_height(792.0, dpi=150) == 1650
+
+
+def test_render_span_raises_loudly_when_declared_page_height_is_wrong(tmp_path):
+    """If a page were rotated, had a non-zero MediaBox origin, or a caller
+    simply passed a stale page_height_pt, the point-to-pixel mapping in
+    `scale_box` would be silently wrong. render_span must fail loudly
+    instead of writing a subtly offset crop (task-5 brief concern 3).
+    """
+    if not RAW_MATH_PDF.exists():
+        pytest.skip("raw question-bank PDFs not present on this checkout")
+    span = {"page": 1, "top": 100.0, "bottom": 300.0}
+    with pytest.raises(RuntimeError, match="rendered page height"):
+        render_span(RAW_MATH_PDF, span, tmp_path / "bad.jpg", page_height_pt=400.0)
+
+
+def test_render_span_writes_a_correctly_scaled_crop_from_a_real_page(tmp_path):
+    """End-to-end against a real page (sliced out of the full Math export
+    with pdfseparate, matching the pattern used for the UTF-8 crash
+    regression above): render_span must produce a JPEG sized from the real
+    span, not from guessed page geometry.
+    """
+    if not RAW_MATH_PDF.exists():
+        pytest.skip("raw question-bank PDFs not present on this checkout")
+
+    pdfseparate = str(poppler.POPPLER_BIN / ("pdfseparate.exe" if os.name == "nt" else "pdfseparate"))
+    sliced = tmp_path / "page.pdf"
+    subprocess.run(
+        [pdfseparate, "-f", str(_WRAPPED_DOMAIN_PAGE), "-l", str(_WRAPPED_DOMAIN_PAGE),
+         str(RAW_MATH_PDF), str(sliced)],
+        check=True,
+    )
+    a = anchors(bbox_xml(sliced))
+    span = question_span(a, "6d99b141")
+    assert span is not None
+    width_pt, height_pt = a["page_size"][span["page"]]
+
+    dest = tmp_path / "out" / "6d99b141.jpg"
+    from PIL import Image
+    result = render_span(sliced, span, dest, dpi=150, page_width_pt=width_pt, page_height_pt=height_pt)
+
+    assert result == dest
+    assert dest.exists()
+    img = Image.open(dest)
+    assert img.width == round(width_pt * 150 / 72)
+    expected_height = round((span["bottom"] - span["top"]) * 150 / 72)
+    assert abs(img.height - expected_height) <= 1
