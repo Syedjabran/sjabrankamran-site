@@ -235,6 +235,30 @@ def test_load_uploaded_treats_a_corrupt_file_as_empty_and_warns_instead_of_crash
     captured = capsys.readouterr()
     assert "WARNING" in captured.err
     assert "uploaded.json" in captured.err
+    assert "corrupt" in captured.err  # a parse failure, distinct from R6's read-failure case
+
+
+def test_load_uploaded_distinguishes_a_read_failure_from_a_parse_failure(tmp_path, monkeypatch, capsys):
+    """R6: a genuine read failure (permissions, the file vanishing mid-read)
+    needs a different operator response than a truncated/malformed file --
+    the warning text must say which one happened, not use one blanket
+    "corrupt" message for both. Both still fail open (empty set), since
+    re-uploading is harmless either way; only the message differs.
+    """
+    path = tmp_path / "uploaded.json"
+    path.write_text('["id1"]', encoding="utf-8")
+
+    def fail_read(self, encoding=None):
+        raise PermissionError("simulated permission denied")
+
+    monkeypatch.setattr(Path, "read_text", fail_read)
+    result = extract_sat._load_uploaded(path)
+
+    assert result == set()
+    captured = capsys.readouterr()
+    assert "WARNING" in captured.err
+    assert "could not read" in captured.err
+    assert "corrupt" not in captured.err  # this is a read failure, not a parse failure
 
 
 # --- crops/uploaded.json desync warning (R3) ------------------------------
@@ -308,3 +332,56 @@ def test_persist_failure_inside_finally_does_not_displace_the_original_exception
 
     captured = capsys.readouterr()
     assert "failed to persist" in captured.err
+
+
+# --- a persistence-only failure on an otherwise clean run must not exit 0
+#     (R5) ---------------------------------------------------------------
+
+def test_main_does_not_exit_zero_when_persistence_fails_on_a_clean_run(tmp_path, monkeypatch, capsys):
+    """R5: R4 stopped a persistence failure from displacing an ORIGINAL
+    exception, but on a CLEAN run (no original exception) that same
+    persistence failure was only warned about, then main() returned 0
+    anyway -- reporting success while rows.json/skipped.json may not
+    reflect the run at all. Since I1 exists specifically so a run's
+    outcome is never lost, that combination (success exit code + no
+    reliable record) is exactly the wrong outcome for a live run that may
+    have just uploaded thousands of images. This forces every crop to
+    render successfully (no original exception) while every persistence
+    write fails, and checks that main() raises rather than returning.
+    """
+    records = [_fake_record("id1")]
+    _patch_fake_pipeline(monkeypatch, tmp_path, records, _write_crop)
+    monkeypatch.setattr(
+        extract_sat, "_atomic_write_text",
+        lambda path, text: (_ for _ in ()).throw(OSError("disk full (simulated)")),
+    )
+
+    out_path = tmp_path / "out" / "rows.json"
+    with pytest.raises(OSError, match="disk full"):
+        extract_sat.main(["--dry-run", "--out", str(out_path)])
+
+    captured = capsys.readouterr()
+    assert "not reporting success" in captured.err
+
+
+def test_main_still_propagates_the_original_exception_not_the_persist_error(tmp_path, monkeypatch):
+    """R5 regression guard for R4: adding the clean-run persist-failure
+    check must not break the case R4 fixed -- when there IS an original
+    exception (here: a simulated crop crash) AND persistence also fails,
+    the ORIGINAL exception must still be what propagates, not the
+    persistence error and not a generic "did the run fail" signal.
+    """
+    records = [_fake_record("id1")]
+
+    def crashing_render_span(pdf, span, dest, **kw):
+        raise RuntimeError("original crash")
+
+    _patch_fake_pipeline(monkeypatch, tmp_path, records, crashing_render_span)
+    monkeypatch.setattr(
+        extract_sat, "_atomic_write_text",
+        lambda path, text: (_ for _ in ()).throw(OSError("persist also failed")),
+    )
+
+    out_path = tmp_path / "out" / "rows.json"
+    with pytest.raises(RuntimeError, match="original crash"):
+        extract_sat.main(["--dry-run", "--out", str(out_path)])

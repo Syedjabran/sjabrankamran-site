@@ -90,20 +90,36 @@ def _load_uploaded(path: Path) -> set[str]:
     """The set of question ids already confirmed uploaded in a prior run,
     or empty on a fresh run / if the file doesn't exist yet.
 
-    Resilient to a corrupt/unparseable file: warns loudly and treats it as
-    empty rather than crashing the run. Re-uploading ids that were actually
-    already uploaded is harmless (Supabase upsert), whereas refusing to
-    start over an unreadable bookkeeping file is not -- that would turn a
-    single corrupted `uploaded.json` into a permanent block on every future
-    resume.
+    Resilient to a corrupt or unreadable file: warns loudly and treats it
+    as empty rather than crashing the run. Re-uploading ids that were
+    actually already uploaded is harmless (Supabase upsert), whereas
+    refusing to start over a bad bookkeeping file is not -- that would turn
+    one bad `uploaded.json` into a permanent block on every future resume.
+
+    The two ways this can fail need different operator responses, so the
+    warning distinguishes them instead of using one blanket "corrupt"
+    message: a read failure (permissions, the file vanished mid-read) means
+    the file itself is inaccessible -- fix the permissions/environment; a
+    parse failure means the file was read fine but its *content* is bad
+    (e.g. truncated by an interrupted write) -- nothing to fix except let
+    the next successful write replace it.
     """
     if not path.exists():
         return set()
     try:
-        return set(json.loads(path.read_text(encoding="utf-8")))
-    except (json.JSONDecodeError, OSError, ValueError) as exc:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
         print(
-            f"WARNING: {path} is unreadable/corrupt ({exc}); treating as empty. "
+            f"WARNING: could not read {path} ({exc}); treating as empty. "
+            "Already-uploaded ids may be re-uploaded (harmless: upsert), not lost.",
+            file=sys.stderr,
+        )
+        return set()
+    try:
+        return set(json.loads(text))
+    except (json.JSONDecodeError, ValueError) as exc:
+        print(
+            f"WARNING: {path} is corrupt/unparseable ({exc}); treating as empty. "
             "Already-uploaded ids may be re-uploaded (harmless: upsert), not lost.",
             file=sys.stderr,
         )
@@ -169,6 +185,7 @@ def main(argv: list[str] | None = None) -> int:
         _atomic_write_text(out_path, json.dumps(rows, indent=1))
         _atomic_write_text(skipped_path, json.dumps(skipped, indent=1))
 
+    persist_error: Exception | None = None
     try:
         for pdf in sorted(RAW.glob("*.pdf")):
             if args.limit and len(rows) >= args.limit:
@@ -236,12 +253,31 @@ def main(argv: list[str] | None = None) -> int:
         # AND persistence then also fails, letting that second exception
         # escape `finally` would replace the original one -- the real cause
         # would never reach whatever is watching this process. Reporting
-        # the persistence failure and continuing lets the original
-        # exception (if any) propagate unmodified.
+        # the persistence failure here and continuing lets the original
+        # exception (if any) propagate unmodified once this `finally`
+        # completes -- Python resumes that pending exception automatically,
+        # so the `persist_error` check below is never reached in that case.
         try:
             _persist()
-        except Exception as persist_exc:
-            print(f"WARNING: failed to persist rows.json/skipped.json: {persist_exc}", file=sys.stderr)
+        except Exception as exc:
+            persist_error = exc
+            print(f"WARNING: failed to persist rows.json/skipped.json: {exc}", file=sys.stderr)
+
+    if persist_error is not None:
+        # Only reached when the loop itself completed without raising --
+        # if it had, the pending exception would already have propagated
+        # out of the function the moment `finally` above finished, and this
+        # line would never run. So getting here means: the run itself was
+        # otherwise clean, but it failed to record what it did. That must
+        # not be reported as success (exit 0) -- I1 exists specifically so
+        # a run's outcome is never lost, and this is the one case (no other
+        # error to blame) where silently returning 0 would do exactly that.
+        print(
+            "ERROR: run completed but failed to persist rows.json/skipped.json -- "
+            "not reporting success.",
+            file=sys.stderr,
+        )
+        raise persist_error
 
     print(f"\n  {len(rows)} rows -> {out_path}")
     print(f"  {len(skipped)} skipped")
