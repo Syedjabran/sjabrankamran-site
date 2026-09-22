@@ -1,8 +1,21 @@
+import os
+import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from crop_qbank import anchors, question_span
+from crop_qbank import anchors, bbox_xml, question_span, question_span_reason
+import poppler
+
+RAW_MATH_PDF = Path(__file__).resolve().parents[1] / "raw" / "question-bank" / "questionbank-export-2026-9-22 math.pdf"
+# Page 255 of the real Math export contains byte 0x9d, confirmed by
+# bisecting pages 1-400 for the byte that crashes a strict cp1252 decode
+# (see task-4-report.md). Any real page with non-ASCII text would do; this
+# one is known to reproduce both the crash and the silent-mangling case.
+_CRASH_PAGE = 255
 
 BBOX = """<?xml version="1.0"?>
 <html><body>
@@ -79,6 +92,65 @@ BBOX_NAMESPACED = """<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//
 """
 
 
+# id present, difficulty and the "Question" body-start row present, but no
+# `Correct Answer:` or `Rationale` anchor anywhere on the page -- the real
+# shape of a question whose end anchor lands on the *next* physical PDF
+# page (verified against the real corpus: ~1.1% of sampled questions).
+BBOX_CROSS_PAGE = """<?xml version="1.0"?>
+<html><body>
+<page width="612" height="792">
+<word xMin="70" yMin="100" xMax="140" yMax="112">Question</word>
+<word xMin="142" yMin="100" xMax="160" yMax="112">ID:</word>
+<word xMin="162" yMin="100" xMax="220" yMax="112">ac472881</word>
+<word xMin="70" yMin="150" xMax="110" yMax="162">Hard</word>
+<word xMin="70" yMin="200" xMax="120" yMax="212">What</word>
+</page>
+</body></html>
+"""
+
+# id present but no difficulty token anywhere after it.
+BBOX_NO_DIFFICULTY = """<?xml version="1.0"?>
+<html><body>
+<page width="612" height="792">
+<word xMin="70" yMin="100" xMax="140" yMax="112">Question</word>
+<word xMin="142" yMin="100" xMax="160" yMax="112">ID:</word>
+<word xMin="162" yMin="100" xMax="220" yMax="112">ac472881</word>
+<word xMin="70" yMin="200" xMax="120" yMax="212">What</word>
+</page>
+</body></html>
+"""
+
+
+def test_bbox_xml_decodes_real_pdftotext_output_as_utf8_not_locale_codec(tmp_path):
+    """Regression for a crash confirmed on this machine: `bbox_xml`'s
+    subprocess.run had no explicit `encoding`, so `text=True` decoded with
+    `locale.getpreferredencoding()` (cp1252 here) instead of UTF-8, which
+    raises UnicodeDecodeError on real question-bank pages (byte 0x9d occurs
+    on math export page 255) and would silently mangle other non-ASCII text
+    (smart quotes etc.) even on pages that happen not to crash.
+
+    Exercises the real `bbox_xml(pdf)` unmodified -- it takes no page-range
+    argument -- against a single real page sliced out with `pdfseparate`
+    into a standalone tiny PDF, so the test stays fast without touching
+    `bbox_xml`'s signature or running it over the full ~159MB/2400-page
+    export. Skipped if the gitignored raw corpus isn't present on this
+    checkout.
+    """
+    if not RAW_MATH_PDF.exists():
+        pytest.skip("raw question-bank PDFs not present on this checkout")
+
+    pdfseparate = str(poppler.POPPLER_BIN / ("pdfseparate.exe" if os.name == "nt" else "pdfseparate"))
+    sliced = tmp_path / "page.pdf"
+    subprocess.run(
+        [pdfseparate, "-f", str(_CRASH_PAGE), "-l", str(_CRASH_PAGE), str(RAW_MATH_PDF), str(sliced)],
+        check=True,
+    )
+
+    xml_text = bbox_xml(sliced)
+    assert "�" not in xml_text  # no replacement-character mangling
+    ET.fromstring(xml_text)  # doesn't raise
+
+
 def test_anchors_and_span_work_against_real_namespaced_bbox_output():
     a = anchors(BBOX_NAMESPACED)
     assert a["ids"][0]["qid"] == "6d99b141"
@@ -122,3 +194,31 @@ def test_span_starts_below_wrapped_tail_not_just_below_difficulty():
     assert span["top"] >= 103              # below the wrapped tail's yMax
     assert not (97 <= span["top"] <= 103)  # not inside the wrapped tail's row
     assert span["bottom"] <= 400
+
+
+def test_span_reason_is_none_when_span_succeeds():
+    assert question_span_reason(anchors(BBOX), "ac472881") is None
+
+
+def test_span_reason_distinguishes_unknown_id():
+    assert question_span_reason(anchors(BBOX), "deadbeef") == "unknown-id"
+
+
+def test_span_reason_distinguishes_missing_difficulty_anchor():
+    assert question_span_reason(anchors(BBOX_NO_DIFFICULTY), "ac472881") == "no-difficulty-anchor"
+
+
+def test_span_reason_distinguishes_cross_page_from_other_failures():
+    """The header (id + difficulty) is found, but there's no answer/
+    rationale anchor on this page at all -- the real shape of a question
+    whose end anchor lands on the next physical PDF page, not a malformed
+    or unparseable block. `question_span` still safely returns None either
+    way; `question_span_reason` is what lets a caller (Task 7's skipped
+    report) count this ~1.1%-of-corpus case separately from genuine
+    failures instead of lumping every None together.
+    """
+    a = anchors(BBOX_CROSS_PAGE)
+    assert question_span(a, "ac472881") is None
+    reason = question_span_reason(a, "ac472881")
+    assert reason is not None
+    assert reason.startswith("cross-page")

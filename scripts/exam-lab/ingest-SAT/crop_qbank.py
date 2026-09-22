@@ -49,9 +49,16 @@ ROW_EPSILON = 1.0
 
 
 def bbox_xml(pdf: Path) -> str:
+    # encoding="utf-8" is required, not optional: pdftotext -bbox emits
+    # UTF-8, but subprocess.run(text=True) without an explicit encoding
+    # decodes with locale.getpreferredencoding() -- cp1252 on this
+    # machine -- which raises UnicodeDecodeError on real question-bank
+    # pages (confirmed: byte 0x9d on math export page 255) and would
+    # silently mangle other non-ASCII text (smart quotes etc.) even on
+    # pages that happen not to crash.
     out = subprocess.run(
         [poppler.tool("pdftotext"), "-bbox", str(pdf), "-"],
-        capture_output=True, text=True, check=True,
+        capture_output=True, encoding="utf-8", check=True,
     )
     return out.stdout
 
@@ -133,11 +140,15 @@ def _header_bottom(words: list[dict], start_bottom: float) -> float:
     return bottom
 
 
-def question_span(a: dict, qid: str) -> dict | None:
-    """Region between the header's true bottom edge and the answer, for one question."""
+def _locate(a: dict, qid: str) -> tuple[dict | None, str | None]:
+    """Shared by `question_span` and `question_span_reason`: (span, None) on
+    success, or (None, reason) when it can't be determined -- distinguishing
+    *why*, since one of those reasons (cross-page) is a measured ~1.1% of
+    the real corpus, not a hypothetical edge case.
+    """
     entry = next((x for x in a["ids"] if x["qid"] == qid), None)
     if entry is None:
-        return None
+        return None, "unknown-id"
     page = entry["page"]
 
     after = [d["bottom"] for d in a["diffs"] if d["page"] == page and d["bottom"] > entry["bottom"]]
@@ -145,7 +156,7 @@ def question_span(a: dict, qid: str) -> dict | None:
         # No difficulty token found below this id: there's nothing to anchor
         # the header's end on, so cropping would risk leaking the header
         # (or worse, guessing) rather than failing safely.
-        return None
+        return None, "no-difficulty-anchor"
     diff_bottom = min(after)
 
     header_bottom = _header_bottom(a["pages"][page], diff_bottom)
@@ -153,5 +164,28 @@ def question_span(a: dict, qid: str) -> dict | None:
 
     ends = [x["top"] for x in a["answers"] + a["rationales"] if x["page"] == page and x["top"] > top]
     if not ends:
-        return None
-    return {"page": page, "top": top, "bottom": min(ends) - PAD}
+        # The header was found on this page but no answer/rationale anchor
+        # was: verified against the real corpus, this means the question
+        # spans two physical PDF pages and the end anchor is on the next
+        # one, not that the page is malformed. Cross-page stitching is a
+        # follow-up (see Task 7); this just needs to be reported separately
+        # from a genuine parse failure, not silently lumped in with one.
+        return None, "cross-page: answer/rationale anchor not found on the id's page"
+    return {"page": page, "top": top, "bottom": min(ends) - PAD}, None
+
+
+def question_span(a: dict, qid: str) -> dict | None:
+    """Region between the header's true bottom edge and the answer, for one
+    question, or None if it can't be determined. Call `question_span_reason`
+    to distinguish why.
+    """
+    return _locate(a, qid)[0]
+
+
+def question_span_reason(a: dict, qid: str) -> str | None:
+    """Why `question_span` returned None for this id, or None if it would
+    succeed. In particular distinguishes the measured cross-page case (the
+    answer/rationale anchor lands on the next PDF page) from an unknown id
+    or a missing difficulty anchor, so a caller can report it separately.
+    """
+    return _locate(a, qid)[1]

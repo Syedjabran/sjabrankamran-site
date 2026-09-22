@@ -30,7 +30,10 @@ def tool(name: str) -> str:
 
 
 def _version(name: str) -> tuple[str, tuple[int, int]]:
-    out = subprocess.run([tool(name), "-v"], capture_output=True, text=True)
+    # Explicit encoding, not locale-dependent text=True: see crop_qbank.py's
+    # bbox_xml for the failure mode (UnicodeDecodeError / silent mangling
+    # on cp1252 machines) this same locale-dependent decode is prone to.
+    out = subprocess.run([tool(name), "-v"], capture_output=True, encoding="utf-8")
     text = (out.stderr or "") + (out.stdout or "")
     # Check if it's poppler first (includes "Poppler Developers" or poppler URL)
     if "Poppler" in text or "poppler.freedesktop.org" in text:
