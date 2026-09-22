@@ -140,12 +140,16 @@ const orgSchema = {
 // receives every script/media asset. sessionStorage guard prevents loops.
 const SELF_HEAL = `(function(){try{
 if(sessionStorage.getItem("sjak-heal"))return;
-setTimeout(function(){
+var done=false;
+function chk(){
+if(done)return;done=true;
 if(!document.documentElement.classList.contains("js-hydrated")){
 try{sessionStorage.setItem("sjak-heal","1")}catch(e){}
 location.reload();
 }
-},3500);
+}
+if(document.readyState==="complete"){setTimeout(chk,2500);}
+else{window.addEventListener("load",function(){setTimeout(chk,2500);});setTimeout(chk,12000);}
 }catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

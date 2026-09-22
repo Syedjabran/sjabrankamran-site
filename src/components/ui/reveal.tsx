@@ -20,7 +20,10 @@ export function Reveal({
     if (!el) return;
     const obs = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting) {
+        // Reveal when the element enters the viewport — OR when it is already
+        // ABOVE it (fast scrolling / deep links can jump past an element
+        // without ever intersecting; it must never stay invisible).
+        if (entry.isIntersecting || entry.boundingClientRect.bottom < 0) {
           setVisible(true);
           obs.disconnect();
         }

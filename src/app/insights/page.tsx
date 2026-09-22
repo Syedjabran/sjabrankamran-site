@@ -21,7 +21,8 @@ export default function InsightsPage() {
         eyebrow="Insights"
         title="Physics first, then everything it touches"
         intro="Notes on teaching physics, exam technique, and student thinking — alongside entrepreneurship, leadership, and applied AI. Physics and education lead."
-        field
+        video="/videos/hero-studio.mp4"
+        poster="/videos/hero-studio-poster.jpg"
       />
 
       <Section tone="void">

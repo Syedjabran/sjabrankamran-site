@@ -9,6 +9,7 @@ import { SJAK_MONOGRAM_DATA_URI } from "@/lib/sjak-monogram";
 const NAV = [
   { href: "/profile", label: "Profile" },
   { href: "/education", label: "Education" },
+  { href: "/physics", label: "Courses" },
   { href: "/physics-studio", label: "Physics Studio" },
   { href: "/enterprise", label: "Enterprise" },
   { href: "/ai-technology", label: "AI & Technology" },
