@@ -15,6 +15,44 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import extract_sat
 
 
+def _fake_record(qid: str) -> dict:
+    return {
+        "id": qid, "section": "math", "domain": "algebra", "skill": "s", "difficulty": "H",
+        "answer": {"kind": "spr", "accepted": ["1"], "source": "answer-line"}, "rationale": "r",
+    }
+
+
+def _patch_fake_pipeline(monkeypatch, tmp_path, records, render_span_fn) -> None:
+    """Wire every crop_qbank/parse_qbank/report_qbank/upload call
+    extract_sat.main() makes to a fake, so main()'s own orchestration logic
+    can be exercised end-to-end without a real PDF, real poppler output, or
+    a real network call -- those are each covered by their own module's
+    test file already.
+    """
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    (raw_dir / "export.pdf").write_bytes(b"")  # only needs to satisfy glob
+    monkeypatch.setattr(extract_sat, "RAW", raw_dir)
+    monkeypatch.setattr(extract_sat, "CROPS", tmp_path / "crops")
+    monkeypatch.setattr(extract_sat, "text_of", lambda pdf: "fake text")
+    monkeypatch.setattr(extract_sat, "parse_export", lambda text: (records, []))
+    monkeypatch.setattr(extract_sat, "bbox_xml", lambda pdf: "<fake/>")
+    monkeypatch.setattr(
+        extract_sat, "anchors",
+        lambda xml: {"ids": [], "diffs": [], "answers": [], "rationales": [],
+                      "pages": {}, "page_size": {1: (612.0, 792.0)}},
+    )
+    monkeypatch.setattr(extract_sat, "question_span", lambda a, qid: {"page": 1, "top": 0.0, "bottom": 10.0})
+    monkeypatch.setattr(extract_sat, "bucket_path", lambda qid, section: f"sat/{section}/{qid}.jpg")
+    monkeypatch.setattr(extract_sat, "render_span", render_span_fn)
+
+
+def _write_crop(pdf, span, dest, **kw):
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(b"fake-jpeg")
+    return dest
+
+
 # --- _upload_with_retry -----------------------------------------------
 
 def test_upload_with_retry_retries_5xx_then_succeeds(monkeypatch):
@@ -127,39 +165,14 @@ def test_main_persists_partial_rows_and_skipped_on_exception(tmp_path, monkeypat
     this tests only extract_sat.py's own orchestration, not the modules
     already covered by their own test files.
     """
-    raw_dir = tmp_path / "raw"
-    raw_dir.mkdir()
-    (raw_dir / "export.pdf").write_bytes(b"")  # only needs to satisfy glob
-    monkeypatch.setattr(extract_sat, "RAW", raw_dir)
-    monkeypatch.setattr(extract_sat, "CROPS", tmp_path / "crops")
-
-    records = [
-        {"id": "id1", "section": "math", "domain": "algebra", "skill": "s", "difficulty": "H",
-         "answer": {"kind": "spr", "accepted": ["1"], "source": "answer-line"}, "rationale": "r"},
-        {"id": "id2", "section": "math", "domain": "algebra", "skill": "s", "difficulty": "H",
-         "answer": {"kind": "spr", "accepted": ["2"], "source": "answer-line"}, "rationale": "r"},
-        {"id": "id3", "section": "math", "domain": "algebra", "skill": "s", "difficulty": "H",
-         "answer": {"kind": "spr", "accepted": ["3"], "source": "answer-line"}, "rationale": "r"},
-    ]
-    monkeypatch.setattr(extract_sat, "text_of", lambda pdf: "fake text")
-    monkeypatch.setattr(extract_sat, "parse_export", lambda text: (records, []))
-    monkeypatch.setattr(extract_sat, "bbox_xml", lambda pdf: "<fake/>")
-    monkeypatch.setattr(
-        extract_sat, "anchors",
-        lambda xml: {"ids": [], "diffs": [], "answers": [], "rationales": [],
-                      "pages": {}, "page_size": {1: (612.0, 792.0)}},
-    )
-    monkeypatch.setattr(extract_sat, "question_span", lambda a, qid: {"page": 1, "top": 0.0, "bottom": 10.0})
-    monkeypatch.setattr(extract_sat, "bucket_path", lambda qid, section: f"sat/{section}/{qid}.jpg")
+    records = [_fake_record("id1"), _fake_record("id2"), _fake_record("id3")]
 
     def fake_render_span(pdf, span, dest, **kw):
         if dest.stem == "id2":
             raise RuntimeError("simulated crash mid-render")
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(b"fake-jpeg")
-        return dest
+        return _write_crop(pdf, span, dest, **kw)
 
-    monkeypatch.setattr(extract_sat, "render_span", fake_render_span)
+    _patch_fake_pipeline(monkeypatch, tmp_path, records, fake_render_span)
 
     out_path = tmp_path / "out" / "rows.json"
     with pytest.raises(RuntimeError, match="simulated crash mid-render"):
@@ -172,3 +185,126 @@ def test_main_persists_partial_rows_and_skipped_on_exception(tmp_path, monkeypat
     skipped_path = out_path.with_name("skipped.json")
     assert skipped_path.exists()
     assert json.loads(skipped_path.read_text(encoding="utf-8")) == []
+
+
+# --- _atomic_write_text (R1) ---------------------------------------------
+
+def test_atomic_write_text_writes_the_file_and_leaves_no_tmp_leftover(tmp_path):
+    path = tmp_path / "out.json"
+    extract_sat._atomic_write_text(path, "hello")
+    assert path.read_text(encoding="utf-8") == "hello"
+    assert list(tmp_path.glob("*.tmp-*")) == []
+
+
+def test_atomic_write_text_leaves_the_original_untouched_on_failure(tmp_path, monkeypatch):
+    """The exact failure mode R1 exists to prevent: `uploaded.json` (or
+    rows.json/skipped.json) killed mid-write must never end up truncated,
+    because a truncated `uploaded.json` makes `_load_uploaded`'s
+    `json.loads` raise on every future run, permanently blocking resume.
+    Forces the final `os.replace` step itself to fail -- the worst-case
+    timing, after the new content is fully staged in the temp file -- and
+    checks the ORIGINAL file is byte-for-byte unchanged, not truncated or
+    replaced with a partial write, and that no temp file is left behind.
+    """
+    path = tmp_path / "out.json"
+    path.write_text("original", encoding="utf-8")
+
+    def fail_replace(src, dst):
+        raise OSError("disk full (simulated)")
+
+    monkeypatch.setattr(extract_sat.os, "replace", fail_replace)
+    with pytest.raises(OSError, match="disk full"):
+        extract_sat._atomic_write_text(path, "new-content")
+
+    assert path.read_text(encoding="utf-8") == "original"
+    assert list(tmp_path.glob("*.tmp-*")) == []
+
+
+def test_load_uploaded_treats_a_corrupt_file_as_empty_and_warns_instead_of_crashing(tmp_path, capsys):
+    """A truncated/corrupt uploaded.json must not hard-block every future
+    resume: re-uploading ids that turn out to already be uploaded is
+    harmless (Supabase upsert), so this degrades to "start over" with a
+    loud warning rather than raising and killing the run outright.
+    """
+    path = tmp_path / "uploaded.json"
+    path.write_text("{not valid json", encoding="utf-8")
+
+    result = extract_sat._load_uploaded(path)
+
+    assert result == set()
+    captured = capsys.readouterr()
+    assert "WARNING" in captured.err
+    assert "uploaded.json" in captured.err
+
+
+# --- crops/uploaded.json desync warning (R3) ------------------------------
+
+def test_main_warns_when_a_recropped_id_is_already_marked_uploaded(tmp_path, monkeypatch, capsys):
+    """CROPS is a fixed path while uploaded.json derives from --out's
+    parent, so the two can desync -- e.g. out/crops was cleared while
+    out/uploaded.json survived a previous live run. If a crop had to be
+    re-rendered but its id is already marked uploaded, the upload step
+    below is skipped (id already in `uploaded`), so the bucket may still be
+    serving the OLD image under that key. Only a human can say which copy
+    is actually correct, so this must be surfaced loudly rather than
+    silently skipped -- the run still succeeds, it just can't be missed.
+    """
+    records = [_fake_record("id1")]
+    _patch_fake_pipeline(monkeypatch, tmp_path, records, _write_crop)
+
+    out_path = tmp_path / "out" / "rows.json"
+    uploaded_path = out_path.with_name("uploaded.json")
+    uploaded_path.parent.mkdir(parents=True, exist_ok=True)
+    uploaded_path.write_text(json.dumps(["id1"]), encoding="utf-8")
+
+    extract_sat.main(["--dry-run", "--out", str(out_path)])
+
+    captured = capsys.readouterr()
+    assert "WARNING" in captured.err
+    assert "id1" in captured.err
+    assert "stale" in captured.err
+
+
+def test_main_does_not_warn_when_a_recropped_id_is_not_yet_uploaded(tmp_path, monkeypatch, capsys):
+    """Sanity check for the R3 warning's condition: the ordinary case (a
+    freshly cropped question that has never been uploaded, e.g. a first
+    run) must NOT trigger the desync warning -- only a re-crop of an id
+    already recorded as uploaded should.
+    """
+    records = [_fake_record("id1")]
+    _patch_fake_pipeline(monkeypatch, tmp_path, records, _write_crop)
+
+    out_path = tmp_path / "out" / "rows.json"
+    extract_sat.main(["--dry-run", "--out", str(out_path)])
+
+    captured = capsys.readouterr()
+    assert "WARNING" not in captured.err
+
+
+# --- _persist() failure inside finally does not displace the original
+#     exception (R4) -------------------------------------------------------
+
+def test_persist_failure_inside_finally_does_not_displace_the_original_exception(tmp_path, monkeypatch, capsys):
+    """If the loop dies for a real reason (here: a simulated crop crash)
+    AND _persist() then also fails (here: _atomic_write_text simulated as
+    broken), the caller must still see the ORIGINAL exception -- not the
+    persistence failure -- so the real cause is never hidden behind a
+    secondary bookkeeping error.
+    """
+    records = [_fake_record("id1")]
+
+    def crashing_render_span(pdf, span, dest, **kw):
+        raise RuntimeError("original crash")
+
+    _patch_fake_pipeline(monkeypatch, tmp_path, records, crashing_render_span)
+    monkeypatch.setattr(
+        extract_sat, "_atomic_write_text",
+        lambda path, text: (_ for _ in ()).throw(OSError("persist also failed")),
+    )
+
+    out_path = tmp_path / "out" / "rows.json"
+    with pytest.raises(RuntimeError, match="original crash"):
+        extract_sat.main(["--dry-run", "--out", str(out_path)])
+
+    captured = capsys.readouterr()
+    assert "failed to persist" in captured.err

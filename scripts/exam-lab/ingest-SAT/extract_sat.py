@@ -31,6 +31,7 @@ generic "skipped" bucket:
 import argparse
 import collections
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -60,13 +61,53 @@ def _reason_key(reason: str) -> str:
     return reason.split(":", 1)[0]
 
 
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write `text` to `path` atomically: to a temp file in the same
+    directory first, then `os.replace()`d onto the real path -- atomic on
+    both POSIX and Windows, same pattern as `crop_qbank.render_span`'s crop
+    writes. A process killed mid-write leaves `path` either absent/
+    unchanged or fully updated, never truncated.
+
+    This matters most for `uploaded.json`: a plain `write_text` truncated
+    by a kill mid-write would make `_load_uploaded`'s `json.loads` raise on
+    every future run -- a hard failure that blocks all resume forever,
+    which is a *worse* outcome than the one Task 7's persistence exists to
+    prevent. The same exposure applies to `rows.json`/`skipped.json`, so
+    every write in this module that needs to survive a kill goes through
+    this helper rather than repeating the temp-file dance three times.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp-{os.getpid()}")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def _load_uploaded(path: Path) -> set[str]:
     """The set of question ids already confirmed uploaded in a prior run,
     or empty on a fresh run / if the file doesn't exist yet.
+
+    Resilient to a corrupt/unparseable file: warns loudly and treats it as
+    empty rather than crashing the run. Re-uploading ids that were actually
+    already uploaded is harmless (Supabase upsert), whereas refusing to
+    start over an unreadable bookkeeping file is not -- that would turn a
+    single corrupted `uploaded.json` into a permanent block on every future
+    resume.
     """
     if not path.exists():
         return set()
-    return set(json.loads(path.read_text(encoding="utf-8")))
+    try:
+        return set(json.loads(path.read_text(encoding="utf-8")))
+    except (json.JSONDecodeError, OSError, ValueError) as exc:
+        print(
+            f"WARNING: {path} is unreadable/corrupt ({exc}); treating as empty. "
+            "Already-uploaded ids may be re-uploaded (harmless: upsert), not lost.",
+            file=sys.stderr,
+        )
+        return set()
 
 
 def _record_uploaded(path: Path, qid: str, already: set[str]) -> None:
@@ -77,7 +118,7 @@ def _record_uploaded(path: Path, qid: str, already: set[str]) -> None:
     what makes a resumed run fast rather than merely correct.
     """
     already.add(qid)
-    path.write_text(json.dumps(sorted(already), indent=1), encoding="utf-8")
+    _atomic_write_text(path, json.dumps(sorted(already), indent=1))
 
 
 def _upload_with_retry(dest: Path, img: str) -> str:
@@ -125,9 +166,8 @@ def main(argv: list[str] | None = None) -> int:
     skipped: list[dict] = []
 
     def _persist() -> None:
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps(rows, indent=1), encoding="utf-8")
-        skipped_path.write_text(json.dumps(skipped, indent=1), encoding="utf-8")
+        _atomic_write_text(out_path, json.dumps(rows, indent=1))
+        _atomic_write_text(skipped_path, json.dumps(skipped, indent=1))
 
     try:
         for pdf in sorted(RAW.glob("*.pdf")):
@@ -155,9 +195,29 @@ def main(argv: list[str] | None = None) -> int:
                     })
                     continue
                 dest = CROPS / rec["section"] / f"{rec['id']}.jpg"
-                if not dest.exists():
+                was_missing = not dest.exists()
+                if was_missing:
                     width_pt, height_pt = a["page_size"][span["page"]]
                     render_span(pdf, span, dest, page_width_pt=width_pt, page_height_pt=height_pt)
+                    if rec["id"] in uploaded:
+                        # CROPS is a fixed path while uploaded.json derives
+                        # from --out's parent, so the two can desync: e.g.
+                        # out/crops was cleared (or never shared) while
+                        # out/uploaded.json survived. The crop just got
+                        # re-rendered but the upload below will be skipped
+                        # (id already marked uploaded), so the bucket keeps
+                        # whatever image it already has -- which may not be
+                        # this new crop. This can't be fixed silently since
+                        # only a human can say which copy is correct; it
+                        # must not be missed, so it prints even in dry-run.
+                        print(
+                            f"WARNING: {rec['id']}'s crop was just re-rendered (missing "
+                            f"from {CROPS}) but its id is already recorded as uploaded in "
+                            f"{uploaded_path.name} -- the bucket copy may now be stale "
+                            f"relative to this new crop. Remove its entry from "
+                            f"{uploaded_path.name} to force a re-upload.",
+                            file=sys.stderr,
+                        )
                 img = bucket_path(rec["id"], rec["section"])
                 if not args.dry_run and rec["id"] not in uploaded:
                     _upload_with_retry(dest, img)
@@ -171,9 +231,17 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         # Always persisted, even on an exception or KeyboardInterrupt: a
         # mid-run failure at item 2,000 of 3,730 must leave a record of how
-        # far the run got, not silently vanish. This does not swallow the
-        # exception -- `finally` runs the cleanup and then lets it propagate.
-        _persist()
+        # far the run got, not silently vanish. `_persist()` itself is
+        # wrapped in its own try/except: if the loop died for a real reason
+        # AND persistence then also fails, letting that second exception
+        # escape `finally` would replace the original one -- the real cause
+        # would never reach whatever is watching this process. Reporting
+        # the persistence failure and continuing lets the original
+        # exception (if any) propagate unmodified.
+        try:
+            _persist()
+        except Exception as persist_exc:
+            print(f"WARNING: failed to persist rows.json/skipped.json: {persist_exc}", file=sys.stderr)
 
     print(f"\n  {len(rows)} rows -> {out_path}")
     print(f"  {len(skipped)} skipped")

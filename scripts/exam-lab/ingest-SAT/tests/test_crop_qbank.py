@@ -328,6 +328,26 @@ def test_render_span_writes_a_correctly_scaled_crop_from_a_real_page(tmp_path):
     assert abs(img.height - expected_height) <= 1
 
 
+def _write_partial_bytes_then_fail(fp, *args, **kwargs):
+    """Fake `Image.save`: writes real (if garbage) bytes to whatever path
+    it was actually called with, then raises.
+
+    This is the part the earlier version of this test got wrong: a fake
+    that raises *before* writing anything proves nothing about atomicity,
+    because a non-atomic `crop.save(dest, ...)` that fails before writing a
+    single byte would leave `dest` absent too -- the same observable
+    result an atomic implementation gives, for an unrelated reason. Writing
+    real bytes to `fp` first means this test distinguishes the two
+    implementations by *where* the caller told `.save()` to write: an
+    atomic `render_span` calls `.save()` with a temp path, so the partial
+    bytes land there and get cleaned up, while a non-atomic one calls
+    `.save()` with `dest` directly, so the partial bytes would land AT
+    `dest` and still be sitting there when this raises.
+    """
+    Path(fp).write_bytes(b"PARTIAL-JPEG-BYTES-not-a-real-image")
+    raise OSError("disk full (simulated) after a partial write")
+
+
 def test_render_span_write_is_atomic_and_leaves_no_partial_file_on_failure(tmp_path):
     """A crop write killed mid-`.save()` (SIGKILL, power loss, an OOM-kill --
     all plausible across a many-minute cold run over the full 3,730-question
@@ -337,10 +357,15 @@ def test_render_span_write_is_atomic_and_leaves_no_partial_file_on_failure(tmp_p
     uploaded as the real thing. render_span writes to a temp file in the
     same directory first and only `os.replace()`s it onto `dest` once the
     write is known-complete, so `dest` either doesn't exist at all or is
-    the complete, correct file -- never a partial one. This forces `.save()`
-    to fail (simulating the kill) and checks both halves of that guarantee:
-    `dest` was never created, and no leftover temp file was left behind
-    either.
+    the complete, correct file -- never a partial one.
+
+    The fake `.save()` genuinely writes bytes to whichever path it's given
+    before raising (see `_write_partial_bytes_then_fail`), so this proves
+    atomicity rather than merely that the cleanup branch runs: verified by
+    temporarily reverting `render_span` to `crop.save(dest, ...)` (no temp
+    file) while developing this fix, which made this test fail with
+    `dest.exists()` True and containing the partial bytes -- see
+    task-7-report.md's fix-round-2 section for that reproduction.
     """
     if not RAW_MATH_PDF.exists():
         pytest.skip("raw question-bank PDFs not present on this checkout")
@@ -358,7 +383,7 @@ def test_render_span_write_is_atomic_and_leaves_no_partial_file_on_failure(tmp_p
     dest = tmp_path / "out" / "6d99b141.jpg"
 
     from PIL import Image
-    with patch.object(Image.Image, "save", side_effect=OSError("disk full (simulated)")):
+    with patch.object(Image.Image, "save", side_effect=_write_partial_bytes_then_fail):
         with pytest.raises(OSError, match="disk full"):
             render_span(sliced, span, dest, dpi=150, page_width_pt=width_pt, page_height_pt=height_pt)
 
