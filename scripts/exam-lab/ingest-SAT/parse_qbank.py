@@ -93,7 +93,23 @@ _IN_RATIONALE = re.compile(r"The correct answer is\s+(-?\d+(?:\.\d+)?(?:/\d+)?)"
 # in the block than "Note that ... are examples" itself (see
 # test_spr_entry_note_survives_reordered_suffix). The captured group is the
 # same either way, so relaxing the suffix costs nothing on the normal case.
-_ENTRY_NOTE = re.compile(r"Note that\s+(.+?)\s+are examples")
+# `Note\s+that`, not `Note that`: the phrase wraps across a line break in the
+# real material (confirmed in practice test 9, Math module 2 Q14), and a
+# literal space silently fails to match there.
+_ENTRY_NOTE = re.compile(r"Note\s+that\s+(.+?)\s+are examples")
+# A grid-in whose equation has several roots is answered with all of them:
+# "The correct answer is either 8 or 9." / "... either 14, -5, or -4."
+# These are distinct correct answers, not alternative spellings of one, and
+# College Board accepts any of them. `_IN_RATIONALE` cannot read them -- it
+# anchors on a digit immediately after "is", where these have the word
+# "either" -- so without this they are rejected as `no-answer` despite the
+# answer being stated plainly (confirmed: question-bank id 364a2d25, and
+# practice tests 7 and 9, where losing one item would drop the whole test
+# under spec rule 4).
+#
+# The terminator is a period followed by whitespace rather than `[^.]`, so a
+# decimal answer ("either 2.5 or 3.") keeps its fractional part.
+_EITHER = re.compile(r"The correct answer is either\s+(.+?)\.\s")
 
 
 def _lines(text: str) -> list[str]:
@@ -239,6 +255,16 @@ def _answer_from(text: str) -> tuple[dict | None, str | None]:
         vals = [p.strip() for p in parts if p.strip()]
         if vals:
             return {"kind": "spr", "accepted": vals, "source": "entry-note"}, None
+
+    either = _EITHER.search(text)
+    if either:
+        # "14, -5, or -4" -> three values. The comma and the "or" may appear
+        # together ("a, b, or c") or alone ("a or b"), so both separators are
+        # consumed in one split rather than leaving a stray "or 9" behind.
+        parts = re.split(r"\s*,\s*(?:or\s+)?|\s+or\s+", either.group(1))
+        vals = [p.strip() for p in parts if p.strip()]
+        if vals:
+            return {"kind": "spr", "accepted": vals, "source": "rationale-either"}, None
 
     stated = _IN_RATIONALE.search(text)
     if stated:

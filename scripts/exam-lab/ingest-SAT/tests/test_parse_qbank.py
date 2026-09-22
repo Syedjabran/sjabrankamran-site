@@ -449,3 +449,66 @@ def test_parse_export_splits_dedupes_and_reports():
 def test_every_domain_has_a_slug():
     assert len(DOMAIN_SLUGS) == 8
     assert DOMAIN_SLUGS["Problem-Solving and Data Analysis"] == "psda"
+
+
+def test_spr_either_phrasing_yields_every_stated_root():
+    """A grid-in whose equation has several roots is answered with all of
+    them: "The correct answer is either 8 or 9." College Board accepts any
+    one of them, so all must ship. Confirmed on question-bank id 364a2d25,
+    which was rejected as no-answer until this phrasing was handled."""
+    block = (
+        "364a2d25\nAssessment\nSAT\nTest\nMath\nDomain\nAlgebra\nSkill\n"
+        "Systems of two linear equations in two variables\nDifficulty\nHard\n"
+        "Question\nWhat is a solution?\n"
+        "Rationale\nThe correct answer is either 8 or 9. The first equation "
+        "can be rewritten as follows.\n"
+    )
+    record = parse_block(block)
+    assert record is not None, "the answer is stated plainly and must resolve"
+    assert record["answer"]["kind"] == "spr"
+    assert record["answer"]["accepted"] == ["8", "9"]
+    assert record["answer"]["source"] == "rationale-either"
+
+
+def test_spr_either_phrasing_handles_a_comma_and_or_list():
+    """"either 14, -5, or -4" is three answers, not "14" plus a stray
+    "or -4". Confirmed in practice test 7, Math module 1 Q7."""
+    block = (
+        "abcd1234\nAssessment\nSAT\nTest\nMath\nDomain\nAlgebra\nSkill\n"
+        "Nonlinear equations in one variable and systems of equations in two variables\n"
+        "Difficulty\nHard\nQuestion\nWhat is an x-intercept?\n"
+        "Rationale\nThe correct answer is either 14, -5, or -4. The x-intercepts "
+        "of a graph are the points where it meets the axis.\n"
+    )
+    record = parse_block(block)
+    assert record["answer"]["accepted"] == ["14", "-5", "-4"]
+
+
+def test_spr_either_phrasing_keeps_a_decimal_intact():
+    """The terminator is a period followed by whitespace, so "2.5" survives
+    where an `[^.]` capture would have truncated it to "2"."""
+    block = (
+        "abcd5678\nAssessment\nSAT\nTest\nMath\nDomain\nAlgebra\nSkill\n"
+        "Linear equations in one variable\nDifficulty\nMedium\n"
+        "Question\nSolve.\n"
+        "Rationale\nThe correct answer is either 2.5 or 3. Substituting yields "
+        "the result.\n"
+    )
+    record = parse_block(block)
+    assert record["answer"]["accepted"] == ["2.5", "3"]
+
+
+def test_entry_note_matches_when_the_phrase_wraps_across_a_line_break():
+    """pdftotext breaks "Note that" across lines in the real material
+    (practice test 9, Math module 2 Q14). A literal space silently missed it
+    and the item fell through to no-answer despite a stated answer."""
+    block = (
+        "ef019012\nAssessment\nSAT\nTest\nMath\nDomain\nAlgebra\nSkill\n"
+        "Linear equations in one variable\nDifficulty\nMedium\n"
+        "Question\nSolve.\n"
+        "Rationale\nSetting each factor equal to 0 yields two equations. Note\n"
+        "that 2 and -12 are examples of ways to enter a correct answer.\n"
+    )
+    record = parse_block(block)
+    assert record["answer"]["kind"] == "spr"
+    assert set(record["answer"]["accepted"]) == {"2", "-12"}

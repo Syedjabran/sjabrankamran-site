@@ -30,7 +30,7 @@ plan; the directory exists but nothing here reads it.
 | `upload.py` | uploads one crop to the `exam-assets` bucket, prefix-guarded to `sat/`. |
 | `extract_sat.py` | orchestrates parse + crop + upload for the whole corpus, resumable, and emits `rows.json` / `skipped.json` / `uploaded.json` / `mode.json`. |
 | `build_sat_bank.py` | the last gate: re-validates every row against a hard-coded closed vocabulary (independent of `parse_qbank`'s), refuses rows it can't confirm were actually uploaded, and writes `src/lib/sat/question-bank.json`. |
-| `tests/` | 102 tests covering all of the above, all network calls mocked. |
+| `tests/` | 106 tests covering all of the above, all network calls mocked. |
 
 ## Run
 
