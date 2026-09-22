@@ -123,7 +123,7 @@ Expected: `R  scripts/exam-lab/ingest-SAT/... -> scripts/exam-lab/ingest-sat/...
 python -m pytest scripts/exam-lab/ingest-sat/tests/ -q
 ```
 
-Expected: `102 passed`.
+Expected: `106 passed`.
 
 - [ ] **Step 5: Update the two docs that name the old path**
 
@@ -311,7 +311,7 @@ Rewrite `anchors()` to build its per-page word lists from `words_by_page(xml_tex
 python -m pytest scripts/exam-lab/ingest-sat/tests/ -q
 ```
 
-Expected: 105 passed (102 existing + 3 new).
+Expected: 109 passed (106 existing + 3 new).
 
 - [ ] **Step 8: Re-verify the question-bank crops are byte-identical**
 
@@ -430,7 +430,7 @@ git add scripts/exam-lab/ingest-sat/
 git commit -m "feat(sat-ingest): shared bbox reader that survives control chars, plus manifest"
 ```
 
-Expected: 108 passed.
+Expected: 112 passed.
 
 ---
 
