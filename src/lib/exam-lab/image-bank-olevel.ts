@@ -12,7 +12,7 @@ const CANON: Record<string, { marks: number; duration: number; name: string }> =
   P4: { marks: 40, duration: 60, name: "Paper 4 · Alternative to Practical" },
 };
 
-// 62 questions across 4 papers.
+// 1464 questions across 83 papers.
 export const OLEVEL_IMAGE_BANK = rawData as ImgQuestion[];
 
 const SESSORD: Record<string, number> = { sp: 0, m: 1, s: 2, w: 3 };

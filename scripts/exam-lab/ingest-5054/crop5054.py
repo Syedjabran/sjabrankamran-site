@@ -34,7 +34,9 @@ RES = 150
 SCALE = RES / 72.0
 LEFT_MIN = 40        # points: reject barcode/margin junk digits left of the text block
 LEFT_MAX = 95        # points: question numbers sit in the left margin
-FOOTER_TRIM = 46     # points trimmed off page bottoms (UCLES footer)
+FOOTER_TRIM = 60     # points trimmed off page bottoms (strip the whole UCLES
+                     # footer band: copyright, exam code AND the page number, so
+                     # no other organisation's branding survives on any crop)
 HEADER_TRIM = 34     # points trimmed off page tops (running header)
 ART_LEFT = 34        # points: below this is barcode / rule / dotted-line margin art
 
