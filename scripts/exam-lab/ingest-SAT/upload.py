@@ -17,11 +17,27 @@ PREFIX = "sat/"
 
 
 def bucket_path(qid: str, section: str) -> str:
+    """Canonical object key for one question's crop, under `PREFIX`.
+
+    Does no sanitisation of its own -- never write this string to the
+    bucket directly. `upload_file`'s call to `guard_prefix` is the real
+    safety boundary; always go through it.
+    """
     return f"{PREFIX}{section}/{qid}.jpg"
 
 
-def guard_prefix(dest: str) -> None:
-    """Raise unless `dest` is confined under `PREFIX`.
+def guard_prefix(dest: str) -> str:
+    """Raise unless `dest` is confined under `PREFIX`; otherwise return the
+    normalised, canonical form of `dest`.
+
+    Callers that write to the bucket MUST use the returned string as the
+    object key, not the original `dest` argument. Validating the
+    normalised form while transmitting the raw one would let a
+    non-canonical-but-valid dest (e.g. "./sat/x.jpg" or "sat//x.jpg") pass
+    the guard while writing to a different literal key than the canonical
+    one `bucket_path` would have produced -- silently creating a
+    near-duplicate object instead of overwriting the existing one, and
+    breaking the idempotent-upload property.
 
     Two independent checks, not one: `normalised.startswith(PREFIX)` catches
     a `dest` that resolves outside `sat/` once `..` segments are walked
@@ -40,14 +56,21 @@ def guard_prefix(dest: str) -> None:
     normalised = posixpath.normpath(dest)
     if not normalised.startswith(PREFIX) or ".." in dest:
         raise ValueError(f"refusing to write outside {PREFIX}: {dest}")
+    return normalised
 
 
 def upload_file(path: Path, dest: str, *, url: str | None = None, key: str | None = None) -> str:
-    """PUT one file. Idempotent: an existing object at `dest` is overwritten."""
-    guard_prefix(dest)
+    """PUT one file. Idempotent: an existing object at `dest` is overwritten.
+
+    Uses `guard_prefix`'s returned, normalised path as the actual object
+    key -- not the raw `dest` argument -- so the string that was validated
+    and the string that gets transmitted are the same by construction. See
+    `guard_prefix` for why that distinction matters.
+    """
+    canonical_dest = guard_prefix(dest)
     url = url or os.environ["SUPABASE_URL"]
     key = key or os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-    endpoint = f"{url.rstrip('/')}/storage/v1/object/{BUCKET}/{dest}"
+    endpoint = f"{url.rstrip('/')}/storage/v1/object/{BUCKET}/{canonical_dest}"
     req = urllib.request.Request(
         endpoint,
         data=path.read_bytes(),
@@ -59,6 +82,12 @@ def upload_file(path: Path, dest: str, *, url: str | None = None, key: str | Non
         },
     )
     with urllib.request.urlopen(req) as resp:
-        if resp.status not in (200, 201):
-            raise RuntimeError(f"upload failed {resp.status} for {dest}")
-    return dest
+        # urlopen itself raises HTTPError for any real 4xx/5xx before this
+        # is ever reached, so this only ever sees a genuine 2xx response --
+        # it exists to catch the full success range (e.g. 204 No Content,
+        # a plausible response to an upsert overwrite) rather than a
+        # narrower (200, 201) check that would misfire a false "upload
+        # failed" on a perfectly successful write.
+        if not (200 <= resp.status < 300):
+            raise RuntimeError(f"upload failed {resp.status} for {canonical_dest}")
+    return canonical_dest
