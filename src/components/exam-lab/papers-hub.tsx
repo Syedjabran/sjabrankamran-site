@@ -4,22 +4,24 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FileText, Layers, Play, Zap, Library, Coffee, ShieldAlert, Video, ClipboardList, Lock, CheckCircle2, Send, Loader2, Clock } from "lucide-react";
 import { IMAGE_BANK, IMAGE_PAPERS, FULL_BANK, type ImgQuestion } from "@/lib/exam-lab/image-bank";
+import { OLEVEL_IMAGE_BANK, OLEVEL_IMAGE_PAPERS, OLEVEL_TOPICS, OLEVEL_PAPER_NAME } from "@/lib/exam-lab/image-bank-olevel";
 import { PaperRunner, type AttemptKind } from "./paper-runner";
-import { ExamRunner } from "./exam-runner";
 import { requestExamFullscreen } from "@/lib/exam-lab/fullscreen";
 import { ClassDrillAssign } from "./class-drill-assign";
 import type { GuardMode } from "./use-exam-guard";
 
 const SESS: Record<string, string> = { s: "May/June", w: "Oct/Nov", m: "Feb/March" };
-const PAPER_NAME: Record<string, string> = { P1: "Paper 1 · Multiple Choice", P2: "Paper 2 · AS Structured", P4: "Paper 4 · A2 Structured" };
+const PAPER_NAME_9702: Record<string, string> = { P1: "Paper 1 · Multiple Choice", P2: "Paper 2 · AS Structured", P4: "Paper 4 · A2 Structured" };
 const PT_ACCENT: Record<string, string> = { P1: "#3DE1F0", P2: "#12D48C", P4: "#8B5CF6" };
 
-function yearOf(code: string) { const m = code.match(/9702_[smw](\d\d)_/); return m ? 2000 + parseInt(m[1]) : 0; }
+function yearOf(code: string) { const m = code.match(/(?:9702|5054)_(?:sp|[smw])(\d\d)_/); return m ? 2000 + parseInt(m[1]) : 0; }
 function label(code: string) {
-  const m = code.match(/9702_([smw])(\d\d)_(\d\d)/);
+  const sp = code.match(/5054_sp(\d\d)_(\d)/);
+  if (sp) return `Specimen 20${sp[1]}`;
+  const m = code.match(/(?:9702|5054)_([smw])(\d\d)_(\d\d?)/);
   if (!m) return code;
   const [, s, yy, v] = m;
-  return `${SESS[s] || s} 20${yy} · variant ${v[1]}`;
+  return `${SESS[s] || s} 20${yy}${v.length > 1 ? ` · variant ${v[1]}` : ""}`;
 }
 
 const TOPICS_AS = ["Physical quantities & units","Kinematics","Dynamics","Forces, density & pressure","Work, energy & power","Deformation of solids","Waves","Superposition","Electricity","D.C. circuits","Particle physics"];
@@ -120,9 +122,16 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
   const focusHandled = useRef<string | null>(null);
 
   const [tab, setTab] = useState<"papers" | "drill">("papers");
-  // Course track: A Level 9702 (real past-paper bank) or its O Level 5054
-  // mirror (authored syllabus-aligned bank rendered by the ExamRunner).
+  // Course track: A Level 9702 or O Level 5054 — both are REAL past-paper image
+  // banks rendered by the identical paper-browser + topic-drill UI below.
   const [course, setCourse] = useState<"9702" | "5054">("9702");
+  const isOL = course === "5054";
+  // Bank/paper set/labels/topics selected by the active course. Everything
+  // downstream uses these so the 9702 path stays byte-identical.
+  const BANK = isOL ? OLEVEL_IMAGE_BANK : IMAGE_BANK;
+  const PAPERS = isOL ? OLEVEL_IMAGE_PAPERS : IMAGE_PAPERS;
+  const FBANK = isOL ? OLEVEL_IMAGE_BANK : FULL_BANK;
+  const PAPER_NAME = isOL ? OLEVEL_PAPER_NAME : PAPER_NAME_9702;
   const [sitMode, setSitMode] = useState<SitMode>("practice");
   const [active, setActive] = useState<Active | null>(null);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
@@ -183,16 +192,16 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
 
   // Compatibility for old, spec-only allocations. New papers never use this.
   function legacyDrillQuestions(spec: DrillSpec): ImgQuestion[] {
-    if (spec.type === "daily") return shuffle(IMAGE_BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
+    if (spec.type === "daily") return shuffle(BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
     const { paperType, topics, levels, count } = spec;
     const tset = new Set(topics); const lset = new Set(levels);
     // Old automated allocations may contain a retired topic label or an
     // over-restrictive level combination. Fall back within the assigned
     // paper instead of silently doing nothing when Start is pressed.
-    const exact = IMAGE_BANK.filter((q) => q.paperType === paperType && (!tset.size || (q.topic && tset.has(q.topic))) && lset.has(q.level));
-    const topicAnyLevel = IMAGE_BANK.filter((q) => q.paperType === paperType && (!tset.size || (q.topic && tset.has(q.topic))));
-    const paperAndLevel = IMAGE_BANK.filter((q) => q.paperType === paperType && lset.has(q.level));
-    const pool = exact.length ? exact : topicAnyLevel.length ? topicAnyLevel : paperAndLevel.length ? paperAndLevel : IMAGE_BANK.filter((q) => q.paperType === paperType);
+    const exact = BANK.filter((q) => q.paperType === paperType && (!tset.size || (q.topic && tset.has(q.topic))) && lset.has(q.level));
+    const topicAnyLevel = BANK.filter((q) => q.paperType === paperType && (!tset.size || (q.topic && tset.has(q.topic))));
+    const paperAndLevel = BANK.filter((q) => q.paperType === paperType && lset.has(q.level));
+    const pool = exact.length ? exact : topicAnyLevel.length ? topicAnyLevel : paperAndLevel.length ? paperAndLevel : BANK.filter((q) => q.paperType === paperType);
     return shuffle([...pool]).slice(0, count);
   }
 
@@ -210,8 +219,8 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
     const common = { ...cfg, integrity: al.integrity ?? cfg.integrity, timed: true, lockOnExpiry: al.lockOnExpiry !== false, attemptId: al.attemptId, allocationId: al.id, daily: isDailyTask };
     if (al.content.type === "paper") {
       const code = al.content.code;
-      const qs = IMAGE_BANK.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
-      const meta = IMAGE_PAPERS.find((p) => p.code === code);
+      const qs = BANK.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
+      const meta = PAPERS.find((p) => p.code === code);
       if (!qs.length || !meta) return;
       enter({ questions: qs, title: al.title || PAPER_NAME[meta.paperType], subtitle: `${meta.ref} · ${label(code)}`, duration: al.durationMin || meta.duration, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType }, ...common });
     } else if (al.content.type === "drillref") {
@@ -220,7 +229,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
       // the class sits the same paper in the same order, and closing and
       // reopening replays that identical paper instead of reshuffling.
       const { ids, ref } = al.content;
-      const byId = new Map(FULL_BANK.map((q) => [q.id, q] as const));
+      const byId = new Map(FBANK.map((q) => [q.id, q] as const));
       const qs = ids.map((qid) => byId.get(qid)).filter((q): q is ImgQuestion => !!q);
       if (!qs.length || qs.length !== ids.length) {
         setLaunchError("This stored drill has unavailable questions. Contact the teacher; no replacement paper has been generated.");
@@ -245,7 +254,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
     } else if (al.content.type === "custom") {
       // Custom allocations may reference the secure (allocation-only) bank.
       // Preserve staff selection order for older custom allocations too.
-      const byId = new Map(FULL_BANK.map((q) => [q.id, q] as const));
+      const byId = new Map(FBANK.map((q) => [q.id, q] as const));
       const qs = al.content.ids.map((id) => byId.get(id)).filter((q): q is ImgQuestion => !!q);
 
       if (!qs.length) return;
@@ -254,7 +263,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
       const mins = al.durationMin || Math.max(5, Math.round(qs.reduce((s, q) => s + (q.paperType === "P1" ? 1.5 : 9), 0)));
       enter({ questions: qs, title: al.title || "Selected questions", subtitle: `${qs.length} hand-picked questions · ${mins} min`, duration: mins, logMeta: { mode: "drill", paperType: pt }, ...common });
     } else {
-      const p1 = shuffle(IMAGE_BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
+      const p1 = shuffle(BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
       enter({ questions: p1, title: al.title || "Daily Challenge", subtitle: "10 mixed Paper-1 questions", duration: al.durationMin || 15, logMeta: { mode: "drill", paperType: "P1" }, ...common });
     }
   }
@@ -283,22 +292,22 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
   }, [allocationParam, allocations, active]);
 
   const grouped = useMemo(() => {
-    const g: Record<string, typeof IMAGE_PAPERS> = { P1: [], P2: [], P4: [] };
-    IMAGE_PAPERS.forEach((p) => g[p.paperType]?.push(p));
+    const g: Record<string, typeof PAPERS> = { P1: [], P2: [], P4: [] };
+    PAPERS.forEach((p) => g[p.paperType]?.push(p));
     return g;
   }, []);
 
   const stats = useMemo(() => ({
-    papers: IMAGE_PAPERS.length,
-    questions: IMAGE_BANK.length,
-    years: new Set(IMAGE_PAPERS.map((p) => yearOf(p.code))).size,
+    papers: PAPERS.length,
+    questions: BANK.length,
+    years: new Set(PAPERS.map((p) => yearOf(p.code))).size,
   }), []);
 
   function shuffle<T>(a: T[]): T[] { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 
   function startPaper(code: string) {
-    const qs = IMAGE_BANK.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
-    const meta = IMAGE_PAPERS.find((p) => p.code === code)!;
+    const qs = BANK.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
+    const meta = PAPERS.find((p) => p.code === code)!;
     enter({ questions: qs, title: PAPER_NAME[meta.paperType], subtitle: `${meta.ref} · ${label(code)}`, duration: meta.duration, timed: true, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType }, ...modeCfg(sitMode) });
   }
 
@@ -310,7 +319,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
     focusHandled.current = focusParam;
     const want = new Set(focusParam.split(",").map((s) => s.trim()).filter(Boolean));
     if (!want.size) return;
-    const pool = IMAGE_BANK.filter((q) => q.topic && want.has(q.topic));
+    const pool = BANK.filter((q) => q.topic && want.has(q.topic));
     if (!pool.length) { setLaunchError("No practice questions are available for those topics yet."); router.replace(pathname, { scroll: false }); return; }
     const qs = shuffle([...pool]).slice(0, 10);
     const kinds = new Set(qs.map((q) => q.paperType));
@@ -326,7 +335,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusParam, active]);
 
-  const drillPool = useMemo(() => IMAGE_BANK.filter((q) => q.paperType === pType && (!topics.size || (q.topic && topics.has(q.topic))) && levels.has(q.level)), [pType, topics, levels]);
+  const drillPool = useMemo(() => BANK.filter((q) => q.paperType === pType && (!topics.size || (q.topic && topics.has(q.topic))) && levels.has(q.level)), [pType, topics, levels]);
 
   function startDrill() {
     const qs = shuffle([...drillPool]).slice(0, count);
@@ -336,7 +345,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
   }
 
   function dailyChallenge() {
-    const p1 = shuffle(IMAGE_BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
+    const p1 = shuffle(BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
     enter({ questions: p1, title: "Daily Challenge", subtitle: "10 mixed Paper-1 questions · 15 min", duration: 15, timed: true, logMeta: { mode: "drill", paperType: "P1" }, daily: true, ...modeCfg(sitMode) });
   }
 
@@ -345,7 +354,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
     <PaperRunner {...active} canPause={canPause} onExit={exit} />
   </>;
 
-  const availTopics = pType === "P4" ? TOPICS_A2 : TOPICS_AS;
+  const availTopics = isOL ? OLEVEL_TOPICS : pType === "P4" ? TOPICS_A2 : TOPICS_AS;
 
   const modeOpts: { id: SitMode; label: string; icon: typeof Coffee; hint: string }[] = [
     { id: "practice", label: "Practice", icon: Coffee, hint: "Relaxed — no timer lock, switch tabs freely. Nothing is cancelled." },
@@ -371,16 +380,6 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
         ))}
       </div>
 
-      {course === "5054" ? (
-        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
-          <div className="mb-4">
-            <p className="font-display text-lg text-ice">Cambridge O Level Physics · 5054</p>
-            <p className="mt-1 text-sm text-dust">Syllabus-aligned practice — Paper 1 multiple choice and Paper 2 theory, drawn from the authored 5054 bank. Same drill flow as A Level.</p>
-          </div>
-          <ExamRunner mode="portal" maxCount={20} showPatterns course="5054" />
-        </div>
-      ) : (
-      <>
       {/* sit-mode selector */}
       <div className="mb-5 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
         <p className="mb-2 font-mono text-[11px] uppercase tracking-widest text-fog">How do you want to sit this?</p>
@@ -491,8 +490,6 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
             </div>
           </div>
         </div>
-      )}
-      </>
       )}
     </div>
   );
