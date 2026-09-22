@@ -10,8 +10,8 @@ import { useEffect, useRef, useState } from "react";
  * - Poster underlay always present as fallback while the video buffers or if
  *   the media request fails.
  * - JS is progressive enhancement only: it pauses/unloads the video for
- *   prefers-reduced-motion and Save-Data users, and nudges play() where
- *   autoplay needs a post-hydration kick.
+ *   prefers-reduced-motion users (accessibility), and otherwise nudges play()
+ *   whenever the browser needs a post-hydration or post-buffer kick.
  * - Always sits behind a dark overlay so text stays readable.
  */
 const MAX_VIDEO_RETRIES = 3;
@@ -24,17 +24,26 @@ export function HeroVideo({ src, poster }: { src: string; poster: string }) {
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    const conn = (navigator as unknown as { connection?: { saveData?: boolean } }).connection;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches || conn?.saveData) {
+    // Only accessibility (reduced motion) suppresses the video. Save-Data no
+    // longer halts it — a small muted loop is worth the cinematic hero, and
+    // the old Save-Data gate was the main cause of "video halted" reports.
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       stopped.current = true;
       v.pause();
       v.removeAttribute("src");
       v.load(); // poster remains
       return;
     }
-    v.play().catch(() => {
-      /* autoplay blocked → poster remains */
-    });
+    const nudge = () => v.play().catch(() => {/* autoplay blocked → poster */});
+    nudge();
+    // Some browsers only allow play() once enough data has buffered; retry on
+    // the readiness events so the hero reliably starts instead of stalling.
+    v.addEventListener("canplay", nudge);
+    v.addEventListener("loadeddata", nudge);
+    return () => {
+      v.removeEventListener("canplay", nudge);
+      v.removeEventListener("loadeddata", nudge);
+    };
   }, [retry]);
 
   // Edge challenge can block the media request on a fresh visit before the
@@ -64,7 +73,7 @@ export function HeroVideo({ src, poster }: { src: string; poster: string }) {
         muted
         loop
         playsInline
-        preload="metadata"
+        preload="auto"
         onError={handleError}
       />
       {/* Readability overlays */}
