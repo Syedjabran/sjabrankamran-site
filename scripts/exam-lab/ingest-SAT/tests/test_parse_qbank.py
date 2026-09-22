@@ -286,6 +286,35 @@ Rationale
 Choice D is correct. Substituting the given value into the equation...
 """
 
+# The reviewer's exact bug report: a header carrying "Hard" -- the real
+# difficulty, and the line `_header_region` actually anchors the boundary
+# on -- then "Easy" elsewhere in the header (simulating a stray wrapped-row
+# word). The old code re-derived difficulty by re-scanning DIFFICULTY in
+# dict order (Easy, Medium, Hard) and would find "Easy" first regardless of
+# which one is the true boundary, shipping "E" instead of the correct "H".
+TWO_DIFFICULTY_WORDS_HEADER = """ 7a2b9c1d
+
+Assessment
+Test
+Domain
+Skill
+Difficulty
+SAT
+Math
+Algebra
+Linear equations in one variable
+Hard
+Easy
+
+Question
+What is x ?
+
+Correct Answer: B
+
+Rationale
+Choice B is correct.
+"""
+
 # pdftotext's column layout reorders this sentence so the tail ("of ways to
 # enter a correct answer") lands before "Note that ... are examples" itself.
 SPR_ENTRY_NOTE_REORDERED = """ 466b87e3
@@ -387,6 +416,11 @@ def test_domain_and_skill_ambiguous_match_is_rejected():
     # larger one ({0, 2} = "Problem-Solving and Data Analysis"); both must
     # be seen before deciding, or the smaller one silently wins.
     assert _domain_and_skill(["Problem-Solving and", "Algebra", "Data Analysis"]) == (None, None)
+
+
+def test_difficulty_derived_from_boundary_line_not_a_dict_order_rescan():
+    r = parse_block(TWO_DIFFICULTY_WORDS_HEADER)
+    assert r["difficulty"] == "H"
 
 
 def test_skill_bleed_from_stem_recovered_by_vocabulary_prefix():

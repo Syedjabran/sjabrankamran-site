@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from upload import bucket_path, guard_prefix, upload_file
+from upload import bucket_path, guard_prefix, preflight_credentials, upload_file
 
 
 def test_bucket_path_is_under_sat_prefix():
@@ -123,3 +123,40 @@ def test_upload_file_treats_204_as_success_not_failure(tmp_path):
         result = upload_file(src, "sat/math/x.jpg", url="https://example.supabase.co", key="fake-key")
 
     assert result == "sat/math/x.jpg"
+
+
+def test_upload_file_passes_a_socket_timeout_to_urlopen(tmp_path):
+    """socket.getdefaulttimeout() is None on this machine, so with no
+    explicit timeout a half-open connection during the 3,730-file run would
+    block forever with no output. `urlopen` is fully mocked -- no network
+    request is made.
+    """
+    src = tmp_path / "crop.jpg"
+    src.write_bytes(b"fake-jpeg-bytes")
+
+    with patch("upload.urllib.request.urlopen", return_value=_fake_response(200)) as mock_urlopen:
+        upload_file(src, "sat/math/x.jpg", url="https://example.supabase.co", key="fake-key")
+
+    assert mock_urlopen.call_args.kwargs["timeout"] == 60
+
+
+# --- preflight_credentials -------------------------------------------------
+
+def test_preflight_credentials_raises_when_missing(monkeypatch):
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="SUPABASE_URL"):
+        preflight_credentials()
+
+
+def test_preflight_credentials_passes_when_present(monkeypatch):
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "fake-key-for-test")
+    preflight_credentials()  # must not raise
+
+
+def test_preflight_credentials_reports_each_missing_var_by_name(monkeypatch):
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="SUPABASE_SERVICE_ROLE_KEY"):
+        preflight_credentials()

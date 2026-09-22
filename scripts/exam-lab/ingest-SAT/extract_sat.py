@@ -17,6 +17,12 @@ are far more useful than none on a run this long. `--dry-run` skips the
 upload call entirely -- no Supabase credential is read and no network
 request is made.
 
+A `mode.json` sidecar is written alongside `rows.json` recording whether the
+run that produced it was `--dry-run` or live. `build_sat_bank.py` reads it
+before shipping anything: a dry run's rows point at bucket objects that were
+never uploaded, and building a bank from them without that check would ship
+a page of broken image links -- see `build_sat_bank.check_provenance`.
+
 Two independent things can make a question un-ingestable, and they are
 reported with distinct, specific reasons rather than lumped into one
 generic "skipped" bucket:
@@ -42,7 +48,7 @@ import poppler
 from crop_qbank import anchors, bbox_xml, question_span, question_span_reason, render_span
 from parse_qbank import parse_export
 from report_qbank import text_of
-from upload import bucket_path, upload_file
+from upload import bucket_path, preflight_credentials, upload_file
 
 HERE = Path(__file__).resolve().parent
 RAW = HERE / "raw" / "question-bank"
@@ -173,17 +179,22 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     poppler.preflight()
+    if not args.dry_run:
+        preflight_credentials()
     out_path = Path(args.out)
     skipped_path = out_path.with_name("skipped.json")
     uploaded_path = out_path.with_name("uploaded.json")
+    mode_path = out_path.with_name("mode.json")
     uploaded = _load_uploaded(uploaded_path)
 
     rows: list[dict] = []
     skipped: list[dict] = []
+    corpus_seen: set[str] = set()
 
     def _persist() -> None:
         _atomic_write_text(out_path, json.dumps(rows, indent=1))
         _atomic_write_text(skipped_path, json.dumps(skipped, indent=1))
+        _atomic_write_text(mode_path, json.dumps({"dry_run": args.dry_run}, indent=1))
 
     persist_error: Exception | None = None
     try:
@@ -203,6 +214,21 @@ def main(argv: list[str] | None = None) -> int:
             for rec in records:
                 if args.limit and len(rows) >= args.limit:
                     break
+                if rec["id"] in corpus_seen:
+                    # parse_export only dedupes within one PDF's own export;
+                    # an id exported under two overlapping filters (spec
+                    # integrity rule 3) would otherwise be re-cropped and
+                    # re-uploaded here, then rejected as a duplicate id only
+                    # much later by build_sat_bank.py's validate() -- after
+                    # a multi-hour upload already ran. Caught here instead,
+                    # with a reason distinct from a parse- or crop-stage
+                    # reject so it's clear the record itself was fine.
+                    skipped.append({
+                        "id": rec["id"], "reason": "duplicate-across-exports",
+                        "stage": "dedupe", "section": rec["section"],
+                    })
+                    continue
+                corpus_seen.add(rec["id"])
                 span = question_span(a, rec["id"])
                 if span is None:
                     reason = question_span_reason(a, rec["id"])
@@ -237,7 +263,14 @@ def main(argv: list[str] | None = None) -> int:
                         )
                 img = bucket_path(rec["id"], rec["section"])
                 if not args.dry_run and rec["id"] not in uploaded:
-                    _upload_with_retry(dest, img)
+                    # Store the canonical key _upload_with_retry's return
+                    # value carries (upload_file's, via guard_prefix's
+                    # normalised form) -- not img, bucket_path's raw output
+                    # -- as the row's "img". Identical today, but this is
+                    # the validated-vs-transmitted distinction commit
+                    # 3b848bb closed for upload_file itself; storing img
+                    # here instead would silently reopen it one call up.
+                    img = _upload_with_retry(dest, img)
                     _record_uploaded(uploaded_path, rec["id"], uploaded)
                 rows.append({
                     **rec,

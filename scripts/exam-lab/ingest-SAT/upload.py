@@ -14,6 +14,12 @@ import urllib.request
 
 BUCKET = "exam-assets"
 PREFIX = "sat/"
+CREDENTIAL_VARS = ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY")
+# Half-open connections happen on a run this long; with no explicit
+# timeout, urlopen inherits socket.getdefaulttimeout() (None on this
+# machine), which blocks forever with no output and makes the
+# TimeoutError arm of extract_sat.py's retry handler dead code.
+REQUEST_TIMEOUT = 60
 
 
 def bucket_path(qid: str, section: str) -> str:
@@ -59,6 +65,26 @@ def guard_prefix(dest: str) -> str:
     return normalised
 
 
+def preflight_credentials() -> None:
+    """Fail fast if a required Supabase credential is missing, before any
+    crop is rendered -- not lazily inside `upload_file`, which reads
+    `os.environ[...]` directly and would otherwise raise a bare `KeyError`
+    only once the first live upload is attempted, after the first crop of a
+    potentially many-minute run has already been produced.
+
+    Checks only for *presence* in the environment, never reads or logs the
+    value itself. Call this beside `poppler.preflight()`, and skip it under
+    `--dry-run` -- a machine with no Supabase credentials configured at all
+    must still be able to run a dry-run crop-only pass.
+    """
+    missing = [name for name in CREDENTIAL_VARS if name not in os.environ]
+    if missing:
+        raise RuntimeError(
+            f"missing required environment variable(s): {', '.join(missing)}. "
+            "Set them before running a live upload (not needed for --dry-run)."
+        )
+
+
 def upload_file(path: Path, dest: str, *, url: str | None = None, key: str | None = None) -> str:
     """PUT one file. Idempotent: an existing object at `dest` is overwritten.
 
@@ -81,7 +107,7 @@ def upload_file(path: Path, dest: str, *, url: str | None = None, key: str | Non
             "x-upsert": "true",
         },
     )
-    with urllib.request.urlopen(req) as resp:
+    with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
         # urlopen itself raises HTTPError for any real 4xx/5xx before this
         # is ever reached, so this only ever sees a genuine 2xx response --
         # it exists to catch the full success range (e.g. 204 No Content,

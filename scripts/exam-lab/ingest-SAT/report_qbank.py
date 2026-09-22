@@ -20,7 +20,12 @@ def text_of(pdf: Path) -> str:
     if not cache.exists():
         OUT.mkdir(parents=True, exist_ok=True)
         subprocess.run([poppler.tool("pdftotext"), str(pdf), str(cache)], check=True)
-    return cache.read_text(encoding="utf-8", errors="ignore")
+    # Strict UTF-8, matching crop_qbank.py's decode of the same corpus (see
+    # its bbox_xml). errors="ignore" here would silently mangle rationale
+    # text on a future corrupt file instead of failing loudly -- the
+    # current corpus is verified clean (0 U+FFFD), so this only changes
+    # behaviour for material that doesn't exist yet.
+    return cache.read_text(encoding="utf-8")
 
 
 def main() -> int:

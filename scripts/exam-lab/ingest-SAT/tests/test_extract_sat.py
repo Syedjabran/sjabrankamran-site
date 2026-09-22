@@ -385,3 +385,208 @@ def test_main_still_propagates_the_original_exception_not_the_persist_error(tmp_
     out_path = tmp_path / "out" / "rows.json"
     with pytest.raises(RuntimeError, match="original crash"):
         extract_sat.main(["--dry-run", "--out", str(out_path)])
+
+
+# --- mode.json sidecar (C1) ------------------------------------------------
+
+def test_main_records_dry_run_mode_alongside_rows(tmp_path, monkeypatch):
+    """build_sat_bank.py's provenance check (C1) needs to tell a dry run's
+    rows.json apart from a live one's -- otherwise running it against the
+    dry-run rows.json sitting on disk would silently accept rows whose
+    images were never uploaded.
+    """
+    records = [_fake_record("id1")]
+    _patch_fake_pipeline(monkeypatch, tmp_path, records, _write_crop)
+
+    out_path = tmp_path / "out" / "rows.json"
+    extract_sat.main(["--dry-run", "--out", str(out_path)])
+
+    mode = json.loads(out_path.with_name("mode.json").read_text(encoding="utf-8"))
+    assert mode == {"dry_run": True}
+
+
+def test_main_records_live_mode_alongside_rows(tmp_path, monkeypatch):
+    records = [_fake_record("id1")]
+    _patch_fake_pipeline(monkeypatch, tmp_path, records, _write_crop)
+    monkeypatch.setattr(extract_sat, "upload_file", lambda dest, img: img)
+    monkeypatch.setattr(extract_sat, "preflight_credentials", lambda: None)
+
+    out_path = tmp_path / "out" / "rows.json"
+    extract_sat.main(["--out", str(out_path)])  # no --dry-run: live path
+
+    mode = json.loads(out_path.with_name("mode.json").read_text(encoding="utf-8"))
+    assert mode == {"dry_run": False}
+
+
+# --- credential preflight (cheap fix: fail fast on missing credentials) ---
+
+def test_main_dry_run_does_not_check_credentials(monkeypatch, tmp_path):
+    """A machine with no Supabase credentials configured at all must still
+    be able to run a dry-run crop-only pass -- the check is skipped under
+    --dry-run.
+    """
+    records = [_fake_record("id1")]
+    _patch_fake_pipeline(monkeypatch, tmp_path, records, _write_crop)
+
+    def boom():
+        raise AssertionError("preflight_credentials must not run under --dry-run")
+
+    monkeypatch.setattr(extract_sat, "preflight_credentials", boom)
+
+    out_path = tmp_path / "out" / "rows.json"
+    extract_sat.main(["--dry-run", "--out", str(out_path)])  # must not raise
+
+
+def test_main_live_run_checks_credentials_before_any_crop_is_rendered(monkeypatch, tmp_path):
+    """upload.py's os.environ[...] used to raise a bare KeyError only after
+    the first crop was already rendered. The credential check must run
+    before poppler ever touches a page, so a missing credential is reported
+    immediately instead of after partial, wasted work.
+    """
+    records = [_fake_record("id1")]
+    _patch_fake_pipeline(monkeypatch, tmp_path, records, _write_crop)
+    monkeypatch.setattr(
+        extract_sat, "preflight_credentials",
+        lambda: (_ for _ in ()).throw(RuntimeError(
+            "missing required environment variable(s): SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY"
+        )),
+    )
+
+    out_path = tmp_path / "out" / "rows.json"
+    with pytest.raises(RuntimeError, match="SUPABASE_URL"):
+        extract_sat.main(["--out", str(out_path)])  # no --dry-run: live path
+
+    assert not (tmp_path / "crops").exists()
+
+
+# --- live upload branch (I2): upload -> record -> append, never out of order,
+#     and a row exists only if its upload succeeded -----------------------
+
+def test_main_live_run_uploads_before_recording_before_appending_row(monkeypatch, tmp_path):
+    """The live branch (`not args.dry_run`) had zero test coverage -- every
+    existing main() test passes --dry-run. This exercises it end-to-end and
+    asserts the ordering the code relies on: a question is uploaded, then
+    recorded in uploaded.json, then (only after both) appended to rows.
+    """
+    records = [_fake_record("id1"), _fake_record("id2")]
+    calls: list[tuple[str, str]] = []
+
+    def fake_upload_file(dest, img):
+        calls.append(("upload", dest.stem))
+        return img
+
+    real_record_uploaded = extract_sat._record_uploaded
+
+    def spy_record_uploaded(path, qid, already):
+        calls.append(("record", qid))
+        return real_record_uploaded(path, qid, already)
+
+    _patch_fake_pipeline(monkeypatch, tmp_path, records, _write_crop)
+    monkeypatch.setattr(extract_sat, "upload_file", fake_upload_file)
+    monkeypatch.setattr(extract_sat, "_record_uploaded", spy_record_uploaded)
+    monkeypatch.setattr(extract_sat, "preflight_credentials", lambda: None)
+
+    out_path = tmp_path / "out" / "rows.json"
+    extract_sat.main(["--out", str(out_path)])  # no --dry-run: live path
+
+    assert calls == [("upload", "id1"), ("record", "id1"), ("upload", "id2"), ("record", "id2")]
+
+    rows = json.loads(out_path.read_text(encoding="utf-8"))
+    assert [r["id"] for r in rows] == ["id1", "id2"]
+
+
+def test_main_live_run_appends_a_row_only_if_its_upload_succeeded(monkeypatch, tmp_path):
+    """The load-bearing invariant extract_sat.py's own docstring relies on:
+    a row is appended only after its upload succeeds. Forces id2's upload
+    to fail partway through a run of three and checks that id1 (uploaded
+    and recorded before the failure) survives in both rows.json and
+    uploaded.json, id2 gets neither, and id3 is never reached.
+    """
+    records = [_fake_record("id1"), _fake_record("id2"), _fake_record("id3")]
+
+    def fake_upload_file(dest, img):
+        if dest.stem == "id2":
+            raise RuntimeError("simulated upload failure")
+        return img
+
+    _patch_fake_pipeline(monkeypatch, tmp_path, records, _write_crop)
+    monkeypatch.setattr(extract_sat, "upload_file", fake_upload_file)
+    monkeypatch.setattr(extract_sat, "preflight_credentials", lambda: None)
+
+    out_path = tmp_path / "out" / "rows.json"
+    with pytest.raises(RuntimeError, match="simulated upload failure"):
+        extract_sat.main(["--out", str(out_path)])  # no --dry-run: live path
+
+    rows = json.loads(out_path.read_text(encoding="utf-8"))
+    assert [r["id"] for r in rows] == ["id1"]
+
+    uploaded = json.loads(out_path.with_name("uploaded.json").read_text(encoding="utf-8"))
+    assert uploaded == ["id1"]
+
+
+def test_main_live_run_stores_the_canonical_upload_key_not_the_raw_bucket_path(monkeypatch, tmp_path):
+    """extract_sat.py used to discard _upload_with_retry's return value (the
+    canonical key guard_prefix produced) and store bucket_path's raw output
+    in the row instead. Identical today, but a row's "img" must come from
+    what was actually transmitted, not what was merely requested.
+    """
+    records = [_fake_record("id1")]
+
+    def fake_upload_file(dest, img):
+        return "sat/math/canonical-id1.jpg"  # deliberately different from bucket_path's output
+
+    _patch_fake_pipeline(monkeypatch, tmp_path, records, _write_crop)
+    monkeypatch.setattr(extract_sat, "upload_file", fake_upload_file)
+    monkeypatch.setattr(extract_sat, "preflight_credentials", lambda: None)
+
+    out_path = tmp_path / "out" / "rows.json"
+    extract_sat.main(["--out", str(out_path)])  # no --dry-run: live path
+
+    rows = json.loads(out_path.read_text(encoding="utf-8"))
+    assert rows[0]["img"] == "sat/math/canonical-id1.jpg"
+
+
+# --- corpus-level dedupe across exports (I4) -------------------------------
+
+def test_main_dedupes_an_id_ingested_from_an_earlier_export(monkeypatch, tmp_path):
+    """Spec integrity rule 3: an item exported under two filters ingests
+    once. parse_qbank.parse_export only dedupes within a single PDF's own
+    export; extract_sat.py must track ids across the whole corpus so an id
+    reappearing in a later PDF (e.g. overlapping filters) is skipped with a
+    reason distinct from a parse- or crop-stage reject, instead of being
+    cropped/uploaded/appended a second time.
+    """
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    (raw_dir / "a-export.pdf").write_bytes(b"")
+    (raw_dir / "b-export.pdf").write_bytes(b"")
+    monkeypatch.setattr(extract_sat, "RAW", raw_dir)
+    monkeypatch.setattr(extract_sat, "CROPS", tmp_path / "crops")
+    monkeypatch.setattr(extract_sat, "text_of", lambda pdf: pdf.name)
+    # Both exports carry "id1"; only the second (b-export.pdf) also has "id2".
+    monkeypatch.setattr(
+        extract_sat, "parse_export",
+        lambda text: ([_fake_record("id1")], []) if text == "a-export.pdf"
+        else ([_fake_record("id1"), _fake_record("id2")], []),
+    )
+    monkeypatch.setattr(extract_sat, "bbox_xml", lambda pdf: "<fake/>")
+    monkeypatch.setattr(
+        extract_sat, "anchors",
+        lambda xml: {"ids": [], "diffs": [], "answers": [], "rationales": [],
+                      "pages": {}, "page_size": {1: (612.0, 792.0)}},
+    )
+    monkeypatch.setattr(extract_sat, "question_span", lambda a, qid: {"page": 1, "top": 0.0, "bottom": 10.0})
+    monkeypatch.setattr(extract_sat, "bucket_path", lambda qid, section: f"sat/{section}/{qid}.jpg")
+    monkeypatch.setattr(extract_sat, "render_span", _write_crop)
+
+    out_path = tmp_path / "out" / "rows.json"
+    extract_sat.main(["--dry-run", "--out", str(out_path)])
+
+    rows = json.loads(out_path.read_text(encoding="utf-8"))
+    assert [r["id"] for r in rows] == ["id1", "id2"]  # id1 ingested once, from a-export.pdf
+
+    skipped = json.loads(out_path.with_name("skipped.json").read_text(encoding="utf-8"))
+    dupes = [s for s in skipped if s["id"] == "id1"]
+    assert len(dupes) == 1
+    assert dupes[0]["reason"] == "duplicate-across-exports"
+    assert dupes[0]["stage"] == "dedupe"

@@ -100,8 +100,9 @@ def _lines(text: str) -> list[str]:
     return [ln.strip() for ln in text.splitlines() if ln.strip()]
 
 
-def _header_region(lines: list[str]) -> list[str] | None:
-    """Lines from the id through the header, difficulty included.
+def _header_region(lines: list[str]) -> tuple[list[str], int] | None:
+    """Lines from the id through the header, difficulty included, plus the
+    index within that slice of the line that anchored the boundary.
 
     The PDF header is a flattened 3-column table (Domain / Skill /
     Difficulty), read row by row. A domain or skill name that wraps onto a
@@ -112,6 +113,14 @@ def _header_region(lines: list[str]) -> list[str] | None:
     instead the header runs through the `Question` boundary line that marks
     the start of the stem, when one follows the difficulty value. If none
     does, there is nothing to recover and the header ends at difficulty.
+
+    The returned index is the *specific* line that anchored this boundary --
+    the first Easy/Medium/Hard token found -- not merely "some difficulty
+    word is present somewhere in the header". A caller that re-scanned the
+    header afterward for any DIFFICULTY member, instead of reading this
+    exact index, could land on an unrelated second difficulty word bled in
+    from elsewhere (e.g. question-stem text absorbed into the header) and
+    ship the wrong one.
     """
     diff_idx = next((i for i, ln in enumerate(lines) if ln in DIFFICULTY), None)
     if diff_idx is None:
@@ -120,7 +129,7 @@ def _header_region(lines: list[str]) -> list[str] | None:
         (i for i in range(diff_idx + 1, len(lines)) if lines[i] == "Question"), None
     )
     end = question_idx if question_idx is not None else diff_idx + 1
-    return lines[:end]
+    return lines[:end], diff_idx
 
 
 def _domain_and_skill(fragments: list[str]) -> tuple[str | None, str | None]:
@@ -214,6 +223,12 @@ def _answer_from(text: str) -> tuple[dict | None, str | None]:
             return {"kind": "mcq", "correct": "ABCD".index(line_letter), "source": "answer-line"}, None
         return {"kind": "spr", "accepted": [raw], "source": "answer-line"}, None
 
+    # No `Correct Answer:` line at all: MCQ's rationale-stated "Choice X is
+    # correct" is tried before SPR's rationale patterns below, on purpose.
+    # The two are mutually exclusive in the real corpus (an MCQ never also
+    # carries "The correct answer is ..."/"Note that ... are examples"
+    # phrasing), so this ordering is not resolving a genuine ambiguity
+    # between the two -- it just means MCQ's fallback is checked first.
     choice = _CHOICE_CORRECT.search(text)
     if choice:
         return {"kind": "mcq", "correct": "ABCD".index(choice.group(1)), "source": "rationale"}, None
@@ -245,12 +260,17 @@ def _parse_block_detailed(block: str) -> tuple[dict | None, str | None]:
         return None, "no-id"
     qid = ident.group(1)
 
-    header = _header_region(_lines(block))
-    if header is None:
+    region = _header_region(_lines(block))
+    if region is None:
         return None, "no-difficulty"
+    header, diff_idx = region
 
     section = next((v for k, v in SECTIONS.items() if k in header), None)
-    difficulty = next((DIFFICULTY[d] for d in DIFFICULTY if d in header), None)
+    # Read difficulty off the exact line `_header_region` anchored the
+    # boundary on, not by re-scanning the header for any DIFFICULTY member
+    # -- see `_header_region`'s docstring for why a re-scan can land on the
+    # wrong one when a second difficulty-shaped word is present.
+    difficulty = DIFFICULTY.get(header[diff_idx])
     if not section:
         return None, "no-section"
     if not difficulty:
