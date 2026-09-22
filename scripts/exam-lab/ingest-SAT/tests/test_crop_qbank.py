@@ -271,6 +271,29 @@ def test_render_span_raises_loudly_when_declared_page_height_is_wrong(tmp_path):
         render_span(RAW_MATH_PDF, span, tmp_path / "bad.jpg", page_height_pt=400.0)
 
 
+def test_render_span_raises_loudly_for_a_degenerate_span(tmp_path):
+    """An inverted span (top > bottom) or a zero-height one (top == bottom)
+    would otherwise reach PIL: `.crop()` raises `ValueError: Coordinate
+    'lower' is less than 'upper'` for the inverted case, and `.save()`
+    raises `cannot write empty image as JPEG` for the zero-height case.
+    Both fail loud, which is good, but with a generic PIL message carrying
+    no pdf/page/question-id context. Task 7 calls `render_span` 3,766
+    times, so this needs to name exactly which pdf/page/span produced it
+    instead -- mirroring the diagnostic style of the height assertion
+    above. The check runs before the PDF is ever opened, so a nonexistent
+    `pdf` path is fine here and doesn't need the raw-corpus skip guard.
+    """
+    pdf = Path("nonexistent.pdf")
+
+    zero_height = {"page": 1, "top": 300.0, "bottom": 300.0}
+    with pytest.raises(RuntimeError, match="degenerate span"):
+        render_span(pdf, zero_height, tmp_path / "bad.jpg")
+
+    inverted = {"page": 1, "top": 300.0, "bottom": 100.0}
+    with pytest.raises(RuntimeError, match="degenerate span"):
+        render_span(pdf, inverted, tmp_path / "bad2.jpg")
+
+
 def test_render_span_writes_a_correctly_scaled_crop_from_a_real_page(tmp_path):
     """End-to-end against a real page (sliced out of the full Math export
     with pdfseparate, matching the pattern used for the UTF-8 crash

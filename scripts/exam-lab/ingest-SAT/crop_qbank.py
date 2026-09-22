@@ -245,6 +245,19 @@ def render_span(pdf: Path, span: dict, dest: Path, dpi: int = 150,
     rather than rely on the default, since a future export is not
     guaranteed to keep this size.
     """
+    if span["bottom"] <= span["top"]:
+        # An inverted span (top > bottom) would otherwise reach PIL's
+        # .crop() and raise `ValueError: Coordinate 'lower' is less than
+        # 'upper'`; a zero-height one (top == bottom) would pass .crop()
+        # but fail .save() with `cannot write empty image as JPEG`. Both
+        # already fail loud, but with a generic PIL message carrying no
+        # pdf/page/question-id context. Task 7 calls this function 3,766
+        # times, so this needs to name exactly which pdf/page/span produced
+        # it -- mirroring the diagnostic style of the height check below.
+        raise RuntimeError(
+            f"degenerate span top={span['top']} bottom={span['bottom']} "
+            f"for {pdf.name} p{span['page']}: bottom must be > top"
+        )
     dest.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         stem = Path(tmp) / "page"
