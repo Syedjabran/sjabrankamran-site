@@ -10,7 +10,8 @@ College Board material, not assumed.
 | What | Where |
 | --- | --- |
 | Design spec (the authority) | `docs/superpowers/specs/2026-09-22-sat-module-design.md` |
-| Plan 1 — ingestion (executed) | `docs/superpowers/plans/2026-09-22-sat-ingestion-pipeline.md` |
+| Plan 1 — question-bank ingestion (executed) | `docs/superpowers/plans/2026-09-22-sat-ingestion-pipeline.md` |
+| Plan 2 — practice tests + TypeScript core (written, not executed) | `docs/superpowers/plans/2026-09-23-sat-practice-tests-and-core.md` |
 | Execution ledger, every ruling | `.superpowers/sdd/2026-09-22-sat-ingestion-pipeline/progress.md` (gitignored, local) |
 | Pipeline README | `scripts/exam-lab/ingest-SAT/README.md` |
 
@@ -19,8 +20,8 @@ if wrong. It is local and gitignored — read it before re-litigating anything.
 
 ## Status
 
-**Plan 1 — question-bank ingestion: complete and verified.** 21 commits through `ebf6d68`.
-**Plans 2 and 3: not written.**
+**Plan 1 — question-bank ingestion: complete and verified.** 23 commits through `6bdf729`.
+**Plan 2: written, not executed.** **Plan 3 (surfaces): not written.**
 
 ### The crop sign-off found a real defect — fixed 2026-09-23, `ebf6d68`
 
@@ -69,13 +70,18 @@ lands in the row's `img`, `preflight_credentials()` runs beside `poppler.preflig
 any crop is rendered, and `report_qbank.text_of` decodes strict UTF-8 like `crop_qbank`
 always did.
 
-**102 tests pass** (98 before the crop fix added 4 regressions). The pipeline still yields
-3,730 rows / 40 skipped, unchanged by either the fix wave or the crop fix.
+**106 tests pass.** The pipeline yields 3,731 rows / 39 skipped.
 
 ```
 3,770 questions in the exports
-3,730 verified, cropped, ready      40 skipped (36 cross-page, 2 answer-source-conflict, 2 no-answer)
+3,731 verified, cropped, ready      39 skipped (36 cross-page, 2 answer-source-conflict, 1 no-answer)
 ```
+
+`364a2d25` was recovered on 2026-09-23 — its answer is phrased "The correct answer is
+either 8 or 9", which the parser could not read (`1534bc4`). The same commit corrected
+`c362c210`, which accepted only `1.5` where College Board also prints `3/2`. The single
+remaining `no-answer`, `fb58c0db`, is genuinely unrecoverable: its answer is a
+mathematical expression the text layer drops.
 
 ## THE TWO THINGS BLOCKING PROGRESS — both need the user
 
@@ -138,10 +144,10 @@ the bucket. The code warns at runtime; do not ignore it.
 ## Next steps, in order
 
 1. Get the user's crop sign-off and credentials; run the live upload; build the real
-   `src/lib/sat/question-bank.json`.
-2. Write plan 2 — practice-test ingestion (8 linear papers, a different document shape, plus
-   raw→scaled conversion tables) and the TypeScript core (types, bank loaders, adaptive form
-   assembly, scoring, `sat-001` migration, course gating). Estimate 3–5 h.
+   `src/lib/sat/question-bank.json`. **Still the only hard blocker.**
+2. Execute plan 2 (`docs/superpowers/plans/2026-09-23-sat-practice-tests-and-core.md`).
+   Tasks 0–3 and 7–13 need no credentials. Task 4 is the real work — its anchor rule is
+   unsolved and two attempts are documented as dead ends.
 3. Write plan 3 — portal SAT Lab, adaptive runner, SPR pad, score report, public `/sat`
    vertical, integration. Estimate 4–6 h.
 
