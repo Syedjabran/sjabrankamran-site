@@ -2,10 +2,12 @@ import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, Inter, IBM_Plex_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
-import "katex/dist/katex.min.css";
-import "driver.js/dist/driver.css";
+// KaTeX CSS is imported by the exam-runner client component (the only KaTeX
+// renderer) so it is not render-blocking on every page. Same for driver.js
+// CSS, used only by the product-tour components.
 import { SITE } from "@/lib/utils";
 import { SiteHeader } from "@/components/site-header";
+import { HydrationMarker } from "@/components/hydration-marker";
 import { SiteFooter } from "@/components/site-footer";
 import { EinsteinCompanion } from "@/components/einstein-companion";
 
@@ -139,6 +141,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify([websiteSchema, orgSchema, personSchema]) }}
         />
+        <HydrationMarker />
         <SiteHeader />
         <main>{children}</main>
         <SiteFooter />

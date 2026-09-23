@@ -9,6 +9,7 @@ import { SJAK_MONOGRAM_DATA_URI } from "@/lib/sjak-monogram";
 const NAV = [
   { href: "/profile", label: "Profile" },
   { href: "/education", label: "Education" },
+  { href: "/physics", label: "Courses" },
   { href: "/physics-studio", label: "Physics Studio" },
   { href: "/enterprise", label: "Enterprise" },
   { href: "/ai-technology", label: "AI & Technology" },
@@ -22,8 +23,9 @@ export function SiteHeader() {
     <header className="sticky top-0 z-[110] border-b border-white/[0.06] bg-abyss/80 backdrop-blur-xl">
       <div className="container-x flex h-16 items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5" aria-label="Home">
-          {/* Inlined data URI so the header logo survives flaky/roaming mobile
-              networks that drop separate image requests. */}
+          {/* Inlined data URI: the monogram renders on every public page, so
+              it must survive the edge bot-challenge that can block first-visit
+              subresource requests before the clearance cookie exists. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={SJAK_MONOGRAM_DATA_URI}

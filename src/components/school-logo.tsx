@@ -1,4 +1,5 @@
-/* eslint-disable @next/next/no-img-element */
+import { ResilientImg } from "@/components/ui/resilient-image";
+import { SCHOOL_LOGO_DATA_URIS } from "@/lib/inline-media";
 
 /**
  * SchoolLogo — official institution logos, unmodified.
@@ -16,8 +17,6 @@
  * Logos are third-party trademarks shown solely to describe teaching
  * history; their use does not imply endorsement.
  */
-import { SCHOOL_LOGO_DATA_URIS } from "@/lib/inline-media";
-
 export function SchoolLogo({
   logo,
   onDark = false,
@@ -31,15 +30,15 @@ export function SchoolLogo({
   name: string;
   height?: number;
 }) {
-  // Serve the inlined data URI when we have one, so logos render on flaky /
-  // roaming / data-saver mobile where separate image requests were dropped.
-  const src = logo ? (SCHOOL_LOGO_DATA_URIS[logo] ?? logo) : logo;
+  // Landing-critical logos ship inline (data URI) so they render even when
+  // edge protection blocks image subresource requests.
+  const resolved = logo ? SCHOOL_LOGO_DATA_URIS[logo] || logo : logo;
   if (logo) {
     if (onDark) {
       return (
         <span className="flex shrink-0 items-center overflow-hidden rounded-lg" style={{ height }}>
-          <img
-            src={src}
+          <ResilientImg
+            src={resolved}
             alt={`${name} logo`}
             className="rounded-lg"
             style={{ height: "100%", width: "auto", maxWidth: height * 2.6, objectFit: "contain" }}
@@ -53,8 +52,8 @@ export function SchoolLogo({
         className="flex shrink-0 items-center justify-center rounded-lg bg-white px-2 py-1.5 shadow-sm ring-1 ring-black/5"
         style={{ height, minWidth: height, maxWidth: height * 2.6 }}
       >
-        <img
-          src={src}
+        <ResilientImg
+          src={resolved}
           alt={`${name} logo`}
           style={{ height: "100%", width: "auto", maxWidth: height * 2.3, objectFit: "contain" }}
           loading="lazy"
