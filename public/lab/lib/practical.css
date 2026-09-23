@@ -1,1 +1,161 @@
-:root{color-scheme:dark;--bg:#060b12;--panel:#0d1826;--line:#315168;--ink:#dcecf5;--dim:#a1bfd0;--cyan:#3de1f0;--amber:#f7c948}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}header,main{max-width:1250px;margin:auto;padding:18px}h1{font-size:1.4rem;color:var(--cyan)}h2{font-size:1.1rem}a{color:var(--cyan)}.sub,.note{color:var(--dim)}.wrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}.panel{padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--panel);min-width:0}.wide{grid-column:1/-1}label{display:block;margin:10px 0 5px}input,select,button,textarea{font:inherit;color:var(--ink);background:#102438;border:1px solid var(--line);border-radius:6px;min-height:44px;padding:8px}button{cursor:pointer}button:hover{border-color:var(--cyan)}button:disabled{opacity:.5;cursor:default}:focus-visible{outline:3px solid var(--amber);outline-offset:3px}input[type=range],textarea{width:100%}input[type=checkbox]{min-height:24px;min-width:24px;vertical-align:middle}.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}.scroll{overflow:auto}table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}th,td{padding:6px;border:1px solid var(--line);text-align:right}td input{width:8rem}canvas,svg{display:block;width:100%;height:auto;background:#04080d;border-radius:8px}output{font-variant-numeric:tabular-nums;color:var(--cyan)}.notice{border-left:4px solid var(--amber);padding:10px}.error{color:#ffb5aa}[hidden]{display:none!important}@media(max-width:820px){.wrap{grid-template-columns:1fr}header,main{padding:12px}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+:root {
+  color-scheme: dark;
+  --bg: #060b12;
+  --panel: #0d1826;
+  --line: #315168;
+  --ink: #dcecf5;
+  --dim: #a1bfd0;
+  --cyan: #3de1f0;
+  --amber: #f7c948;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font:
+    16px/1.5 system-ui,
+    sans-serif;
+}
+header,
+main {
+  max-width: 1250px;
+  margin: auto;
+  padding: 18px;
+}
+h1 {
+  font-size: 1.4rem;
+  color: var(--cyan);
+}
+h2 {
+  font-size: 1.1rem;
+}
+a {
+  color: var(--cyan);
+}
+.sub,
+.note {
+  color: var(--dim);
+}
+.wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.panel {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  min-width: 0;
+}
+.wide {
+  grid-column: 1/-1;
+}
+label {
+  display: block;
+  margin: 10px 0 5px;
+}
+input,
+select,
+button,
+textarea {
+  font: inherit;
+  color: var(--ink);
+  background: #102438;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  min-height: 44px;
+  padding: 8px;
+  max-width: 100%;
+}
+select {
+  width: 100%;
+}
+button {
+  cursor: pointer;
+}
+button:hover {
+  border-color: var(--cyan);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+:focus-visible {
+  outline: 3px solid var(--amber);
+  outline-offset: 3px;
+}
+input[type="range"],
+textarea {
+  width: 100%;
+}
+input[type="checkbox"] {
+  min-height: 24px;
+  min-width: 24px;
+  vertical-align: middle;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 12px 0;
+}
+.scroll {
+  overflow: auto;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+th,
+td {
+  padding: 6px;
+  border: 1px solid var(--line);
+  text-align: right;
+}
+td input {
+  width: 8rem;
+}
+canvas,
+svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #04080d;
+  border-radius: 8px;
+}
+output {
+  font-variant-numeric: tabular-nums;
+  color: var(--cyan);
+}
+.notice {
+  border-left: 4px solid var(--amber);
+  padding: 10px;
+}
+.error {
+  color: #ffb5aa;
+}
+[hidden] {
+  display: none !important;
+}
+@media (max-width: 820px) {
+  .wrap {
+    grid-template-columns: 1fr;
+  }
+  header,
+  main {
+    padding: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+    animation: none !important;
+    transition: none !important;
+  }
+}
