@@ -16,6 +16,8 @@
  * Logos are third-party trademarks shown solely to describe teaching
  * history; their use does not imply endorsement.
  */
+import { SCHOOL_LOGO_DATA_URIS } from "@/lib/inline-media";
+
 export function SchoolLogo({
   logo,
   onDark = false,
@@ -29,12 +31,15 @@ export function SchoolLogo({
   name: string;
   height?: number;
 }) {
+  // Serve the inlined data URI when we have one, so logos render on flaky /
+  // roaming / data-saver mobile where separate image requests were dropped.
+  const src = logo ? (SCHOOL_LOGO_DATA_URIS[logo] ?? logo) : logo;
   if (logo) {
     if (onDark) {
       return (
         <span className="flex shrink-0 items-center overflow-hidden rounded-lg" style={{ height }}>
           <img
-            src={logo}
+            src={src}
             alt={`${name} logo`}
             className="rounded-lg"
             style={{ height: "100%", width: "auto", maxWidth: height * 2.6, objectFit: "contain" }}
@@ -49,7 +54,7 @@ export function SchoolLogo({
         style={{ height, minWidth: height, maxWidth: height * 2.6 }}
       >
         <img
-          src={logo}
+          src={src}
           alt={`${name} logo`}
           style={{ height: "100%", width: "auto", maxWidth: height * 2.3, objectFit: "contain" }}
           loading="lazy"
