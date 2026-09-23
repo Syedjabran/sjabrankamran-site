@@ -4,15 +4,6 @@ const nextConfig = {
   poweredByHeader: false,
   experimental: {
     serverActions: { bodySizeLimit: "8mb" },
-    // Inline global CSS into the HTML document instead of a separate
-    // /_next/static/*.css request. Edge bot-mitigation (Vercel Security
-    // Checkpoint) can challenge subresource requests it cannot run JS on,
-    // which silently drops the stylesheet and renders the site unstyled for
-    // flagged visitors (a <link> cannot retry itself). Inlining removes that
-    // failure mode: if the HTML arrives, the styling arrives with it.
-    // CSP already permits inline styles. Global CSS is ~76 KB raw after the
-    // KaTeX/driver code-split, so the gzipped HTML cost is small.
-    inlineCss: true,
   },
   images: {
     dangerouslyAllowSVG: true,
@@ -46,16 +37,6 @@ const nextConfig = {
       "upgrade-insecure-requests",
     ].join("; ");
     return [
-      {
-        // HTML documents must never be served stale. Match page routes only
-        // (exclude /api, Next build assets and any path with a file extension
-        // like /videos/*.mp4 or /brand/*.jpg, which stay long-cached). Every
-        // navigation then re-fetches the current deploy instead of a cached
-        // copy — killing the "stale page on some devices" class of bug while
-        // hashed assets and media keep their immutable cache.
-        source: "/((?!api|_next/static|_next/image|.*\\.).*)",
-        headers: [{ key: "Cache-Control", value: "no-store, must-revalidate" }],
-      },
       {
         source: "/(.*)",
         headers: [
