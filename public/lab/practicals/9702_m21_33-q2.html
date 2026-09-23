@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>9702 m21/33 Q2 — Air flow virtual practical</title><link rel="stylesheet" href="../lib/practical.css"></head>
+<body><header><a href="../status.html">Build status</a><h1 id="title">Speed of air flowing through a hole</h1><p id="provenance">Adapted/generated; not official Cambridge software.</p><p>Guided practice · applet built; browser verification pending.</p></header>
+<main class="wrap"><section class="panel"><h2>Membrane, bottle and stopwatch</h2>
+<svg viewBox="0 0 560 350" role="img" aria-labelledby="apparatus-title apparatus-desc"><title id="apparatus-title">Inverted bottle with falling water interface</title><desc id="apparatus-desc">The interface moves down from above the upper mark to below the lower mark. Text below also reports its position.</desc>
+<path d="M130 55H350V270H280V315H200V270H130Z" fill="none" stroke="#a1bfd0" stroke-width="4"/>
+<path d="M90 285V335H400V285" fill="none" stroke="#3de1f0" stroke-width="3"/><path d="M92 302H398" stroke="#3de1f0" stroke-width="2"/>
+<path d="M130 55H350" stroke="#f7c948" stroke-width="7"/><circle cx="240" cy="55" r="4" fill="#060b12"/>
+<rect id="water" x="133" y="90" width="214" height="177" fill="#15527a"/>
+<path d="M110 110H370M110 240H370" stroke="#f7c948" stroke-dasharray="8 5"/><path id="interface" d="M133 90H347" stroke="#dcecf5" stroke-width="4"/>
+<g fill="#dcecf5" font-size="15"><text x="380" y="114">Upper mark</text><text x="380" y="244">Lower mark</text><text x="200" y="35">Membrane hole</text><text x="410" y="306">Water bowl</text></g></svg>
+<p id="position" role="status">Fill the bottle to begin.</p>
+<label for="tool">Piercing tool</label><select id="tool"><option value="pin">Pin (approximately 0.6 mm)</option><option value="nail">Nail (approximately 1.5 mm)</option></select>
+<label><input id="submerged" type="checkbox"> Hold vertically with mouth submerged 0.01 m</label>
+<label><input id="parallax" type="checkbox"> Add ruler parallax error</label>
+<div class="row"><button id="measure">Read rulers and micrometer</button><button id="fill">Refill / prepare trial</button><button id="abandon">Empty / change tool</button></div><p id="dimensions" role="status">Take dimension readings for this tool.</p>
+<div class="row"><button id="play" disabled>Release / resume</button><button id="pause" disabled>Pause</button><button id="step" disabled>Advance 0.1 s</button></div>
+<label><input id="reduced" type="checkbox"> Reduced motion / manual stepping</label>
+<p class="note">Pause freezes the physical simulation and stopwatch together, without adding waiting time. Step advances exactly 0.1 s. Reduced motion never changes the flow law. Start/stop judgements supply timing error.</p>
+<div class="row"><button id="start" disabled>Start stopwatch</button><button id="stop" disabled>Stop stopwatch</button><output id="watch" aria-label="Stopwatch">0.0 s</output><button id="record" disabled>Record trial</button></div>
+<p id="message" role="status" aria-live="polite">Loading student guide…</p>
+<p class="notice">Fixed effective-speed approximation over the marked interval, not a full coupled air/water hydrostatic solution. Actual membrane holes can differ from the piercing tool. This activity uses the baseline intact-hole model.</p></section>
+<section class="panel"><h2>Editable student readings</h2><p>Repeat both tool conditions. Raw readings remain separate from editable calculated columns.</p><div class="scroll"><table id="table"><caption>Measurements and student calculations</caption></table></div><div class="row"><button id="clear">Clear table</button><button id="csv">Export student CSV</button></div>
+<label for="criterion">Your justified k-agreement criterion (%)</label><input id="criterion" type="number" min="0" max="100" step="1"><button id="compare">Compare repeat means</button><p id="comparison" role="status"></p><p class="note">Comparison uses |k₁ − k₂| / mean(k₁,k₂) × 100%. Only unambiguous pin-size or nail-size readings are grouped; edited intermediate diameters are excluded.</p>
+<label for="evaluation">Uncertainty, limitations and improvement</label><textarea id="evaluation" rows="5"></textarea><p class="note">CSV contains table readings only; copy your evaluation separately.</p></section>
+<section class="panel wide"><details><summary>Student guide, formulae and evaluation prompts</summary><div id="guide"></div></details></section></main>
+<script type="module">
+import { makeGasFlowHole } from '../models/gas_flow_hole.mjs';
+import { $, loadGuide, makeTable } from '../lib/practical-ui.mjs';
+try {
+const guide = await loadGuide('9702_m21_33-q2');
+const model = makeGasFlowHole();
+const positive = (...values) => values.every(v => Number.isFinite(v) && v > 0);
+const table = makeTable(guide, { units: { k: 's m²', s: 'm/s' }, derive(row) {
+  row.k = positive(row.t, row.d_2) ? row.t * row.d_2 ** 2 : null;
+  row.s = positive(row.d, row.l, row.k) ? row.d ** 2 * row.l / row.k : null;
+  return row;
+}});
+let dimensions = null, prepared = false, running = false, elapsed = 0, started = null, stopped = null, recorded = false, last = null;
+$('reduced').checked = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function update() {
+  const p = model.interfacePosition($('tool').value, elapsed), y = 110 + 130 * p;
+  $('interface').setAttribute('d', `M133 ${y}H347`); $('water').setAttribute('y', y); $('water').setAttribute('height', Math.max(0, 267-y));
+  $('position').textContent = !prepared ? 'Refill to prepare a trial.' : p < 0 ? 'Interface above upper mark.' : p < 1 ? `Interface between marks: ${(p * 100).toFixed(0)}% of interval traversed.` : 'Interface below lower mark.';
+  $('play').disabled = !prepared || running || p >= 1.2 || $('reduced').checked;
+  $('pause').disabled = !running; $('step').disabled = !prepared || running || p >= 1.2;
+  $('start').disabled = !prepared || started !== null || p >= 1.2;
+  $('stop').disabled = started === null || stopped !== null || elapsed <= started;
+  $('record').disabled = stopped === null || !dimensions || recorded;
+  $('watch').textContent = `${started === null ? '0.0' : ((stopped ?? elapsed) - started).toFixed(1)} s`;
+  $('tool').disabled = prepared; $('submerged').disabled = prepared; $('measure').disabled = prepared;
+}
+function advance(dt) { elapsed += dt; if (model.interfacePosition($('tool').value, elapsed) >= 1.2) running = false; update(); }
+function frame(now) { if (running && last !== null) advance((now-last)/1000); last = now; requestAnimationFrame(frame); }
+$('measure').onclick = () => { dimensions = model.readDimensions($('tool').value, { parallax: $('parallax').checked }); $('dimensions').textContent = `L = ${dimensions.l.toFixed(3)} m; D = ${dimensions.d.toFixed(3)} m; d = ${dimensions.d_2.toFixed(5)} m`; update(); };
+$('tool').onchange = () => { dimensions = null; $('dimensions').textContent = 'Read dimensions for the new tool.'; update(); };
+$('fill').onclick = () => {
+  running = false; prepared = false; elapsed = 0; started = stopped = null; recorded = false;
+  if (!$('submerged').checked) $('message').textContent = 'Set the bottle vertically at the specified immersion depth first.';
+  else if (!dimensions) $('message').textContent = 'Read rulers and micrometer first.';
+  else { prepared = true; $('message').textContent = 'Ready. Release or step; start at the upper mark and stop at the lower mark.'; }
+  update();
+};
+$('abandon').onclick = () => { running = prepared = false; elapsed = 0; started = stopped = null; recorded = false; $('message').textContent = 'Trial discarded. Choose a tool or refill.'; update(); };
+$('play').onclick = () => { running = true; last = performance.now(); update(); };
+$('pause').onclick = () => { running = false; update(); };
+$('step').onclick = () => advance(.1);
+$('reduced').onchange = () => { running = false; update(); };
+// Background tabs pause, avoiding hidden time jumps on return.
+document.addEventListener('visibilitychange', () => { if (document.hidden) { running = false; update(); } });
+$('start').onclick = () => { started = elapsed; update(); };
+$('stop').onclick = () => { stopped = elapsed; update(); };
+$('record').onclick = () => { table.add({ ...dimensions, t: model.readElapsed(stopped-started) }); recorded = true; prepared = false; running = false; $('message').textContent = 'Trial recorded. Refill to repeat, or change the tool and remeasure.'; update(); };
+$('compare').onclick = () => {
+  const criterion = $('criterion').valueAsNumber;
+  if (!Number.isFinite(criterion) || criterion < 0 || criterion > 100) { $('comparison').textContent = 'Enter your criterion between 0 and 100% first.'; return; }
+  const groups = [table.rows.filter(r => r.d_2 > 0 && r.d_2 < .0009 && r.k > 0), table.rows.filter(r => r.d_2 > .0012 && r.d_2 < .0018 && r.k > 0)];
+  if (groups.some(g => g.length < 2)) { $('comparison').textContent = 'Record at least two positive readings for each tool first.'; return; }
+  const means = groups.map(g => g.reduce((s,r) => s+r.k,0)/g.length), percent = 200*Math.abs(means[0]-means[1])/(means[0]+means[1]);
+  $('comparison').textContent = `Mean k: pin ${means[0].toPrecision(4)}, nail ${means[1].toPrecision(4)} s m². Difference ${percent.toFixed(1)}%: ${percent <= criterion ? 'within' : 'outside'} your ${criterion}% criterion. Two conditions do not establish a universal law.`;
+};
+$('message').textContent = 'Read dimensions, set immersion, then prepare a trial.'; update(); requestAnimationFrame(frame);
+} catch (error) { $('message').textContent = `Unable to initialise: ${error.message}. Serve the project through the local sandbox HTTP server.`; }
+</script></body></html>

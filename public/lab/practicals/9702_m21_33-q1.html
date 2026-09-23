@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>9702/33 F/M 2021 Q1 — Equilibrium of a rod on a spring (virtual)</title>
+<style>
+  :root { --bg:#060b12; --panel:#0d1826; --line:#16324a; --ink:#dcecf5; --dim:#7fa6bd; --cyan:#3de1f0; --amber:#f7c948; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:14px 18px; border-bottom:1px solid var(--line); }
+  h1 { font-size:16px; margin:0; color:var(--cyan); font-weight:600; }
+  .sub { color:var(--dim); font-size:12.5px; margin-top:3px; }
+  .wrap { display:grid; grid-template-columns:minmax(320px,1fr) minmax(300px,420px); gap:16px; padding:16px; }
+  @media (max-width:820px){ .wrap{ grid-template-columns:1fr; } }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  canvas { width:100%; height:auto; background:#04080d; border-radius:8px; display:block; touch-action:none; }
+  label { display:block; font-size:12px; color:var(--dim); margin:10px 0 4px; }
+  input[type=range]{ width:100%; accent-color:var(--cyan); }
+  button { background:#12283c; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:7px 12px; cursor:pointer; font-size:13px; }
+  button:hover{ border-color:var(--cyan); color:var(--cyan); }
+  button.primary{ background:var(--cyan); color:#04121a; border-color:var(--cyan); font-weight:600; }
+  table { width:100%; border-collapse:collapse; margin-top:8px; font-size:13px; }
+  th,td { border:1px solid var(--line); padding:4px 7px; text-align:right; }
+  th { color:var(--dim); font-weight:500; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+  .chip { font-size:11.5px; color:var(--amber); border:1px solid #4a3c12; background:#1c1708; padding:2px 8px; border-radius:20px; }
+  .note { font-size:11.5px; color:var(--dim); margin-top:10px; }
+  .val { color:var(--cyan); font-variant-numeric:tabular-nums; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Paper 9702/33 · Feb/March 2021 · Question 1 — rod held horizontal by a spring</h1>
+  <div class="sub">Adjust the loop position <b>x</b>, level the rod, then read the spring mark <b>C</b> with the ruler. Record six readings and plot <b>E⁻⁴</b> against <b>x</b>. <span class="chip">Adapted simulation — not official Cambridge software</span></div>
+</header>
+<div class="wrap">
+  <div class="panel">
+    <canvas id="stage" width="640" height="420" aria-label="Apparatus: rod, spring and ruler"></canvas>
+    <label for="x">Loop position x = <span id="xval" class="val"></span> m</label>
+    <input id="x" type="range" min="0.145" max="0.32" step="0.005" value="0.245" />
+    <label for="str">String length adjust (level the rod first) = <span id="strval" class="val"></span> mm</label>
+    <input id="str" type="range" min="-30" max="30" step="1" value="0" />
+    <div class="row">
+      <button id="take" class="primary" disabled>Record reading</button>
+      <button id="reset">Clear table</button>
+      <label style="display:inline;margin:0 0 0 6px;"><input type="checkbox" id="parallax" /> add parallax error</label>
+    </div>
+    <div id="tilt" class="note"></div>
+  </div>
+  <div class="panel">
+    <b style="font-size:13px;">Readings</b>
+    <table id="tbl"><thead><tr><th>x / m</th><th>C / m</th><th>E / m</th><th>E⁻⁴ / m⁻⁴</th></tr></thead><tbody></tbody></table>
+    <div class="row">
+      <button id="csv">Export CSV</button>
+      <span id="fit" class="note"></span>
+    </div>
+    <canvas id="graph" width="420" height="280" style="margin-top:10px"></canvas>
+    <div class="note">The straight line of E⁻⁴ vs x is a finite-range approximation, so a little scatter is expected — the E⁻⁴ transform multiplies your ±1 mm ruler error about four-fold.</div>
+  </div>
+</div>
+<script type="module">
+import { makeStaticSpringRod } from '../models/static_spring_rod.mjs';
+import { seededRandom, readInstrument, linearFit, readingsCSV } from '../lib/measurement.mjs';
+
+// Hidden truth — never shown to the student. Seeded so a class shares one setup.
+const rod = makeStaticSpringRod({ h_m:0.25, C0_m:0.02, ks_N_per_m:25, mass_kg:0.16, centre_m:0.205 });
+const C0 = 0.02, rnd = seededRandom(202133);
+const rows = [];
+const $ = id => document.getElementById(id);
+const xEl=$('x'), strEl=$('str');
+
+function levelled(){ return Math.abs(+strEl.value) <= 1; } // within 1 mm of horizontal
+function draw(){
+  const x=+xEl.value; $('xval').textContent=x.toFixed(3); $('strval').textContent=strEl.value;
+  const tilt = rod.tiltDegrees((+strEl.value)/1000);
+  $('take').disabled = !levelled();
+  $('tilt').innerHTML = levelled()
+    ? '<span style="color:var(--cyan)">Rod is horizontal — you may read the ruler.</span>'
+    : `Rod tilts ${tilt.toFixed(1)}° — adjust the string until it is horizontal before reading.`;
+  const c=$('stage'), g=c.getContext('2d'); g.clearRect(0,0,c.width,c.height);
+  // ruler
+  g.strokeStyle='#16324a'; g.fillStyle='#0a1420'; g.fillRect(40,360,560,26); g.strokeRect(40,360,560,26);
+  g.fillStyle='#7fa6bd'; g.font='10px system-ui';
+  for(let i=0;i<=56;i++){ const px=40+i*10; g.beginPath(); g.moveTo(px,360); g.lineTo(px,360+(i%5?5:10)); g.stroke(); }
+  // pivot + rod (tilts with string error)
+  const pivotX=120, pivotY=150, len=360, ang=tilt*Math.PI/180;
+  const ex=pivotX+len*Math.cos(ang), ey=pivotY+len*Math.sin(ang);
+  g.strokeStyle='#caa46a'; g.lineWidth=8; g.beginPath(); g.moveTo(pivotX,pivotY); g.lineTo(ex,ey); g.stroke(); g.lineWidth=1;
+  g.fillStyle='#3de1f0'; g.beginPath(); g.arc(pivotX,pivotY,6,0,7); g.fill();
+  // spring from top nail down to loop at position x along rod
+  const fx=pivotX+(len*(x/0.55))*Math.cos(ang), fy=pivotY+(len*(x/0.55))*Math.sin(ang);
+  const topY=60, coils=14; g.strokeStyle='#9fd6e6'; g.beginPath(); g.moveTo(fx,topY);
+  for(let i=0;i<=coils;i++){ const t=i/coils; g.lineTo(fx+(i%2?7:-7), topY+t*(fy-topY)); } g.lineTo(fx,fy); g.stroke();
+  g.fillStyle='#f7c948'; g.beginPath(); g.arc(fx,fy,4,0,7); g.fill();
+  g.fillStyle='#7fa6bd'; g.fillText('nail (top)',fx-20,topY-6); g.fillText('loop',fx+8,fy);
+}
+function refresh(){ draw(); drawGraph(); }
+xEl.oninput=refresh; strEl.oninput=refresh;
+
+$('take').onclick=()=>{
+  if(!levelled()) return;
+  const x=+xEl.value;
+  let mark = rod.springMark(x);
+  if($('parallax').checked) mark += 0.0015;            // student-selectable systematic error
+  const C = readInstrument(mark, { resolution:0.001, halfWidth:0.001 }, rnd);
+  const E = +(C - C0).toFixed(3);
+  rows.push({ x:x.toFixed(3), C:C.toFixed(3), E:E.toFixed(3), Y:(E**-4).toFixed(0) });
+  renderRows();
+};
+$('reset').onclick=()=>{ rows.length=0; renderRows(); };
+$('csv').onclick=()=>{
+  const csv = readingsCSV([{key:'x',label:'x',unit:'m'},{key:'C',label:'C',unit:'m'},{key:'E',label:'E',unit:'m'},{key:'Y',label:'E^-4',unit:'m^-4'}], rows);
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='9702_m21_33_q1_readings.csv'; a.click();
+};
+function renderRows(){
+  $('tbl').querySelector('tbody').innerHTML = rows.map(r=>`<tr><td>${r.x}</td><td>${r.C}</td><td>${r.E}</td><td>${r.Y}</td></tr>`).join('');
+  drawGraph();
+}
+function drawGraph(){
+  const c=$('graph'), g=c.getContext('2d'); g.clearRect(0,0,c.width,c.height);
+  g.strokeStyle='#16324a'; g.strokeRect(38,10,360,230);
+  g.fillStyle='#7fa6bd'; g.font='11px system-ui'; g.fillText('E⁻⁴ / m⁻⁴',6,14); g.fillText('x / m',360,256);
+  const pts=rows.map(r=>[+r.x,+r.Y]); if(pts.length<1) return;
+  const xs=pts.map(p=>p[0]), ys=pts.map(p=>p[1]);
+  const xmin=Math.min(...xs,0.14), xmax=Math.max(...xs,0.33), ymin=Math.min(...ys), ymax=Math.max(...ys,ymin+1);
+  const X=v=>38+(v-xmin)/(xmax-xmin)*360, Y=v=>240-(v-ymin)/(ymax-ymin)*230;
+  g.fillStyle='#3de1f0'; pts.forEach(p=>{ g.beginPath(); g.arc(X(p[0]),Y(p[1]),3.5,0,7); g.fill(); });
+  if(pts.length>=2){ const f=linearFit(pts); g.strokeStyle='#f7c948'; g.beginPath();
+    g.moveTo(X(xmin),Y(f.slope*xmin+f.intercept)); g.lineTo(X(xmax),Y(f.slope*xmax+f.intercept)); g.stroke();
+    $('fit').textContent = `best fit: gradient ${f.slope.toPrecision(3)} m⁻⁵, r² ${f.rSquared?.toFixed(4)}`;
+  } else $('fit').textContent='';
+}
+refresh();
+</script>
+</body>
+</html>

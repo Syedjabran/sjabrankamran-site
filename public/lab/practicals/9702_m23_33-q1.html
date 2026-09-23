@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>9702 m23/33 Q1 — Rod and pulley equilibrium</title><link rel="stylesheet" href="../lib/practical.css"></head>
+<body><header><a href="../status.html">Build status</a><h1 id="title">Equilibrium of a wooden rod</h1><p id="provenance">Adapted/generated; not official Cambridge software.</p><p>Guided practice · applet built; browser verification pending.</p></header>
+<main class="wrap"><section class="panel"><h2>Notched rod, horizontal string and pulley</h2>
+<svg viewBox="0 0 560 470" role="img" aria-labelledby="apparatus-title apparatus-desc"><title id="apparatus-title">Suspended rod pulled at a notch by a string over a pulley</title><desc id="apparatus-desc">The dashed plumb line is vertical. Adjust the pulley until the string from the selected notch is horizontal. Readings are available in text after alignment.</desc>
+<path d="M80 30H225M140 35V435" stroke="#a1bfd0" stroke-width="2" stroke-dasharray="5 5"/><path id="rod" stroke="#c89569" stroke-width="12"/>
+<g id="notches" fill="#f7c948"></g><circle id="pivot" cx="140" cy="55" r="7" fill="#3de1f0"/>
+<path id="string" stroke="#fff" fill="none" stroke-width="2"/><circle id="pulley" cx="425" cy="160" r="15" stroke="#a1bfd0" fill="none" stroke-width="4"/>
+<rect id="hanger" x="425" y="320" width="30" height="32" fill="#758ba0"/><rect id="endMass" x="140" y="370" width="24" height="28" fill="#758ba0"/>
+<path id="angle" fill="none" stroke="#3de1f0" stroke-width="2"/>
+<g fill="#dcecf5" font-size="15"><text x="35" y="215">Plumb line</text><text x="185" y="28">Pivot</text><text x="450" y="210">Pulley</text><text x="325" y="445">Heights above datum</text></g>
+<path d="M60 425H490" stroke="#a1bfd0"/></svg>
+<label for="notch">Notch distance from pivot / m</label><select id="notch"><option>0.04</option><option>0.08</option><option>0.12</option><option>0.16</option><option selected>0.20</option><option>0.24</option><option>0.28</option><option>0.32</option><option>0.36</option></select>
+<label for="pulleyHeight">Pulley tangent-height setting / m (adjustment scale)</label><input id="pulleyHeight" type="range" min="0.20" max="0.55" step="0.001" value="0.400"><output id="pulleyValue" for="pulleyHeight">0.400 m</output>
+<p id="alignment" role="status" aria-live="polite">Adjust pulley to level the string.</p><label><input id="parallax" type="checkbox"> Add parallax to ruler and protractor readings</label>
+<div class="row"><button id="read" disabled>Read rulers and protractor</button><button id="record" disabled>Record readings</button></div><p id="readout" role="status">No instrument readings yet.</p>
+<p class="note">θ is measured from the vertical plumb line, not from the horizontal. The diagram previews the horizontal-string equilibrium; a misaligned pulley is an invalid setup, not a simulated non-horizontal equilibrium. Level within the ruler resolution before reading.</p><p class="notice">Static presentation, no automatic animation. Model limits: negligible pulley friction and string mass, uniform rod, and bolt mass included in the rod model.</p></section>
+<section class="panel"><h2>Student measurements and graph</h2><div class="scroll"><table id="table"><caption>Editable measurements and sin θ (calculated to 3 significant figures)</caption></table></div><div class="row"><button id="clear">Clear table</button><button id="csv">Export student CSV</button></div><p id="coverage" role="status">Take six settings spanning the required angular range.</p>
+<canvas id="graph" width="560" height="330" role="img" aria-label="Graph of measured sin theta against measured string height h in metres; all points are listed in the table.">Graph values are in the table.</canvas><button id="fitButton">Fit measured points</button><p id="fit" role="status"></p>
+<p class="note">Horizontal axis: h / m. Vertical axis: sin θ (dimensionless). Gradient a has unit m⁻¹; intercept b is dimensionless. Repeats at one height do not define a gradient.</p>
+<details><summary>Calculate rod mass from your gradient</summary><p>M = N[−1/(aL) − 1], using the source coefficient N = 0.200 kg. Enter your measured L and your gradient, not apparatus settings.</p><label for="gradient">Your gradient a / m⁻¹</label><input id="gradient" type="number" step="any"><label for="length">Your measured rod length L / m</label><input id="length" type="number" min="0" step="0.001"><button id="calculateMass">Calculate from my values</button><p id="massResult" role="status"></p></details>
+<label for="evaluation">Uncertainty, conclusion and practical improvements</label><textarea id="evaluation" rows="5"></textarea><p class="note">CSV contains the student table only; copy calculation and evaluation notes separately.</p></section>
+<section class="panel wide"><details><summary>Student guide, formulae and evaluation prompts</summary><div id="guide"></div></details><p id="message" role="status">Loading student guide…</p></section></main>
+<script type="module">
+import { makeRodPulleyEquilibrium, inferRodMass } from '../models/rod_pulley_equilibrium.mjs';
+import { $, loadGuide, makeTable, drawGraph } from '../lib/practical-ui.mjs';
+try {
+const guide=await loadGuide('9702_m23_33-q1'),model=makeRodPulleyEquilibrium();
+let reading=null,showFit=false;
+const plot=rows=>drawGraph(rows,'h_2','sin_theta','h / m','sin θ / 1',showFit,{slopeUnit:'m⁻¹',interceptUnit:'1'});
+const table=makeTable(guide,{units:{sin_theta:'1'},derive(row){row.sin_theta=Number.isFinite(row.theta)&&row.theta>=0&&row.theta<=90?Number(Math.sin(row.theta*Math.PI/180).toPrecision(3)):null;return row;},onChange(rows){
+  plot(rows);const angles=rows.filter(r=>Number.isFinite(r.theta)&&Number.isFinite(r.sin_theta)).map(r=>r.theta);
+  $('coverage').textContent=`${angles.length} usable readings. Measured angle range: ${angles.length?`${Math.min(...angles)}° to ${Math.max(...angles)}°`:'—'}. Aim for six settings, θmin ≤ 10° and θmax ≥ 30°.`;
+}});
+const NS='http://www.w3.org/2000/svg';
+function draw(){
+  const r=Number($('notch').value),height=Number($('pulleyHeight').value),g=model.geometry(r),Y=m=>425-m*670,X=m=>140+m*670;
+  const px=140,py=Y(g.pivotHeight_m),ex=X(g.endX_m),ey=Y(g.endHeight_m),nx=X(g.notchX_m),ny=Y(g.notchHeight_m),hy=Y(height);
+  $('pivot').setAttribute('cy',py);$('rod').setAttribute('d',`M${px} ${py}L${ex} ${ey}`);
+  $('endMass').setAttribute('x',ex-12);$('endMass').setAttribute('y',ey);
+  $('notches').replaceChildren();
+  for(let i=1;i<=9;i++){const fraction=i*.04/r,c=document.createElementNS(NS,'circle');c.setAttribute('cx',px+(nx-px)*fraction);c.setAttribute('cy',py+(ny-py)*fraction);c.setAttribute('r',Math.abs(i*.04-r)<.001?5:2.5);$('notches').append(c);}
+  $('pulley').setAttribute('cy',hy+15);$('string').setAttribute('d',`M${nx} ${ny}L425 ${hy}Q440 ${hy} 440 ${hy+15}V${hy+115}`);
+  $('hanger').setAttribute('y',hy+115);
+  const theta=Math.atan2(ex-px,ey-py),rad=55;
+  $('angle').setAttribute('d',`M${px} ${py+rad}A${rad} ${rad} 0 0 0 ${px+rad*Math.sin(theta)} ${py+rad*Math.cos(theta)}`);
+  const alignment=model.alignment(r,height);$('alignment').textContent=`String alignment: ${alignment}.`;
+  $('read').disabled=alignment!=='horizontal';$('record').disabled=!reading;$('pulleyValue').textContent=`${height.toFixed(3)} m`;
+}
+function invalidate(){reading=null;$('readout').textContent='Setup changed. Take fresh ruler and protractor readings.';draw();}
+$('notch').onchange=invalidate;$('pulleyHeight').oninput=invalidate;$('parallax').onchange=invalidate;
+$('read').onclick=()=>{reading=model.read(Number($('notch').value),Number($('pulleyHeight').value),{parallax:$('parallax').checked});$('readout').textContent=`H = ${reading.h.toFixed(3)} m; h = ${reading.h_2.toFixed(3)} m; L = ${reading.l.toFixed(3)} m; θ = ${reading.theta}° from vertical`;draw();};
+$('record').onclick=()=>{table.add(reading);reading=null;draw();$('message').textContent='Recorded. Read again for a repeat, or select another notch and re-level the string.';};
+$('fitButton').onclick=()=>{showFit=true;plot(table.rows);};
+$('calculateMass').onclick=()=>{try{const mass=inferRodMass($('gradient').valueAsNumber,$('length').valueAsNumber,.200);$('massResult').textContent=mass>=0?`Your inferred rod mass: ${mass.toPrecision(4)} kg.`:'Your values imply a negative mass: check the gradient, units and measurement scatter.';}catch(error){$('massResult').textContent=error.message;}};
+$('message').textContent='Ready. Adjust pulley height until the string is horizontal.';draw();plot([]);
+} catch(error){$('message').textContent=`Unable to initialise: ${error.message}. Serve the project through the local sandbox HTTP server.`;}
+</script></body></html>

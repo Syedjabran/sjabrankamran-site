@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>9702 m22/33 Q2 — Spring-system oscillations</title><link rel="stylesheet" href="../lib/practical.css"></head>
+<body><header><a href="../status.html">Build status</a><h1 id="title">Oscillations of a spring system</h1><p id="provenance">Adapted/generated; not official Cambridge software.</p><p>Guided practice · applet built; browser verification pending.</p></header>
+<main class="wrap"><section class="panel"><h2>Four springs and clay at a selected joint</h2>
+<svg viewBox="0 0 560 430" role="img" aria-labelledby="apparatus-title apparatus-desc"><title id="apparatus-title">Vertical spring network between two clamps</title><desc id="apparatus-desc">The clay divides four springs into an upper and a lower series branch. The diagram is schematic, not a ruler. Displacement and motion direction are also reported in text.</desc>
+<path d="M100 25H450M100 405H450M100 25V405" fill="none" stroke="#a1bfd0" stroke-width="8"/>
+<path id="upper" stroke="#dcecf5" fill="none" stroke-width="2"/><path id="lower" stroke="#dcecf5" fill="none" stroke-width="2"/>
+<path id="equilibrium" stroke="#f7c948" stroke-dasharray="6 5"/><circle id="clay" cx="270" cy="170" r="22" fill="#c89569"/>
+<g fill="#dcecf5" font-size="16"><text id="upperLabel" x="325" y="95">Upper branch</text><text id="lowerLabel" x="325" y="320">Lower branch</text><text x="120" y="422">Schematic — not to scale</text></g></svg>
+<p id="position" role="status">At rest.</p>
+<label for="configuration">Cut/shape and attach clay</label><select id="configuration"><option value="1">n = 1, whole clay</option><option value="2">n = 2, three-quarter clay</option></select>
+<label><input id="anisotropy" type="checkbox"> Measure a longer diameter of non-spherical clay (+2 mm)</label>
+<div class="row"><button id="measure" disabled>Read clay diameter</button><output id="diameter">No diameter reading</output></div>
+<label for="amplitude">Release displacement / m (adapted control)</label><input id="amplitude" type="range" min="0" max="0.02" step="0.001" value="0.015"><output id="amplitudeValue" for="amplitude">0.015 m</output>
+<label for="target">Intended number of cycles (adapted control)</label><select id="target"><option>5</option><option selected>10</option><option>20</option></select>
+<div class="row"><button id="release" disabled>Displace / release</button><button id="resume" disabled>Resume motion</button><button id="pause" disabled>Pause</button><button id="step" disabled>Advance 0.02 s</button><button id="reset" disabled>Reset trial / change clay</button></div>
+<label><input id="reduced" type="checkbox"> Reduced motion / manual stepping</label>
+<p class="note">Pause freezes the simulation and stopwatch together without adding waiting time. Step advances physical time by 0.02 s. Use the same phase and direction for start and stop. This is manual counting: one full oscillation, not each crossing, counts as one cycle.</p>
+<div class="row"><button id="start" disabled>Start stopwatch / zero tally</button><button id="count" disabled>Count one full cycle</button><button id="uncount" disabled>Undo count</button><button id="stop" disabled>Stop stopwatch</button></div><p><output id="watch" aria-label="Stopwatch">0.0 s</output> · <output id="tally" aria-label="Manually counted cycles">0 cycles</output></p>
+<button id="record" disabled>Record trial</button><p id="message" role="status" aria-live="polite">Loading student guide…</p>
+<p class="notice">Model limits: identical linear springs, both branches tensioned, small vertical displacements and clay clear of the coils. The model includes finite spring mass and weak damping; it does not simulate slack springs or clay-covered coils.</p></section>
+<section class="panel"><h2>Editable readings and repeat comparison</h2><div class="scroll"><table id="table"><caption>Student measurements, counted cycles and derived quantities</caption></table></div><div class="row"><button id="clear">Clear table</button><button id="csv">Export student CSV</button><button id="compare">Compare repeat mean k</button></div><p id="comparison" role="status">Repeat each configuration before comparing.</p>
+<p class="note">T = elapsed time / counted cycles. k uses your measured diameter, joint and period; cubic diameter uncertainty can dominate. The table includes control settings and your cycle count so exported calculations remain reproducible. Editing raw columns recalculates T and k; calculated columns are independently editable.</p>
+<p class="note">Comparison convention: |k₁ − k₂| / mean(k₁,k₂) × 100%, using the source-specified 20% criterion. State this denominator in your conclusion.</p>
+<label for="evaluation">Uncertainty, comparison and practical improvements</label><textarea id="evaluation" rows="7"></textarea><p class="note">CSV contains the student table only; copy evaluation notes separately.</p></section>
+<section class="panel wide"><details><summary>Student guide, formulae and evaluation prompts</summary><div id="guide"></div></details></section></main>
+<script type="module">
+import { makeSpringNetworkOscillator } from '../models/spring_network_oscillator.mjs';
+import { $, loadGuide, makeTable } from '../lib/practical-ui.mjs';
+try {
+const guide = await loadGuide('9702_m22_33-q2'), model = makeSpringNetworkOscillator();
+// Add recorded student controls, not model parameters, to preserve trial provenance.
+const tableGuide = { ...guide, table: { ...guide.table, columns: [
+  {key:'n',label:'n',unit:'count',source:'measured'},
+  {key:'fraction',label:'clay fraction',unit:'1',source:'measured'},
+  {key:'cycles',label:'counted cycles',unit:'count',source:'measured'},
+  ...guide.table.columns ] } };
+const positive = v => Number.isFinite(v) && v > 0;
+const table = makeTable(tableGuide, { units:{t:'s',k:'m³/s²'}, derive(row) {
+  row.t = positive(row.elapsed_t) && Number.isInteger(row.cycles) && row.cycles >= 5 ? row.elapsed_t/row.cycles : null;
+  row.k = positive(row.d) && positive(row.t) && [1,2].includes(row.n) ? row.d**3*row.n*(4-row.n)/row.t**2 : null;
+  return row;
+}});
+let diameter = null, released = false, running = false, elapsed = 0, start = null, stop = null, count = 0, last = null, recorded = false;
+$('reduced').checked = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const config = () => ({ n:Number($('configuration').value), fraction:$('configuration').value==='1'?1:.75 });
+function spring(x, top, bottom, number) {
+  let path=`M${x} ${top}`;
+  for(let j=0;j<number;j++) {
+    const lo=top+(bottom-top)*j/number, hi=top+(bottom-top)*(j+1)/number;
+    path+=` L${x} ${lo+5}`;
+    for(let i=1;i<=12;i++)path+=` L${x+(i%2?10:-10)} ${lo+5+(hi-lo-10)*i/12}`;
+    path+=` L${x} ${hi}`;
+  }
+  return path;
+}
+function update() {
+  const {n,fraction}=config(), A=Number($('amplitude').value);
+  const z=released?model.displacement(n,fraction,A,elapsed):0, eq=25+380*n/4, cy=eq+z*1600;
+  $('upper').setAttribute('d',spring(270,25,cy-22,n));$('lower').setAttribute('d',spring(270,cy+22,405,4-n));
+  $('clay').setAttribute('cy',cy);$('clay').setAttribute('r',22*Math.cbrt(fraction));
+  $('equilibrium').setAttribute('d',`M180 ${eq}H310`);
+  $('upperLabel').textContent=`${n} upper spring${n===1?'':'s'}`;$('lowerLabel').textContent=`${4-n} lower springs`;
+  const movingDown=released && model.displacement(n,fraction,A,elapsed+.001)>z;
+  $('position').textContent = !released?'At equilibrium; choose a displacement and release.':`Displacement ${(z*1000).toFixed(0)} mm ${z>=0?'below':'above'} equilibrium; ${running?'moving': 'paused'}, next direction ${movingDown?'down':'up'}.`;
+  $('amplitudeValue').textContent=`${A.toFixed(3)} m`;
+  for(const id of ['configuration','amplitude','target','anisotropy','measure'])$(id).disabled=released;
+  $('release').disabled=released||diameter===null||A===0;
+  $('resume').disabled=!released||running||$('reduced').checked;
+  $('pause').disabled=!running;$('step').disabled=!released||running;
+  $('start').disabled=!released||start!==null;
+  $('count').disabled=start===null||stop!==null;$('uncount').disabled=start===null||stop!==null||count===0;
+  $('stop').disabled=start===null||stop!==null||elapsed<=start||count<5;
+  $('record').disabled=stop===null||recorded;
+  $('watch').textContent=`${start===null?'0.0':((stop??elapsed)-start).toFixed(1)} s`;
+  $('tally').textContent=`${count} cycles counted; target ${$('target').value}`;
+}
+function advance(dt){elapsed+=dt;update();}
+function frame(now){if(running&&last!==null)advance((now-last)/1000);last=now;requestAnimationFrame(frame);}
+function reset(){released=running=recorded=false;elapsed=0;start=stop=null;count=0;update();}
+$('measure').onclick=()=>{diameter=model.readDiameter(config().fraction,{anisotropy:$('anisotropy').checked});$('diameter').textContent=`d = ${diameter.toFixed(3)} m`;update();};
+for(const id of ['configuration','anisotropy'])$(id).onchange=()=>{diameter=null;$('diameter').textContent='Remeasure clay diameter.';update();};
+$('amplitude').oninput=update;$('target').onchange=update;
+$('release').onclick=()=>{released=true;running=!$('reduced').checked;elapsed=0;last=performance.now();$('message').textContent='Start at a chosen phase; count full cycles, then stop at the same phase.';update();};
+$('resume').onclick=()=>{running=true;last=performance.now();update();};
+$('pause').onclick=()=>{running=false;update();};$('step').onclick=()=>advance(.02);
+$('reduced').onchange=()=>{running=false;update();};
+document.addEventListener('visibilitychange',()=>{if(document.hidden){running=false;update();}});
+$('start').onclick=()=>{start=elapsed;count=0;update();};$('count').onclick=()=>{count++;update();};$('uncount').onclick=()=>{count--;update();};
+$('stop').onclick=()=>{stop=elapsed;running=false;update();};
+$('record').onclick=()=>{const {n,fraction}=config();table.add({n,fraction,cycles:count,d:diameter,elapsed_t:model.readElapsed(stop-start)});recorded=true;update();$('message').textContent='Recorded. Reset for an independent timing repeat or to change clay.';};
+$('reset').onclick=()=>{reset();$('message').textContent='Trial reset; existing diameter reading and table retained. Remeasure diameter if required.';};
+$('compare').onclick=()=>{
+  const valid=table.rows.filter(r=>positive(r.k)&&Number.isInteger(r.cycles)&&r.cycles>=5);
+  const groups=[valid.filter(r=>r.n===1&&r.fraction===1),valid.filter(r=>r.n===2&&r.fraction===.75)];
+  if(groups.some(g=>g.length<2)){$('comparison').textContent='Record at least two valid ≥5-cycle trials for each source configuration.';return;}
+  const means=groups.map(g=>g.reduce((s,r)=>s+r.k,0)/g.length),percent=200*Math.abs(means[0]-means[1])/(means[0]+means[1]);
+  $('comparison').textContent=`Mean k: n=1 ${means[0].toPrecision(4)}, n=2 ${means[1].toPrecision(4)} m³/s². Difference ${percent.toFixed(1)}% is ${percent<=guide.calculations.graph.comparisonPercent?'within':'outside'} the ${guide.calculations.graph.comparisonPercent}% criterion. Limit conclusions to these tested conditions.`;
+};
+$('reset').disabled=false;$('message').textContent='Ready. Measure clay diameter before release.';update();requestAnimationFrame(frame);
+} catch(error){$('message').textContent=`Unable to initialise: ${error.message}. Serve the project through the local sandbox HTTP server.`;}
+</script></body></html>

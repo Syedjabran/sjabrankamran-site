@@ -1,0 +1,7 @@
+import {seededRandom,readInstrument} from '../lib/measurement.mjs';
+export function makeSymmetricPulley(parameters={},seed=2024341){
+ const truth={M_hanger_kg:.1,Q_kg:.1,span_m:.5,string_m:.85,pulley_mass_kg:.01,support_height_m:.6,...parameters};if(!Object.values(truth).every(v=>Number.isFinite(v)&&v>=0)||truth.span_m===0||truth.string_m===0)throw new RangeError('Invalid pulley parameters');const random=seededRandom(seed),loads=[0,.01,.02,.03,.04,.05,.06,.07,.1,.15,.2,.24];
+ function ideal(x){if(!loads.includes(x))throw new RangeError('Choose a supplied added mass');const cos_theta=(truth.M_hanger_kg+truth.pulley_mass_kg)/(2*(truth.Q_kg+x));if(cos_theta<=0||cos_theta>=1)throw new RangeError('No finite sag equilibrium');const theta=Math.acos(cos_theta),sag_m=truth.span_m/2/Math.tan(theta),free_hanger_drop_m=truth.string_m-2*Math.hypot(truth.span_m/2,sag_m);if(sag_m>=truth.support_height_m||free_hanger_drop_m<=0||free_hanger_drop_m>=truth.support_height_m)throw new RangeError('Insufficient string or hanger travel');return {cos_theta,theta_deg:theta*180/Math.PI,sag_m,free_hanger_drop_m};}
+ function read(x,alignment_deg=0){if(!Number.isFinite(alignment_deg)||Math.abs(alignment_deg)>5)throw new RangeError('Align within five degrees');const s=ideal(x);return {mass_labels:readInstrument(x,{resolution:.01},random),theta:readInstrument(s.theta_deg,{resolution:1,halfWidth:1,bias:alignment_deg},random)};}
+ return Object.freeze({ideal,read});
+}

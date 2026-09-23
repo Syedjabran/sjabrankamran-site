@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>9702 m22/33 Q1 — Liquid density</title><link rel="stylesheet" href="../lib/practical.css"></head>
+<body><header><a href="../status.html">Build status</a><h1 id="title">Density of a liquid</h1><p id="provenance">Adapted/generated; not official Cambridge software.</p><p>Guided practice · applet built; browser verification pending.</p></header>
+<main class="wrap"><section class="panel"><h2>Equal-bore U-tube and ruler</h2>
+<svg viewBox="0 0 560 470" role="img" aria-labelledby="apparatus-title apparatus-desc"><title id="apparatus-title">Oil columns A and B above coloured water</title><desc id="apparatus-desc">Interface a is on the left and b on the right. Both are read upwards from the same ruler zero. Text readings are provided by the Read rulers button.</desc>
+<path d="M135 35V380Q135 420 175 420H325Q365 420 365 380V35" fill="none" stroke="#a1bfd0" stroke-width="36"/>
+<path d="M135 35V380Q135 420 175 420H325Q365 420 365 380V35" fill="none" stroke="#0d1826" stroke-width="30"/>
+<path id="water" d="M135 240V380Q135 420 175 420H325Q365 420 365 380V240" fill="none" stroke="#258bc4" stroke-width="28"/>
+<path id="oilA" d="M135 240V180" stroke="#d8ad47" stroke-width="28"/><path id="oilB" d="M365 240V180" stroke="#d8ad47" stroke-width="28"/>
+<path id="markA" d="M115 240H155" stroke="#fff" stroke-width="3"/><path id="markB" d="M345 240H385" stroke="#fff" stroke-width="3"/>
+<g id="ruler" fill="#a1bfd0" stroke="#a1bfd0"></g>
+<g fill="#dcecf5" font-size="16"><text x="95" y="24">Oil A (fixed)</text><text x="320" y="24">Oil B (add)</text><text id="labelA" x="75" y="240">a</text><text id="labelB" x="402" y="240">b</text><text x="200" y="463">Shared zero / m</text></g></svg>
+<p id="state" role="status">Loading apparatus…</p><label for="height">Target oil B column h / m (pipette setting, not a ruler reading)</label><input id="height" type="range" min="0.03" max="0.20" step="0.005" value="0.03"><output id="heightValue" for="height">0.030 m</output>
+<div class="row"><button id="add" disabled>Add oil B to target</button><button id="settle" disabled>Wait for interfaces to settle</button><button id="reset" disabled>Reset columns</button></div>
+<label><input type="checkbox" id="parallax"> Read a with parallax error (+2 mm)</label><div class="row"><button id="read" disabled>Read rulers</button><button id="record" disabled>Record readings</button></div><p id="readout" role="status" aria-live="polite">No instrument readings yet.</p>
+<p class="note">Static presentation: no automatic motion. The settling action represents waiting for equilibrium. Oil A stays fixed; only add to B during a series. Reset to start a new series at the minimum height.</p><p class="notice">Model limits: immiscible static columns, equal tube bore and atmospheric free surfaces. Meniscus, emulsion and capillary mismatch are not simulated.</p></section>
+<section class="panel"><h2>Measured interfaces and graph</h2><div class="scroll"><table id="table"><caption>Editable student ruler readings and y = b − a</caption></table></div><div class="row"><button id="clear">Clear table</button><button id="csv">Export student CSV</button></div><p id="coverage" role="status">Record six readings spanning the required range.</p>
+<canvas id="graph" width="560" height="330" role="img" aria-label="Graph of measured y in metres against measured h in metres. The editable table provides all plotted values.">Graph values are available in the table.</canvas><button id="fitButton">Fit measured points</button><p id="fit" role="status"></p><p class="note">Graph: h / m horizontally, y / m vertically; gradient is dimensionless, intercept in metres. Repeat measurements may share an x value. A fit needs at least two distinct measured h values.</p>
+<label for="evaluation">Your density calculation, uncertainty and evaluation</label><textarea id="evaluation" rows="6"></textarea><p class="note">CSV contains table readings only; copy your evaluation separately.</p></section>
+<section class="panel wide"><details><summary>Student guide, formulae and evaluation prompts</summary><div id="guide"></div></details><p id="message" role="status" aria-live="polite">Loading student guide…</p></section></main>
+<script type="module">
+import { makeHydrostaticUTube } from '../models/hydrostatic_u_tube.mjs';
+import { $, loadGuide, makeTable, drawGraph } from '../lib/practical-ui.mjs';
+try {
+const guide = await loadGuide('9702_m22_33-q1'), model = makeHydrostaticUTube();
+let h = Number($('height').min), settled = true, reading = null, showFit = false;
+const table = makeTable(guide, { units: { y: 'm' }, derive(row) {
+  row.y = Number.isFinite(row.a) && Number.isFinite(row.b) ? Number((row.b-row.a).toFixed(3)) : null; return row;
+}, onChange(rows) {
+  drawGraph(rows, 'h', 'y', 'h / m', 'y / m', showFit);
+  const valid = rows.filter(r => Number.isFinite(r.h) && Number.isFinite(r.y));
+  const distinct = new Set(valid.map(r => r.h)).size;
+  $('coverage').textContent = `${valid.length} usable readings; ${distinct} distinct measured heights; maximum h ${valid.length ? Math.max(...valid.map(r=>r.h)).toFixed(3) : '—'} m. Aim for six settings and hmax ≥ 0.18 m.`;
+}});
+const NS = 'http://www.w3.org/2000/svg';
+for (let i=0;i<=50;i++) {
+  const y=440-i*8, line=document.createElementNS(NS,'line');
+  for(const [k,v] of Object.entries({x1:230,x2:i%5?240:250,y1:y,y2:y})) line.setAttribute(k,v);
+  $('ruler').append(line);
+  if(i%5===0){const text=document.createElementNS(NS,'text');text.setAttribute('x',255);text.setAttribute('y',y+5);text.setAttribute('stroke','none');text.textContent=(i/100).toFixed(2);$('ruler').append(text);}
+}
+function draw() {
+  const g=model.geometry(h), Y=m=>440-m*800;
+  $('water').setAttribute('d', `M135 ${Y(g.a_m)}V380Q135 420 175 420H325Q365 420 365 380V${Y(g.b_m)}`);
+  $('oilA').setAttribute('d', `M135 ${Y(g.a_m)}V${Y(g.surfaceA_m)}`); $('oilB').setAttribute('d', `M365 ${Y(g.b_m)}V${Y(g.surfaceB_m)}`);
+  $('markA').setAttribute('d', `M115 ${Y(g.a_m)}H155`); $('markB').setAttribute('d', `M345 ${Y(g.b_m)}H385`);
+  $('labelA').setAttribute('y',Y(g.a_m)+5);$('labelB').setAttribute('y',Y(g.b_m)+5);
+  $('heightValue').textContent = `${Number($('height').value).toFixed(3)} m`;
+  $('state').textContent = settled ? 'Interfaces settled; read both against the same zero.' : 'Oil added. Equilibrium preview shown; wait for settling before measuring.';
+  $('read').disabled=!settled; $('record').disabled=!reading; $('settle').disabled=settled;
+  $('add').disabled=!settled || Number($('height').value)<=h;
+}
+function invalidate(){reading=null;$('readout').textContent='No current readings. Read rulers after settling.';}
+$('height').oninput=draw;
+$('add').onclick=()=>{h=Number($('height').value);settled=false;invalidate();draw();};
+$('settle').onclick=()=>{settled=true;draw();};
+$('reset').onclick=()=>{h=Number($('height').min);$('height').value=h;settled=true;invalidate();draw();$('message').textContent='Columns reset. Existing table retained; clear it to start a separate series.';};
+$('parallax').onchange=()=>{invalidate();draw();};
+$('read').onclick=()=>{reading=model.readColumns(h,{parallax:$('parallax').checked});$('readout').textContent=`F = ${reading.f.toFixed(3)} m; h = ${reading.h.toFixed(3)} m; a = ${reading.a.toFixed(3)} m; b = ${reading.b.toFixed(3)} m`;draw();};
+$('record').onclick=()=>{table.add(reading);reading=null;draw();$('message').textContent='Recorded. Read again for a repeat, or add oil B for the next setting.';};
+$('fitButton').onclick=()=>{showFit=true;drawGraph(table.rows,'h','y','h / m','y / m',showFit);};
+$('reset').disabled=false;$('message').textContent='Ready. Read the fixed column and interfaces before adding oil B.';draw();drawGraph([],'h','y','h / m','y / m');
+} catch(error){$('message').textContent=`Unable to initialise: ${error.message}. Serve the project through the local sandbox HTTP server.`;}
+</script></body></html>

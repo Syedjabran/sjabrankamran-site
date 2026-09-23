@@ -1,0 +1,9 @@
+import {seededRandom,readInstrument} from '../lib/measurement.mjs';
+export function makeCounterweightedPendulum(parameters={},seed=2023341){
+ const truth={L_m:.48,m_lower_kg:.1,r_top_m:.21,r_lower_m:.24,Mrod_kg:.026,Ibolts_kg_m2:0,rod_COM_offset_m:.015,g:9.81,...parameters};if(!Object.values(truth).every(v=>Number.isFinite(v)&&v>=0)||truth.g===0||truth.r_top_m===0||truth.r_lower_m===0)throw new RangeError('Invalid pendulum parameters');const random=seededRandom(seed);
+ function ideal(M){if(!Number.isFinite(M)||M<0||M>.09||Math.abs(M/.01-Math.round(M/.01))>1e-9)throw new RangeError('Use 0–0.09 kg in 0.01 kg steps');const I=truth.Mrod_kg*(truth.L_m**2/12+truth.rod_COM_offset_m**2)+truth.m_lower_kg*truth.r_lower_m**2+M*truth.r_top_m**2+truth.Ibolts_kg_m2,restoring=truth.g*(truth.m_lower_kg*truth.r_lower_m-M*truth.r_top_m+truth.Mrod_kg*truth.rod_COM_offset_m);if(restoring<=0||I<=0)throw new RangeError('No stable hanging equilibrium');return {T_s:2*Math.PI*Math.sqrt(I/restoring)};}
+ function createMotion(M,A){const w2=(2*Math.PI/ideal(M).T_s)**2;if(!Number.isFinite(A)||A<2||A>6)throw new RangeError('Use a 2–6 degree release');let q=A*Math.PI/180,v=0,t=0;const snapshot=()=>({angle_deg:q*180/Math.PI,velocity_deg_s:v*180/Math.PI,elapsed_s:t});function advance(dt){if(!Number.isFinite(dt)||dt<=0||dt>60)throw new RangeError('Advance 0–60 s');const n=Math.ceil(dt/.002),h=dt/n,acc=a=>-w2*Math.sin(a);for(let i=0;i<n;i++){const a1=v,b1=acc(q),a2=v+h*b1/2,b2=acc(q+h*a1/2),a3=v+h*b2/2,b3=acc(q+h*a2/2),a4=v+h*b3,b4=acc(q+h*a3);q+=h*(a1+2*a2+2*a3+a4)/6;v+=h*(b1+2*b2+2*b3+b4)/6;}t+=dt;return snapshot();}return Object.freeze({snapshot,advance});}
+ function readMass(M){ideal(M);return readInstrument(M,{resolution:.01},random);}
+ function readElapsed(t){if(!Number.isFinite(t)||t<=0)throw new RangeError('Positive elapsed time required');return readInstrument(t,{resolution:.1},random);}
+ return Object.freeze({ideal,createMotion,readMass,readElapsed});
+}
