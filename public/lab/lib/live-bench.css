@@ -1,0 +1,39 @@
+.live-bench { --accent:#5ce0cf; border:1px solid #315e69; background:linear-gradient(145deg,#102f36,#0d1b2d); border-radius:14px; padding:16px; margin:12px 0; }
+.lb-kicker { color:#78eadb; text-transform:uppercase; font-size:11px; letter-spacing:.14em; font-weight:750; }
+.lb-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.lb-heading h2 { margin:3px 0; font-size:19px; color:#edfffb; }
+.lb-cue { margin:8px 0 14px; color:#c1d9e2; font-size:14px; }
+.lb-buttons { display:flex; flex-wrap:wrap; gap:7px; }
+.lb-buttons button,.lb-speed { min-height:44px; font:600 13px system-ui; border-radius:8px; padding:10px 12px; border:1px solid #3d6777; color:#dcecf5; background:#102638; cursor:pointer; max-width:100%; }
+#lb-run { color:#042621; background:#5ce0cf; border-color:#5ce0cf; }
+.lb-buttons button:disabled { opacity:.45; cursor:default; }
+.lb-buttons button:focus-visible,.lb-handle:focus-visible { outline:3px solid #ffcd76; outline-offset:3px; }
+.lb-controls { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; margin-top:10px; font-size:12px; color:#b6d0df; }
+.lb-controls label { display:flex; align-items:center; gap:8px; margin:0; }
+.lb-speed { width:auto; padding:6px; }
+.lb-status { font-size:13px; margin:12px 0 4px; min-height:1.5em; color:#9de8df; }
+.lb-steps { margin:9px 0; padding-left:22px; font-size:12px; color:#a3bdce; }
+.lb-steps li { padding:3px; }
+.lb-steps .done { color:#64dbbb; }
+.lb-steps .current { color:#ffe0a1; }
+.lb-details { font-size:12px; margin:10px 0 0; color:#9fb9cb; }
+.lb-details summary { cursor:pointer; }
+.lb-stage { position:relative; isolation:isolate; margin:12px 0; border:1px solid #2c5366; border-radius:12px; overflow:hidden; background:#06111c; }
+.lb-stage > svg,.lb-stage > canvas { border-radius:0; background:radial-gradient(ellipse at 50% 25%,#122b3e,#060e18 75%); min-height:200px; }
+.lb-stage::after { content:''; position:absolute; inset:0; background-image:linear-gradient(#64bac609 1px,transparent 1px),linear-gradient(90deg,#64bac609 1px,transparent 1px); background-size:24px 24px; pointer-events:none; z-index:-1; }
+.lb-stage svg { touch-action:pan-y; }
+.lb-handles { position:absolute; inset:0; pointer-events:none; }
+.lb-handle { position:absolute; transform:translate(-50%,-50%); width:44px; height:44px; min-height:44px; border-radius:50%; border:2px solid #67ecdf; background:#12333bdd; color:white; box-shadow:0 0 0 5px #5ce0cf15; padding:0; font:700 21px system-ui; cursor:grab; pointer-events:auto; touch-action:none; user-select:none; }
+.lb-handle:active { cursor:grabbing; background:#177566; }
+.lb-handle:disabled { opacity:.28; cursor:not-allowed; }
+.lb-handle .lb-tip { position:absolute; bottom:calc(100% + 8px); left:50%; transform:translateX(-50%); max-width:160px; width:max-content; padding:6px 9px; font:12px system-ui; background:#132a3b; border:1px solid #65d7c7; border-radius:5px; pointer-events:none; display:none; }
+.lb-handle:hover .lb-tip,.lb-handle:focus .lb-tip { display:block; }
+.lb-hint { font-size:12px; color:#9db9ca; margin:6px 0 12px; }
+.lb-instruments { border:1px solid #365267; background:#07141e; padding:12px; border-radius:10px; margin:12px 0; }
+.lb-instruments h3 { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:#79cbbb; margin:0 0 8px; }
+.lb-readings { white-space:pre-line; color:#d0f3df; font:13px/1.65 ui-monospace,monospace; overflow-wrap:anywhere; min-height:24px; }
+.lb-task-active { outline:2px solid #ffd07b !important; outline-offset:3px; }
+.lb-home { font-size:13px; display:inline-block; margin-bottom:8px; color:#73e8d9; }
+.lb-mode { font-size:10px; color:#80eacb; border:1px solid #376c63; padding:4px 7px; border-radius:20px; white-space:nowrap; }
+body[data-bench-settling='true'] #record,body[data-bench-settling='true'] #take { opacity:.4; }
+@media(max-width:600px) { .live-bench { padding:12px; } .lb-heading h2 { font-size:17px; } .lb-mode { display:none; } .lb-buttons button { flex:1 1 auto; } .lb-stage > svg,.lb-stage > canvas { min-height:0; } .wrap { min-width:0; } .lb-controls label { flex-wrap:wrap; } }

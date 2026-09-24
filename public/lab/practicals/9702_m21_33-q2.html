@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>9702 m21/33 Q2 — Air flow virtual practical</title><link rel="stylesheet" href="../lib/practical.css"></head>
-<body><header><a href="../status.html">Build status</a><h1 id="title">Speed of air flowing through a hole</h1><p id="provenance">Adapted/generated; not official Cambridge software.</p><p>Guided practice · applet built; browser verification pending.</p></header>
+<body><header><a href="../status.html">Build status</a><h1 id="title">Speed of air flowing through a hole</h1><p id="provenance">Adapted/generated; not official Cambridge software.</p><p>Hands-on practice · motion, measurements and student analysis.</p></header>
 <main class="wrap"><section class="panel"><h2>Membrane, bottle and stopwatch</h2>
 <svg viewBox="0 0 560 350" role="img" aria-labelledby="apparatus-title apparatus-desc"><title id="apparatus-title">Inverted bottle with falling water interface</title><desc id="apparatus-desc">The interface moves down from above the upper mark to below the lower mark. Text below also reports its position.</desc>
 <path d="M130 55H350V270H280V315H200V270H130Z" fill="none" stroke="#a1bfd0" stroke-width="4"/>
@@ -26,6 +26,8 @@
 <label for="evaluation">Uncertainty, limitations and improvement</label><textarea id="evaluation" rows="5"></textarea><p class="note">CSV contains table readings only; copy your evaluation separately.</p></section>
 <section class="panel wide"><details><summary>Student guide, formulae and evaluation prompts</summary><div id="guide"></div></details></section></main>
 <script type="module">
+import {mountLiveBench} from '../lib/live-bench.mjs';
+import {simulationDelta} from '../lib/live-clock.mjs';
 import { makeGasFlowHole } from '../models/gas_flow_hole.mjs';
 import { $, loadGuide, makeTable } from '../lib/practical-ui.mjs';
 try {
@@ -52,7 +54,7 @@ function update() {
   $('tool').disabled = prepared; $('submerged').disabled = prepared; $('measure').disabled = prepared;
 }
 function advance(dt) { elapsed += dt; if (model.interfacePosition($('tool').value, elapsed) >= 1.2) running = false; update(); }
-function frame(now) { if (running && last !== null) advance((now-last)/1000); last = now; requestAnimationFrame(frame); }
+function frame(now) { if (running && last !== null) advance(simulationDelta(now,last)); last = now; requestAnimationFrame(frame); }
 $('measure').onclick = () => { dimensions = model.readDimensions($('tool').value, { parallax: $('parallax').checked }); $('dimensions').textContent = `L = ${dimensions.l.toFixed(3)} m; D = ${dimensions.d.toFixed(3)} m; d = ${dimensions.d_2.toFixed(5)} m`; update(); };
 $('tool').onchange = () => { dimensions = null; $('dimensions').textContent = 'Read dimensions for the new tool.'; update(); };
 $('fill').onclick = () => {
@@ -81,5 +83,6 @@ $('compare').onclick = () => {
   $('comparison').textContent = `Mean k: pin ${means[0].toPrecision(4)}, nail ${means[1].toPrecision(4)} s m². Difference ${percent.toFixed(1)}%: ${percent <= criterion ? 'within' : 'outside'} your ${criterion}% criterion. Two conditions do not establish a universal law.`;
 };
 $('message').textContent = 'Read dimensions, set immersion, then prepare a trial.'; update(); requestAnimationFrame(frame);
+mountLiveBench('9702_m21_33-q2');
 } catch (error) { $('message').textContent = `Unable to initialise: ${error.message}. Serve the project through the local sandbox HTTP server.`; }
 </script></body></html>

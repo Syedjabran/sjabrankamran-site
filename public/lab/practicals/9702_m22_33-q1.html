@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>9702 m22/33 Q1 — Liquid density</title><link rel="stylesheet" href="../lib/practical.css"></head>
-<body><header><a href="../status.html">Build status</a><h1 id="title">Density of a liquid</h1><p id="provenance">Adapted/generated; not official Cambridge software.</p><p>Guided practice · applet built; browser verification pending.</p></header>
+<body><header><a href="../status.html">Build status</a><h1 id="title">Density of a liquid</h1><p id="provenance">Adapted/generated; not official Cambridge software.</p><p>Hands-on practice · motion, measurements and student analysis.</p></header>
 <main class="wrap"><section class="panel"><h2>Equal-bore U-tube and ruler</h2>
 <svg viewBox="0 0 560 470" role="img" aria-labelledby="apparatus-title apparatus-desc"><title id="apparatus-title">Oil columns A and B above coloured water</title><desc id="apparatus-desc">Interface a is on the left and b on the right. Both are read upwards from the same ruler zero. Text readings are provided by the Read rulers button.</desc>
 <path d="M135 35V380Q135 420 175 420H325Q365 420 365 380V35" fill="none" stroke="#a1bfd0" stroke-width="36"/>
@@ -19,6 +19,8 @@
 <label for="evaluation">Your density calculation, uncertainty and evaluation</label><textarea id="evaluation" rows="6"></textarea><p class="note">CSV contains table readings only; copy your evaluation separately.</p></section>
 <section class="panel wide"><details><summary>Student guide, formulae and evaluation prompts</summary><div id="guide"></div></details><p id="message" role="status" aria-live="polite">Loading student guide…</p></section></main>
 <script type="module">
+import {mountLiveBench} from '../lib/live-bench.mjs';
+import {simulationDelta} from '../lib/live-clock.mjs';
 import { makeHydrostaticUTube } from '../models/hydrostatic_u_tube.mjs';
 import { $, loadGuide, makeTable, drawGraph } from '../lib/practical-ui.mjs';
 try {
@@ -60,5 +62,6 @@ $('read').onclick=()=>{reading=model.readColumns(h,{parallax:$('parallax').check
 $('record').onclick=()=>{table.add(reading);reading=null;draw();$('message').textContent='Recorded. Read again for a repeat, or add oil B for the next setting.';};
 $('fitButton').onclick=()=>{showFit=true;drawGraph(table.rows,'h','y','h / m','y / m',showFit);};
 $('reset').disabled=false;$('message').textContent='Ready. Read the fixed column and interfaces before adding oil B.';draw();drawGraph([],'h','y','h / m','y / m');
+mountLiveBench('9702_m22_33-q1');
 } catch(error){$('message').textContent=`Unable to initialise: ${error.message}. Serve the project through the local sandbox HTTP server.`;}
 </script></body></html>

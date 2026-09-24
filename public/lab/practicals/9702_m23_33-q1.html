@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>9702 m23/33 Q1 — Rod and pulley equilibrium</title><link rel="stylesheet" href="../lib/practical.css"></head>
-<body><header><a href="../status.html">Build status</a><h1 id="title">Equilibrium of a wooden rod</h1><p id="provenance">Adapted/generated; not official Cambridge software.</p><p>Guided practice · applet built; browser verification pending.</p></header>
+<body><header><a href="../status.html">Build status</a><h1 id="title">Equilibrium of a wooden rod</h1><p id="provenance">Adapted/generated; not official Cambridge software.</p><p>Hands-on practice · motion, measurements and student analysis.</p></header>
 <main class="wrap"><section class="panel"><h2>Notched rod, horizontal string and pulley</h2>
 <svg viewBox="0 0 560 470" role="img" aria-labelledby="apparatus-title apparatus-desc"><title id="apparatus-title">Suspended rod pulled at a notch by a string over a pulley</title><desc id="apparatus-desc">The dashed plumb line is vertical. Adjust the pulley until the string from the selected notch is horizontal. Readings are available in text after alignment.</desc>
 <path d="M80 30H225M140 35V435" stroke="#a1bfd0" stroke-width="2" stroke-dasharray="5 5"/><path id="rod" stroke="#c89569" stroke-width="12"/>
@@ -22,6 +22,8 @@
 <label for="evaluation">Uncertainty, conclusion and practical improvements</label><textarea id="evaluation" rows="5"></textarea><p class="note">CSV contains the student table only; copy calculation and evaluation notes separately.</p></section>
 <section class="panel wide"><details><summary>Student guide, formulae and evaluation prompts</summary><div id="guide"></div></details><p id="message" role="status">Loading student guide…</p></section></main>
 <script type="module">
+import {mountLiveBench} from '../lib/live-bench.mjs';
+import {simulationDelta} from '../lib/live-clock.mjs';
 import { makeRodPulleyEquilibrium, inferRodMass } from '../models/rod_pulley_equilibrium.mjs';
 import { $, loadGuide, makeTable, drawGraph } from '../lib/practical-ui.mjs';
 try {
@@ -54,5 +56,6 @@ $('record').onclick=()=>{table.add(reading);reading=null;draw();$('message').tex
 $('fitButton').onclick=()=>{showFit=true;plot(table.rows);};
 $('calculateMass').onclick=()=>{try{const mass=inferRodMass($('gradient').valueAsNumber,$('length').valueAsNumber,.200);$('massResult').textContent=mass>=0?`Your inferred rod mass: ${mass.toPrecision(4)} kg.`:'Your values imply a negative mass: check the gradient, units and measurement scatter.';}catch(error){$('massResult').textContent=error.message;}};
 $('message').textContent='Ready. Adjust pulley height until the string is horizontal.';draw();plot([]);
+mountLiveBench('9702_m23_33-q1');
 } catch(error){$('message').textContent=`Unable to initialise: ${error.message}. Serve the project through the local sandbox HTTP server.`;}
 </script></body></html>

@@ -1,3 +1,4 @@
+import {simulationDelta} from './live-clock.mjs';
 // Shared manual stopwatch/counting UI. No ideal period, automatic cycle counter,
 // or apparatus parameter is supplied to students by this helper.
 import {$} from './practical-ui.mjs';
@@ -10,7 +11,7 @@ export function wireManualTiming({canRelease,onRecord,draw,locked=[],onReset=()=
   $('watch').textContent=`${started===null?'0.0':((stopped??elapsed)-started).toFixed(1)} s`;$('tally').textContent=`${count} full cycles counted`;$('reset').disabled=false;draw(state());
  }
  function advance(dt){elapsed+=dt;refresh();}
- function frame(now){if(running&&last!==null){const dt=(now-last)/1000;if(dt<=60)advance(dt);else{running=false;refresh();}}last=now;requestAnimationFrame(frame);}
+ function frame(now){if(running&&last!==null){const dt=simulationDelta(now,last);if(dt<=60)advance(dt);else{running=false;refresh();}}last=now;requestAnimationFrame(frame);}
  $('release').onclick=()=>{active=true;running=!$('reduced').checked;elapsed=0;last=performance.now();refresh();};$('resume').onclick=()=>{running=true;last=performance.now();refresh();};$('pause').onclick=()=>{running=false;refresh();};$('step').onclick=()=>advance(step);
  $('start').onclick=()=>{started=elapsed;count=0;refresh();};$('count').onclick=()=>{count++;refresh();};$('uncount').onclick=()=>{count--;refresh();};$('stop').onclick=()=>{stopped=elapsed;running=false;refresh();};
  $('record').onclick=()=>{onRecord({elapsed_t:stopped-started,cycles:count});recorded=true;refresh();};

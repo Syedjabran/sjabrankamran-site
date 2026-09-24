@@ -2,7 +2,7 @@
 import { readingsCSV, linearFit } from './measurement.mjs';
 export const $ = id => document.getElementById(id);
 export async function loadGuide(id) {
-  const response = await fetch('/lab/content/student-guides.json');
+  const response = await fetch(new URL('../content/student-guides.json', import.meta.url));
   if (!response.ok) throw new Error('Student guide could not be loaded');
   const guide = (await response.json()).guides.find(g => g.id === id);
   if (!guide) throw new Error('Student guide missing');

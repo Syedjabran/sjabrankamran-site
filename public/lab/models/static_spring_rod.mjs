@@ -7,7 +7,7 @@
 //
 // `truth` holds hidden nominal/synthetic parameters (rod mass, ks, C0, geometry).
 // It must never be exported to the student layer; only ruler-readable lengths are.
-export function makeStaticSpringRod(truth) {
+export function makeStaticSpringRod(truth = { h_m:.25, C0_m:.02, ks_N_per_m:25, mass_kg:.16, centre_m:.205 }) {
   const { h_m, C0_m, ks_N_per_m, mass_kg, centre_m, g = 9.81 } = truth;
   for (const [k, v] of Object.entries({ h_m, C0_m, ks_N_per_m, mass_kg, centre_m, g }))
     if (!Number.isFinite(v)) throw new RangeError(`static_spring_rod: ${k} must be finite`);

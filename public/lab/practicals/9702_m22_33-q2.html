@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>9702 m22/33 Q2 — Spring-system oscillations</title><link rel="stylesheet" href="../lib/practical.css"></head>
-<body><header><a href="../status.html">Build status</a><h1 id="title">Oscillations of a spring system</h1><p id="provenance">Adapted/generated; not official Cambridge software.</p><p>Guided practice · applet built; browser verification pending.</p></header>
+<body><header><a href="../status.html">Build status</a><h1 id="title">Oscillations of a spring system</h1><p id="provenance">Adapted/generated; not official Cambridge software.</p><p>Hands-on practice · motion, measurements and student analysis.</p></header>
 <main class="wrap"><section class="panel"><h2>Four springs and clay at a selected joint</h2>
 <svg viewBox="0 0 560 430" role="img" aria-labelledby="apparatus-title apparatus-desc"><title id="apparatus-title">Vertical spring network between two clamps</title><desc id="apparatus-desc">The clay divides four springs into an upper and a lower series branch. The diagram is schematic, not a ruler. Displacement and motion direction are also reported in text.</desc>
 <path d="M100 25H450M100 405H450M100 25V405" fill="none" stroke="#a1bfd0" stroke-width="8"/>
@@ -25,6 +25,8 @@
 <label for="evaluation">Uncertainty, comparison and practical improvements</label><textarea id="evaluation" rows="7"></textarea><p class="note">CSV contains the student table only; copy evaluation notes separately.</p></section>
 <section class="panel wide"><details><summary>Student guide, formulae and evaluation prompts</summary><div id="guide"></div></details></section></main>
 <script type="module">
+import {mountLiveBench} from '../lib/live-bench.mjs';
+import {simulationDelta} from '../lib/live-clock.mjs';
 import { makeSpringNetworkOscillator } from '../models/spring_network_oscillator.mjs';
 import { $, loadGuide, makeTable } from '../lib/practical-ui.mjs';
 try {
@@ -76,7 +78,7 @@ function update() {
   $('tally').textContent=`${count} cycles counted; target ${$('target').value}`;
 }
 function advance(dt){elapsed+=dt;update();}
-function frame(now){if(running&&last!==null)advance((now-last)/1000);last=now;requestAnimationFrame(frame);}
+function frame(now){if(running&&last!==null)advance(simulationDelta(now,last));last=now;requestAnimationFrame(frame);}
 function reset(){released=running=recorded=false;elapsed=0;start=stop=null;count=0;update();}
 $('measure').onclick=()=>{diameter=model.readDiameter(config().fraction,{anisotropy:$('anisotropy').checked});$('diameter').textContent=`d = ${diameter.toFixed(3)} m`;update();};
 for(const id of ['configuration','anisotropy'])$(id).onchange=()=>{diameter=null;$('diameter').textContent='Remeasure clay diameter.';update();};
@@ -98,5 +100,6 @@ $('compare').onclick=()=>{
   $('comparison').textContent=`Mean k: n=1 ${means[0].toPrecision(4)}, n=2 ${means[1].toPrecision(4)} m³/s². Difference ${percent.toFixed(1)}% is ${percent<=guide.calculations.graph.comparisonPercent?'within':'outside'} the ${guide.calculations.graph.comparisonPercent}% criterion. Limit conclusions to these tested conditions.`;
 };
 $('reset').disabled=false;$('message').textContent='Ready. Measure clay diameter before release.';update();requestAnimationFrame(frame);
+mountLiveBench('9702_m22_33-q2');
 } catch(error){$('message').textContent=`Unable to initialise: ${error.message}. Serve the project through the local sandbox HTTP server.`;}
 </script></body></html>

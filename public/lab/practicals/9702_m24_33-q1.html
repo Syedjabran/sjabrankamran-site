@@ -1,5 +1,5 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>9702 m24/33 Q1 — T-pendulum</title><link rel="stylesheet" href="../lib/practical.css"></head><body>
-<header><a href="../status.html">Build status</a><h1 id="title">Properties of a pendulum</h1><p id="provenance">Adapted/generated; not official Cambridge software.</p><p>Guided practice · applet built; browser verification pending.</p></header><main class="wrap"><section class="panel"><h2>Symmetrically loaded T-pendulum</h2>
+<header><a href="../status.html">Build status</a><h1 id="title">Properties of a pendulum</h1><p id="provenance">Adapted/generated; not official Cambridge software.</p><p>Hands-on practice · motion, measurements and student analysis.</p></header><main class="wrap"><section class="panel"><h2>Symmetrically loaded T-pendulum</h2>
 <svg viewBox="0 0 560 440" role="img" aria-labelledby="apparatus-title apparatus-desc"><title id="apparatus-title">T-shaped pendulum with two movable equal loads</title><desc id="apparatus-desc">The pivot stays at the top of the vertical stem. Select a hole distance to move both masses equally outwards. Text reports angle and motion direction.</desc><path d="M280 50V390" stroke="#a1bfd0" stroke-dasharray="5 5"/><g id="pendulum"><path d="M120 65H440M280 65V385" stroke="#c89569" stroke-width="12"/><circle id="leftMass" cx="240" cy="65" r="14" fill="#758ba0"/><circle id="rightMass" cx="320" cy="65" r="14" fill="#758ba0"/></g><circle cx="280" cy="65" r="6" fill="#3de1f0"/><g fill="#dcecf5" font-size="15"><text x="220" y="30">Fixed central pivot</text><text x="135" y="425">Equal loads; symmetrical positions</text></g></svg>
 <p id="motion" role="status">At rest.</p><label for="position">Both load centres: x / m from pivot</label><select id="position"><option>0.05</option><option>0.07</option><option>0.09</option><option>0.11</option><option>0.13</option><option>0.15</option><option>0.17</option><option>0.19</option></select>
 <label><input id="parallax" type="checkbox"> Add ruler parallax (+2 mm)</label><div class="row"><button id="read" disabled>Read x with ruler</button><output id="ruler">No reading</output></div>
@@ -10,6 +10,8 @@
 <p class="note">Count full cycles, not half-swings. Start and stop at the same phase and direction. Pause freezes simulation and stopwatch together, adding no waiting time. Step advances physical time by 0.05 s; reduced motion changes presentation, not the governing law.</p><p class="notice">Uniform slender strips, small release angles, fixed central pivot. Bolt/overlap corrections are omitted. Nonlinear undamped motion is simulated; no damping coefficient is specified. T against x³ᐟ² is a local empirical approximation, not the imposed law.</p></section>
 <section class="panel"><h2>Student timing table and graph</h2><div class="scroll"><table id="table"><caption>Measured x, manual timing and derived quantities</caption></table></div><div class="row"><button id="clear">Clear table</button><button id="csv">Export student CSV</button></div><p id="coverage" role="status">Use at least six load positions and repeat timings.</p><canvas id="graph" width="560" height="330" role="img" aria-label="Measured period T versus measured x to the power 1.5; all plotted points are in the table.">All graph values are in the table.</canvas><button id="fitButton">Fit measured points</button><p id="fit" role="status"></p><p class="note">X = √(x³), in m³ᐟ²; T in seconds. Gradient: s m⁻³ᐟ²; intercept: s. Raw table edits recalculate T and X; derived columns remain editable.</p><label for="evaluation">Timing uncertainty, amplitude effect, graph interpretation and improvements</label><textarea id="evaluation" rows="6"></textarea><p class="note">CSV includes the student table only. Copy evaluation notes separately.</p></section><section class="panel wide"><details><summary>Student guide and analysis prompts</summary><div id="guide"></div></details></section></main>
 <script type="module">
+import {mountLiveBench} from '../lib/live-bench.mjs';
+import {simulationDelta} from '../lib/live-clock.mjs';
 import { makeCompoundTPendulum } from '../models/compound_t_pendulum.mjs';
 import { $, loadGuide, makeTable, drawGraph } from '../lib/practical-ui.mjs';
 try {
@@ -29,7 +31,7 @@ try {
   $('watch').textContent=`${started===null?'0.0':((stopped??state.elapsed_s)-started).toFixed(1)} s`;$('tally').textContent=`${count} cycles counted; target ${$('target').value}`;
  }
  function advance(dt){motion.advance(dt);update();}
- function frame(now){if(running&&last!==null){const dt=(now-last)/1000;if(dt>0&&dt<=60)advance(dt);else running=false;}last=now;requestAnimationFrame(frame);}
+ function frame(now){if(running&&last!==null){const dt=simulationDelta(now,last);if(dt>0&&dt<=60)advance(dt);}last=now;requestAnimationFrame(frame);}
  $('read').onclick=()=>{measuredX=model.readPosition(Number($('position').value),{parallax:$('parallax').checked});$('ruler').textContent=`x = ${measuredX.toFixed(3)} m`;update();};
  for(const id of ['position','parallax'])$(id).onchange=()=>{measuredX=null;$('ruler').textContent='Remeasure x.';update();};$('amplitude').oninput=update;$('target').onchange=update;
  $('release').onclick=()=>{motion=model.createMotion(Number($('position').value),Number($('amplitude').value));running=!$('reduced').checked;last=performance.now();update();};
@@ -39,5 +41,6 @@ try {
  $('record').onclick=()=>{table.add({setting:Number($('position').value),amplitude:Number($('amplitude').value),cycles:count,x:measuredX,elapsed_t:model.readElapsed(stopped-started)});recorded=true;update();$('message').textContent='Recorded. Reset for a timing repeat or to move the loads.';};
  $('reset').onclick=()=>{motion=null;running=false;started=stopped=null;count=0;recorded=false;update();$('message').textContent='Trial reset. Ruler reading and existing table retained; changing load setting requires a new ruler reading.';};
  $('fitButton').onclick=()=>{showFit=true;plot(table.rows);};$('reset').disabled=false;$('message').textContent='Ready. Read x before release.';update();plot([]);requestAnimationFrame(frame);
+mountLiveBench('9702_m24_33-q1');
 } catch(error){$('message').textContent=`Unable to initialise: ${error.message}. Use the local sandbox HTTP server.`;}
 </script></body></html>

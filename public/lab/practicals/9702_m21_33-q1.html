@@ -60,17 +60,20 @@
   </div>
 </div>
 <script type="module">
+import {mountLiveBench} from '../lib/live-bench.mjs';
+import {simulationDelta} from '../lib/live-clock.mjs';
 import { makeStaticSpringRod } from '../models/static_spring_rod.mjs';
 import { seededRandom, readInstrument, linearFit, readingsCSV } from '../lib/measurement.mjs';
 
 // Hidden truth — never shown to the student. Seeded so a class shares one setup.
-const rod = makeStaticSpringRod({ h_m:0.25, C0_m:0.02, ks_N_per_m:25, mass_kg:0.16, centre_m:0.205 });
+const rod = makeStaticSpringRod();
 const C0 = 0.02, rnd = seededRandom(202133);
 const rows = [];
 const $ = id => document.getElementById(id);
 const xEl=$('x'), strEl=$('str');
+let shownX=+xEl.value, shownStr=+strEl.value, renderLast=performance.now(), visualPaused=false;
 
-function levelled(){ return Math.abs(+strEl.value) <= 1; } // within 1 mm of horizontal
+function levelled(){ return Math.abs(+strEl.value) <= 1 && Math.abs(shownStr-Number(strEl.value))<.1 && Math.abs(shownX-Number(xEl.value))<.0001; } // within 1 mm of horizontal
 function draw(){
   const x=+xEl.value; $('xval').textContent=x.toFixed(3); $('strval').textContent=strEl.value;
   const tilt = rod.tiltDegrees((+strEl.value)/1000);
@@ -79,21 +82,26 @@ function draw(){
     ? '<span style="color:var(--cyan)">Rod is horizontal — you may read the ruler.</span>'
     : `Rod tilts ${tilt.toFixed(1)}° — adjust the string until it is horizontal before reading.`;
   const c=$('stage'), g=c.getContext('2d'); g.clearRect(0,0,c.width,c.height);
-  // ruler
-  g.strokeStyle='#16324a'; g.fillStyle='#0a1420'; g.fillRect(40,360,560,26); g.strokeRect(40,360,560,26);
-  g.fillStyle='#7fa6bd'; g.font='10px system-ui';
-  for(let i=0;i<=56;i++){ const px=40+i*10; g.beginPath(); g.moveTo(px,360); g.lineTo(px,360+(i%5?5:10)); g.stroke(); }
-  // pivot + rod (tilts with string error)
-  const pivotX=120, pivotY=150, len=360, ang=tilt*Math.PI/180;
-  const ex=pivotX+len*Math.cos(ang), ey=pivotY+len*Math.sin(ang);
-  g.strokeStyle='#caa46a'; g.lineWidth=8; g.beginPath(); g.moveTo(pivotX,pivotY); g.lineTo(ex,ey); g.stroke(); g.lineWidth=1;
-  g.fillStyle='#3de1f0'; g.beginPath(); g.arc(pivotX,pivotY,6,0,7); g.fill();
-  // spring from top nail down to loop at position x along rod
-  const fx=pivotX+(len*(x/0.55))*Math.cos(ang), fy=pivotY+(len*(x/0.55))*Math.sin(ang);
-  const topY=60, coils=14; g.strokeStyle='#9fd6e6'; g.beginPath(); g.moveTo(fx,topY);
-  for(let i=0;i<=coils;i++){ const t=i/coils; g.lineTo(fx+(i%2?7:-7), topY+t*(fy-topY)); } g.lineTo(fx,fy); g.stroke();
-  g.fillStyle='#f7c948'; g.beginPath(); g.arc(fx,fy,4,0,7); g.fill();
-  g.fillStyle='#7fa6bd'; g.fillText('nail (top)',fx-20,topY-6); g.fillText('loop',fx+8,fy);
+  const px=120,py=280,scale=850,angle=rod.tiltDegrees(shownStr/1000)*Math.PI/180;
+  const ex=px+.41*scale*Math.cos(angle),ey=py+.41*scale*Math.sin(angle);
+  const fx=px+shownX*scale*Math.cos(angle),fy=py+shownX*scale*Math.sin(angle),ny=py-.25*scale;
+  const dx=fx-px,dy=fy-ny,hyp=Math.hypot(dx,dy),ux=dx/hyp,uy=dy/hyp;
+  const coilLength=rod.springMark(shownX)*scale;
+  g.lineCap='round';g.strokeStyle='#7293a8';g.lineWidth=7;g.beginPath();g.moveTo(px,ny-20);g.lineTo(px,335);g.stroke();
+  g.fillStyle='#244253';g.fillRect(75,333,95,14);
+  g.strokeStyle='#d9b37c';g.lineWidth=10;g.beginPath();g.moveTo(px,py);g.lineTo(ex,ey);g.stroke();
+  g.strokeStyle='#ecf3f7';g.lineWidth=2;g.beginPath();g.moveTo(px,ny);
+  for(let i=1;i<=24;i++){const d=coilLength*i/24,z=i===24?0:(i%2?6:-6);g.lineTo(px+ux*d-uy*z,ny+uy*d+ux*z);}g.lineTo(fx,fy);g.stroke();
+  g.fillStyle='#65ead8';for(const [x,y] of [[px,py],[px,ny],[fx,fy]]){g.beginPath();g.arc(x,y,5,0,Math.PI*2);g.fill();}
+  // Ruler alongside the diagonal spring; extension changes with loop position.
+  g.font='11px system-ui';g.fillStyle='#c7dce8';g.strokeStyle='#7b9fb6';g.lineWidth=1;
+  for(let i=0;i<=12;i++){const d=i*.01*scale,x=px+ux*d-uy*18,y=ny+uy*d+ux*18;g.beginPath();g.moveTo(x,y);g.lineTo(x-uy*(i%2?5:9),y+ux*(i%2?5:9));g.stroke();if(i%2===0)g.fillText((i/100).toFixed(2),x-35,y+3);}
+  g.fillText('Fixed upper nail',px+12,ny-14);g.fillText('Pivot',px-18,py+25);g.fillText('Spring + string',250,100);
+  g.fillStyle='#ffdc8e';g.fillText('Loop — drag ↔',fx-30,fy-20);g.fillStyle='#abc4d4';g.fillText('C ruler / m',30,30);
+  g.strokeStyle='#304d61';g.setLineDash([5,5]);g.beginPath();g.moveTo(px,py);g.lineTo(560,py);g.stroke();g.setLineDash([]);
+  g.fillText('Level the rod with the string adjustment',200,375);
+  c.dataset.gripXx=String(fx/640);c.dataset.gripXy=String(fy/420);c.dataset.gripStrx=String(ex/640);c.dataset.gripStry=String(ey/420);
+
 }
 function refresh(){ draw(); drawGraph(); }
 xEl.oninput=refresh; strEl.oninput=refresh;
@@ -126,12 +134,24 @@ function drawGraph(){
   const xmin=Math.min(...xs,0.14), xmax=Math.max(...xs,0.33), ymin=Math.min(...ys), ymax=Math.max(...ys,ymin+1);
   const X=v=>38+(v-xmin)/(xmax-xmin)*360, Y=v=>240-(v-ymin)/(ymax-ymin)*230;
   g.fillStyle='#3de1f0'; pts.forEach(p=>{ g.beginPath(); g.arc(X(p[0]),Y(p[1]),3.5,0,7); g.fill(); });
-  if(pts.length>=2){ const f=linearFit(pts); g.strokeStyle='#f7c948'; g.beginPath();
+  if(pts.length>=2){
+    if (new Set(pts.map(p=>p[0])).size > 1) { const f=linearFit(pts); g.strokeStyle='#f7c948'; g.beginPath();
     g.moveTo(X(xmin),Y(f.slope*xmin+f.intercept)); g.lineTo(X(xmax),Y(f.slope*xmax+f.intercept)); g.stroke();
     $('fit').textContent = `best fit: gradient ${f.slope.toPrecision(3)} m⁻⁵, r² ${f.rSquared?.toFixed(4)}`;
+    } else $('fit').textContent='Record readings at different x values to see the line of best fit.';
   } else $('fit').textContent='';
 }
-refresh();
+function animateRod(now){
+  const dt=Math.min(.1,Math.max(0,(now-renderLast)/1000));renderLast=now;
+  const f=visualPaused?0:matchMedia('(prefers-reduced-motion: reduce)').matches?1:1-Math.exp(-dt*12);
+  const x=Number(xEl.value),str=Number(strEl.value);
+  if(Math.abs(shownX-x)>1e-7||Math.abs(shownStr-str)>1e-4){shownX+=(x-shownX)*f;shownStr+=(str-shownStr)*f;draw();}
+  requestAnimationFrame(animateRod);
+}
+document.addEventListener('lab-visual-pause',e=>{visualPaused=e.detail;});
+document.addEventListener('lab-visual-step',()=>{shownX+=(Number(xEl.value)-shownX)*.65;shownStr+=(Number(strEl.value)-shownStr)*.65;draw();});
+refresh();requestAnimationFrame(animateRod);
+mountLiveBench('9702_m21_33-q1');
 </script>
 </body>
 </html>
