@@ -1,0 +1,1943 @@
+{
+  "9702_m21_33-q1": {
+    "family": "static_spring_rod",
+    "controls": [
+      {
+        "key": "x",
+        "type": "range",
+        "min": 0.145,
+        "max": 0.32,
+        "step": 0.025,
+        "value": 0.245,
+        "label": "Loop position x =  m"
+      },
+      {
+        "key": "str",
+        "type": "range",
+        "min": -30.0,
+        "max": 30.0,
+        "step": 1.0,
+        "value": 0.0,
+        "label": "String length adjust (level the rod first) =  mm"
+      }
+    ],
+    "graph": {
+      "x": "x",
+      "y": "Y"
+    },
+    "derived": [
+      "E=C-C0",
+      "Y=E**-4"
+    ]
+  },
+  "9702_m21_33-q2": {
+    "family": "gas_flow_hole",
+    "controls": [
+      {
+        "key": "tool",
+        "type": "select",
+        "options": [
+          {
+            "value": "pin",
+            "label": "Pin (approximately 0.6 mm)"
+          },
+          {
+            "value": "nail",
+            "label": "Nail (approximately 1.5 mm)"
+          }
+        ],
+        "label": "Piercing tool",
+        "value": "pin"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "k=t*d**2 [s m\u00b2]",
+      "S=D**2*L/k [m/s]"
+    ]
+  },
+  "9702_m22_33-q1": {
+    "family": "hydrostatic_u_tube",
+    "controls": [
+      {
+        "key": "height",
+        "type": "range",
+        "min": 0.03,
+        "max": 0.2,
+        "step": 0.005,
+        "value": 0.03,
+        "label": "Target oil B column h / m (pipette setting, not a ruler reading)"
+      }
+    ],
+    "graph": {
+      "x": "h",
+      "y": "y"
+    },
+    "derived": [
+      "y=b-a"
+    ]
+  },
+  "9702_m22_33-q2": {
+    "family": "spring_network_oscillator",
+    "controls": [
+      {
+        "key": "configuration",
+        "type": "select",
+        "options": [
+          {
+            "value": "1",
+            "label": "n = 1, whole clay"
+          },
+          {
+            "value": "2",
+            "label": "n = 2, three-quarter clay"
+          }
+        ],
+        "label": "Cut/shape and attach clay",
+        "value": "1"
+      },
+      {
+        "key": "amplitude",
+        "type": "range",
+        "min": 0.0,
+        "max": 0.02,
+        "step": 0.001,
+        "value": 0.015,
+        "label": "Release displacement / m (adapted control)"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "T=t/Ncycles",
+      "k=d**3*n*(4-n)/T**2 [m\u00b3/s\u00b2]"
+    ]
+  },
+  "9702_m23_33-q1": {
+    "family": "rod_pulley_equilibrium",
+    "controls": [
+      {
+        "key": "notch",
+        "type": "select",
+        "options": [
+          {
+            "value": "0.04",
+            "label": "0.04"
+          },
+          {
+            "value": "0.08",
+            "label": "0.08"
+          },
+          {
+            "value": "0.12",
+            "label": "0.12"
+          },
+          {
+            "value": "0.16",
+            "label": "0.16"
+          },
+          {
+            "value": "0.20",
+            "label": "0.20"
+          },
+          {
+            "value": "0.24",
+            "label": "0.24"
+          },
+          {
+            "value": "0.28",
+            "label": "0.28"
+          },
+          {
+            "value": "0.32",
+            "label": "0.32"
+          },
+          {
+            "value": "0.36",
+            "label": "0.36"
+          }
+        ],
+        "label": "Notch distance from pivot / m",
+        "value": "0.20"
+      },
+      {
+        "key": "pulleyHeight",
+        "type": "range",
+        "min": 0.2,
+        "max": 0.55,
+        "step": 0.001,
+        "value": 0.4,
+        "label": "Pulley tangent-height setting / m (adjustment scale)"
+      }
+    ],
+    "graph": {
+      "x": "h",
+      "y": "sin(theta)"
+    },
+    "derived": [
+      "sin(theta)"
+    ]
+  },
+  "9702_m23_33-q2": {
+    "family": "lens_in_solution",
+    "controls": [
+      {
+        "key": "solution",
+        "type": "select",
+        "options": [
+          {
+            "value": "0",
+            "label": "Dry lens baseline (C = 0 label)"
+          },
+          {
+            "value": "0.18",
+            "label": "Sugar solution C = 0.18"
+          },
+          {
+            "value": "0.33",
+            "label": "Sugar solution C = 0.33"
+          }
+        ],
+        "label": "Lens condition / concentration C",
+        "value": "0"
+      },
+      {
+        "key": "object",
+        "type": "range",
+        "min": 3.0,
+        "max": 80.0,
+        "step": 0.1,
+        "value": 10.0,
+        "label": "Object-distance setting u / cm"
+      },
+      {
+        "key": "screenDistance",
+        "type": "range",
+        "min": 39.0,
+        "max": 41.0,
+        "step": 0.1,
+        "value": 40.0,
+        "label": "Screen-distance setting v / cm"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "f=v*u/(v+u) in cm",
+      "n=0.553*f/(1+0.333*f)",
+      "k=(n-1.31)/C"
+    ]
+  },
+  "9702_m24_33-q1": {
+    "family": "compound_t_pendulum",
+    "controls": [
+      {
+        "key": "position",
+        "type": "select",
+        "options": [
+          {
+            "value": "0.05",
+            "label": "0.05"
+          },
+          {
+            "value": "0.07",
+            "label": "0.07"
+          },
+          {
+            "value": "0.09",
+            "label": "0.09"
+          },
+          {
+            "value": "0.11",
+            "label": "0.11"
+          },
+          {
+            "value": "0.13",
+            "label": "0.13"
+          },
+          {
+            "value": "0.15",
+            "label": "0.15"
+          },
+          {
+            "value": "0.17",
+            "label": "0.17"
+          },
+          {
+            "value": "0.19",
+            "label": "0.19"
+          }
+        ],
+        "label": "Both load centres: x / m from pivot",
+        "value": "0.05"
+      },
+      {
+        "key": "amplitude",
+        "type": "range",
+        "min": 2.0,
+        "max": 8.0,
+        "step": 1.0,
+        "value": 5.0,
+        "label": "Release amplitude / degree (adapted control)"
+      }
+    ],
+    "graph": {
+      "x": "X",
+      "y": "T"
+    },
+    "derived": [
+      "T=t/Ncycles",
+      "X=sqrt(x**3)"
+    ]
+  },
+  "9702_m24_33-q2": {
+    "family": "ladder_static_friction",
+    "controls": [
+      {
+        "key": "strip",
+        "type": "select",
+        "options": [
+          {
+            "value": "thick",
+            "label": "1 \u2014 thick, nominal length 0.44 m"
+          },
+          {
+            "value": "thin",
+            "label": "2 \u2014 thin, nominal length 0.47 m"
+          }
+        ],
+        "label": "Strip",
+        "value": "thick"
+      },
+      {
+        "key": "end",
+        "type": "select",
+        "options": [
+          {
+            "value": "A",
+            "label": "A \u2014 load near floor"
+          },
+          {
+            "value": "B",
+            "label": "B \u2014 load near wall"
+          }
+        ],
+        "label": "End at floor (reverse the same loaded strip)",
+        "value": "A"
+      },
+      {
+        "key": "base",
+        "type": "range",
+        "min": 0.02,
+        "max": 0.42,
+        "step": 0.001,
+        "value": 0.2,
+        "label": "Base distance from wall / m (adapted adjustment range)"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "FA=(M/2+S*dA/L)/((M+S)*tan(thetaA))",
+      "FB=(M/2+S*dB/L)/((M+S)*tan(thetaB))",
+      "k=FA/FB"
+    ]
+  },
+  "9702_m25_33-q1": {
+    "family": "shorted_resistance_wire",
+    "controls": [
+      {
+        "key": "length",
+        "type": "range",
+        "min": 0.05,
+        "max": 0.95,
+        "step": 0.005,
+        "value": 0.45,
+        "label": "Shorted length x / m (adapted range)"
+      },
+      {
+        "key": "clipPosition",
+        "type": "range",
+        "min": 0.0,
+        "max": 0.55,
+        "step": 0.005,
+        "value": 0.1,
+        "label": "F clip position / m (moving this shifts both clips)"
+      }
+    ],
+    "graph": {
+      "x": "x",
+      "y": "Y"
+    },
+    "derived": [
+      "Y=1/I"
+    ]
+  },
+  "9702_m25_33-q2": {
+    "family": "thermal_pipe_lever",
+    "controls": [
+      {
+        "key": "length",
+        "type": "select",
+        "options": [
+          {
+            "value": "0.12",
+            "label": "0.12"
+          },
+          {
+            "value": "0.19",
+            "label": "0.19"
+          }
+        ],
+        "label": "Heated-length mark / m",
+        "value": "0.12"
+      },
+      {
+        "key": "water",
+        "type": "range",
+        "min": 60.0,
+        "max": 95.0,
+        "step": 1.0,
+        "value": 82.0,
+        "label": "Pour-water setting / \u00b0C"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "deltaH=H1-H2",
+      "deltaL=s*deltaH/d",
+      "k=deltaL/(L*(T-T0)) [K^-1]"
+    ]
+  },
+  "9702_s21_33-q1": {
+    "family": "complementary_series_wires",
+    "controls": [
+      {
+        "key": "g",
+        "type": "range",
+        "min": 0.05,
+        "max": 0.62,
+        "step": 0.005,
+        "value": 0.3,
+        "label": "G clip setting / m"
+      },
+      {
+        "key": "h",
+        "type": "range",
+        "min": 0.05,
+        "max": 0.62,
+        "step": 0.005,
+        "value": 0.3,
+        "label": "H clip setting / m"
+      }
+    ],
+    "graph": {
+      "x": "x",
+      "y": "1/I"
+    },
+    "derived": [
+      "1/I"
+    ]
+  },
+  "9702_s21_33-q2": {
+    "family": "spring_torsional_rod",
+    "controls": [
+      {
+        "key": "b",
+        "type": "select",
+        "options": [
+          {
+            "value": "0.10",
+            "label": "0.10"
+          },
+          {
+            "value": "0.20",
+            "label": "0.20"
+          }
+        ],
+        "label": "Spring arm b / m",
+        "value": "0.10"
+      },
+      {
+        "key": "level",
+        "type": "range",
+        "min": -10.0,
+        "max": 10.0,
+        "step": 1.0,
+        "value": 5.0,
+        "label": "Spring-preload leveling adjustment / mm"
+      },
+      {
+        "key": "amplitude",
+        "type": "range",
+        "min": 1.0,
+        "max": 5.0,
+        "step": 1.0,
+        "value": 3.0,
+        "label": "Release angle / degree"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "alpha=b/d",
+      "T=t/Ncycles",
+      "C=T*alpha [s]",
+      "ks=12*pi**2*0.100/C**2 [N/m]"
+    ]
+  },
+  "9702_s21_34-q1": {
+    "family": "catenary_transverse_pendulum",
+    "controls": [
+      {
+        "key": "separation",
+        "type": "range",
+        "min": 0.25,
+        "max": 0.77,
+        "step": 0.005,
+        "value": 0.6,
+        "label": "Support-separation setting / m (adapted range)"
+      },
+      {
+        "key": "amplitude",
+        "type": "range",
+        "min": 2.0,
+        "max": 8.0,
+        "step": 1.0,
+        "value": 5.0,
+        "label": "Out-of-plane release angle / degree"
+      }
+    ],
+    "graph": {
+      "x": "X",
+      "y": "Y"
+    },
+    "derived": [
+      "T=t/Ncycles",
+      "X=1/sqrt(C)",
+      "Y=1/T"
+    ]
+  },
+  "9702_s21_34-q2": {
+    "family": "foam_ring_compression",
+    "controls": [
+      {
+        "key": "ring",
+        "type": "select",
+        "options": [
+          {
+            "value": "large",
+            "label": "Larger"
+          },
+          {
+            "value": "small",
+            "label": "Smaller"
+          }
+        ],
+        "label": "Ring",
+        "value": "large"
+      },
+      {
+        "key": "level",
+        "type": "range",
+        "min": -5.0,
+        "max": 5.0,
+        "step": 0.5,
+        "value": 2.0,
+        "label": "Initial rod angle / degree (adapted leveling control)"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "y=h1-h2",
+      "F=.100*9.81*B/A",
+      "k=y*(D2**2-D1**2)/(F*D2**3) [N^-1]"
+    ]
+  },
+  "9702_s22_33-q1": {
+    "family": "parallel_wire_voltage_divider",
+    "controls": [
+      {
+        "key": "d",
+        "type": "range",
+        "min": 0.2,
+        "max": 0.7,
+        "step": 0.005,
+        "value": 0.4,
+        "label": "Clip H: d / m"
+      }
+    ],
+    "graph": {
+      "x": "X",
+      "y": "Y"
+    },
+    "derived": [
+      "X=d**2",
+      "Y=(V2/V1)*d"
+    ]
+  },
+  "9702_s22_33-q2": {
+    "family": "wrapping_mass_dynamics",
+    "controls": [
+      {
+        "key": "theta",
+        "type": "select",
+        "options": [
+          {
+            "value": "90",
+            "label": "90"
+          },
+          {
+            "value": "65",
+            "label": "65"
+          },
+          {
+            "value": "45",
+            "label": "45"
+          }
+        ],
+        "label": "Release-angle setting / degree",
+        "value": "90"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "X=cos(theta)**2",
+      "Y=H/A",
+      "k=(H/A-1)/cos(theta)**2"
+    ]
+  },
+  "9702_s22_34-q1": {
+    "family": "rc_discharge_parallel",
+    "controls": [
+      {
+        "key": "resistor",
+        "type": "select",
+        "options": [
+          {
+            "value": "470000",
+            "label": "470000"
+          },
+          {
+            "value": "330000",
+            "label": "330000"
+          },
+          {
+            "value": "220000",
+            "label": "220000"
+          },
+          {
+            "value": "150000",
+            "label": "150000"
+          },
+          {
+            "value": "100000",
+            "label": "100000"
+          },
+          {
+            "value": "47000",
+            "label": "47000"
+          },
+          {
+            "value": "33000",
+            "label": "33000"
+          },
+          {
+            "value": "22000",
+            "label": "22000"
+          }
+        ],
+        "label": "Resistor R / \u03a9",
+        "value": "220000"
+      }
+    ],
+    "graph": {
+      "x": "1/R",
+      "y": "1/t"
+    },
+    "derived": [
+      "1/R",
+      "1/t"
+    ]
+  },
+  "9702_s22_34-q2": {
+    "family": "liquid_adhesion_drainage",
+    "controls": [
+      {
+        "key": "liquid",
+        "type": "select",
+        "options": [
+          {
+            "value": "water",
+            "label": "Water"
+          },
+          {
+            "value": "oil",
+            "label": "Vegetable oil"
+          }
+        ],
+        "label": "Liquid",
+        "value": "water"
+      },
+      {
+        "key": "speed",
+        "type": "range",
+        "min": 0.0001,
+        "max": 0.001,
+        "step": 0.0001,
+        "value": 0.0002,
+        "label": "Pull speed / m s\u207b\u00b9 (adapted)"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "E=F-W",
+      "k=T/E**2 [s/N\u00b2]"
+    ]
+  },
+  "9702_s23_33-q1": {
+    "family": "cylinder_wrapped_pendulum",
+    "controls": [
+      {
+        "key": "length",
+        "type": "range",
+        "min": 0.25,
+        "max": 0.6,
+        "step": 0.005,
+        "value": 0.45,
+        "label": "Unattached string-length setting L / m"
+      },
+      {
+        "key": "amplitude",
+        "type": "range",
+        "min": 2.0,
+        "max": 8.0,
+        "step": 1.0,
+        "value": 5.0,
+        "label": "Release angle / degree"
+      }
+    ],
+    "graph": {
+      "x": "X",
+      "y": "Y"
+    },
+    "derived": [
+      "T=t/Ncycles",
+      "Y=T**3",
+      "X=L**2"
+    ]
+  },
+  "9702_s23_33-q2": {
+    "family": "lamina_centroid",
+    "controls": [
+      {
+        "key": "width",
+        "type": "select",
+        "options": [
+          {
+            "value": "0.12",
+            "label": "Original: 0.120"
+          },
+          {
+            "value": "0.09",
+            "label": "Trim right edge: 0.090"
+          }
+        ],
+        "label": "Card width / m",
+        "value": "0.12"
+      },
+      {
+        "key": "hole",
+        "type": "select",
+        "options": [
+          {
+            "value": "0",
+            "label": "Bottom left"
+          },
+          {
+            "value": "1",
+            "label": "Top right"
+          },
+          {
+            "value": "2",
+            "label": "Top left"
+          }
+        ],
+        "label": "Punch / suspend at corner",
+        "value": "0"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "A=h*x+5*x**2/8",
+      "k=(c*A-h*x**2/2)/x**3"
+    ]
+  },
+  "9702_s23_34-q1": {
+    "family": "counterweighted_compound_pendulum",
+    "controls": [
+      {
+        "key": "mass",
+        "type": "select",
+        "options": [
+          {
+            "value": "0.0",
+            "label": "0.00"
+          },
+          {
+            "value": "0.01",
+            "label": "0.01"
+          },
+          {
+            "value": "0.02",
+            "label": "0.02"
+          },
+          {
+            "value": "0.03",
+            "label": "0.03"
+          },
+          {
+            "value": "0.04",
+            "label": "0.04"
+          },
+          {
+            "value": "0.05",
+            "label": "0.05"
+          },
+          {
+            "value": "0.06",
+            "label": "0.06"
+          },
+          {
+            "value": "0.07",
+            "label": "0.07"
+          },
+          {
+            "value": "0.08",
+            "label": "0.08"
+          },
+          {
+            "value": "0.09",
+            "label": "0.09"
+          }
+        ],
+        "label": "Upper mass M / kg",
+        "value": "0.0"
+      },
+      {
+        "key": "amplitude",
+        "type": "range",
+        "min": 2.0,
+        "max": 6.0,
+        "step": 1.0,
+        "value": 4.0,
+        "label": "Release angle / degree"
+      }
+    ],
+    "graph": {
+      "x": "M**2",
+      "y": "T**2"
+    },
+    "derived": [
+      "T=t/Ncycles",
+      "T**2",
+      "M**2"
+    ]
+  },
+  "9702_s23_34-q2": {
+    "family": "thermal_pipe_suspended_lever",
+    "controls": [
+      {
+        "key": "length",
+        "type": "select",
+        "options": [
+          {
+            "value": "0.122",
+            "label": "Long: 0.122"
+          },
+          {
+            "value": "0.074",
+            "label": "Short: 0.074"
+          }
+        ],
+        "label": "Pipe / m",
+        "value": "0.122"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "deltaX=x1-x2",
+      "k=L*(T-T0)/deltaX [K]"
+    ]
+  },
+  "9702_s24_33-q1": {
+    "family": "loaded_rule_balance",
+    "controls": [
+      {
+        "key": "n",
+        "type": "range",
+        "min": 1.0,
+        "max": 7.0,
+        "step": 1.0,
+        "value": 1.0,
+        "label": "Number n transferred from centre to right end"
+      },
+      {
+        "key": "pivot",
+        "type": "range",
+        "min": 0.2,
+        "max": 0.5,
+        "step": 0.001,
+        "value": 0.4,
+        "label": "Pivot position from left end / m"
+      }
+    ],
+    "graph": {
+      "x": "1/n",
+      "y": "y/n"
+    },
+    "derived": [
+      "1/n",
+      "y/n to3sf"
+    ]
+  },
+  "9702_s24_33-q2": {
+    "family": "rubber_lateral_contraction",
+    "controls": [
+      {
+        "key": "ratio",
+        "type": "select",
+        "options": [
+          {
+            "value": "1",
+            "label": "1 \u2014 relaxed"
+          },
+          {
+            "value": "1.5",
+            "label": "1.5"
+          },
+          {
+            "value": "2",
+            "label": "2"
+          }
+        ],
+        "label": "Clamp stretch setting L/L\u2080",
+        "value": "1"
+      },
+      {
+        "key": "pressure",
+        "type": "select",
+        "options": [
+          {
+            "value": "light",
+            "label": "Light contact"
+          },
+          {
+            "value": "over-tight",
+            "label": "Over-tight"
+          }
+        ],
+        "label": "Micrometer pressure",
+        "value": "light"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "deltaL=L-L0",
+      "deltaw=w0-w",
+      "k=deltaL/deltaw [1]",
+      "F=2*E*t*k*w0*deltaw/L0, E=1.0e6Pa"
+    ]
+  },
+  "9702_s24_34-q1": {
+    "family": "symmetric_movable_pulley",
+    "controls": [
+      {
+        "key": "mass",
+        "type": "select",
+        "options": [
+          {
+            "value": "0",
+            "label": "0.00"
+          },
+          {
+            "value": "0.01",
+            "label": "0.01"
+          },
+          {
+            "value": "0.02",
+            "label": "0.02"
+          },
+          {
+            "value": "0.03",
+            "label": "0.03"
+          },
+          {
+            "value": "0.04",
+            "label": "0.04"
+          },
+          {
+            "value": "0.05",
+            "label": "0.05"
+          },
+          {
+            "value": "0.06",
+            "label": "0.06"
+          },
+          {
+            "value": "0.07",
+            "label": "0.07"
+          },
+          {
+            "value": "0.1",
+            "label": "0.10"
+          },
+          {
+            "value": "0.15",
+            "label": "0.15"
+          },
+          {
+            "value": "0.2",
+            "label": "0.20"
+          },
+          {
+            "value": "0.24",
+            "label": "0.24"
+          }
+        ],
+        "label": "Added mass x / kg (not a length)",
+        "value": "0"
+      }
+    ],
+    "graph": {
+      "x": "x",
+      "y": "1/cos(theta)"
+    },
+    "derived": [
+      "1/cos(theta)"
+    ]
+  },
+  "9702_s24_34-q2": {
+    "family": "falling_mass_rotating_card",
+    "controls": [
+      {
+        "key": "card",
+        "type": "select",
+        "options": [
+          {
+            "value": "none",
+            "label": "None \u2014 baseline"
+          },
+          {
+            "value": "A",
+            "label": "Card A"
+          },
+          {
+            "value": "B",
+            "label": "Card B"
+          }
+        ],
+        "label": "Card on spindle",
+        "value": "none"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "k=L**2*W/(T-T0) [m\u00b3/s]"
+    ]
+  },
+  "9702_s25_33-q1": {
+    "family": "wire_shunt_equal_resistors",
+    "controls": [
+      {
+        "key": "length",
+        "type": "range",
+        "min": 0.3,
+        "max": 0.95,
+        "step": 0.005,
+        "value": 0.3,
+        "label": "Clip separation L / m"
+      }
+    ],
+    "graph": {
+      "x": "V",
+      "y": "Y"
+    },
+    "derived": [
+      "Y=(E-V)/L"
+    ]
+  },
+  "9702_s25_33-q2": {
+    "family": "asymmetric_loaded_chain",
+    "controls": [
+      {
+        "key": "condition",
+        "type": "select",
+        "options": [
+          {
+            "value": "0",
+            "label": "10 g clay; attach at clip 11; stands \u22480.70 m"
+          },
+          {
+            "value": "1",
+            "label": "Combine to 30 g clay; attach at clip 7; stands \u22480.80 m"
+          }
+        ],
+        "label": "Source condition",
+        "value": "0"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "N=n**(2/3), N(11)=4.95 to3sf",
+      "T=t/Ncycles",
+      "k=T**2*x**2/(d*N) [s\u00b2 m]"
+    ]
+  },
+  "9702_s25_34-q1": {
+    "family": "interrupted_pendulum",
+    "controls": [
+      {
+        "key": "length",
+        "type": "range",
+        "min": 0.04,
+        "max": 0.17,
+        "step": 0.005,
+        "value": 0.17,
+        "label": "Short-side length L\u2082 setting / m"
+      },
+      {
+        "key": "amplitude",
+        "type": "range",
+        "min": 2.0,
+        "max": 6.0,
+        "step": 1.0,
+        "value": 2.0,
+        "label": "Long-side release angle / degree"
+      }
+    ],
+    "graph": {
+      "x": "X",
+      "y": "T"
+    },
+    "derived": [
+      "X=sqrt(L1)+sqrt(L2) to3sf",
+      "T=t/Ncycles"
+    ]
+  },
+  "9702_s25_34-q2": {
+    "family": "confined_ball_settling",
+    "controls": [
+      {
+        "key": "diameter",
+        "type": "select",
+        "options": [
+          {
+            "value": "0.005",
+            "label": "5 mm steel ball"
+          },
+          {
+            "value": "0.004",
+            "label": "4 mm steel ball"
+          }
+        ],
+        "label": "Ball",
+        "value": "0.005"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "k=1/(t*(D**2-d**2)) [s^-1 m^-2]"
+    ]
+  },
+  "9702_w21_33-q1": {
+    "family": "parallel_resistor_network",
+    "controls": [
+      {
+        "key": "r1",
+        "type": "select",
+        "options": [
+          {
+            "value": "33",
+            "label": "33 \u03a9"
+          },
+          {
+            "value": "47",
+            "label": "47 \u03a9"
+          },
+          {
+            "value": "56",
+            "label": "56 \u03a9"
+          },
+          {
+            "value": "68",
+            "label": "68 \u03a9"
+          },
+          {
+            "value": "82",
+            "label": "82 \u03a9"
+          }
+        ],
+        "label": "First part R\u2081",
+        "value": "33"
+      },
+      {
+        "key": "r2",
+        "type": "select",
+        "options": [
+          {
+            "value": "33",
+            "label": "33 \u03a9"
+          },
+          {
+            "value": "47",
+            "label": "47 \u03a9"
+          },
+          {
+            "value": "56",
+            "label": "56 \u03a9"
+          },
+          {
+            "value": "68",
+            "label": "68 \u03a9"
+          },
+          {
+            "value": "82",
+            "label": "82 \u03a9"
+          }
+        ],
+        "label": "Second part R\u2082",
+        "value": "47"
+      }
+    ],
+    "graph": {
+      "x": "X",
+      "y": "Y"
+    },
+    "derived": [
+      "X=R1*R2/(R1+R2)",
+      "Y=1/I"
+    ]
+  },
+  "9702_w21_33-q2": {
+    "family": "filter_paper_fall",
+    "controls": [
+      {
+        "key": "stack",
+        "type": "select",
+        "options": [
+          {
+            "value": "0",
+            "label": "Six smaller sheets"
+          },
+          {
+            "value": "1",
+            "label": "Two larger sheets"
+          }
+        ],
+        "label": "Paper stack",
+        "value": "0"
+      },
+      {
+        "key": "tilt",
+        "type": "range",
+        "min": 0.0,
+        "max": 20.0,
+        "step": 1.0,
+        "value": 0.0,
+        "label": "Release tilt from horizontal / degrees (adapted)"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "A=pi*d**2/4",
+      "k=m*A/t [kg m\u00b2/s]"
+    ]
+  },
+  "9702_w21_34-q1": {
+    "family": "wire_bridge_null",
+    "controls": [
+      {
+        "key": "p",
+        "type": "range",
+        "min": 0.15,
+        "max": 0.72,
+        "step": 0.005,
+        "value": 0.4,
+        "label": "Upper contact A: p / m"
+      },
+      {
+        "key": "q",
+        "type": "range",
+        "min": 0.0,
+        "max": 0.8,
+        "step": 0.001,
+        "value": 0.2,
+        "label": "Lower contact C: q from E / m"
+      }
+    ],
+    "graph": {
+      "x": "X",
+      "y": "Y"
+    },
+    "derived": [
+      "X=p/q",
+      "Y=1/q"
+    ]
+  },
+  "9702_w21_34-q2": {
+    "family": "suspended_rod_two_modes",
+    "controls": [
+      {
+        "key": "depth",
+        "type": "select",
+        "options": [
+          {
+            "value": "0.3",
+            "label": "Long arrangement"
+          },
+          {
+            "value": "0.15",
+            "label": "Short arrangement"
+          }
+        ],
+        "label": "String arrangement",
+        "value": "0.3"
+      },
+      {
+        "key": "mode",
+        "type": "select",
+        "options": [
+          {
+            "value": "S",
+            "label": "S \u2014 side-to-side rocking"
+          },
+          {
+            "value": "B",
+            "label": "B \u2014 parallel transverse translation"
+          }
+        ],
+        "label": "Displacement direction",
+        "value": "S"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "D=y*tan(theta)/2",
+      "S=tS/Ncycles",
+      "B=tB/Ncycles",
+      "k=D*(S**2-B**2) [m s\u00b2]"
+    ]
+  },
+  "9702_w22_33-q1": {
+    "family": "folded_wire_series_resistivity",
+    "controls": [
+      {
+        "key": "position",
+        "type": "select",
+        "options": [
+          {
+            "value": "1",
+            "label": "Position 1"
+          },
+          {
+            "value": "2",
+            "label": "Position 2, rotated"
+          },
+          {
+            "value": "3",
+            "label": "Position 3"
+          }
+        ],
+        "label": "Micrometer placement / orientation",
+        "value": "1"
+      },
+      {
+        "key": "x",
+        "type": "range",
+        "min": 0.1,
+        "max": 0.85,
+        "step": 0.005,
+        "value": 0.1,
+        "label": "Upper clip Q position x / m"
+      }
+    ],
+    "graph": {
+      "x": "x",
+      "y": "1/V"
+    },
+    "derived": [
+      "1/V"
+    ]
+  },
+  "9702_w22_33-q2": {
+    "family": "buoyancy_series_springs",
+    "controls": [
+      {
+        "key": "load",
+        "type": "select",
+        "options": [
+          {
+            "value": "cal100",
+            "label": "Calibration: 100 g"
+          },
+          {
+            "value": "cal200",
+            "label": "Calibration: 200 g"
+          },
+          {
+            "value": "M12",
+            "label": "Four M12 nuts"
+          },
+          {
+            "value": "M16",
+            "label": "Four M16 nuts"
+          }
+        ],
+        "label": "Suspended load",
+        "value": "cal100"
+      },
+      {
+        "key": "medium",
+        "type": "select",
+        "options": [
+          {
+            "value": "air",
+            "label": "Air"
+          },
+          {
+            "value": "oil",
+            "label": "Fully immersed in oil"
+          }
+        ],
+        "label": "Medium",
+        "value": "air"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "k=.981/(L2-L1) [N/m]",
+      "V=M/7800 [m\u00b3]",
+      "Z=(Lair-Loil)/V [m^-2]",
+      "rho_oil=Z*k/9.81 [kg/m\u00b3]"
+    ]
+  },
+  "9702_w22_34-q1": {
+    "family": "cylinder_step_stability",
+    "controls": [
+      {
+        "key": "pileT",
+        "type": "range",
+        "min": 0.001,
+        "max": 0.01,
+        "step": 0.0005,
+        "value": 0.003,
+        "label": "Paper pile setting T / m"
+      },
+      {
+        "key": "height",
+        "type": "range",
+        "min": 0.0,
+        "max": 0.28,
+        "step": 0.001,
+        "value": 0.0,
+        "label": "Board rise z setting / m"
+      }
+    ],
+    "graph": {
+      "x": "T",
+      "y": "cos(theta)"
+    },
+    "derived": [
+      "theta=asin(z/w)",
+      "cos(theta) to3sf"
+    ]
+  },
+  "9702_w22_34-q2": {
+    "family": "magnet_coil_cantilever",
+    "controls": [
+      {
+        "key": "rheostat",
+        "type": "range",
+        "min": 0.0,
+        "max": 8.0,
+        "step": 0.01,
+        "value": 8.0,
+        "label": "Rheostat / \u03a9"
+      },
+      {
+        "key": "polarity",
+        "type": "select",
+        "options": [
+          {
+            "value": "1",
+            "label": "Attract downward"
+          },
+          {
+            "value": "-1",
+            "label": "Reverse \u2014 repel upward"
+          }
+        ],
+        "label": "Coil polarity",
+        "value": "1"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "dm=h0-h",
+      "S=m*9.81/dm [N/m]",
+      "k=S*(h-H)/I [N/A]"
+    ]
+  },
+  "9702_w23_33-q1": {
+    "family": "interrupted_pendulum",
+    "controls": [
+      {
+        "key": "separation",
+        "type": "range",
+        "min": 0.05,
+        "max": 0.45,
+        "step": 0.005,
+        "value": 0.36,
+        "label": "Pivot-to-obstruction separation S / m"
+      },
+      {
+        "key": "amplitude",
+        "type": "range",
+        "min": 2.0,
+        "max": 6.0,
+        "step": 1.0,
+        "value": 2.0,
+        "label": "Long-side release angle / degree"
+      }
+    ],
+    "graph": {
+      "x": "X",
+      "y": "T"
+    },
+    "derived": [
+      "X=sqrt(L-S)",
+      "T=t/Ncycles"
+    ]
+  },
+  "9702_w23_33-q2": {
+    "family": "inclined_rod_lift",
+    "controls": [
+      {
+        "key": "distance",
+        "type": "select",
+        "options": [
+          {
+            "value": "0.15",
+            "label": "0.150"
+          },
+          {
+            "value": "0.3",
+            "label": "0.300"
+          }
+        ],
+        "label": "Mass position d along strip / m",
+        "value": "0.15"
+      },
+      {
+        "key": "force",
+        "type": "range",
+        "min": 0.0,
+        "max": 1.0,
+        "step": 0.01,
+        "value": 0.0,
+        "label": "Applied pull setting / N"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "V=x*y*z",
+      "k=F*x-.49*d [N m]",
+      "rho=2*k/(9.8*V*x) [kg/m\u00b3]"
+    ]
+  },
+  "9702_w23_34-q1": {
+    "family": "meter_bridge_parallel_resistor",
+    "controls": [
+      {
+        "key": "resistor",
+        "type": "select",
+        "options": [
+          {
+            "value": "4700",
+            "label": "4700 \u03a9"
+          },
+          {
+            "value": "3300",
+            "label": "3300 \u03a9"
+          },
+          {
+            "value": "2200",
+            "label": "2200 \u03a9"
+          },
+          {
+            "value": "1000",
+            "label": "1000 \u03a9"
+          },
+          {
+            "value": "680",
+            "label": "680 \u03a9"
+          },
+          {
+            "value": "470",
+            "label": "470 \u03a9"
+          },
+          {
+            "value": "330",
+            "label": "330 \u03a9"
+          },
+          {
+            "value": "220",
+            "label": "220 \u03a9"
+          }
+        ],
+        "label": "Insert resistor R parallel to Q",
+        "value": "4700"
+      },
+      {
+        "key": "a",
+        "type": "range",
+        "min": 0.05,
+        "max": 0.95,
+        "step": 0.0001,
+        "value": 0.5,
+        "label": "Slide contact a / m (fine placement control)"
+      }
+    ],
+    "graph": {
+      "x": "1/R",
+      "y": "b/a"
+    },
+    "derived": [
+      "1/R",
+      "b/a"
+    ]
+  },
+  "9702_w23_34-q2": {
+    "family": "water_jet_ballistics",
+    "controls": [
+      {
+        "key": "base",
+        "type": "select",
+        "options": [
+          {
+            "value": "0.27",
+            "label": "0.270"
+          },
+          {
+            "value": "0.32",
+            "label": "0.320"
+          }
+        ],
+        "label": "Bottle base height / m",
+        "value": "0.27"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "s=A-C",
+      "x=sqrt(B**2-s**2)",
+      "k=sqrt(h*s)/x [1]"
+    ]
+  },
+  "9702_w24_33-q1": {
+    "family": "wire_voltage_divider_resistivity",
+    "controls": [
+      {
+        "key": "length",
+        "type": "range",
+        "min": 0.15,
+        "max": 0.95,
+        "step": 0.005,
+        "value": 0.45,
+        "label": "Clip F setting L / m"
+      },
+      {
+        "key": "placement",
+        "type": "select",
+        "options": [
+          {
+            "value": "1",
+            "label": "Position 1"
+          },
+          {
+            "value": "2",
+            "label": "Position 2, rotated"
+          },
+          {
+            "value": "3",
+            "label": "Position 3"
+          }
+        ],
+        "label": "Micrometer placement",
+        "value": "1"
+      }
+    ],
+    "graph": {
+      "x": "1/L",
+      "y": "1/V"
+    },
+    "derived": [
+      "1/L",
+      "1/V"
+    ]
+  },
+  "9702_w24_33-q2": {
+    "family": "colliding_pendulum_balls",
+    "controls": [
+      {
+        "key": "alignment",
+        "type": "select",
+        "options": [
+          {
+            "value": "head-on",
+            "label": "Head-on"
+          },
+          {
+            "value": "offset",
+            "label": "Offset \u2014 adapted reduced impulse"
+          }
+        ],
+        "label": "Collision alignment",
+        "value": "head-on"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "sqrt(d-b)",
+      "sqrt(H-b)",
+      "k=1/sqrt(H-b)-m/(2*M*sqrt(d-b)) [m^-0.5]"
+    ]
+  },
+  "9702_w24_34-q1": {
+    "family": "syringe_nozzle_drainage",
+    "controls": [
+      {
+        "key": "top",
+        "type": "select",
+        "options": [
+          {
+            "value": "10",
+            "label": "10 \u2192 5 cm\u00b3"
+          },
+          {
+            "value": "15",
+            "label": "15 \u2192 10 cm\u00b3"
+          },
+          {
+            "value": "20",
+            "label": "20 \u2192 15 cm\u00b3"
+          },
+          {
+            "value": "25",
+            "label": "25 \u2192 20 cm\u00b3"
+          },
+          {
+            "value": "30",
+            "label": "30 \u2192 25 cm\u00b3"
+          },
+          {
+            "value": "35",
+            "label": "35 \u2192 30 cm\u00b3"
+          },
+          {
+            "value": "40",
+            "label": "40 \u2192 35 cm\u00b3"
+          },
+          {
+            "value": "45",
+            "label": "45 \u2192 40 cm\u00b3"
+          },
+          {
+            "value": "50",
+            "label": "50 \u2192 45 cm\u00b3"
+          }
+        ],
+        "label": "Select 5 cm\u00b3 interval",
+        "value": "30"
+      }
+    ],
+    "graph": {
+      "x": "hm",
+      "y": "1/T"
+    },
+    "derived": [
+      "hm=(ht+hb)/2",
+      "1/T"
+    ]
+  },
+  "9702_w24_34-q2": {
+    "family": "magnetic_inelastic_pickup",
+    "controls": [
+      {
+        "key": "nut",
+        "type": "select",
+        "options": [
+          {
+            "value": "0",
+            "label": "A (approximately 10 g)"
+          },
+          {
+            "value": "1",
+            "label": "B (approximately 30 g)"
+          }
+        ],
+        "label": "Nut label",
+        "value": "0"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "h=r-sqrt(r**2-x**2)",
+      "k=h*(M+m)**2 [m kg\u00b2]"
+    ]
+  },
+  "9702_w25_33-q1": {
+    "family": "inclined_board_rolling_pendulum",
+    "controls": [
+      {
+        "key": "height",
+        "type": "range",
+        "min": 0.1,
+        "max": 0.38,
+        "step": 0.001,
+        "value": 0.22,
+        "label": "Support height h / m"
+      }
+    ],
+    "graph": {
+      "x": "X",
+      "y": "T**2"
+    },
+    "derived": [
+      "X=S/h",
+      "T=t/Ncycles",
+      "T**2"
+    ]
+  },
+  "9702_w25_33-q2": {
+    "family": "led_ldr_photoresistance",
+    "controls": [
+      {
+        "key": "length",
+        "type": "range",
+        "min": 0.1,
+        "max": 0.9,
+        "step": 0.001,
+        "value": 0.1,
+        "label": "Selected wire length L / m"
+      },
+      {
+        "key": "angle",
+        "type": "range",
+        "min": 0.0,
+        "max": 20.0,
+        "step": 1.0,
+        "value": 0.0,
+        "label": "Alignment angle / degrees (adaptation)"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "k=V-Z*d/R [V], Z=1000 V ohm/m",
+      "lambda=6.63e-34*3e8/(1.60e-19*k) [m]"
+    ]
+  },
+  "9702_w25_34-q1": {
+    "family": "spring_supported_variable_pivot_rod",
+    "controls": [
+      {
+        "key": "hole",
+        "type": "select",
+        "options": [
+          {
+            "value": "0.26",
+            "label": "0.26"
+          },
+          {
+            "value": "0.29",
+            "label": "0.29"
+          },
+          {
+            "value": "0.32",
+            "label": "0.32"
+          },
+          {
+            "value": "0.35",
+            "label": "0.35"
+          },
+          {
+            "value": "0.38",
+            "label": "0.38"
+          },
+          {
+            "value": "0.41",
+            "label": "0.41"
+          },
+          {
+            "value": "0.44",
+            "label": "0.44"
+          },
+          {
+            "value": "0.47",
+            "label": "0.47"
+          }
+        ],
+        "label": "Pivot hole distance W from S / m",
+        "value": "0.35"
+      },
+      {
+        "key": "height",
+        "type": "range",
+        "min": 0.3,
+        "max": 0.5,
+        "step": 0.001,
+        "value": 0.4,
+        "label": "Upper nail adjustment above pivot"
+      }
+    ],
+    "graph": {
+      "x": "Z",
+      "y": "L"
+    },
+    "derived": [
+      "Z=W/sqrt(N**2+W**2) [1]"
+    ]
+  },
+  "9702_w25_34-q2": {
+    "family": "sphere_on_two_rails",
+    "controls": [
+      {
+        "key": "sphere",
+        "type": "select",
+        "options": [
+          {
+            "value": "0.019",
+            "label": "Small (nominal 19 mm)"
+          },
+          {
+            "value": "0.025",
+            "label": "Large (nominal 25 mm)"
+          }
+        ],
+        "label": "Sphere",
+        "value": "0.019"
+      },
+      {
+        "key": "height",
+        "type": "range",
+        "min": 0.004,
+        "max": 0.016,
+        "step": 0.001,
+        "value": 0.008,
+        "label": "Set initial underside clearance h / m"
+      }
+    ],
+    "graph": null,
+    "derived": [
+      "J=1-(x/d)**2",
+      "k=t**2*h/(5+2/J) [s\u00b2 m]"
+    ]
+  }
+}

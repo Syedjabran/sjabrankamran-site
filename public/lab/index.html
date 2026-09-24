@@ -1,438 +1,54 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>9702 Virtual Practical Lab — Status</title>
-<style>
- body{margin:0;font:14px/1.5 system-ui,sans-serif;background:#060b12;color:#dcecf5}
- header{padding:18px 20px;border-bottom:1px solid #16324a}
- h1{font-size:17px;margin:0;color:#3de1f0}
- .sub{color:#7fa6bd;font-size:12.5px;margin-top:4px}
- .stats{display:flex;gap:18px;flex-wrap:wrap;padding:14px 20px;border-bottom:1px solid #16324a}
- .stat b{display:block;font-size:20px;color:#3de1f0}
- .stat span{font-size:11px;color:#7fa6bd;text-transform:uppercase;letter-spacing:.04em}
- table{width:100%;border-collapse:collapse;font-size:12.5px}
- th,td{padding:6px 8px;border-bottom:1px solid #12283c;text-align:left;vertical-align:top}
- th{position:sticky;top:0;background:#0d1826;color:#7fa6bd;font-weight:500}
- tr.gate td{background:#1c1708}
- .mono{font-family:ui-monospace,monospace;font-size:11.5px}
- a{color:#3de1f0} .na{color:#4a5568}
- .wrap{padding:0 20px 40px}
- .chip{font-size:11px;color:#f7c948;border:1px solid #4a3c12;padding:1px 6px;border-radius:12px}
-</style></head><body>
-<header>
- <h1>9702 Virtual Practical Lab — Paper 33 &amp; 34 (2021–2025)</h1>
- <div class="sub">Browser-native virtual practicals for CAIE 9702 components 33 &amp; 34.
- Simulations adapted from past-paper requirements; <b>not official Cambridge software</b>.
- Hidden model parameters are never exposed to students. Each applet reproduces its paper's
- reference vector within tolerance and shows honest instrument noise. <span class="chip">sandbox — not production</span></div>
-</header>
-<div class="stats">
- <div class="stat"><b>50</b><span>experiments</span></div>
- <div class="stat"><b>50</b><span>applets built</span></div>
- <div class="stat"><b>9</b><span>provisional (gated)</span></div>
- <div class="stat"><b>177</b><span>node tests passing</span></div>
-</div>
-<div class="wrap">
-<table><thead><tr><th>Paper</th><th>Experiment</th><th>Title</th><th>Apparatus family</th><th>Status</th><th></th></tr></thead>
-<tbody>
-<tr class="">
-    <td class="mono">9702/33/F/M/21</td>
-    <td class="mono">9702_m21_33-q1</td>
-    <td>Equilibrium of a wooden rod supported by a spring</td>
-    <td>static_spring_rod</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_m21_33-q1.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/F/M/21</td>
-    <td class="mono">9702_m21_33-q2</td>
-    <td>Speed of air flowing through a hole</td>
-    <td>gas_flow_hole</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_m21_33-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/F/M/22</td>
-    <td class="mono">9702_m22_33-q1</td>
-    <td>Density of a liquid</td>
-    <td>hydrostatic_u_tube</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_m22_33-q1.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/F/M/22</td>
-    <td class="mono">9702_m22_33-q2</td>
-    <td>Oscillations of a spring system</td>
-    <td>spring_network_oscillator</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_m22_33-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/F/M/23</td>
-    <td class="mono">9702_m23_33-q1</td>
-    <td>Equilibrium of a wooden rod</td>
-    <td>rod_pulley_equilibrium</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_m23_33-q1.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/F/M/23</td>
-    <td class="mono">9702_m23_33-q2</td>
-    <td>Optical properties of sugar solution</td>
-    <td>lens_in_solution</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_m23_33-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/F/M/24</td>
-    <td class="mono">9702_m24_33-q1</td>
-    <td>Properties of a pendulum</td>
-    <td>compound_t_pendulum</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_m24_33-q1.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/F/M/24</td>
-    <td class="mono">9702_m24_33-q2</td>
-    <td>Frictional forces on a wooden strip</td>
-    <td>ladder_static_friction</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_m24_33-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/F/M/25</td>
-    <td class="mono">9702_m25_33-q1</td>
-    <td>Electrical circuit with resistance wire</td>
-    <td>shorted_resistance_wire</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_m25_33-q1.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/F/M/25</td>
-    <td class="mono">9702_m25_33-q2</td>
-    <td>Thermal properties of plastic pipe</td>
-    <td>thermal_pipe_lever</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_m25_33-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/M/J/21</td>
-    <td class="mono">9702_s21_33-q1</td>
-    <td>Electrical circuit using resistance wires</td>
-    <td>complementary_series_wires</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_s21_33-q1.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/M/J/21</td>
-    <td class="mono">9702_s21_33-q2</td>
-    <td>Oscillations of a loaded wooden strip</td>
-    <td>spring_torsional_rod</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_s21_33-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/34/M/J/21</td>
-    <td class="mono">9702_s21_34-q1</td>
-    <td>Oscillations of a chain</td>
-    <td>catenary_transverse_pendulum</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_s21_34-q1.html">Open applet</a></td>
-  </tr>
-<tr class="gate">
-    <td class="mono">9702/34/M/J/21</td>
-    <td class="mono">9702_s21_34-q2</td>
-    <td>Deformation of a foam ring</td>
-    <td>foam_ring_compression</td>
-    <td>Provisional (calibration gate)</td>
-    <td><a href="/lab/practicals/9702_s21_34-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/M/J/22</td>
-    <td class="mono">9702_s22_33-q1</td>
-    <td>Electrical circuit with two resistance wires</td>
-    <td>parallel_wire_voltage_divider</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_s22_33-q1.html">Open applet</a></td>
-  </tr>
-<tr class="gate">
-    <td class="mono">9702/33/M/J/22</td>
-    <td class="mono">9702_s22_33-q2</td>
-    <td>Motion of two connected masses</td>
-    <td>wrapping_mass_dynamics</td>
-    <td>Provisional (calibration gate)</td>
-    <td><a href="/lab/practicals/9702_s22_33-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/34/M/J/22</td>
-    <td class="mono">9702_s22_34-q1</td>
-    <td>Capacitor discharge circuit</td>
-    <td>rc_discharge_parallel</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_s22_34-q1.html">Open applet</a></td>
-  </tr>
-<tr class="gate">
-    <td class="mono">9702/34/M/J/22</td>
-    <td class="mono">9702_s22_34-q2</td>
-    <td>Comparison of properties of two liquids</td>
-    <td>liquid_adhesion_drainage</td>
-    <td>Provisional (calibration gate)</td>
-    <td><a href="/lab/practicals/9702_s22_34-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/M/J/23</td>
-    <td class="mono">9702_s23_33-q1</td>
-    <td>Motion of a pendulum</td>
-    <td>cylinder_wrapped_pendulum</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_s23_33-q1.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/M/J/23</td>
-    <td class="mono">9702_s23_33-q2</td>
-    <td>Equilibrium of a card</td>
-    <td>lamina_centroid</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_s23_33-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/34/M/J/23</td>
-    <td class="mono">9702_s23_34-q1</td>
-    <td>Oscillations of a counterweighted wooden-rod pendulum</td>
-    <td>counterweighted_compound_pendulum</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_s23_34-q1.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/34/M/J/23</td>
-    <td class="mono">9702_s23_34-q2</td>
-    <td>Thermal expansion of plastic</td>
-    <td>thermal_pipe_suspended_lever</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_s23_34-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/M/J/24</td>
-    <td class="mono">9702_s24_33-q1</td>
-    <td>Balanced metre rule</td>
-    <td>loaded_rule_balance</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_s24_33-q1.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/M/J/24</td>
-    <td class="mono">9702_s24_33-q2</td>
-    <td>Properties of a rubber band</td>
-    <td>rubber_lateral_contraction</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_s24_33-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/34/M/J/24</td>
-    <td class="mono">9702_s24_34-q1</td>
-    <td>Equilibrium of a pulley system under added mass</td>
-    <td>symmetric_movable_pulley</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_s24_34-q1.html">Open applet</a></td>
-  </tr>
-<tr class="gate">
-    <td class="mono">9702/34/M/J/24</td>
-    <td class="mono">9702_s24_34-q2</td>
-    <td>Effect of air resistance on a spinning card</td>
-    <td>falling_mass_rotating_card</td>
-    <td>Provisional (calibration gate)</td>
-    <td><a href="/lab/practicals/9702_s24_34-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/M/J/25</td>
-    <td class="mono">9702_s25_33-q1</td>
-    <td>Electrical circuit with nichrome wire</td>
-    <td>wire_shunt_equal_resistors</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_s25_33-q1.html">Open applet</a></td>
-  </tr>
-<tr class="gate">
-    <td class="mono">9702/33/M/J/25</td>
-    <td class="mono">9702_s25_33-q2</td>
-    <td>Oscillations of a chain of paper clips</td>
-    <td>asymmetric_loaded_chain</td>
-    <td>Provisional (calibration gate)</td>
-    <td><a href="/lab/practicals/9702_s25_33-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/34/M/J/25</td>
-    <td class="mono">9702_s25_34-q1</td>
-    <td>Properties of a pendulum</td>
-    <td>interrupted_pendulum</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_s25_34-q1.html">Open applet</a></td>
-  </tr>
-<tr class="gate">
-    <td class="mono">9702/34/M/J/25</td>
-    <td class="mono">9702_s25_34-q2</td>
-    <td>Steel balls falling through water</td>
-    <td>confined_ball_settling</td>
-    <td>Provisional (calibration gate)</td>
-    <td><a href="/lab/practicals/9702_s25_34-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/O/N/21</td>
-    <td class="mono">9702_w21_33-q1</td>
-    <td>Combinations of resistors</td>
-    <td>parallel_resistor_network</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_w21_33-q1.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/O/N/21</td>
-    <td class="mono">9702_w21_33-q2</td>
-    <td>Falling filter papers</td>
-    <td>filter_paper_fall</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_w21_33-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/34/O/N/21</td>
-    <td class="mono">9702_w21_34-q1</td>
-    <td>Electrical circuit with two resistance wires</td>
-    <td>wire_bridge_null</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_w21_34-q1.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/34/O/N/21</td>
-    <td class="mono">9702_w21_34-q2</td>
-    <td>Oscillations of a suspended rod</td>
-    <td>suspended_rod_two_modes</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_w21_34-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/O/N/22</td>
-    <td class="mono">9702_w22_33-q1</td>
-    <td>Resistivity of a metal</td>
-    <td>folded_wire_series_resistivity</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_w22_33-q1.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/O/N/22</td>
-    <td class="mono">9702_w22_33-q2</td>
-    <td>Extension of two springs</td>
-    <td>buoyancy_series_springs</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_w22_33-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/34/O/N/22</td>
-    <td class="mono">9702_w22_34-q1</td>
-    <td>Stability of a cylinder</td>
-    <td>cylinder_step_stability</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_w22_34-q1.html">Open applet</a></td>
-  </tr>
-<tr class="gate">
-    <td class="mono">9702/34/O/N/22</td>
-    <td class="mono">9702_w22_34-q2</td>
-    <td>Force acting on a magnet</td>
-    <td>magnet_coil_cantilever</td>
-    <td>Provisional (calibration gate)</td>
-    <td><a href="/lab/practicals/9702_w22_34-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/O/N/23</td>
-    <td class="mono">9702_w23_33-q1</td>
-    <td>Oscillations of a pendulum</td>
-    <td>interrupted_pendulum</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_w23_33-q1.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/O/N/23</td>
-    <td class="mono">9702_w23_33-q2</td>
-    <td>Wooden strip resting at an angle</td>
-    <td>inclined_rod_lift</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_w23_33-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/34/O/N/23</td>
-    <td class="mono">9702_w23_34-q1</td>
-    <td>Null-balance circuit with selectable fixed resistors</td>
-    <td>meter_bridge_parallel_resistor</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_w23_34-q1.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/34/O/N/23</td>
-    <td class="mono">9702_w23_34-q2</td>
-    <td>Path of a jet of water</td>
-    <td>water_jet_ballistics</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_w23_34-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/O/N/24</td>
-    <td class="mono">9702_w24_33-q1</td>
-    <td>Resistivity of a metal</td>
-    <td>wire_voltage_divider_resistivity</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_w24_33-q1.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/O/N/24</td>
-    <td class="mono">9702_w24_33-q2</td>
-    <td>Movement of a ball</td>
-    <td>colliding_pendulum_balls</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_w24_33-q2.html">Open applet</a></td>
-  </tr>
-<tr class="gate">
-    <td class="mono">9702/34/O/N/24</td>
-    <td class="mono">9702_w24_34-q1</td>
-    <td>Flow of water through a nozzle</td>
-    <td>syringe_nozzle_drainage</td>
-    <td>Provisional (calibration gate)</td>
-    <td><a href="/lab/practicals/9702_w24_34-q1.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/34/O/N/24</td>
-    <td class="mono">9702_w24_34-q2</td>
-    <td>Conservation of momentum</td>
-    <td>magnetic_inelastic_pickup</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_w24_34-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/33/O/N/25</td>
-    <td class="mono">9702_w25_33-q1</td>
-    <td>Oscillations of a pendulum on a board</td>
-    <td>inclined_board_rolling_pendulum</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_w25_33-q1.html">Open applet</a></td>
-  </tr>
-<tr class="gate">
-    <td class="mono">9702/33/O/N/25</td>
-    <td class="mono">9702_w25_33-q2</td>
-    <td>Resistance of a light-dependent resistor</td>
-    <td>led_ldr_photoresistance</td>
-    <td>Provisional (calibration gate)</td>
-    <td><a href="/lab/practicals/9702_w25_33-q2.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/34/O/N/25</td>
-    <td class="mono">9702_w25_34-q1</td>
-    <td>Equilibrium of forces</td>
-    <td>spring_supported_variable_pivot_rod</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_w25_34-q1.html">Open applet</a></td>
-  </tr>
-<tr class="">
-    <td class="mono">9702/34/O/N/25</td>
-    <td class="mono">9702_w25_34-q2</td>
-    <td>Sphere rolling along a track</td>
-    <td>sphere_on_two_rails</td>
-    <td>Source-aligned</td>
-    <td><a href="/lab/practicals/9702_w25_34-q2.html">Open applet</a></td>
-  </tr>
-</tbody></table>
-</div></body></html>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Assemble apparatus, observe motion and take your own measurements in 50 adapted 9702 practical laboratory rooms."><title>9702 Hands-on Physics Laboratory · SJAK</title><style>
+:root{--ink:#163f34;--muted:#586e66;--line:#d4ded6;--green:#17644d;--paper:#f7f8f2}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.6 system-ui,-apple-system,Segoe UI,sans-serif}a{color:inherit}.top{background:#153d33;color:#fff;padding:18px max(22px,calc((100vw - 1300px)/2));display:flex;align-items:center;justify-content:space-between;gap:20px}.brand{font-size:24px;letter-spacing:2px;font-weight:800;text-decoration:none}.brand span{font-size:10px;letter-spacing:2px;margin-left:12px;font-weight:500}.top>a:last-child{font-size:13px;text-decoration:none;color:#d8e8df}.page{max-width:1344px;margin:auto;padding:0 22px}.hero{padding:55px 0 36px;display:grid;grid-template-columns:1.5fr 1fr;gap:60px;align-items:center}.eyebrow{font-size:11px;font-weight:700;letter-spacing:2.2px;color:var(--green);text-transform:uppercase}h1{font:clamp(36px,4.5vw,62px)/1.1 Georgia,serif;margin:14px 0 20px;max-width:720px}h1 em{color:var(--green);font-weight:400}.intro{max-width:680px;font-size:17px;color:var(--muted);margin-bottom:24px}.primary{display:inline-block;background:var(--green);color:#fff;border-radius:7px;padding:12px 20px;text-decoration:none;font-weight:600}.preview{font-size:12px;color:var(--muted);margin-top:16px}.bench-card{padding:26px;border:1px solid var(--line);border-radius:14px;background:#edf2e8}.bench-card h2{font:24px Georgia,serif;margin:0 0 16px}.step{display:flex;align-items:flex-start;gap:14px;padding:12px 0;border-bottom:1px solid var(--line)}.step:last-child{border:0}.step b{display:grid;place-items:center;background:#fff;border:1px solid #cedace;border-radius:50%;width:30px;height:30px;flex:none;font-size:12px}.step strong{display:block;font-size:14px}.step p{margin:3px 0 0;font-size:12px;color:var(--muted)}.stats{display:flex;flex-wrap:wrap;gap:35px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:18px 0;margin-bottom:26px}.stats strong{font-size:23px;margin-right:8px}.stats span{font-size:12px;color:var(--muted)}.filterbar{display:grid;grid-template-columns:2fr 1fr 1fr 1.3fr;gap:12px;margin:22px 0 14px}label{display:block;font-size:11px;font-weight:600;color:var(--muted)}input,select{width:100%;min-height:44px;margin-top:6px;padding:10px;border:1px solid #bdcfc2;border-radius:7px;background:white;color:var(--ink);font:14px system-ui}#count{font-size:12px;color:var(--muted);margin:14px 0 22px}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}.room-card{display:flex;flex-direction:column;border:1px solid var(--line);background:white;border-radius:12px;overflow:hidden;padding:23px;transition:border-color .15s}.room-card:hover{border-color:#60977d}.card-top{display:flex;justify-content:space-between;gap:10px}.tag{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#5f7869}.paper{font-size:12px;color:var(--muted);margin:10px 0}.apparatus{width:74px;height:92px;flex:none}.room-card h2{font:23px/1.25 Georgia,serif;margin:10px 0 14px}.card-detail{font-size:12px;color:var(--muted);margin:0 0 15px}.model-status{font-size:10px;color:#3a7460;margin:auto 0 18px}.model-status.provisional{color:#8b5a22}.open-room{display:flex;justify-content:space-between;border-top:1px solid var(--line);padding-top:14px;font-size:13px;font-weight:600;color:var(--green);text-decoration:none}.limitations{margin:40px 0 24px;padding:20px 24px;border-left:3px solid #9ba88c;background:#edf1e5;color:var(--muted);font-size:13px}.limitations strong{color:var(--ink)}footer{padding:20px 0 35px;text-align:center;font-size:12px;color:var(--muted)}[hidden]{display:none!important}:focus-visible{outline:3px solid #bd7b2f;outline-offset:4px}@media(max-width:1000px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.hero{gap:28px}.filterbar{grid-template-columns:1fr 1fr}}@media(max-width:650px){.top{padding:14px 20px}.brand span{display:none}.hero{display:block;padding-top:30px}.bench-card{margin-top:28px;padding:20px}.intro{font-size:15px}.stats{gap:16px 22px}.stats strong{font-size:20px}.grid{grid-template-columns:1fr}.page{padding:0 16px}.filterbar{gap:10px}.filterbar label:first-child{grid-column:1/-1}.room-card{padding:21px}.limitations{padding:16px}.apparatus{width:80px}}
+</style></head><body><svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs><radialGradient id="steel"><stop stop-color="#fbffff"/><stop offset="1" stop-color="#527477"/></radialGradient><linearGradient id="wood"><stop stop-color="#dbb47a"/><stop offset="1" stop-color="#9c6c38"/></linearGradient><linearGradient id="glass"><stop stop-color="#e0f6fa" stop-opacity=".5"/><stop offset="1" stop-color="#acd3dc" stop-opacity=".5"/></linearGradient></defs></svg><header class="top"><a class="brand" href="/">SJAK <span>PHYSICS LABORATORY</span></a><a href="#experiments">Browse experiments ↓</a></header><main class="page"><section class="hero"><div><p class="eyebrow">9702 · Papers 33 & 34 · 2021–2025</p><h1>Your bench.<br><em>Your experiment.</em></h1><p class="intro">Start with an empty workspace. Mount the apparatus, make the connections and take the measurements yourself. The notebook is yours—not a sheet of generated answers.</p><a class="primary" href="/lab/lab-room/index.html?experiment=9702_m22_33-q2">Try the spring laboratory ↗</a><p class="preview">Hands-on rebuild · preview for testing · 24 September 2026</p></div><aside class="bench-card"><h2>Work through the practical</h2><div class="step"><b>1</b><div><strong>Assemble & connect</strong><p>Place the components. Follow the mounting guide or hide it to practise independently.</p></div></div><div class="step"><b>2</b><div><strong>Release & observe</strong><p>Adjust the apparatus. Follow its motion and operate the stopwatch beside the bench.</p></div></div><div class="step"><b>3</b><div><strong>Measure & reason</strong><p>Read the instrument scales, enter your observations, repeat and plot your own data.</p></div></div></aside></section><div class="stats"><div><strong>50</strong><span>laboratory rooms</span></div><div><strong>25</strong><span>paper sittings</span></div><div><strong>415</strong><span>placeable components</span></div><div><strong>9</strong><span>provisional models</span></div></div><section id="experiments" aria-label="Find a practical"><p class="eyebrow">Choose your laboratory</p><div class="filterbar"><label>Search apparatus or experiment<input id="search" type="search" placeholder="e.g. pendulum, resistance wire, 9702_m22"></label><label>Year<select id="year"><option value="">All five years</option><option>2021</option><option>2022</option><option>2023</option><option>2024</option><option>2025</option></select></label><label>Component<select id="component"><option value="">Papers 33 & 34</option><option>33</option><option>34</option></select></label><label>Topic<select id="category"><option value="">All practicals</option><option value="mechanics">Forces & motion</option><option value="oscillation">Oscillations</option><option value="circuit">Electricity</option><option value="flow">Fluids & flow</option><option value="thermal">Thermal physics</option><option value="optics">Optics</option></select></label></div><p id="count" role="status">50 laboratories available</p><div class="grid"><article class="room-card" data-year="2021" data-category="mechanics" data-component="33" data-search="equilibrium of a wooden rod supported by a spring 9702_m21_33-q1 forces &amp; motion february / march"><div class="card-top"><div><span class="tag">Forces & motion</span><p class="paper">2021 · February / March<br>Paper 33 · Question 1</p></div><svg class="apparatus" viewBox="-33 -48 66 96" aria-hidden="true"><circle cx="0" cy="-31" r="4.5" fill="none" stroke="#5c7477" stroke-width="2.6"/><path d="M0 -26.5 L0 -22" stroke="#5c7477" stroke-width="3"/><path d="M0 -22 Q -15 -18.857142857142858 0 -15.714285714285715 Q 15 -12.571428571428571 0 -9.428571428571429 Q -15 -6.2857142857142865 0 -3.1428571428571423 Q 15 0 0 3.1428571428571423 Q -15 6.285714285714285 0 9.428571428571427 Q 15 12.57142857142857 0 15.714285714285715 Q -15 18.857142857142854 0 22" fill="none" stroke="#5c7477" stroke-width="4.6" stroke-linecap="round"/><path d="M0 -22 Q -15 -18.857142857142858 0 -15.714285714285715 Q 15 -12.571428571428571 0 -9.428571428571429 Q -15 -6.2857142857142865 0 -3.1428571428571423 Q 15 0 0 3.1428571428571423 Q -15 6.285714285714285 0 9.428571428571427 Q 15 12.57142857142857 0 15.714285714285715 Q -15 18.857142857142854 0 22" fill="none" stroke="#cfe0e1" stroke-width="1.5" stroke-linecap="round"/><path d="M0 22 L0 26.5" stroke="#5c7477" stroke-width="3"/><circle cx="0" cy="31" r="4.5" fill="none" stroke="#5c7477" stroke-width="2.6"/></svg></div><h2>Equilibrium of a wooden rod supported by a spring</h2><p class="card-detail">8 placeable parts · 5 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_m21_33-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2021" data-category="flow" data-component="33" data-search="speed of air flowing through a hole 9702_m21_33-q2 fluids &amp; flow february / march"><div class="card-top"><div><span class="tag">Fluids & flow</span><p class="paper">2021 · February / March<br>Paper 33 · Question 2</p></div><svg class="apparatus" viewBox="-58 -103 116 206" aria-hidden="true"><rect x="-15" y="-92" width="30" height="14" rx="4" fill="#3a6ea5"/><rect x="-12" y="-80" width="24" height="16" fill="#cfe4e8" stroke="#7fa3ad" stroke-width="1.4"/><path d="M-12 -64 Q-38 -52 -38 -26 L-38 70 Q-38 82 -26 82 L26 82 Q38 82 38 70 L38 -26 Q38 -52 12 -64 Z" fill="url(#glass)" stroke="#7fa3ad" stroke-width="2.2"/><rect data-liquid="" x="-31" y="10.4" width="62" height="70.6" fill="#4babc0" opacity=".7"/><rect x="-30" y="-18" width="60" height="30" rx="3" fill="#f4efe0" stroke="#c9c0a2"/><text x="0" y="1" text-anchor="middle" font-size="9" fill="#6d5420" font-family="Arial,Helvetica,sans-serif" >WATER</text><path d="M30 -40 h10 M30 -10 h10 M30 20 h10" stroke="#33413f" stroke-width="2.2"/></svg></div><h2>Speed of air flowing through a hole</h2><p class="card-detail">9 placeable parts · 4 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_m21_33-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2022" data-category="mechanics" data-component="33" data-search="density of a liquid 9702_m22_33-q1 forces &amp; motion february / march"><div class="card-top"><div><span class="tag">Forces & motion</span><p class="paper">2022 · February / March<br>Paper 33 · Question 1</p></div><svg class="apparatus" viewBox="-98 -133 196 266" aria-hidden="true"><path d="M-45 -100 L-45 88 Q-45 110 -22 110 L22 110 Q45 110 45 88 L45 -100" stroke="#aecdd3" stroke-width="17" fill="none" opacity=".6" stroke-linecap="round"/><path d="M-45 30 L-45 88 Q-45 110 -22 110 L22 110 Q45 110 45 88 L45 44" stroke="#3f9db4" stroke-width="9" fill="none"/><rect data-liquid="" x="-52.5" y="30" width="15" height="80" fill="#3f9db4" opacity=".85"/><path d="M-45 -100 L-45 88 Q-45 110 -22 110 L22 110 Q45 110 45 88 L45 -100" stroke="#e8f6f8" stroke-width="3" fill="none" opacity=".7" transform="translate(-4 0)"/><path d="M-72 90 H-60" stroke="#5f7f88" stroke-width="1.2"/><path d="M-72 68 H-64" stroke="#5f7f88" stroke-width="1.2"/><path d="M-72 46 H-60" stroke="#5f7f88" stroke-width="1.2"/><path d="M-72 24 H-64" stroke="#5f7f88" stroke-width="1.2"/><path d="M-72 2 H-60" stroke="#5f7f88" stroke-width="1.2"/><path d="M-72 -20 H-64" stroke="#5f7f88" stroke-width="1.2"/><path d="M-72 -42 H-60" stroke="#5f7f88" stroke-width="1.2"/><path d="M-72 -64 H-64" stroke="#5f7f88" stroke-width="1.2"/><path d="M-72 -86 H-60" stroke="#5f7f88" stroke-width="1.2"/></svg></div><h2>Density of a liquid</h2><p class="card-detail">8 placeable parts · 5 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_m22_33-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2022" data-category="oscillation" data-component="33" data-search="oscillations of a spring system 9702_m22_33-q2 oscillations february / march"><div class="card-top"><div><span class="tag">Oscillations</span><p class="paper">2022 · February / March<br>Paper 33 · Question 2</p></div><svg class="apparatus" viewBox="-33 -48 66 96" aria-hidden="true"><circle cx="0" cy="-31" r="4.5" fill="none" stroke="#5c7477" stroke-width="2.6"/><path d="M0 -26.5 L0 -22" stroke="#5c7477" stroke-width="3"/><path d="M0 -22 Q -15 -18.857142857142858 0 -15.714285714285715 Q 15 -12.571428571428571 0 -9.428571428571429 Q -15 -6.2857142857142865 0 -3.1428571428571423 Q 15 0 0 3.1428571428571423 Q -15 6.285714285714285 0 9.428571428571427 Q 15 12.57142857142857 0 15.714285714285715 Q -15 18.857142857142854 0 22" fill="none" stroke="#5c7477" stroke-width="4.6" stroke-linecap="round"/><path d="M0 -22 Q -15 -18.857142857142858 0 -15.714285714285715 Q 15 -12.571428571428571 0 -9.428571428571429 Q -15 -6.2857142857142865 0 -3.1428571428571423 Q 15 0 0 3.1428571428571423 Q -15 6.285714285714285 0 9.428571428571427 Q 15 12.57142857142857 0 15.714285714285715 Q -15 18.857142857142854 0 22" fill="none" stroke="#cfe0e1" stroke-width="1.5" stroke-linecap="round"/><path d="M0 22 L0 26.5" stroke="#5c7477" stroke-width="3"/><circle cx="0" cy="31" r="4.5" fill="none" stroke="#5c7477" stroke-width="2.6"/></svg></div><h2>Oscillations of a spring system</h2><p class="card-detail">10 placeable parts · 8 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_m22_33-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2023" data-category="mechanics" data-component="33" data-search="equilibrium of a wooden rod 9702_m23_33-q1 forces &amp; motion february / march"><div class="card-top"><div><span class="tag">Forces & motion</span><p class="paper">2023 · February / March<br>Paper 33 · Question 1</p></div><svg class="apparatus" viewBox="-52 -61 104 122" aria-hidden="true"><rect x="-9" y="-49" width="18" height="12" rx="3" fill="#4e6266" stroke="#2e3a37" stroke-width="1.4"/><circle cx="0" cy="-43" r="3" fill="#26302e"/><path d="M-26 -37 L-26 0 L26 0 L26 -37 Z" fill="#6e8a88" stroke="#3c4a48" stroke-width="1.6"/><path d="M-19 8 L19 8" stroke="#a3987f" stroke-width="3"/><path d="M-9.500000000000002 -8.454482671904334 L9.500000000000002 24.454482671904334" stroke="#a3987f" stroke-width="3"/><path d="M9.499999999999996 -8.454482671904337 L-9.499999999999996 24.454482671904337" stroke="#a3987f" stroke-width="3"/><circle cx="0" cy="8" r="26" fill="none" stroke="#d8d2c4" stroke-width="9"/><circle cx="0" cy="8" r="26" fill="none" stroke="#7a735e" stroke-width="1.6"/><circle cx="0" cy="8" r="21.5" fill="none" stroke="#7a735e" stroke-width="1.2"/><circle cx="0" cy="8" r="5.5" fill="url(#steel)" stroke="#3c4a48" stroke-width="1.4"/><path d="M-26 0 L26 0" stroke="#3c4a48" stroke-width="1.6"/></svg></div><h2>Equilibrium of a wooden rod</h2><p class="card-detail">9 placeable parts · 5 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_m23_33-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2023" data-category="optics" data-component="33" data-search="optical properties of sugar solution 9702_m23_33-q2 optics february / march"><div class="card-top"><div><span class="tag">Optics</span><p class="paper">2023 · February / March<br>Paper 33 · Question 2</p></div><svg class="apparatus" viewBox="-43 -93 86 186" aria-hidden="true"><rect x="-15" y="66" width="30" height="14" rx="4" fill="#4d5a57" stroke="#2e3a37" stroke-width="1.4"/><path d="M0 -72 C 36 -38 36 38 0 72 C -36 38 -36 -38 0 -72 Z" fill="url(#glass)" stroke="#7fa3ad" stroke-width="2.4"/><path d="M-12 -50 C 6 -30 6 30 -12 50" fill="none" stroke="#ffffff" stroke-width="2.6" opacity=".55"/><path d="M0 -80 V-72 M0 72 V80" stroke="#7fa3ad" stroke-width="1.4" stroke-dasharray="3 3"/></svg></div><h2>Optical properties of sugar solution</h2><p class="card-detail">7 placeable parts · 1 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_m23_33-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2024" data-category="oscillation" data-component="33" data-search="properties of a pendulum 9702_m24_33-q1 oscillations february / march"><div class="card-top"><div><span class="tag">Oscillations</span><p class="paper">2024 · February / March<br>Paper 33 · Question 1</p></div><svg class="apparatus" viewBox="-51 -24 102 48" aria-hidden="true"><rect x="-32" y="-3.5" width="62" height="7" rx="2" fill="url(#steel)" stroke="#43585a" stroke-width="1"/><circle cx="-32" cy="0" r="8" fill="url(#steel)" stroke="#3c5052" stroke-width="1.6"/><circle cx="-34.5" cy="-2.5" r="2.2" fill="#e8f4f4"/><path d="M30 -4.5 L42 0 L30 4.5 Z" fill="#9db4b5" stroke="#43585a" stroke-width="1"/></svg></div><h2>Properties of a pendulum</h2><p class="card-detail">9 placeable parts · 5 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_m24_33-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2024" data-category="mechanics" data-component="33" data-search="frictional forces on a wooden strip 9702_m24_33-q2 forces &amp; motion february / march"><div class="card-top"><div><span class="tag">Forces & motion</span><p class="paper">2024 · February / March<br>Paper 33 · Question 2</p></div><svg class="apparatus" viewBox="-143 -33 286 66" aria-hidden="true"><rect x="-131" y="-21" width="262" height="42" rx="4" fill="url(#wood)" stroke="#6d4a22" stroke-width="2"/><path d="M-118 -8 q40 4 80 0 t80 0 t78 0 M-118 9 q52 -4 104 0 t100 0" fill="none" stroke="#b9854c" stroke-width="1.2" opacity=".75"/><rect x="-131" y="-21" width="262" height="6" fill="#caa06a" opacity=".8"/></svg></div><h2>Frictional forces on a wooden strip</h2><p class="card-detail">8 placeable parts · 4 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_m24_33-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2025" data-category="circuit" data-component="33" data-search="electrical circuit with resistance wire 9702_m25_33-q1 electricity february / march"><div class="card-top"><div><span class="tag">Electricity</span><p class="paper">2025 · February / March<br>Paper 33 · Question 1</p></div><svg class="apparatus" viewBox="-25 -132 50 264" aria-hidden="true"><rect x="-13" y="-120" width="26" height="9" rx="2" fill="#b08d3f" stroke="#6d5420" stroke-width="1.2"/><rect x="-13" y="111" width="26" height="9" rx="2" fill="#b08d3f" stroke="#6d5420" stroke-width="1.2"/><circle cx="0" cy="-115.5" r="2.4" fill="#26302e"/><circle cx="0" cy="115.5" r="2.4" fill="#26302e"/><path d="M0 -111 L0 111" stroke="#a35f35" stroke-width="3.2"/><path d="M-1 -111 L-1 111" stroke="#d89a6a" stroke-width="1"/></svg></div><h2>Electrical circuit with resistance wire</h2><p class="card-detail">7 placeable parts · 7 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_m25_33-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2025" data-category="thermal" data-component="33" data-search="thermal properties of plastic pipe 9702_m25_33-q2 thermal physics february / march"><div class="card-top"><div><span class="tag">Thermal physics</span><p class="paper">2025 · February / March<br>Paper 33 · Question 2</p></div><svg class="apparatus" viewBox="-128 -41 256 82" aria-hidden="true"><rect x="-116" y="-26" width="232" height="52" rx="24" fill="url(#glass)" stroke="#7fa3ad" stroke-width="2.2"/><ellipse cx="-116" cy="0" rx="7" ry="24" fill="#cfe4e8" stroke="#7fa3ad" stroke-width="2"/><ellipse cx="116" cy="0" rx="7" ry="24" fill="#9fc3cb" stroke="#7fa3ad" stroke-width="2"/><path d="M-104 -14 H104" stroke="#ffffff" stroke-width="3" opacity=".5"/><path d="M-104 16 H104" stroke="#8fb4bc" stroke-width="1.4" opacity=".6"/></svg></div><h2>Thermal properties of plastic pipe</h2><p class="card-detail">8 placeable parts · 3 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_m25_33-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2021" data-category="circuit" data-component="33" data-search="electrical circuit using resistance wires 9702_s21_33-q1 electricity may / june"><div class="card-top"><div><span class="tag">Electricity</span><p class="paper">2021 · May / June<br>Paper 33 · Question 1</p></div><svg class="apparatus" viewBox="-25 -132 50 264" aria-hidden="true"><rect x="-13" y="-120" width="26" height="9" rx="2" fill="#b08d3f" stroke="#6d5420" stroke-width="1.2"/><rect x="-13" y="111" width="26" height="9" rx="2" fill="#b08d3f" stroke="#6d5420" stroke-width="1.2"/><circle cx="0" cy="-115.5" r="2.4" fill="#26302e"/><circle cx="0" cy="115.5" r="2.4" fill="#26302e"/><path d="M0 -111 L0 111" stroke="#a35f35" stroke-width="3.2"/><path d="M-1 -111 L-1 111" stroke="#d89a6a" stroke-width="1"/></svg></div><h2>Electrical circuit using resistance wires</h2><p class="card-detail">8 placeable parts · 7 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s21_33-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2021" data-category="oscillation" data-component="33" data-search="oscillations of a loaded wooden strip 9702_s21_33-q2 oscillations may / june"><div class="card-top"><div><span class="tag">Oscillations</span><p class="paper">2021 · May / June<br>Paper 33 · Question 2</p></div><svg class="apparatus" viewBox="-33 -48 66 96" aria-hidden="true"><circle cx="0" cy="-31" r="4.5" fill="none" stroke="#5c7477" stroke-width="2.6"/><path d="M0 -26.5 L0 -22" stroke="#5c7477" stroke-width="3"/><path d="M0 -22 Q -15 -18.857142857142858 0 -15.714285714285715 Q 15 -12.571428571428571 0 -9.428571428571429 Q -15 -6.2857142857142865 0 -3.1428571428571423 Q 15 0 0 3.1428571428571423 Q -15 6.285714285714285 0 9.428571428571427 Q 15 12.57142857142857 0 15.714285714285715 Q -15 18.857142857142854 0 22" fill="none" stroke="#5c7477" stroke-width="4.6" stroke-linecap="round"/><path d="M0 -22 Q -15 -18.857142857142858 0 -15.714285714285715 Q 15 -12.571428571428571 0 -9.428571428571429 Q -15 -6.2857142857142865 0 -3.1428571428571423 Q 15 0 0 3.1428571428571423 Q -15 6.285714285714285 0 9.428571428571427 Q 15 12.57142857142857 0 15.714285714285715 Q -15 18.857142857142854 0 22" fill="none" stroke="#cfe0e1" stroke-width="1.5" stroke-linecap="round"/><path d="M0 22 L0 26.5" stroke="#5c7477" stroke-width="3"/><circle cx="0" cy="31" r="4.5" fill="none" stroke="#5c7477" stroke-width="2.6"/></svg></div><h2>Oscillations of a loaded wooden strip</h2><p class="card-detail">8 placeable parts · 6 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s21_33-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2021" data-category="oscillation" data-component="34" data-search="oscillations of a chain 9702_s21_34-q1 oscillations may / june"><div class="card-top"><div><span class="tag">Oscillations</span><p class="paper">2021 · May / June<br>Paper 34 · Question 1</p></div><svg class="apparatus" viewBox="-163 -62 326 124" aria-hidden="true"><path d="M-140 -38 Q0 78 140 -38" fill="none" stroke="#98a4a8" stroke-width="1" stroke-dasharray="2 4"/><g transform="translate(-140.0 -38.0) rotate(39.6)"><rect x="-15" y="-6.5" width="30" height="13" rx="6.5" fill="#cfd7da" stroke="#7f8b90" stroke-width="2.6"/><rect x="-7" y="-2.6" width="16" height="5.2" rx="2.6" fill="none" stroke="#98a4a8" stroke-width="1.8"/></g><g transform="translate(-105.0 -12.6) rotate(31.9)"><rect x="-15" y="-6.5" width="30" height="13" rx="6.5" fill="#dfe5e7" stroke="#7f8b90" stroke-width="2.6"/><rect x="-7" y="-2.6" width="16" height="5.2" rx="2.6" fill="none" stroke="#98a4a8" stroke-width="1.8"/></g><g transform="translate(-70.0 5.5) rotate(22.5)"><rect x="-15" y="-6.5" width="30" height="13" rx="6.5" fill="#cfd7da" stroke="#7f8b90" stroke-width="2.6"/><rect x="-7" y="-2.6" width="16" height="5.2" rx="2.6" fill="none" stroke="#98a4a8" stroke-width="1.8"/></g><g transform="translate(-35.0 16.4) rotate(11.7)"><rect x="-15" y="-6.5" width="30" height="13" rx="6.5" fill="#dfe5e7" stroke="#7f8b90" stroke-width="2.6"/><rect x="-7" y="-2.6" width="16" height="5.2" rx="2.6" fill="none" stroke="#98a4a8" stroke-width="1.8"/></g><g transform="translate(0.0 20.0) rotate(0.0)"><rect x="-15" y="-6.5" width="30" height="13" rx="6.5" fill="#cfd7da" stroke="#7f8b90" stroke-width="2.6"/><rect x="-7" y="-2.6" width="16" height="5.2" rx="2.6" fill="none" stroke="#98a4a8" stroke-width="1.8"/></g><g transform="translate(35.0 16.4) rotate(-11.7)"><rect x="-15" y="-6.5" width="30" height="13" rx="6.5" fill="#dfe5e7" stroke="#7f8b90" stroke-width="2.6"/><rect x="-7" y="-2.6" width="16" height="5.2" rx="2.6" fill="none" stroke="#98a4a8" stroke-width="1.8"/></g><g transform="translate(70.0 5.5) rotate(-22.5)"><rect x="-15" y="-6.5" width="30" height="13" rx="6.5" fill="#cfd7da" stroke="#7f8b90" stroke-width="2.6"/><rect x="-7" y="-2.6" width="16" height="5.2" rx="2.6" fill="none" stroke="#98a4a8" stroke-width="1.8"/></g><g transform="translate(105.0 -12.6) rotate(-31.9)"><rect x="-15" y="-6.5" width="30" height="13" rx="6.5" fill="#dfe5e7" stroke="#7f8b90" stroke-width="2.6"/><rect x="-7" y="-2.6" width="16" height="5.2" rx="2.6" fill="none" stroke="#98a4a8" stroke-width="1.8"/></g><g transform="translate(140.0 -38.0) rotate(-39.6)"><rect x="-15" y="-6.5" width="30" height="13" rx="6.5" fill="#cfd7da" stroke="#7f8b90" stroke-width="2.6"/><rect x="-7" y="-2.6" width="16" height="5.2" rx="2.6" fill="none" stroke="#98a4a8" stroke-width="1.8"/></g></svg></div><h2>Oscillations of a chain</h2><p class="card-detail">7 placeable parts · 3 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s21_34-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2021" data-category="mechanics" data-component="34" data-search="deformation of a foam ring 9702_s21_34-q2 forces &amp; motion may / june"><div class="card-top"><div><span class="tag">Forces & motion</span><p class="paper">2021 · May / June<br>Paper 34 · Question 2</p></div><svg class="apparatus" viewBox="-59 -52 118 104" aria-hidden="true"><rect x="-47" y="-38" width="94" height="76" rx="4" fill="url(#wood)" stroke="#6d4a22" stroke-width="2"/><path d="M-36 -20 h70 M-40 0 h78 M-36 20 h70" stroke="#b9854c" stroke-width="1.4" opacity=".8"/><rect x="-47" y="-38" width="94" height="9" fill="#caa06a"/></svg></div><h2>Deformation of a foam ring</h2><p class="card-detail">9 placeable parts · 4 connections</p><p class="model-status provisional">Provisional · awaiting apparatus calibration</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s21_34-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2022" data-category="circuit" data-component="33" data-search="electrical circuit with two resistance wires 9702_s22_33-q1 electricity may / june"><div class="card-top"><div><span class="tag">Electricity</span><p class="paper">2022 · May / June<br>Paper 33 · Question 1</p></div><svg class="apparatus" viewBox="-25 -132 50 264" aria-hidden="true"><rect x="-13" y="-120" width="26" height="9" rx="2" fill="#b08d3f" stroke="#6d5420" stroke-width="1.2"/><rect x="-13" y="111" width="26" height="9" rx="2" fill="#b08d3f" stroke="#6d5420" stroke-width="1.2"/><circle cx="0" cy="-115.5" r="2.4" fill="#26302e"/><circle cx="0" cy="115.5" r="2.4" fill="#26302e"/><path d="M0 -111 L0 111" stroke="#a35f35" stroke-width="3.2"/><path d="M-1 -111 L-1 111" stroke="#d89a6a" stroke-width="1"/></svg></div><h2>Electrical circuit with two resistance wires</h2><p class="card-detail">9 placeable parts · 11 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s22_33-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2022" data-category="mechanics" data-component="33" data-search="motion of two connected masses 9702_s22_33-q2 forces &amp; motion may / june"><div class="card-top"><div><span class="tag">Forces & motion</span><p class="paper">2022 · May / June<br>Paper 33 · Question 2</p></div><svg class="apparatus" viewBox="-51 -24 102 48" aria-hidden="true"><rect x="-32" y="-3.5" width="62" height="7" rx="2" fill="url(#steel)" stroke="#43585a" stroke-width="1"/><circle cx="-32" cy="0" r="8" fill="url(#steel)" stroke="#3c5052" stroke-width="1.6"/><circle cx="-34.5" cy="-2.5" r="2.2" fill="#e8f4f4"/><path d="M30 -4.5 L42 0 L30 4.5 Z" fill="#9db4b5" stroke="#43585a" stroke-width="1"/></svg></div><h2>Motion of two connected masses</h2><p class="card-detail">8 placeable parts · 4 connections · Manual timing</p><p class="model-status provisional">Provisional · awaiting apparatus calibration</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s22_33-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2022" data-category="circuit" data-component="34" data-search="capacitor discharge circuit 9702_s22_34-q1 electricity may / june"><div class="card-top"><div><span class="tag">Electricity</span><p class="paper">2022 · May / June<br>Paper 34 · Question 1</p></div><svg class="apparatus" viewBox="-63 -65 126 130" aria-hidden="true"><rect x="-51" y="32" width="102" height="18" rx="5" fill="#3c4a49" stroke="#222d2c" stroke-width="1.6"/><path d="M-28 32 L-46 41 M28 32 L46 41" stroke="#8f9a98" stroke-width="4"/><rect x="-31" y="-46" width="62" height="82" rx="16" fill="url(#steel)" stroke="#2e3a37" stroke-width="1.8"/><rect x="-31" y="-46" width="62" height="30" rx="16" fill="#2f4a68"/><path d="M-31 -32 h62" stroke="#22384f" stroke-width="2"/><text x="0" y="-27" text-anchor="middle" font-size="10" fill="#dbe6ee" font-family="Arial,Helvetica,sans-serif" >µF</text><path d="M-18 4 h10 M-13 -1 v10" stroke="#c0453c" stroke-width="2.4"/><circle cx="-20" cy="-50" r="3.4" fill="#c8d8d8" stroke="#43585a"/><circle cx="20" cy="-50" r="3.4" fill="#c8d8d8" stroke="#43585a"/><circle cx="-51" cy="41" r="7.5" fill="#2b2f2e" stroke="#2f3a38" stroke-width="1.6"/><circle cx="-51" cy="41" r="2.6" fill="#26302e"/><circle cx="51" cy="41" r="7.5" fill="#c0453c" stroke="#2f3a38" stroke-width="1.6"/><circle cx="51" cy="41" r="2.6" fill="#26302e"/></svg></div><h2>Capacitor discharge circuit</h2><p class="card-detail">7 placeable parts · 9 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s22_34-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2022" data-category="flow" data-component="34" data-search="comparison of properties of two liquids 9702_s22_34-q2 fluids &amp; flow may / june"><div class="card-top"><div><span class="tag">Fluids & flow</span><p class="paper">2022 · May / June<br>Paper 34 · Question 2</p></div><svg class="apparatus" viewBox="-88 -74 176 148" aria-hidden="true"><rect x="-74" y="-60" width="148" height="120" rx="4" fill="url(#glass)" stroke="#8fb4bc" stroke-width="2.4"/><path d="M-58 44 L40 -52" stroke="#ffffff" stroke-width="5" opacity=".45"/><rect x="-74" y="-60" width="148" height="10" fill="#ffffff" opacity=".3"/></svg></div><h2>Comparison of properties of two liquids</h2><p class="card-detail">8 placeable parts · 3 connections · Manual timing</p><p class="model-status provisional">Provisional · awaiting apparatus calibration</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s22_34-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2023" data-category="oscillation" data-component="33" data-search="motion of a pendulum 9702_s23_33-q1 oscillations may / june"><div class="card-top"><div><span class="tag">Oscillations</span><p class="paper">2023 · May / June<br>Paper 33 · Question 1</p></div><svg class="apparatus" viewBox="-60 -48 120 96" aria-hidden="true"><path d="M8 -30 L-26 -30 L-26 30 L8 30" fill="none" stroke="#4e6266" stroke-width="13" stroke-linejoin="round"/><path d="M8 -30 L-26 -30 L-26 30 L8 30" fill="none" stroke="#7c9699" stroke-width="4" stroke-linejoin="round"/><circle cx="12" cy="-30" r="6" fill="#8fa3a1" stroke="#3c4a48" stroke-width="1.4"/><rect x="-7" y="6" width="9" height="26" fill="url(#steel)" stroke="#3c4a48"/><circle cx="-2.5" cy="4" r="7" fill="#8fa3a1" stroke="#3c4a48" stroke-width="1.4"/><rect x="-20" y="30" width="34" height="6" rx="3" fill="#37433f"/><circle cx="-26" cy="-2" r="5.5" fill="#2e3a37"/></svg></div><h2>Motion of a pendulum</h2><p class="card-detail">8 placeable parts · 4 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s23_33-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2023" data-category="mechanics" data-component="33" data-search="equilibrium of a card 9702_s23_33-q2 forces &amp; motion may / june"><div class="card-top"><div><span class="tag">Forces & motion</span><p class="paper">2023 · May / June<br>Paper 33 · Question 2</p></div><svg class="apparatus" viewBox="-51 -24 102 48" aria-hidden="true"><rect x="-32" y="-3.5" width="62" height="7" rx="2" fill="url(#steel)" stroke="#43585a" stroke-width="1"/><circle cx="-32" cy="0" r="8" fill="url(#steel)" stroke="#3c5052" stroke-width="1.6"/><circle cx="-34.5" cy="-2.5" r="2.2" fill="#e8f4f4"/><path d="M30 -4.5 L42 0 L30 4.5 Z" fill="#9db4b5" stroke="#43585a" stroke-width="1"/></svg></div><h2>Equilibrium of a card</h2><p class="card-detail">7 placeable parts · 2 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s23_33-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2023" data-category="oscillation" data-component="34" data-search="oscillations of a counterweighted wooden-rod pendulum 9702_s23_34-q1 oscillations may / june"><div class="card-top"><div><span class="tag">Oscillations</span><p class="paper">2023 · May / June<br>Paper 34 · Question 1</p></div><svg class="apparatus" viewBox="-51 -24 102 48" aria-hidden="true"><rect x="-32" y="-3.5" width="62" height="7" rx="2" fill="url(#steel)" stroke="#43585a" stroke-width="1"/><circle cx="-32" cy="0" r="8" fill="url(#steel)" stroke="#3c5052" stroke-width="1.6"/><circle cx="-34.5" cy="-2.5" r="2.2" fill="#e8f4f4"/><path d="M30 -4.5 L42 0 L30 4.5 Z" fill="#9db4b5" stroke="#43585a" stroke-width="1"/></svg></div><h2>Oscillations of a counterweighted wooden-rod pendulum</h2><p class="card-detail">7 placeable parts · 4 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s23_34-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2023" data-category="thermal" data-component="34" data-search="thermal expansion of plastic 9702_s23_34-q2 thermal physics may / june"><div class="card-top"><div><span class="tag">Thermal physics</span><p class="paper">2023 · May / June<br>Paper 34 · Question 2</p></div><svg class="apparatus" viewBox="-128 -41 256 82" aria-hidden="true"><rect x="-116" y="-26" width="232" height="52" rx="24" fill="url(#glass)" stroke="#7fa3ad" stroke-width="2.2"/><ellipse cx="-116" cy="0" rx="7" ry="24" fill="#cfe4e8" stroke="#7fa3ad" stroke-width="2"/><ellipse cx="116" cy="0" rx="7" ry="24" fill="#9fc3cb" stroke="#7fa3ad" stroke-width="2"/><path d="M-104 -14 H104" stroke="#ffffff" stroke-width="3" opacity=".5"/><path d="M-104 16 H104" stroke="#8fb4bc" stroke-width="1.4" opacity=".6"/></svg></div><h2>Thermal expansion of plastic</h2><p class="card-detail">8 placeable parts · 4 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s23_34-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2024" data-category="mechanics" data-component="33" data-search="balanced metre rule 9702_s24_33-q1 forces &amp; motion may / june"><div class="card-top"><div><span class="tag">Forces & motion</span><p class="paper">2024 · May / June<br>Paper 33 · Question 1</p></div><svg class="apparatus" viewBox="-54 -41 108 82" aria-hidden="true"><path d="M-40 26 L40 26 L0 -26 Z" fill="url(#wood)" stroke="#6d4a22" stroke-width="2"/><path d="M0 -26 L0 26" stroke="#6d4a22" stroke-width="1"/><path d="M-40 26 L0 -26" stroke="#e9cd96" stroke-width="2"/><rect x="-46" y="26" width="92" height="6" rx="2" fill="#5c4326"/></svg></div><h2>Balanced metre rule</h2><p class="card-detail">6 placeable parts · 3 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s24_33-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2024" data-category="mechanics" data-component="33" data-search="properties of a rubber band 9702_s24_33-q2 forces &amp; motion may / june"><div class="card-top"><div><span class="tag">Forces & motion</span><p class="paper">2024 · May / June<br>Paper 33 · Question 2</p></div><svg class="apparatus" viewBox="-60 -48 120 96" aria-hidden="true"><path d="M8 -30 L-26 -30 L-26 30 L8 30" fill="none" stroke="#4e6266" stroke-width="13" stroke-linejoin="round"/><path d="M8 -30 L-26 -30 L-26 30 L8 30" fill="none" stroke="#7c9699" stroke-width="4" stroke-linejoin="round"/><circle cx="12" cy="-30" r="6" fill="#8fa3a1" stroke="#3c4a48" stroke-width="1.4"/><rect x="-7" y="6" width="9" height="26" fill="url(#steel)" stroke="#3c4a48"/><circle cx="-2.5" cy="4" r="7" fill="#8fa3a1" stroke="#3c4a48" stroke-width="1.4"/><rect x="-20" y="30" width="34" height="6" rx="3" fill="#37433f"/><circle cx="-26" cy="-2" r="5.5" fill="#2e3a37"/></svg></div><h2>Properties of a rubber band</h2><p class="card-detail">7 placeable parts · 3 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s24_33-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2024" data-category="mechanics" data-component="34" data-search="equilibrium of a pulley system under added mass 9702_s24_34-q1 forces &amp; motion may / june"><div class="card-top"><div><span class="tag">Forces & motion</span><p class="paper">2024 · May / June<br>Paper 34 · Question 1</p></div><svg class="apparatus" viewBox="-52 -61 104 122" aria-hidden="true"><rect x="-9" y="-49" width="18" height="12" rx="3" fill="#4e6266" stroke="#2e3a37" stroke-width="1.4"/><circle cx="0" cy="-43" r="3" fill="#26302e"/><path d="M-26 -37 L-26 0 L26 0 L26 -37 Z" fill="#6e8a88" stroke="#3c4a48" stroke-width="1.6"/><path d="M-19 8 L19 8" stroke="#a3987f" stroke-width="3"/><path d="M-9.500000000000002 -8.454482671904334 L9.500000000000002 24.454482671904334" stroke="#a3987f" stroke-width="3"/><path d="M9.499999999999996 -8.454482671904337 L-9.499999999999996 24.454482671904337" stroke="#a3987f" stroke-width="3"/><circle cx="0" cy="8" r="26" fill="none" stroke="#d8d2c4" stroke-width="9"/><circle cx="0" cy="8" r="26" fill="none" stroke="#7a735e" stroke-width="1.6"/><circle cx="0" cy="8" r="21.5" fill="none" stroke="#7a735e" stroke-width="1.2"/><circle cx="0" cy="8" r="5.5" fill="url(#steel)" stroke="#3c4a48" stroke-width="1.4"/><path d="M-26 0 L26 0" stroke="#3c4a48" stroke-width="1.6"/></svg></div><h2>Equilibrium of a pulley system under added mass</h2><p class="card-detail">10 placeable parts · 7 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s24_34-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2024" data-category="mechanics" data-component="34" data-search="effect of air resistance on a spinning card 9702_s24_34-q2 forces &amp; motion may / june"><div class="card-top"><div><span class="tag">Forces & motion</span><p class="paper">2024 · May / June<br>Paper 34 · Question 2</p></div><svg class="apparatus" viewBox="-52 -61 104 122" aria-hidden="true"><rect x="-9" y="-49" width="18" height="12" rx="3" fill="#4e6266" stroke="#2e3a37" stroke-width="1.4"/><circle cx="0" cy="-43" r="3" fill="#26302e"/><path d="M-26 -37 L-26 0 L26 0 L26 -37 Z" fill="#6e8a88" stroke="#3c4a48" stroke-width="1.6"/><path d="M-19 8 L19 8" stroke="#a3987f" stroke-width="3"/><path d="M-9.500000000000002 -8.454482671904334 L9.500000000000002 24.454482671904334" stroke="#a3987f" stroke-width="3"/><path d="M9.499999999999996 -8.454482671904337 L-9.499999999999996 24.454482671904337" stroke="#a3987f" stroke-width="3"/><circle cx="0" cy="8" r="26" fill="none" stroke="#d8d2c4" stroke-width="9"/><circle cx="0" cy="8" r="26" fill="none" stroke="#7a735e" stroke-width="1.6"/><circle cx="0" cy="8" r="21.5" fill="none" stroke="#7a735e" stroke-width="1.2"/><circle cx="0" cy="8" r="5.5" fill="url(#steel)" stroke="#3c4a48" stroke-width="1.4"/><path d="M-26 0 L26 0" stroke="#3c4a48" stroke-width="1.6"/></svg></div><h2>Effect of air resistance on a spinning card</h2><p class="card-detail">9 placeable parts · 4 connections · Manual timing</p><p class="model-status provisional">Provisional · awaiting apparatus calibration</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s24_34-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2025" data-category="circuit" data-component="33" data-search="electrical circuit with nichrome wire 9702_s25_33-q1 electricity may / june"><div class="card-top"><div><span class="tag">Electricity</span><p class="paper">2025 · May / June<br>Paper 33 · Question 1</p></div><svg class="apparatus" viewBox="-25 -132 50 264" aria-hidden="true"><rect x="-13" y="-120" width="26" height="9" rx="2" fill="#b08d3f" stroke="#6d5420" stroke-width="1.2"/><rect x="-13" y="111" width="26" height="9" rx="2" fill="#b08d3f" stroke="#6d5420" stroke-width="1.2"/><circle cx="0" cy="-115.5" r="2.4" fill="#26302e"/><circle cx="0" cy="115.5" r="2.4" fill="#26302e"/><path d="M0 -111 L0 111" stroke="#a35f35" stroke-width="3.2"/><path d="M-1 -111 L-1 111" stroke="#d89a6a" stroke-width="1"/></svg></div><h2>Electrical circuit with nichrome wire</h2><p class="card-detail">8 placeable parts · 9 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s25_33-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2025" data-category="oscillation" data-component="33" data-search="oscillations of a chain of paper clips 9702_s25_33-q2 oscillations may / june"><div class="card-top"><div><span class="tag">Oscillations</span><p class="paper">2025 · May / June<br>Paper 33 · Question 2</p></div><svg class="apparatus" viewBox="-163 -62 326 124" aria-hidden="true"><path d="M-140 -38 Q0 78 140 -38" fill="none" stroke="#98a4a8" stroke-width="1" stroke-dasharray="2 4"/><g transform="translate(-140.0 -38.0) rotate(39.6)"><rect x="-15" y="-6.5" width="30" height="13" rx="6.5" fill="#cfd7da" stroke="#7f8b90" stroke-width="2.6"/><rect x="-7" y="-2.6" width="16" height="5.2" rx="2.6" fill="none" stroke="#98a4a8" stroke-width="1.8"/></g><g transform="translate(-105.0 -12.6) rotate(31.9)"><rect x="-15" y="-6.5" width="30" height="13" rx="6.5" fill="#dfe5e7" stroke="#7f8b90" stroke-width="2.6"/><rect x="-7" y="-2.6" width="16" height="5.2" rx="2.6" fill="none" stroke="#98a4a8" stroke-width="1.8"/></g><g transform="translate(-70.0 5.5) rotate(22.5)"><rect x="-15" y="-6.5" width="30" height="13" rx="6.5" fill="#cfd7da" stroke="#7f8b90" stroke-width="2.6"/><rect x="-7" y="-2.6" width="16" height="5.2" rx="2.6" fill="none" stroke="#98a4a8" stroke-width="1.8"/></g><g transform="translate(-35.0 16.4) rotate(11.7)"><rect x="-15" y="-6.5" width="30" height="13" rx="6.5" fill="#dfe5e7" stroke="#7f8b90" stroke-width="2.6"/><rect x="-7" y="-2.6" width="16" height="5.2" rx="2.6" fill="none" stroke="#98a4a8" stroke-width="1.8"/></g><g transform="translate(0.0 20.0) rotate(0.0)"><rect x="-15" y="-6.5" width="30" height="13" rx="6.5" fill="#cfd7da" stroke="#7f8b90" stroke-width="2.6"/><rect x="-7" y="-2.6" width="16" height="5.2" rx="2.6" fill="none" stroke="#98a4a8" stroke-width="1.8"/></g><g transform="translate(35.0 16.4) rotate(-11.7)"><rect x="-15" y="-6.5" width="30" height="13" rx="6.5" fill="#dfe5e7" stroke="#7f8b90" stroke-width="2.6"/><rect x="-7" y="-2.6" width="16" height="5.2" rx="2.6" fill="none" stroke="#98a4a8" stroke-width="1.8"/></g><g transform="translate(70.0 5.5) rotate(-22.5)"><rect x="-15" y="-6.5" width="30" height="13" rx="6.5" fill="#cfd7da" stroke="#7f8b90" stroke-width="2.6"/><rect x="-7" y="-2.6" width="16" height="5.2" rx="2.6" fill="none" stroke="#98a4a8" stroke-width="1.8"/></g><g transform="translate(105.0 -12.6) rotate(-31.9)"><rect x="-15" y="-6.5" width="30" height="13" rx="6.5" fill="#dfe5e7" stroke="#7f8b90" stroke-width="2.6"/><rect x="-7" y="-2.6" width="16" height="5.2" rx="2.6" fill="none" stroke="#98a4a8" stroke-width="1.8"/></g><g transform="translate(140.0 -38.0) rotate(-39.6)"><rect x="-15" y="-6.5" width="30" height="13" rx="6.5" fill="#cfd7da" stroke="#7f8b90" stroke-width="2.6"/><rect x="-7" y="-2.6" width="16" height="5.2" rx="2.6" fill="none" stroke="#98a4a8" stroke-width="1.8"/></g></svg></div><h2>Oscillations of a chain of paper clips</h2><p class="card-detail">8 placeable parts · 3 connections · Manual timing</p><p class="model-status provisional">Provisional · awaiting apparatus calibration</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s25_33-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2025" data-category="oscillation" data-component="34" data-search="properties of a pendulum 9702_s25_34-q1 oscillations may / june"><div class="card-top"><div><span class="tag">Oscillations</span><p class="paper">2025 · May / June<br>Paper 34 · Question 1</p></div><svg class="apparatus" viewBox="-99 -25 198 50" aria-hidden="true"><rect x="-85" y="-9" width="170" height="18" rx="9" fill="url(#wood)" stroke="#6d4a22" stroke-width="1.6"/><ellipse cx="-85" cy="0" rx="5" ry="9" fill="#8a6132"/><ellipse cx="85" cy="0" rx="5" ry="9" fill="#caa06a" stroke="#6d4a22"/><path d="M-72 -4.5 q 40 3 80 0 t 72 0" fill="none" stroke="#b9854c" stroke-width="1" opacity=".7"/><path d="M-74 4.5 q 53.333333333333336 -3 96 0" fill="none" stroke="#b9854c" stroke-width="1" opacity=".6"/></svg></div><h2>Properties of a pendulum</h2><p class="card-detail">9 placeable parts · 5 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s25_34-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2025" data-category="flow" data-component="34" data-search="steel balls falling through water 9702_s25_34-q2 fluids &amp; flow may / june"><div class="card-top"><div><span class="tag">Fluids & flow</span><p class="paper">2025 · May / June<br>Paper 34 · Question 2</p></div><svg class="apparatus" viewBox="-63 -163 126 326" aria-hidden="true"><path d="M-26 -146 L-26 120 Q-26 141 0 141 Q26 141 26 120 L26 -146" fill="url(#glass)" stroke="#7fa3ad" stroke-width="2.2"/><ellipse cx="0" cy="-146" rx="26" ry="6" fill="#e8f6f8" stroke="#7fa3ad" stroke-width="2"/><rect data-liquid="" x="-20" y="30.5" width="40" height="110" fill="#4babc0" opacity=".55"/><path d="M16 128 H32" stroke="#5f7f88" stroke-width="1.2"/><text x="35" y="130.5" text-anchor="start" font-size="6.5" fill="#5f7f88" font-family="Arial,Helvetica,sans-serif" >0</text><path d="M16 102 H26" stroke="#5f7f88" stroke-width="1.2"/><path d="M16 76 H26" stroke="#5f7f88" stroke-width="1.2"/><path d="M16 50 H26" stroke="#5f7f88" stroke-width="1.2"/><path d="M16 24 H26" stroke="#5f7f88" stroke-width="1.2"/><path d="M16 -2 H32" stroke="#5f7f88" stroke-width="1.2"/><text x="35" y="0.5" text-anchor="start" font-size="6.5" fill="#5f7f88" font-family="Arial,Helvetica,sans-serif" >50</text><path d="M16 -28 H26" stroke="#5f7f88" stroke-width="1.2"/><path d="M16 -54 H26" stroke="#5f7f88" stroke-width="1.2"/><path d="M16 -80 H26" stroke="#5f7f88" stroke-width="1.2"/><path d="M16 -106 H26" stroke="#5f7f88" stroke-width="1.2"/><path d="M16 -132 H32" stroke="#5f7f88" stroke-width="1.2"/><text x="35" y="-129.5" text-anchor="start" font-size="6.5" fill="#5f7f88" font-family="Arial,Helvetica,sans-serif" >100</text></svg></div><h2>Steel balls falling through water</h2><p class="card-detail">9 placeable parts · 0 connections · Manual timing</p><p class="model-status provisional">Provisional · awaiting apparatus calibration</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_s25_34-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2021" data-category="circuit" data-component="33" data-search="combinations of resistors 9702_w21_33-q1 electricity october / november"><div class="card-top"><div><span class="tag">Electricity</span><p class="paper">2021 · October / November<br>Paper 33 · Question 1</p></div><svg class="apparatus" viewBox="-78 -51 156 102" aria-hidden="true"><rect x="-66" y="-32" width="132" height="64" rx="9" fill="#3c4a49" stroke="#222d2c" stroke-width="2"/><rect x="-54" y="-21" width="48" height="42" rx="19" fill="url(#steel)" stroke="#2e3a37" stroke-width="1.6"/><rect x="6" y="-21" width="48" height="42" rx="19" fill="url(#steel)" stroke="#2e3a37" stroke-width="1.6"/><rect x="-38" y="-21" width="10" height="42" fill="#b03a32"/><rect x="22" y="-21" width="10" height="42" fill="#b03a32"/><text x="-30" y="4" text-anchor="middle" font-size="8" fill="#26302e" font-family="Arial,Helvetica,sans-serif" >1.5 V</text><text x="30" y="4" text-anchor="middle" font-size="8" fill="#26302e" font-family="Arial,Helvetica,sans-serif" >1.5 V</text><circle cx="-66" cy="0" r="7.5" fill="#2b2f2e" stroke="#2f3a38" stroke-width="1.6"/><circle cx="-66" cy="0" r="2.6" fill="#26302e"/><circle cx="66" cy="0" r="7.5" fill="#c0453c" stroke="#2f3a38" stroke-width="1.6"/><circle cx="66" cy="0" r="2.6" fill="#26302e"/><text x="-66" y="-12" text-anchor="middle" font-size="12" fill="#e8ecea" font-family="Arial,Helvetica,sans-serif" >−</text><text x="66" y="-12" text-anchor="middle" font-size="12" fill="#e8ecea" font-family="Arial,Helvetica,sans-serif" >+</text></svg></div><h2>Combinations of resistors</h2><p class="card-detail">7 placeable parts · 7 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w21_33-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2021" data-category="mechanics" data-component="33" data-search="falling filter papers 9702_w21_33-q2 forces &amp; motion october / november"><div class="card-top"><div><span class="tag">Forces & motion</span><p class="paper">2021 · October / November<br>Paper 33 · Question 2</p></div><svg class="apparatus" viewBox="-63 -66 126 132" aria-hidden="true"><circle cx="-7" cy="8" r="40" fill="#e9e6da" stroke="#c9c4b0" stroke-width="1.6"/><circle cx="6" cy="2" r="40" fill="#f2f0e6" stroke="#c9c4b0" stroke-width="1.6"/><circle cx="0" cy="-6" r="40" fill="#faf8ef" stroke="#c9c4b0" stroke-width="1.6"/><path d="M0 -46 V34 M-40 -6 H40" stroke="#d8d3bd" stroke-width="1.2"/><circle cx="0" cy="-6" r="26" fill="none" stroke="#e3ddc8" stroke-width="1"/></svg></div><h2>Falling filter papers</h2><p class="card-detail">7 placeable parts · 1 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w21_33-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2021" data-category="circuit" data-component="34" data-search="electrical circuit with two resistance wires 9702_w21_34-q1 electricity october / november"><div class="card-top"><div><span class="tag">Electricity</span><p class="paper">2021 · October / November<br>Paper 34 · Question 1</p></div><svg class="apparatus" viewBox="-25 -132 50 264" aria-hidden="true"><rect x="-13" y="-120" width="26" height="9" rx="2" fill="#b08d3f" stroke="#6d5420" stroke-width="1.2"/><rect x="-13" y="111" width="26" height="9" rx="2" fill="#b08d3f" stroke="#6d5420" stroke-width="1.2"/><circle cx="0" cy="-115.5" r="2.4" fill="#26302e"/><circle cx="0" cy="115.5" r="2.4" fill="#26302e"/><path d="M0 -111 L0 111" stroke="#a35f35" stroke-width="3.2"/><path d="M-1 -111 L-1 111" stroke="#d89a6a" stroke-width="1"/></svg></div><h2>Electrical circuit with two resistance wires</h2><p class="card-detail">10 placeable parts · 11 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w21_34-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2021" data-category="oscillation" data-component="34" data-search="oscillations of a suspended rod 9702_w21_34-q2 oscillations october / november"><div class="card-top"><div><span class="tag">Oscillations</span><p class="paper">2021 · October / November<br>Paper 34 · Question 2</p></div><svg class="apparatus" viewBox="-52 -36 104 72" aria-hidden="true"><rect x="-26" y="-14" width="52" height="30" rx="9" fill="#c8a06a" stroke="#8f6c3d" stroke-width="1.6"/><path d="M-18 -14 V16 M-6 -14 V16 M8 -14 V16 M20 -14 V16" stroke="#a07c4b" stroke-width="1.2"/><rect x="-38" y="-2" width="76" height="4" fill="url(#steel)" stroke="#43585a" stroke-width=".8"/><circle cx="-36" cy="0" r="6" fill="url(#steel)" stroke="#43585a"/><path d="M38 -3 L46 0 L38 3 Z" fill="#8fa7a8"/></svg></div><h2>Oscillations of a suspended rod</h2><p class="card-detail">9 placeable parts · 6 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w21_34-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2022" data-category="circuit" data-component="33" data-search="resistivity of a metal 9702_w22_33-q1 electricity october / november"><div class="card-top"><div><span class="tag">Electricity</span><p class="paper">2022 · October / November<br>Paper 33 · Question 1</p></div><svg class="apparatus" viewBox="-32 -132 64 264" aria-hidden="true"><rect x="-18" y="-118" width="14" height="9" rx="2" fill="#b08d3f" stroke="#6d5420"/><rect x="4" y="-118" width="14" height="9" rx="2" fill="#b08d3f" stroke="#6d5420"/><path d="M-11 -109 L-11 96 Q-11 110 0 110 Q11 110 11 96 L11 -109" fill="none" stroke="#a35f35" stroke-width="3.4"/><path d="M-11 -109 L-11 96 Q-11 110 0 110 Q11 110 11 96 L11 -109" fill="none" stroke="#d89a6a" stroke-width="1.1"/></svg></div><h2>Resistivity of a metal</h2><p class="card-detail">8 placeable parts · 7 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w22_33-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2022" data-category="mechanics" data-component="33" data-search="extension of two springs 9702_w22_33-q2 forces &amp; motion october / november"><div class="card-top"><div><span class="tag">Forces & motion</span><p class="paper">2022 · October / November<br>Paper 33 · Question 2</p></div><svg class="apparatus" viewBox="-33 -48 66 96" aria-hidden="true"><circle cx="0" cy="-31" r="4.5" fill="none" stroke="#5c7477" stroke-width="2.6"/><path d="M0 -26.5 L0 -22" stroke="#5c7477" stroke-width="3"/><path d="M0 -22 Q -15 -18.857142857142858 0 -15.714285714285715 Q 15 -12.571428571428571 0 -9.428571428571429 Q -15 -6.2857142857142865 0 -3.1428571428571423 Q 15 0 0 3.1428571428571423 Q -15 6.285714285714285 0 9.428571428571427 Q 15 12.57142857142857 0 15.714285714285715 Q -15 18.857142857142854 0 22" fill="none" stroke="#5c7477" stroke-width="4.6" stroke-linecap="round"/><path d="M0 -22 Q -15 -18.857142857142858 0 -15.714285714285715 Q 15 -12.571428571428571 0 -9.428571428571429 Q -15 -6.2857142857142865 0 -3.1428571428571423 Q 15 0 0 3.1428571428571423 Q -15 6.285714285714285 0 9.428571428571427 Q 15 12.57142857142857 0 15.714285714285715 Q -15 18.857142857142854 0 22" fill="none" stroke="#cfe0e1" stroke-width="1.5" stroke-linecap="round"/><path d="M0 22 L0 26.5" stroke="#5c7477" stroke-width="3"/><circle cx="0" cy="31" r="4.5" fill="none" stroke="#5c7477" stroke-width="2.6"/></svg></div><h2>Extension of two springs</h2><p class="card-detail">10 placeable parts · 3 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w22_33-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2022" data-category="mechanics" data-component="34" data-search="stability of a cylinder 9702_w22_34-q1 forces &amp; motion october / november"><div class="card-top"><div><span class="tag">Forces & motion</span><p class="paper">2022 · October / November<br>Paper 34 · Question 1</p></div><svg class="apparatus" viewBox="-143 -33 286 66" aria-hidden="true"><rect x="-131" y="-21" width="262" height="42" rx="4" fill="url(#wood)" stroke="#6d4a22" stroke-width="2"/><path d="M-118 -8 q40 4 80 0 t80 0 t78 0 M-118 9 q52 -4 104 0 t100 0" fill="none" stroke="#b9854c" stroke-width="1.2" opacity=".75"/><rect x="-131" y="-21" width="262" height="6" fill="#caa06a" opacity=".8"/></svg></div><h2>Stability of a cylinder</h2><p class="card-detail">7 placeable parts · 3 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w22_34-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2022" data-category="circuit" data-component="34" data-search="force acting on a magnet 9702_w22_34-q2 electricity october / november"><div class="card-top"><div><span class="tag">Electricity</span><p class="paper">2022 · October / November<br>Paper 34 · Question 2</p></div><svg class="apparatus" viewBox="-33 -48 66 96" aria-hidden="true"><circle cx="0" cy="-31" r="4.5" fill="none" stroke="#5c7477" stroke-width="2.6"/><path d="M0 -26.5 L0 -22" stroke="#5c7477" stroke-width="3"/><path d="M0 -22 Q -15 -18.857142857142858 0 -15.714285714285715 Q 15 -12.571428571428571 0 -9.428571428571429 Q -15 -6.2857142857142865 0 -3.1428571428571423 Q 15 0 0 3.1428571428571423 Q -15 6.285714285714285 0 9.428571428571427 Q 15 12.57142857142857 0 15.714285714285715 Q -15 18.857142857142854 0 22" fill="none" stroke="#5c7477" stroke-width="4.6" stroke-linecap="round"/><path d="M0 -22 Q -15 -18.857142857142858 0 -15.714285714285715 Q 15 -12.571428571428571 0 -9.428571428571429 Q -15 -6.2857142857142865 0 -3.1428571428571423 Q 15 0 0 3.1428571428571423 Q -15 6.285714285714285 0 9.428571428571427 Q 15 12.57142857142857 0 15.714285714285715 Q -15 18.857142857142854 0 22" fill="none" stroke="#cfe0e1" stroke-width="1.5" stroke-linecap="round"/><path d="M0 22 L0 26.5" stroke="#5c7477" stroke-width="3"/><circle cx="0" cy="31" r="4.5" fill="none" stroke="#5c7477" stroke-width="2.6"/></svg></div><h2>Force acting on a magnet</h2><p class="card-detail">9 placeable parts · 7 connections</p><p class="model-status provisional">Provisional · awaiting apparatus calibration</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w22_34-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2023" data-category="oscillation" data-component="33" data-search="oscillations of a pendulum 9702_w23_33-q1 oscillations october / november"><div class="card-top"><div><span class="tag">Oscillations</span><p class="paper">2023 · October / November<br>Paper 33 · Question 1</p></div><svg class="apparatus" viewBox="-60 -48 120 96" aria-hidden="true"><path d="M8 -30 L-26 -30 L-26 30 L8 30" fill="none" stroke="#4e6266" stroke-width="13" stroke-linejoin="round"/><path d="M8 -30 L-26 -30 L-26 30 L8 30" fill="none" stroke="#7c9699" stroke-width="4" stroke-linejoin="round"/><circle cx="12" cy="-30" r="6" fill="#8fa3a1" stroke="#3c4a48" stroke-width="1.4"/><rect x="-7" y="6" width="9" height="26" fill="url(#steel)" stroke="#3c4a48"/><circle cx="-2.5" cy="4" r="7" fill="#8fa3a1" stroke="#3c4a48" stroke-width="1.4"/><rect x="-20" y="30" width="34" height="6" rx="3" fill="#37433f"/><circle cx="-26" cy="-2" r="5.5" fill="#2e3a37"/></svg></div><h2>Oscillations of a pendulum</h2><p class="card-detail">8 placeable parts · 4 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w23_33-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2023" data-category="mechanics" data-component="33" data-search="wooden strip resting at an angle 9702_w23_33-q2 forces &amp; motion october / november"><div class="card-top"><div><span class="tag">Forces & motion</span><p class="paper">2023 · October / November<br>Paper 33 · Question 2</p></div><svg class="apparatus" viewBox="-51 -24 102 48" aria-hidden="true"><rect x="-32" y="-3.5" width="62" height="7" rx="2" fill="url(#steel)" stroke="#43585a" stroke-width="1"/><circle cx="-32" cy="0" r="8" fill="url(#steel)" stroke="#3c5052" stroke-width="1.6"/><circle cx="-34.5" cy="-2.5" r="2.2" fill="#e8f4f4"/><path d="M30 -4.5 L42 0 L30 4.5 Z" fill="#9db4b5" stroke="#43585a" stroke-width="1"/></svg></div><h2>Wooden strip resting at an angle</h2><p class="card-detail">8 placeable parts · 5 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w23_33-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2023" data-category="circuit" data-component="34" data-search="null-balance circuit with selectable fixed resistors 9702_w23_34-q1 electricity october / november"><div class="card-top"><div><span class="tag">Electricity</span><p class="paper">2023 · October / November<br>Paper 34 · Question 1</p></div><svg class="apparatus" viewBox="-25 -132 50 264" aria-hidden="true"><rect x="-13" y="-120" width="26" height="9" rx="2" fill="#b08d3f" stroke="#6d5420" stroke-width="1.2"/><rect x="-13" y="111" width="26" height="9" rx="2" fill="#b08d3f" stroke="#6d5420" stroke-width="1.2"/><circle cx="0" cy="-115.5" r="2.4" fill="#26302e"/><circle cx="0" cy="115.5" r="2.4" fill="#26302e"/><path d="M0 -111 L0 111" stroke="#a35f35" stroke-width="3.2"/><path d="M-1 -111 L-1 111" stroke="#d89a6a" stroke-width="1"/></svg></div><h2>Null-balance circuit with selectable fixed resistors</h2><p class="card-detail">9 placeable parts · 11 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w23_34-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2023" data-category="flow" data-component="34" data-search="path of a jet of water 9702_w23_34-q2 fluids &amp; flow october / november"><div class="card-top"><div><span class="tag">Fluids & flow</span><p class="paper">2023 · October / November<br>Paper 34 · Question 2</p></div><svg class="apparatus" viewBox="-63 -68 126 136" aria-hidden="true"><ellipse cx="0" cy="-46" rx="48" ry="9" fill="#e8f6f8" stroke="#7fa3ad" stroke-width="2"/><path d="M-48 -46 L-9 6 L-9 52 L9 52 L9 6 L48 -46" fill="url(#glass)" stroke="#7fa3ad" stroke-width="2.2"/><path d="M-34 -34 L-12 -4" stroke="#ffffff" stroke-width="2.6" opacity=".5"/></svg></div><h2>Path of a jet of water</h2><p class="card-detail">9 placeable parts · 3 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w23_34-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2024" data-category="circuit" data-component="33" data-search="resistivity of a metal 9702_w24_33-q1 electricity october / november"><div class="card-top"><div><span class="tag">Electricity</span><p class="paper">2024 · October / November<br>Paper 33 · Question 1</p></div><svg class="apparatus" viewBox="-25 -132 50 264" aria-hidden="true"><rect x="-13" y="-120" width="26" height="9" rx="2" fill="#b08d3f" stroke="#6d5420" stroke-width="1.2"/><rect x="-13" y="111" width="26" height="9" rx="2" fill="#b08d3f" stroke="#6d5420" stroke-width="1.2"/><circle cx="0" cy="-115.5" r="2.4" fill="#26302e"/><circle cx="0" cy="115.5" r="2.4" fill="#26302e"/><path d="M0 -111 L0 111" stroke="#a35f35" stroke-width="3.2"/><path d="M-1 -111 L-1 111" stroke="#d89a6a" stroke-width="1"/></svg></div><h2>Resistivity of a metal</h2><p class="card-detail">8 placeable parts · 7 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w24_33-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2024" data-category="oscillation" data-component="33" data-search="movement of a ball 9702_w24_33-q2 oscillations october / november"><div class="card-top"><div><span class="tag">Oscillations</span><p class="paper">2024 · October / November<br>Paper 33 · Question 2</p></div><svg class="apparatus" viewBox="-20 -72 40 144" aria-hidden="true"><circle cx="0" cy="-55" r="5" fill="none" stroke="#c9bd93" stroke-width="2.4"/><path d="M0 -50 L0 50" stroke="#ddd2ab" stroke-width="2.8"/><path d="M-2 -50 L-2 50" stroke="#b3a67c" stroke-width=".8"/><circle cx="0" cy="55" r="5" fill="none" stroke="#c9bd93" stroke-width="2.4"/></svg></div><h2>Movement of a ball</h2><p class="card-detail">10 placeable parts · 4 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w24_33-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2024" data-category="flow" data-component="34" data-search="flow of water through a nozzle 9702_w24_34-q1 fluids &amp; flow october / november"><div class="card-top"><div><span class="tag">Fluids & flow</span><p class="paper">2024 · October / November<br>Paper 34 · Question 1</p></div><svg class="apparatus" viewBox="-41 -58 82 116" aria-hidden="true"><rect x="-24" y="-44" width="48" height="14" rx="4" fill="url(#steel)" stroke="#43585a" stroke-width="1.4"/><path d="M-20 -30 L20 -30 L7 38 L-7 38 Z" fill="url(#glass)" stroke="#7fa3ad" stroke-width="2"/><ellipse cx="0" cy="40" rx="7.5" ry="3" fill="#2e3a37"/><path d="M-12 -22 L-4 30" stroke="#ffffff" stroke-width="2.4" opacity=".5"/></svg></div><h2>Flow of water through a nozzle</h2><p class="card-detail">8 placeable parts · 4 connections · Manual timing</p><p class="model-status provisional">Provisional · awaiting apparatus calibration</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w24_34-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2024" data-category="mechanics" data-component="34" data-search="conservation of momentum 9702_w24_34-q2 forces &amp; motion october / november"><div class="card-top"><div><span class="tag">Forces & motion</span><p class="paper">2024 · October / November<br>Paper 34 · Question 2</p></div><svg class="apparatus" viewBox="-51 -24 102 48" aria-hidden="true"><rect x="-32" y="-3.5" width="62" height="7" rx="2" fill="url(#steel)" stroke="#43585a" stroke-width="1"/><circle cx="-32" cy="0" r="8" fill="url(#steel)" stroke="#3c5052" stroke-width="1.6"/><circle cx="-34.5" cy="-2.5" r="2.2" fill="#e8f4f4"/><path d="M30 -4.5 L42 0 L30 4.5 Z" fill="#9db4b5" stroke="#43585a" stroke-width="1"/></svg></div><h2>Conservation of momentum</h2><p class="card-detail">9 placeable parts · 4 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w24_34-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2025" data-category="oscillation" data-component="33" data-search="oscillations of a pendulum on a board 9702_w25_33-q1 oscillations october / november"><div class="card-top"><div><span class="tag">Oscillations</span><p class="paper">2025 · October / November<br>Paper 33 · Question 1</p></div><svg class="apparatus" viewBox="-60 -48 120 96" aria-hidden="true"><path d="M8 -30 L-26 -30 L-26 30 L8 30" fill="none" stroke="#4e6266" stroke-width="13" stroke-linejoin="round"/><path d="M8 -30 L-26 -30 L-26 30 L8 30" fill="none" stroke="#7c9699" stroke-width="4" stroke-linejoin="round"/><circle cx="12" cy="-30" r="6" fill="#8fa3a1" stroke="#3c4a48" stroke-width="1.4"/><rect x="-7" y="6" width="9" height="26" fill="url(#steel)" stroke="#3c4a48"/><circle cx="-2.5" cy="4" r="7" fill="#8fa3a1" stroke="#3c4a48" stroke-width="1.4"/><rect x="-20" y="30" width="34" height="6" rx="3" fill="#37433f"/><circle cx="-26" cy="-2" r="5.5" fill="#2e3a37"/></svg></div><h2>Oscillations of a pendulum on a board</h2><p class="card-detail">9 placeable parts · 5 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w25_33-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2025" data-category="circuit" data-component="33" data-search="resistance of a light-dependent resistor 9702_w25_33-q2 electricity october / november"><div class="card-top"><div><span class="tag">Electricity</span><p class="paper">2025 · October / November<br>Paper 33 · Question 2</p></div><svg class="apparatus" viewBox="-25 -132 50 264" aria-hidden="true"><rect x="-13" y="-120" width="26" height="9" rx="2" fill="#b08d3f" stroke="#6d5420" stroke-width="1.2"/><rect x="-13" y="111" width="26" height="9" rx="2" fill="#b08d3f" stroke="#6d5420" stroke-width="1.2"/><circle cx="0" cy="-115.5" r="2.4" fill="#26302e"/><circle cx="0" cy="115.5" r="2.4" fill="#26302e"/><path d="M0 -111 L0 111" stroke="#a35f35" stroke-width="3.2"/><path d="M-1 -111 L-1 111" stroke="#d89a6a" stroke-width="1"/></svg></div><h2>Resistance of a light-dependent resistor</h2><p class="card-detail">10 placeable parts · 9 connections · Manual timing</p><p class="model-status provisional">Provisional · awaiting apparatus calibration</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w25_33-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2025" data-category="mechanics" data-component="34" data-search="equilibrium of forces 9702_w25_34-q1 forces &amp; motion october / november"><div class="card-top"><div><span class="tag">Forces & motion</span><p class="paper">2025 · October / November<br>Paper 34 · Question 1</p></div><svg class="apparatus" viewBox="-33 -48 66 96" aria-hidden="true"><circle cx="0" cy="-31" r="4.5" fill="none" stroke="#5c7477" stroke-width="2.6"/><path d="M0 -26.5 L0 -22" stroke="#5c7477" stroke-width="3"/><path d="M0 -22 Q -15 -18.857142857142858 0 -15.714285714285715 Q 15 -12.571428571428571 0 -9.428571428571429 Q -15 -6.2857142857142865 0 -3.1428571428571423 Q 15 0 0 3.1428571428571423 Q -15 6.285714285714285 0 9.428571428571427 Q 15 12.57142857142857 0 15.714285714285715 Q -15 18.857142857142854 0 22" fill="none" stroke="#5c7477" stroke-width="4.6" stroke-linecap="round"/><path d="M0 -22 Q -15 -18.857142857142858 0 -15.714285714285715 Q 15 -12.571428571428571 0 -9.428571428571429 Q -15 -6.2857142857142865 0 -3.1428571428571423 Q 15 0 0 3.1428571428571423 Q -15 6.285714285714285 0 9.428571428571427 Q 15 12.57142857142857 0 15.714285714285715 Q -15 18.857142857142854 0 22" fill="none" stroke="#cfe0e1" stroke-width="1.5" stroke-linecap="round"/><path d="M0 22 L0 26.5" stroke="#5c7477" stroke-width="3"/><circle cx="0" cy="31" r="4.5" fill="none" stroke="#5c7477" stroke-width="2.6"/></svg></div><h2>Equilibrium of forces</h2><p class="card-detail">9 placeable parts · 7 connections</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w25_34-q1">Enter laboratory <span aria-hidden="true">↗</span></a></article>
+<article class="room-card" data-year="2025" data-category="mechanics" data-component="34" data-search="sphere rolling along a track 9702_w25_34-q2 forces &amp; motion october / november"><div class="card-top"><div><span class="tag">Forces & motion</span><p class="paper">2025 · October / November<br>Paper 34 · Question 2</p></div><svg class="apparatus" viewBox="-163 -40 326 80" aria-hidden="true"><rect x="-151" y="-26" width="302" height="18" rx="6" fill="#dfe4e6" stroke="#93a1a4" stroke-width="1.8"/><rect x="-145" y="-22" width="290" height="5" rx="2" fill="#aeb9bc"/><rect x="-151" y="8" width="302" height="18" rx="6" fill="#dfe4e6" stroke="#93a1a4" stroke-width="1.8"/><rect x="-145" y="12" width="290" height="5" rx="2" fill="#aeb9bc"/><rect x="-151" y="-28" width="10" height="56" rx="3" fill="#7d8f92"/><rect x="141" y="-28" width="10" height="56" rx="3" fill="#7d8f92"/></svg></div><h2>Sphere rolling along a track</h2><p class="card-detail">8 placeable parts · 2 connections · Manual timing</p><p class="model-status ">Source-aligned · idealised model</p><a class="open-room" href="/lab/lab-room/index.html?experiment=9702_w25_34-q2">Enter laboratory <span aria-hidden="true">↗</span></a></article></div></section><aside class="limitations"><strong>A place to rehearse laboratory skills—not a claim to replace a physical laboratory.</strong> These are adapted, idealised simulations with guided mounting positions. They do not reproduce touch, every possible assembly or real apparatus variability. Nine models are explicitly provisional and awaiting physical calibration. Source-aligned does not mean official examination software.</aside></main><footer>SJABRANKAMRAN.COM · Physics practical skills · Adapted / generated teaching resource</footer><script>
+const fields=['search','year','component','category'].map(id=>document.getElementById(id));function filter(){let n=0;for(const card of document.querySelectorAll('.room-card')){const match=card.dataset.search.includes(fields[0].value.toLowerCase().trim())&&(!fields[1].value||card.dataset.year===fields[1].value)&&(!fields[2].value||card.dataset.component===fields[2].value)&&(!fields[3].value||card.dataset.category===fields[3].value);card.hidden=!match;if(match)n++;}document.getElementById('count').textContent=n+' laborator'+(n===1?'y':'ies')+' available';}for(const field of fields)field.addEventListener('input',filter);
+</script></body></html>
