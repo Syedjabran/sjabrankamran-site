@@ -32,6 +32,13 @@ def bucket_path(qid: str, section: str) -> str:
     return f"{PREFIX}{section}/{qid}.jpg"
 
 
+def rationale_bucket_path(qid: str, section: str) -> str:
+    """Canonical object key for one question's official-rationale crop, next
+    to its question crop. Same prefix discipline as `bucket_path`: its
+    output must go through `upload_file`, which calls `guard_prefix`."""
+    return f"{PREFIX}{section}/{qid}-r.jpg"
+
+
 def test_bucket_path(test_no: int, section: str, module: int, qnum: int) -> str:
     """Canonical object key for one practice-test question's crop.
 

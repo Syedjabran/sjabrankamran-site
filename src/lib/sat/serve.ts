@@ -27,10 +27,9 @@ function index(): Map<string, Entry> {
   if (INDEX) return INDEX;
   const m = new Map<string, Entry>();
   for (const q of loadQuestionBank()) {
-    const rq = q as typeof q & { rationaleImg?: string };
     m.set(q.id, {
       id: q.id, img: q.img, answer: q.answer, section: q.section, domain: q.domain, skill: q.skill,
-      difficulty: q.difficulty, rationale: q.rationale || null, rationaleImg: rq.rationaleImg ?? null,
+      difficulty: q.difficulty, rationale: q.rationale || null, rationaleImg: q.rationaleImg ?? null,
     });
   }
   for (const t of loadPracticeTests()) {

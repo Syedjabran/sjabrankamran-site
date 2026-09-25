@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from build_sat_bank import check_provenance, validate
+from build_sat_bank import check_provenance, ship_rationale_images, validate
 
 GOOD = [{
     "id": "ac472881", "section": "math", "domain": "algebra",
@@ -187,3 +187,63 @@ def test_check_provenance_refuses_a_live_run_with_no_uploaded_json(tmp_path):
     (tmp_path / "mode.json").write_text(json.dumps({"dry_run": False}), encoding="utf-8")
     with pytest.raises(ValueError, match="uploaded.json"):
         check_provenance(GOOD, rows_path, allow_dry_run=False)
+
+
+# --- rationale images (Task 11) ---------------------------------------------
+
+WITH_R = [
+    {**GOOD[0], "rationale_img": "sat/math/ac472881-r.jpg"},
+    {**GOOD[0], "id": "bbbbbbbb", "rationale_img": "sat/math/bbbbbbbb-r.jpg"},
+    {**GOOD[0], "id": "cccccccc"},  # its rationale couldn't be cropped
+]
+
+
+def _live_at(tmp_path: Path, rationales: list[str] | None) -> Path:
+    rows_path = _rows_at(tmp_path, WITH_R)
+    (tmp_path / "mode.json").write_text(json.dumps({"dry_run": False}), encoding="utf-8")
+    (tmp_path / "uploaded.json").write_text(json.dumps([r["id"] for r in WITH_R]), encoding="utf-8")
+    if rationales is not None:
+        (tmp_path / "uploaded-rationales.json").write_text(json.dumps(rationales), encoding="utf-8")
+    return rows_path
+
+
+def test_live_build_ships_only_confirmed_rationale_images(tmp_path):
+    """Controller ruling 2: a row whose rationale crop was not recorded as
+    uploaded ships without `rationaleImg` (text fallback), never with a
+    dead link -- and the build still succeeds."""
+    rows_path = _live_at(tmp_path, ["ac472881"])
+    check_provenance(WITH_R, rows_path, allow_dry_run=False)
+    out, lacking = ship_rationale_images(WITH_R, rows_path, allow_dry_run=False)
+    assert out[0]["rationaleImg"] == "sat/math/ac472881-r.jpg"
+    assert "rationaleImg" not in out[1] and "rationaleImg" not in out[2]
+    assert lacking == 2
+    assert all("rationale_img" not in r for r in out)  # the snake-case row field never reaches the bank
+
+
+def test_live_build_with_no_rationale_record_ships_every_row_with_the_text_fallback(tmp_path):
+    rows_path = _live_at(tmp_path, None)
+    out, lacking = ship_rationale_images(WITH_R, rows_path, allow_dry_run=False)
+    assert lacking == 3
+    assert all("rationaleImg" not in r and "rationale_img" not in r for r in out)
+
+
+def test_dry_run_build_keeps_rationale_images_under_allow_dry_run(tmp_path):
+    rows_path = _rows_at(tmp_path, WITH_R)
+    (tmp_path / "mode.json").write_text(json.dumps({"dry_run": True}), encoding="utf-8")
+    out, lacking = ship_rationale_images(WITH_R, rows_path, allow_dry_run=True)
+    assert [r.get("rationaleImg") for r in out] == ["sat/math/ac472881-r.jpg", "sat/math/bbbbbbbb-r.jpg", None]
+    assert lacking == 1
+    with pytest.raises(ValueError, match="dry-run"):
+        ship_rationale_images(WITH_R, rows_path, allow_dry_run=False)
+
+
+def test_ship_rationale_images_does_not_mutate_its_input(tmp_path):
+    rows_path = _live_at(tmp_path, [])
+    ship_rationale_images(WITH_R, rows_path, allow_dry_run=False)
+    assert WITH_R[0]["rationale_img"] == "sat/math/ac472881-r.jpg"
+
+
+def test_validate_rejects_a_rationale_image_outside_the_sat_prefix():
+    with pytest.raises(ValueError, match="rationale image"):
+        validate([{**GOOD[0], "rationale_img": "o-level/x-r.jpg"}])
+    validate([{**GOOD[0], "rationale_img": "sat/math/ac472881-r.jpg"}])

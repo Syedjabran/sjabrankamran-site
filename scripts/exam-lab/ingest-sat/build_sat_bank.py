@@ -15,6 +15,13 @@ actually confirmed. Running this against a `--dry-run` rows.json -- e.g. by
 mistakenly skipping the live-upload step -- would otherwise accept all of
 it and write a bank of image links pointing at bucket objects that were
 never created.
+
+The official-rationale image is optional per row, so its provenance works
+differently (`ship_rationale_images`): a live row whose rationale crop is
+not confirmed in `uploaded-rationales.json` ships WITHOUT `rationaleImg` --
+the drill falls back to the text rationale -- rather than failing the build
+or shipping a dead link. rows.json carries it as `rationale_img`; the bank
+emits it as `rationaleImg`, the field name `SATQuestion` declares.
 """
 import argparse
 import json
@@ -66,6 +73,10 @@ def validate(rows: list[dict]) -> None:
             raise ValueError(f"{row['id']}: no image")
         if not row["img"].startswith("sat/"):
             raise ValueError(f"{row['id']}: image outside the sat/ prefix")
+        if "rationale_img" in row:
+            rimg = row["rationale_img"]
+            if not isinstance(rimg, str) or not rimg.startswith("sat/"):
+                raise ValueError(f"{row['id']}: rationale image outside the sat/ prefix")
         ans = row["answer"]
         # Checked before any .get() call below: a malformed (non-dict)
         # answer must fail with this gate's own ValueError, not a confusing
@@ -92,6 +103,12 @@ def _load_json_if_exists(path: Path) -> object | None:
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _is_dry_run(rows_path: Path) -> bool:
+    """A missing mode.json is unverifiable, so it counts as a dry run."""
+    mode = _load_json_if_exists(rows_path.with_name("mode.json"))
+    return mode is None or mode.get("dry_run", True)
 
 
 def check_provenance(rows: list[dict], rows_path: Path, *, allow_dry_run: bool,
@@ -129,8 +146,7 @@ def check_provenance(rows: list[dict], rows_path: Path, *, allow_dry_run: bool,
     """
     mode_path = rows_path.with_name("mode.json")
     mode = _load_json_if_exists(mode_path)
-    is_dry_run = mode is None or mode.get("dry_run", True)
-    if is_dry_run:
+    if _is_dry_run(rows_path):
         if allow_dry_run:
             print(
                 f"WARNING: building from a --dry-run rows.json ({rows_path}) with "
@@ -169,6 +185,39 @@ def check_provenance(rows: list[dict], rows_path: Path, *, allow_dry_run: bool,
         )
 
 
+def ship_rationale_images(rows: list[dict], rows_path: Path, *, allow_dry_run: bool) -> tuple[list[dict], int]:
+    """The bank's rows, with each row's `rationale_img` either emitted as
+    `rationaleImg` or dropped, plus how many rows ship without one.
+
+    Live: kept only for ids confirmed in `uploaded-rationales.json` (written
+    by extract_sat.py, one id at a time, after each rationale upload). A
+    missing file confirms nothing -- e.g. a bank built from a live run that
+    predates rationale crops -- so every row ships with the text fallback;
+    that is a smaller feature, not a broken one, so it is not an error.
+
+    Dry run: kept as-is under `allow_dry_run`, exactly like `img` -- the
+    caller asked to see the bank's shape before anything is uploaded (and
+    `check_provenance` has already printed the warning). Refused otherwise.
+    """
+    if _is_dry_run(rows_path):
+        if not allow_dry_run:
+            raise ValueError(f"{rows_path} is a --dry-run (or unverifiable) rows.json; pass --allow-dry-run")
+        confirmed = {row["id"] for row in rows}
+    else:
+        uploaded = _load_json_if_exists(rows_path.with_name("uploaded-rationales.json"))
+        confirmed = set(uploaded or [])
+    out, lacking = [], 0
+    for row in rows:
+        row = dict(row)
+        rimg = row.pop("rationale_img", None)
+        if rimg and row["id"] in confirmed:
+            row["rationaleImg"] = rimg
+        else:
+            lacking += 1
+        out.append(row)
+    return out, lacking
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("rows", help="JSON produced by extract_sat.py")
@@ -188,10 +237,12 @@ def main() -> int:
     rows = json.loads(rows_path.read_text(encoding="utf-8"))
     check_provenance(rows, rows_path, allow_dry_run=args.allow_dry_run)
     validate(rows)
+    rows, lacking = ship_rationale_images(rows, rows_path, allow_dry_run=args.allow_dry_run)
     dest = Path(args.out)
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(rows, indent=1), encoding="utf-8")
     print(f"wrote {dest} ({len(rows)} questions)")
+    print(f"  {len(rows) - lacking} with a rationale image, {lacking} without one (text rationale fallback)")
     return 0
 
 

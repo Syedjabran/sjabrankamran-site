@@ -33,6 +33,20 @@ generic "skipped" bucket:
   on the page -- see `question_span_reason` in crop_qbank.py, which in
   particular distinguishes the measured cross-page case (the answer/
   rationale anchor lands on the next PDF page) from a genuine anomaly.
+
+Each shipped row also carries its official rationale as an image
+(`rationale_img`, `sat/<section>/<id>-r.jpg`; local copy
+`out/crops/<section>/<id>-r.jpg`) -- see crop_rationale.py for why the text
+won't do. The rationale is bookkept separately from the question, so a
+question uploaded before rationales existed still gets its rationale
+uploaded, and a resume re-uploads neither:
+
+- `uploaded-rationales.json`: ids whose rationale crop a live run confirmed
+  uploaded (build_sat_bank.py ships `rationaleImg` only for these).
+- `skipped-rationales.json`: rows whose rationale could not be cropped
+  cleanly, each with a reason. Such a row still ships -- with the text
+  rationale as its fallback -- so these are NOT counted in skipped.json,
+  which lists records that did not ship at all.
 """
 import argparse
 import collections
@@ -46,9 +60,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import poppler
 from crop_qbank import anchors, bbox_xml, question_span, question_span_reason, render_span
+from crop_rationale import RationaleCropError, id_index, rationale_span, rationale_span_reason, render_rationale
 from parse_qbank import parse_export
 from report_qbank import text_of
-from upload import bucket_path, preflight_credentials, upload_file
+from upload import bucket_path, preflight_credentials, rationale_bucket_path, upload_file
 
 HERE = Path(__file__).resolve().parent
 RAW = HERE / "raw" / "question-bank"
@@ -194,6 +209,47 @@ def _upload_with_retry(dest: Path, img: str) -> str:
     ) from last_exc
 
 
+def _rationale_image(pdf: Path, a: dict, rec: dict, *, dry_run: bool, uploaded: set[str],
+                     uploaded_path: Path, skipped: list[dict]) -> str | None:
+    """Crop (and, live, upload) `rec`'s official rationale; return its
+    bucket key, or None -- with the reason appended to `skipped` -- when it
+    can't be cropped cleanly. Same resume rules as the question crop: an
+    existing local crop is not re-rendered, a recorded upload is not
+    repeated, and the upload is recorded before this returns.
+    """
+    def skip(reason: str, stage: str) -> None:
+        skipped.append({"id": rec["id"], "reason": reason, "stage": stage, "section": rec["section"]})
+
+    i = id_index(a, rec["id"])
+    regions = rationale_span(a, i) if i is not None else None
+    if regions is None:
+        skip(rationale_span_reason(a, i) if i is not None else "unknown-id", "rationale-span")
+        return None
+    dest = CROPS / rec["section"] / f"{rec['id']}-r.jpg"
+    if not dest.exists():
+        try:
+            render_rationale(pdf, regions, dest, a["page_size"])
+        except RationaleCropError as exc:
+            skip(str(exc), "rationale-render")
+            return None
+        if rec["id"] in uploaded:
+            # The rationale counterpart of the question-crop desync warning
+            # in main(): re-rendered locally, but the upload below will be
+            # skipped, so the bucket keeps whatever it already had.
+            print(
+                f"WARNING: {rec['id']}'s rationale crop was just re-rendered (missing from "
+                f"{CROPS}) but its id is already recorded in {uploaded_path.name} -- the bucket "
+                f"copy may now be stale. Remove its entry from {uploaded_path.name} to force a "
+                "re-upload.",
+                file=sys.stderr,
+            )
+    img = rationale_bucket_path(rec["id"], rec["section"])
+    if not dry_run and rec["id"] not in uploaded:
+        img = _upload_with_retry(dest, img)
+        _record_uploaded(uploaded_path, rec["id"], uploaded)
+    return img
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="crop only, do not upload")
@@ -208,15 +264,20 @@ def main(argv: list[str] | None = None) -> int:
     skipped_path = out_path.with_name("skipped.json")
     uploaded_path = out_path.with_name("uploaded.json")
     mode_path = out_path.with_name("mode.json")
+    uploaded_rationales_path = out_path.with_name("uploaded-rationales.json")
+    skipped_rationales_path = out_path.with_name("skipped-rationales.json")
     uploaded = _load_uploaded(uploaded_path)
+    uploaded_rationales = _load_uploaded(uploaded_rationales_path)
 
     rows: list[dict] = []
     skipped: list[dict] = []
+    skipped_rationales: list[dict] = []
     corpus_seen: set[str] = set()
 
     def _persist() -> None:
         _atomic_write_text(out_path, json.dumps(rows, indent=1))
         _atomic_write_text(skipped_path, json.dumps(skipped, indent=1))
+        _atomic_write_text(skipped_rationales_path, json.dumps(skipped_rationales, indent=1))
         _atomic_write_text(mode_path, json.dumps({"dry_run": args.dry_run}, indent=1))
 
     persist_error: Exception | None = None
@@ -295,12 +356,22 @@ def main(argv: list[str] | None = None) -> int:
                     # here instead would silently reopen it one call up.
                     img = _upload_with_retry(dest, img)
                     _record_uploaded(uploaded_path, rec["id"], uploaded)
-                rows.append({
+                row = {
                     **rec,
                     "img": img,
                     "ref": f"SAT Question Bank {rec['id']}",
                     "source": "question-bank",
-                })
+                }
+                # After the question's own upload, before the row is
+                # appended: a row still exists only once everything it
+                # points at is in the bucket.
+                rationale_img = _rationale_image(
+                    pdf, a, rec, dry_run=args.dry_run, uploaded=uploaded_rationales,
+                    uploaded_path=uploaded_rationales_path, skipped=skipped_rationales,
+                )
+                if rationale_img is not None:
+                    row["rationale_img"] = rationale_img
+                rows.append(row)
     finally:
         # Always persisted, even on an exception or KeyboardInterrupt: a
         # mid-run failure at item 2,000 of 3,730 must leave a record of how
@@ -317,7 +388,7 @@ def main(argv: list[str] | None = None) -> int:
             _persist()
         except Exception as exc:
             persist_error = exc
-            print(f"WARNING: failed to persist rows.json/skipped.json: {exc}", file=sys.stderr)
+            print(f"WARNING: failed to persist rows.json/skipped.json/skipped-rationales.json: {exc}", file=sys.stderr)
 
     if persist_error is not None:
         # Only reached when the loop itself completed without raising --
@@ -340,6 +411,13 @@ def main(argv: list[str] | None = None) -> int:
     if skipped:
         histogram = collections.Counter(_reason_key(s["reason"]) for s in skipped)
         print("  skip reasons:")
+        for reason, count in histogram.most_common():
+            print(f"    {reason}: {count}")
+    with_rationale = sum(1 for r in rows if "rationale_img" in r)
+    print(f"  {with_rationale} of {len(rows)} rows carry a rationale image")
+    print(f"  {len(skipped_rationales)} rationales skipped (text fallback) -> {skipped_rationales_path.name}")
+    if skipped_rationales:
+        histogram = collections.Counter(_reason_key(s["reason"]) for s in skipped_rationales)
         for reason, count in histogram.most_common():
             print(f"    {reason}: {count}")
     return 0

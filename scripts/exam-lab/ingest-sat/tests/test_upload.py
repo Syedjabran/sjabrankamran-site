@@ -5,13 +5,19 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from upload import bucket_path, guard_prefix, preflight_credentials, upload_file
+from upload import bucket_path, guard_prefix, preflight_credentials, rationale_bucket_path, upload_file
 
 
 def test_bucket_path_is_under_sat_prefix():
     p = bucket_path("ac472881", "math")
     assert p.startswith("sat/")
     assert p == "sat/math/ac472881.jpg"
+
+
+def test_rationale_bucket_path_sits_beside_the_question_and_passes_the_guard():
+    p = rationale_bucket_path("ac472881", "math")
+    assert p == "sat/math/ac472881-r.jpg"
+    assert guard_prefix(p) == p
 
 
 def test_guard_rejects_paths_outside_sat():

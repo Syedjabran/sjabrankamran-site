@@ -27,10 +27,11 @@ plan; the directory exists but nothing here reads it.
 | `parse_qbank.py` | parses the exported text into verified records: id, section, domain, skill, difficulty, answer, rationale. Rejects anything it can't verify rather than guessing. |
 | `report_qbank.py` | runs the parser over both raw PDFs and prints a coverage report (counts by domain/difficulty/answer kind/source, every rejected id and why). Run this first. |
 | `crop_qbank.py` | locates each question's crop region in `-bbox` coordinate space (below the full metadata header *table*, above the answer/rationale) and rasterises + crops it. The lower bound is the body's `Question` label, not the header's lowest text row: the difficulty rating is also drawn as a textless vector bar glyph, which has no word box to crop below. |
+| `crop_rationale.py` | locates each item's official rationale (below its `Rationale` label, above the next record's header, stitched across a page break) and renders it as an image. The text layer drops every math symbol, so the rationale ships as a picture, like the question. |
 | `upload.py` | uploads one crop to the `exam-assets` bucket, prefix-guarded to `sat/`. |
-| `extract_sat.py` | orchestrates parse + crop + upload for the whole corpus, resumable, and emits `rows.json` / `skipped.json` / `uploaded.json` / `mode.json`. |
-| `build_sat_bank.py` | the last gate: re-validates every row against a hard-coded closed vocabulary (independent of `parse_qbank`'s), refuses rows it can't confirm were actually uploaded, and writes `src/lib/sat/question-bank.json`. |
-| `tests/` | 106 tests covering all of the above, all network calls mocked. |
+| `extract_sat.py` | orchestrates parse + crop + upload for the whole corpus, resumable, and emits `rows.json` / `skipped.json` / `uploaded.json` / `mode.json`, plus `uploaded-rationales.json` / `skipped-rationales.json` for the rationale crops. |
+| `build_sat_bank.py` | the last gate: re-validates every row against a hard-coded closed vocabulary (independent of `parse_qbank`'s), refuses rows it can't confirm were actually uploaded, and writes `src/lib/sat/question-bank.json`. A row's `rationaleImg` ships only if its rationale upload is confirmed; otherwise the row ships with the text rationale. |
+| `tests/` | 272 tests covering all of the above (and the practice-test pipeline), all network calls mocked. |
 
 ## Run
 
@@ -130,6 +131,19 @@ no-answer -- see "Integrity rules" below for what each means.
   token's own bottom edge -- it extends through any table row that
   continues tightly below it and stops at the first looser gap, which
   marks the real start of the question body.
+* **Rationale crops never show part of the next question.** Every record
+  in both exports opens its own page, so a rationale runs from just below
+  its `Rationale` label to the page bottom and, for 182 records, onto one
+  more page. The region stops above the next record's `Question ID:` row,
+  is refused if its text holds another header, answer line or header
+  table, and any cut that isn't a page edge must fall on blank paper. The
+  blank remainder of each page is trimmed in the raster, not from the text
+  layer, because the math and figures have no word boxes. A rationale that
+  fails any of this ships as text only and is listed, with its reason, in
+  `skipped-rationales.json`. Images: `sat/<section>/<id>-r.jpg` in the
+  bucket, `out/crops/<section>/<id>-r.jpg` locally. Rationale uploads are
+  recorded in `uploaded-rationales.json`, apart from `uploaded.json`, so a
+  question uploaded before rationales existed still gets its rationale.
 * **All bucket writes are confined to the `sat/` prefix**, checked by
   `upload.py`'s `guard_prefix` before any network call. The existing 9702
   and `o-level/` assets cannot be reached by this pipeline, by

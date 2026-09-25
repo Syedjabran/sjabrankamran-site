@@ -623,3 +623,172 @@ def test_main_dedupes_an_id_ingested_from_an_earlier_export(monkeypatch, tmp_pat
     assert len(dupes) == 1
     assert dupes[0]["reason"] == "duplicate-across-exports"
     assert dupes[0]["stage"] == "dedupe"
+
+
+# --- official-rationale crops (Task 11) --------------------------------------
+
+def _patch_rationales(monkeypatch, span=lambda a, i: [{"page": 1, "top": 0.0, "bottom": 10.0}],
+                      reason=lambda a, i: None, render=None) -> None:
+    """Fake the crop_rationale calls. `id_index` hands back the id itself so
+    a fake `span` can decide per record."""
+    monkeypatch.setattr(extract_sat, "id_index", lambda a, qid: qid)
+    monkeypatch.setattr(extract_sat, "rationale_span", span)
+    monkeypatch.setattr(extract_sat, "rationale_span_reason", reason)
+    monkeypatch.setattr(
+        extract_sat, "render_rationale",
+        render or (lambda pdf, regions, dest, sizes: _write_crop(pdf, None, dest)),
+    )
+
+
+def _live(monkeypatch, upload) -> None:
+    monkeypatch.setattr(extract_sat, "upload_file", upload)
+    monkeypatch.setattr(extract_sat, "preflight_credentials", lambda: None)
+
+
+def _read(path: Path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _refuse_upload(dest, img):
+    raise AssertionError(f"must not upload {img}")
+
+
+def test_main_dry_run_crops_the_rationale_beside_the_question_without_uploading(tmp_path, monkeypatch):
+    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record("id1")], _write_crop)
+    _patch_rationales(monkeypatch)
+    monkeypatch.setattr(extract_sat, "upload_file", _refuse_upload)
+
+    out_path = tmp_path / "out" / "rows.json"
+    extract_sat.main(["--dry-run", "--out", str(out_path)])
+
+    rows = _read(out_path)
+    assert rows[0]["rationale_img"] == "sat/math/id1-r.jpg"
+    assert rows[0]["img"] == "sat/math/id1.jpg"
+    assert (tmp_path / "crops" / "math" / "id1-r.jpg").exists()
+    assert not out_path.with_name("uploaded-rationales.json").exists()
+
+
+def test_main_live_run_uploads_a_rationale_even_when_its_question_was_already_uploaded(tmp_path, monkeypatch):
+    """The real situation after this task lands: all 3,731 questions are
+    already in the bucket and recorded in uploaded.json. The rationale is
+    bookkept separately, so it is still uploaded -- and the question is
+    not uploaded a second time."""
+    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record("id1")], _write_crop)
+    _patch_rationales(monkeypatch)
+    sent = []
+    _live(monkeypatch, lambda dest, img: sent.append(img) or img)
+
+    out_path = tmp_path / "out" / "rows.json"
+    out_path.parent.mkdir(parents=True)
+    out_path.with_name("uploaded.json").write_text(json.dumps(["id1"]), encoding="utf-8")
+    (tmp_path / "crops" / "math").mkdir(parents=True)
+    (tmp_path / "crops" / "math" / "id1.jpg").write_bytes(b"already-cropped")
+    extract_sat.main(["--out", str(out_path)])
+
+    assert sent == ["sat/math/id1-r.jpg"]
+    assert _read(out_path.with_name("uploaded.json")) == ["id1"]
+    assert _read(out_path.with_name("uploaded-rationales.json")) == ["id1"]
+    assert _read(out_path)[0]["rationale_img"] == "sat/math/id1-r.jpg"
+
+
+def test_main_resume_reuploads_nothing_already_recorded(tmp_path, monkeypatch):
+    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record("id1")], _write_crop)
+    _patch_rationales(monkeypatch)
+    _live(monkeypatch, _refuse_upload)
+
+    out_path = tmp_path / "out" / "rows.json"
+    out_path.parent.mkdir(parents=True)
+    out_path.with_name("uploaded.json").write_text(json.dumps(["id1"]), encoding="utf-8")
+    out_path.with_name("uploaded-rationales.json").write_text(json.dumps(["id1"]), encoding="utf-8")
+    (tmp_path / "crops" / "math").mkdir(parents=True)
+    for name in ("id1.jpg", "id1-r.jpg"):
+        (tmp_path / "crops" / "math" / name).write_bytes(b"cropped")
+    extract_sat.main(["--out", str(out_path)])
+
+    assert _read(out_path)[0]["rationale_img"] == "sat/math/id1-r.jpg"
+
+
+def test_main_live_run_uploads_question_then_rationale_before_the_row_exists(tmp_path, monkeypatch):
+    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record("id1")], _write_crop)
+    _patch_rationales(monkeypatch)
+    calls = []
+    real_record = extract_sat._record_uploaded
+
+    def spy_record(path, qid, already):
+        calls.append(("record", path.name))
+        return real_record(path, qid, already)
+
+    _live(monkeypatch, lambda dest, img: calls.append(("upload", dest.name)) or img)
+    monkeypatch.setattr(extract_sat, "_record_uploaded", spy_record)
+
+    out_path = tmp_path / "out" / "rows.json"
+    extract_sat.main(["--out", str(out_path)])
+
+    assert calls == [
+        ("upload", "id1.jpg"), ("record", "uploaded.json"),
+        ("upload", "id1-r.jpg"), ("record", "uploaded-rationales.json"),
+    ]
+
+
+def test_a_failed_rationale_upload_leaves_the_row_out_and_resumes_cleanly(tmp_path, monkeypatch):
+    """A row exists only once everything it points at is uploaded. If the
+    rationale upload dies, the row is not written -- but the question's
+    upload is on record, so the resumed run uploads only the rationale."""
+    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record("id1")], _write_crop)
+    _patch_rationales(monkeypatch)
+
+    def fail_rationale(dest, img):
+        if img.endswith("-r.jpg"):
+            raise RuntimeError("simulated rationale upload failure")
+        return img
+
+    _live(monkeypatch, fail_rationale)
+    out_path = tmp_path / "out" / "rows.json"
+    with pytest.raises(RuntimeError, match="simulated rationale upload failure"):
+        extract_sat.main(["--out", str(out_path)])
+    assert _read(out_path) == []
+    assert _read(out_path.with_name("uploaded.json")) == ["id1"]
+
+    sent = []
+    _live(monkeypatch, lambda dest, img: sent.append(img) or img)
+    extract_sat.main(["--out", str(out_path)])
+    assert sent == ["sat/math/id1-r.jpg"]
+    assert _read(out_path)[0]["rationale_img"] == "sat/math/id1-r.jpg"
+
+
+def test_a_rationale_that_cannot_be_located_ships_the_row_without_one(tmp_path, monkeypatch):
+    """Controller ruling 3: left out (text fallback) and recorded with its
+    reason -- never approximated. The question itself still ships, so it
+    is not in skipped.json."""
+    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record("id1"), _fake_record("id2")], _write_crop)
+    _patch_rationales(
+        monkeypatch,
+        span=lambda a, i: None if i == "id1" else [{"page": 1, "top": 0.0, "bottom": 10.0}],
+        reason=lambda a, i: "no-rationale-label" if i == "id1" else None,
+    )
+    out_path = tmp_path / "out" / "rows.json"
+    extract_sat.main(["--dry-run", "--out", str(out_path)])
+
+    rows = _read(out_path)
+    assert [r["id"] for r in rows] == ["id1", "id2"]
+    assert "rationale_img" not in rows[0] and rows[1]["rationale_img"] == "sat/math/id2-r.jpg"
+    assert not (tmp_path / "crops" / "math" / "id1-r.jpg").exists()
+    assert _read(out_path.with_name("skipped-rationales.json")) == [
+        {"id": "id1", "reason": "no-rationale-label", "stage": "rationale-span", "section": "math"},
+    ]
+    assert _read(out_path.with_name("skipped.json")) == []
+
+
+def test_a_render_refusal_is_recorded_and_the_row_ships_without_a_rationale_image(tmp_path, monkeypatch):
+    def refuse(pdf, regions, dest, sizes):
+        raise extract_sat.RationaleCropError("cut-through-ink", "top of p1 at 510px")
+
+    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record("id1")], _write_crop)
+    _patch_rationales(monkeypatch, render=refuse)
+    out_path = tmp_path / "out" / "rows.json"
+    extract_sat.main(["--dry-run", "--out", str(out_path)])
+
+    assert "rationale_img" not in _read(out_path)[0]
+    (entry,) = _read(out_path.with_name("skipped-rationales.json"))
+    assert entry["stage"] == "rationale-render"
+    assert entry["reason"].startswith("cut-through-ink")
