@@ -7,6 +7,7 @@
 import { BLUEPRINT } from "./forms.ts";
 import { routeModule2 } from "./adaptive.ts";
 import { isCorrect } from "./grade.ts";
+import { practiceTestTitle } from "./client-types.ts";
 import type { SATAnswer, SATForm, SATFormKey, SATPracticeTest, SATScore, SATSection } from "./types.ts";
 
 export type SATStageKey = "rw.m1" | "rw.m2" | "math.m1" | "math.m2";
@@ -94,7 +95,7 @@ export function startPractice(test: TimedPracticeTest, ids: Ids): SATSession {
       .sort((a, b) => a.qnum - b.qnum)
       .map((q) => practiceQuestionId(test.testNo, section, module, q.qnum));
   }
-  return base(ids, "practice", `Official Practice Test ${test.testNo}`, test.testNo, plan, {}, {
+  return base(ids, "practice", practiceTestTitle(test.testNo), test.testNo, plan, {}, {
     "rw.m1": test.minutes.rw[0], "rw.m2": test.minutes.rw[1],
     "math.m1": test.minutes.math[0], "math.m2": test.minutes.math[1],
   });

@@ -12,7 +12,7 @@ import { getRegistry } from "@/lib/portal/institutions";
 import { notify } from "@/lib/portal/notifications";
 import { pkDateTimeToIso, formatPk } from "@/lib/portal/pk-time";
 import { listAssignments, addAssignments, type SATAssignment } from "@/lib/sat/assignments";
-import { drillTitle, DRILL_MIN, DRILL_MAX } from "@/lib/sat/drills";
+import { DRILL_COUNT_MAX, DRILL_COUNT_MIN, drillTitle, practiceTestTitle } from "@/lib/sat/client-types";
 import { satFilterSchema } from "@/lib/sat/filter-schema";
 import { invalidRequest } from "@/lib/sat/zod-messages";
 import { practiceTestList } from "@/lib/sat/serve";
@@ -32,7 +32,7 @@ const recipients = {
 const bodySchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("adaptive"), ...recipients }),
   z.object({ kind: z.literal("practice"), testNo: z.number().int().min(1).max(99), ...recipients }),
-  z.object({ kind: z.literal("drill"), filter: satFilterSchema.optional(), count: z.number().int().min(DRILL_MIN).max(DRILL_MAX), ...recipients }),
+  z.object({ kind: z.literal("drill"), filter: satFilterSchema.optional(), count: z.number().int().min(DRILL_COUNT_MIN).max(DRILL_COUNT_MAX), ...recipients }),
 ]);
 
 const unavailable = () => NextResponse.json({ error: "Your assignments couldn't be loaded. Please try again." }, { status: 503 });
@@ -111,7 +111,7 @@ export async function POST(req: Request) {
 
   const title =
     b.kind === "adaptive" ? "Adaptive mock exam" :
-    b.kind === "practice" ? `Practice Test ${b.testNo}` :
+    b.kind === "practice" ? practiceTestTitle(b.testNo) :
     drillTitle(b.filter ?? {});
 
   const assignment: SATAssignment = {

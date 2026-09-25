@@ -30,7 +30,8 @@ export async function listSummaries(uid: string): Promise<SessionSummary[] | nul
   if (!SAFE_ID.test(uid)) return [];
   const r = await readFreshJson<{ items: SessionSummary[] }>(BUCKET, indexPath(uid));
   if (!r.ok) return null;
-  return r.data?.items ?? [];
+  // Entries written before `overtime` existed carry no such field: false.
+  return (r.data?.items ?? []).map((x) => ({ ...x, overtime: x.overtime === true }));
 }
 
 /** Save the document, then its summary. A failed index write leaves the

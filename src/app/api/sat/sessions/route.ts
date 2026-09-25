@@ -7,7 +7,7 @@ import { satAccess } from "@/lib/sat/access";
 import { assembleForm } from "@/lib/sat/forms";
 import { loadQuestionBank } from "@/lib/sat/bank";
 import { startAdaptive, startPractice, type TimedPracticeTest } from "@/lib/sat/session";
-import { startDrill, DRILL_MAX, DRILL_MIN } from "@/lib/sat/drills";
+import { startDrill } from "@/lib/sat/drills";
 import { hasConversionTables, practiceTest, practiceTestList } from "@/lib/sat/serve";
 import { ROUTING_DISCLOSURE } from "@/lib/sat/adaptive";
 import { listSummaries, loadDoc, saveDoc } from "@/lib/sat/store";
@@ -15,6 +15,7 @@ import { listAssignments, markAssignment, resolveStart, type SATAssignment } fro
 import { satFilterSchema } from "@/lib/sat/filter-schema";
 import { invalidRequest } from "@/lib/sat/zod-messages";
 import type { SATFilter } from "@/lib/sat/bank";
+import { DRILL_COUNT_MAX, DRILL_COUNT_MIN } from "@/lib/sat/client-types";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,8 @@ const newId = () => randomBytes(12).toString("base64url");
 const rng = () => randomInt(0, 2 ** 32) / 2 ** 32;
 
 // A student's own sittings started within this window are treated as
-// currently "in play" for drill-exclusion purposes -- long enough to cover
+// currently "in play" for exclusion purposes (a new drill or adaptive
+// mock never draws their questions) -- long enough to cover
 // any adaptive/practice sitting actually in progress, short enough that an
 // old, abandoned, unfinished sitting stops narrowing the drill pool forever.
 const RECENT_MS = 4 * 60 * 60 * 1000;
@@ -42,7 +44,7 @@ const body = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("drill"),
     filter: satFilterSchema.optional(),
-    count: z.number().int().min(DRILL_MIN).max(DRILL_MAX).optional(),
+    count: z.number().int().min(DRILL_COUNT_MIN).max(DRILL_COUNT_MAX).optional(),
     assignmentId: z.string().max(64).optional(),
   }),
 ]).superRefine((b, ctx) => {
@@ -71,13 +73,14 @@ export async function GET() {
   });
 }
 
-/** Question ids the student must not be drilled on right now: everything
- *  planned, or possibly still to be routed to, in their own unfinished
- *  adaptive/practice sittings started in the last four hours -- otherwise a
- *  drill opened in another tab, filtered to match, becomes a way to look up
- *  a mid-exam answer. Reads fail closed: any failure returns `null` and the
- *  caller must refuse to build an unfiltered drill rather than silently
- *  show one. */
+/** Question ids a new drill or adaptive mock must not draw right now:
+ *  everything planned, or possibly still to be routed to, in the student's
+ *  own unfinished adaptive/practice sittings started in the last four hours
+ *  -- otherwise a drill opened in another tab, filtered to match, or a
+ *  second mock blank-submitted for its review, becomes a way to look up a
+ *  mid-exam answer. Reads fail closed: any failure returns `null` and the
+ *  caller must refuse to build an unfiltered drill or form rather than
+ *  silently start one. */
 async function recentUnfinishedIds(uid: string, now: number): Promise<Set<string> | null> {
   const summaries = await listSummaries(uid);
   if (summaries === null) return null;
@@ -133,7 +136,9 @@ export async function POST(req: Request) {
 
   let doc;
   if (kind === "adaptive") {
-    doc = startAdaptive(assembleForm(loadQuestionBank(), rng), ids);
+    const exclude = await recentUnfinishedIds(user.id, ids.now);
+    if (exclude === null) return NextResponse.json({ error: "Your SAT history couldn't be checked. Please try again." }, { status: 503 });
+    doc = startAdaptive(assembleForm(loadQuestionBank(), rng, exclude), ids);
   } else if (kind === "practice") {
     const testNo = assignment ? assignment.testNo : (b.kind === "practice" ? (b.testNo ?? null) : null);
     if (testNo === null) return NextResponse.json({ error: "Invalid request." }, { status: 400 });

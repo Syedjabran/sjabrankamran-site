@@ -3,22 +3,15 @@
 // SERVER-ONLY. The zod schema for a drill filter (SATFilter), shared by
 // src/app/api/sat/sessions/route.ts (a student starting a drill directly)
 // and src/app/api/sat/assignments/route.ts (staff assigning a filtered
-// drill) -- fix round 1 ruling: one SAT_DOMAINS + filter zod schema, shared
-// by both routes, so the domain list and its validation rules can never
-// drift between a student's own drill and a staff-assigned one.
+// drill) -- fix round 1 ruling: one filter zod schema, shared by both
+// routes, so the domain list and its validation rules can never drift
+// between a student's own drill and a staff-assigned one.
 import { z } from "zod";
 import { loadQuestionBank, filterQuestions } from "./bank.ts";
-// The domain->section map used to be a local copy of this same data --
-// fix round 2 finding 5: one DOMAIN_SECTIONS (client-types.ts, already
-// shared by sat-hub.tsx's and sat-assign.tsx's drill-filter dropdowns) is
-// now the only place it's spelled out; this schema derives its lookup from
-// it instead of redeclaring it.
-import { DOMAIN_SECTIONS } from "./client-types.ts";
-
-export const SAT_DOMAINS = [
-  "information-ideas", "craft-structure", "expression-ideas", "standard-english",
-  "algebra", "advanced-math", "psda", "geometry-trig",
-] as const;
+// The domain ids and their sections are spelled once, in client-types.ts
+// (shared with the hub's and the assign panel's drill-filter dropdowns);
+// this schema derives its enum and its domain->section lookup from them.
+import { DOMAIN_SECTIONS, SAT_DOMAIN_IDS, type SATDomainId } from "./client-types.ts";
 
 const DOMAIN_SECTION = new Map(DOMAIN_SECTIONS.map((d) => [d.value, d.section]));
 
@@ -33,7 +26,7 @@ const DOMAIN_SECTION = new Map(DOMAIN_SECTIONS.map((d) => [d.value, d.section]))
  */
 export const satFilterSchema = z.object({
   section: z.enum(["rw", "math"]).optional(),
-  domain: z.enum(SAT_DOMAINS).optional(),
+  domain: z.enum(SAT_DOMAIN_IDS as [SATDomainId, ...SATDomainId[]]).optional(),
   difficulty: z.enum(["E", "M", "H"]).optional(),
   skill: z.string().max(120).optional(),
 }).superRefine((f, ctx) => {

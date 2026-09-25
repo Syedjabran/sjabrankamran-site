@@ -11,13 +11,11 @@ import { markAssignment } from "@/lib/sat/assignments";
 
 export const runtime = "nodejs";
 
-// A whole sitting is at most 120 questions (27+27 R&W, 22+22 Math). 200
-// leaves headroom without ever accepting a payload bigger than one sitting
-// could legitimately produce. The runner currently posts the WHOLE answers
-// map on every save/submit, not just the current module's -- saveAnswers /
-// submitStage already filter to the module actually being sat regardless,
-// so raising this cap only ever affects how much a request may carry, never
-// which module it can write into.
+// The runner posts only the current module's answers and flags (at most 33
+// items, on a paper practice test). 200 is a generous ceiling on what one
+// request may carry -- saveAnswers / submitStage filter to the module
+// actually being sat regardless, so this cap never decides which module a
+// request can write into.
 const answersSchema = z.record(z.string().max(80), z.string().max(12)).refine((a) => Object.keys(a).length <= 200);
 const flaggedSchema = z.array(z.string().max(80)).max(200);
 const stageSchema = z.enum(["rw.m1", "rw.m2", "math.m1", "math.m2"]);

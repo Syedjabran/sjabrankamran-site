@@ -6,13 +6,13 @@
 // mean "section/module/domain/skill/E-M-H/SPR" would make every SAT field
 // optional noise in a working, revenue-carrying code path (spec 5.1).
 
+import type { SATDomainId } from "./client-types.ts";
+
 export type SATSection = "rw" | "math";
 export type SATDifficulty = "E" | "M" | "H";
 
-export type SATDomain =
-  | "information-ideas" | "craft-structure"
-  | "expression-ideas"  | "standard-english"
-  | "algebra" | "advanced-math" | "psda" | "geometry-trig";
+/** The eight College Board domains, spelled once in client-types.ts. */
+export type SATDomain = SATDomainId;
 
 /** How an answer was established. Kept on the shipped data so "how many
  *  answers rest on rationale prose alone" stays a one-line query. */

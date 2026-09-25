@@ -1,7 +1,10 @@
 // src/lib/sat/client-types.ts
 //
-// The JSON the SAT API returns. TYPES ONLY: client components import from here
-// and never from serve.ts / bank.ts, which carry the answer key.
+// The JSON the SAT API returns, plus plain answer-free constants and pure
+// copy helpers shared by client and server. Client components import from
+// here and never from serve.ts / bank.ts, which carry the answer key
+// (scripts/check-sat-client-imports.mjs enforces that). Nothing here may
+// import a runtime value from another src/lib/sat module.
 import type { SATDifficulty, SATScore, SATSection } from "./types.ts";
 
 export type PublicQuestion = {
@@ -76,6 +79,10 @@ export type SessionSummary = {
   correct: number;
   total: number;
   assignmentId: string | null;
+  /** A module of this finished sitting was submitted after its time limit
+   *  (always false for drills and unfinished sittings). Index entries
+   *  written before this field existed read as false (store.ts). */
+  overtime: boolean;
 };
 
 export type AssignmentView = {
@@ -97,45 +104,79 @@ export type PracticeTestInfo = {
   minutes: { rw: [number, number]; math: [number, number] } | null;
 };
 
-// Domain ids are plain labels, not answer data, so a runtime const is safe
-// in this types-only module. Shared by the drill filter (sat-hub.tsx) and
-// the score report's "By domain" breakdown (score-report.tsx) so the copy
-// can never drift between the two.
-export const DOMAIN_LABEL: Record<string, string> = {
-  "information-ideas": "Information and Ideas",
-  "craft-structure": "Craft and Structure",
-  "expression-ideas": "Expression of Ideas",
-  "standard-english": "Standard English Conventions",
-  algebra: "Algebra",
-  "advanced-math": "Advanced Math",
-  psda: "Problem-Solving and Data Analysis",
-  "geometry-trig": "Geometry and Trigonometry",
-};
+// The digital SAT blueprint the adaptive mock is assembled to (spec 7):
+// plain numbers, so the hub's description of the mock is built from the
+// same values forms.ts assembles with.
+export const BLUEPRINT = {
+  rw: { perModule: 27, minutes: 32 },
+  math: { perModule: 22, minutes: 35 },
+  breakMinutes: 10,
+} as const;
+
+/** Spec 10.6: shown verbatim wherever Module 2 routing is surfaced -- the
+ *  hub and every adaptive report (sent by the API) and the public /sat
+ *  pages. adaptive.ts re-exports it next to the threshold it describes. */
+export const ROUTING_DISCLOSURE =
+  "College Board does not publish the routing rule or cut score the real " +
+  "digital SAT uses. This practice form routes on the number of Module 1 " +
+  "questions answered correctly, against a threshold this site chose as an " +
+  "approximation. It is not the official algorithm.";
+
+/** Shown where the Math section begins (the break screen and Math modules):
+ *  the SAT Lab has no Desmos calculator or reference sheet yet. */
+export const MATH_TOOLS_NOTE =
+  "The real digital SAT has a built-in Desmos graphing calculator and a reference sheet. " +
+  "This practice module doesn't include them yet — use your own approved calculator and reference sheet.";
+
+/** One name for an official practice test, for sittings and assignments alike. */
+export function practiceTestTitle(testNo: number): string {
+  return `Official Practice Test ${testNo}`;
+}
+
+export const SECTION_LABEL: Record<SATSection, string> = { rw: "Reading and Writing", math: "Math" };
+
+// The College Board domains, spelled once: id, section and label. The
+// SATDomain type (types.ts), the drill-filter schema (filter-schema.ts), the
+// dropdowns and the score report's "By domain" rows all derive from this.
+const DOMAINS = {
+  "information-ideas": { section: "rw", label: "Information and Ideas" },
+  "craft-structure": { section: "rw", label: "Craft and Structure" },
+  "expression-ideas": { section: "rw", label: "Expression of Ideas" },
+  "standard-english": { section: "rw", label: "Standard English Conventions" },
+  algebra: { section: "math", label: "Algebra" },
+  "advanced-math": { section: "math", label: "Advanced Math" },
+  psda: { section: "math", label: "Problem-Solving and Data Analysis" },
+  "geometry-trig": { section: "math", label: "Geometry and Trigonometry" },
+} as const satisfies Record<string, { section: SATSection; label: string }>;
+
+export type SATDomainId = keyof typeof DOMAINS;
+
+/** Every domain id, in the order above (R&W first, then Math). */
+export const SAT_DOMAIN_IDS = Object.keys(DOMAINS) as SATDomainId[];
+
+export const DOMAIN_LABEL: Record<string, string> = Object.fromEntries(SAT_DOMAIN_IDS.map((id) => [id, DOMAINS[id].label]));
 
 // Which section each domain belongs to -- needed to grey out the wrong half
-// of the domain dropdown once a section filter is chosen. Shared by the
-// drill filter (sat-hub.tsx) and the staff assign panel (sat-assign.tsx) so
-// the two drill-filter UIs can never drift apart.
-export const DOMAIN_SECTIONS: { value: string; section: "rw" | "math" }[] = [
-  { value: "information-ideas", section: "rw" },
-  { value: "craft-structure", section: "rw" },
-  { value: "expression-ideas", section: "rw" },
-  { value: "standard-english", section: "rw" },
-  { value: "algebra", section: "math" },
-  { value: "advanced-math", section: "math" },
-  { value: "psda", section: "math" },
-  { value: "geometry-trig", section: "math" },
-];
+// of the domain dropdown once a section filter is chosen.
+export const DOMAIN_SECTIONS: { value: SATDomainId; section: SATSection }[] = SAT_DOMAIN_IDS.map((id) => ({ value: id, section: DOMAINS[id].section }));
 
-// Server enforces the same 5–30 bound (drills.ts DRILL_MIN/DRILL_MAX); kept
-// as plain numbers here rather than imported, since drills.ts pulls in
-// bank.ts (the answer key) and must never reach a client bundle. Shared by
-// the hub's own drill form and the staff assign panel (both via
-// DrillFields) so the bound and the default can't drift between them.
+// The drill question-count bound, enforced by the server (the sessions and
+// assignments routes' schemas, and startDrill's clamp) and offered by the
+// hub's drill form and the staff assign panel (both via DrillFields).
 export const DRILL_COUNT_MIN = 5;
 export const DRILL_COUNT_MAX = 30;
 export const DRILL_COUNT_DEFAULT = 10;
 
-// Same convention as DOMAIN_LABEL above -- plain UI copy, shared by the
-// drill filter (DrillFields) and the assign panel's title preview.
-export const DIFFICULTY_LABEL: Record<"E" | "M" | "H", string> = { E: "Easy", M: "Medium", H: "Hard" };
+export const DIFFICULTY_LABEL: Record<SATDifficulty, string> = { E: "Easy", M: "Medium", H: "Hard" };
+
+/** A drill's title ("Math · Algebra · Hard drill"): stored on the drill and
+ *  its assignment, and previewed by the staff assign panel. An empty string
+ *  counts as "not chosen", the way the client's filter fields hold it. */
+export function drillTitle(f: { section?: SATSection | ""; domain?: string; skill?: string; difficulty?: SATDifficulty | "" }): string {
+  const parts = [
+    f.section ? SECTION_LABEL[f.section] : "Mixed",
+    f.skill ?? (f.domain ? DOMAIN_LABEL[f.domain] ?? f.domain : null),
+    f.difficulty ? DIFFICULTY_LABEL[f.difficulty] : null,
+  ].filter(Boolean);
+  return `${parts.join(" · ")} drill`;
+}

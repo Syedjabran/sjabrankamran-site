@@ -164,17 +164,21 @@ export function drillState(d: SATDrill, now: number): DrillState {
 
 /** `correct`/`total` are reported only once the doc is finished — 0/0 before.
  *  A mid-sitting Module 1 count would reveal an adaptive session's routing
- *  (and a mid-drill count is simply not a finished result yet either). */
+ *  (and a mid-drill count is simply not a finished result yet either).
+ *  `overtime` follows the same rule: set once a finished sitting has any
+ *  module submitted past its limit, so the staff list can flag its score. */
 export function summaryOf(doc: SATSession | SATDrill): SessionSummary {
   const finished = doc.finishedAt !== null;
   if (doc.kind === "drill") {
     const values = Object.values(doc.checked);
     return { id: doc.id, kind: "drill", title: doc.title, createdAt: doc.createdAt, finishedAt: doc.finishedAt, score: null,
-      correct: finished ? values.filter(Boolean).length : 0, total: finished ? doc.questionIds.length : 0, assignmentId: doc.assignmentId };
+      correct: finished ? values.filter(Boolean).length : 0, total: finished ? doc.questionIds.length : 0, assignmentId: doc.assignmentId,
+      overtime: false };
   }
   const results = finished ? STAGES.map((k) => doc.results[k]).filter((r): r is StageResult => !!r) : [];
   return { id: doc.id, kind: doc.kind, title: doc.title, createdAt: doc.createdAt, finishedAt: doc.finishedAt, score: doc.score,
-    correct: results.reduce((n, r) => n + r.correct, 0), total: results.reduce((n, r) => n + r.total, 0), assignmentId: doc.assignmentId };
+    correct: results.reduce((n, r) => n + r.correct, 0), total: results.reduce((n, r) => n + r.total, 0), assignmentId: doc.assignmentId,
+    overtime: results.some((r) => r.overtime) };
 }
 
 export { practiceTest };

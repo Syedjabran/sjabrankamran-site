@@ -75,10 +75,6 @@ export function isCorrectSPR(entry: string, accepted: string[]): boolean {
   return false;
 }
 
-export function mcqLetter(i: number): string {
-  return LETTERS[i] ?? "?";
-}
-
 export function isCorrect(answer: SATAnswer, response: string | null | undefined): boolean {
   if (!response || !response.trim()) return false;
   if (answer.kind === "mcq") return response.trim().toUpperCase() === LETTERS[answer.correct];

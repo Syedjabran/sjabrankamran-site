@@ -3,7 +3,7 @@ import { loadQuestionBank } from "../src/lib/sat/bank.ts";
 import { assembleForm } from "../src/lib/sat/forms.ts";
 import { startAdaptive, submitStage, beginStage } from "../src/lib/sat/session.ts";
 import { startDrill, checkDrillAnswer } from "../src/lib/sat/drills.ts";
-import { answerOf, sessionState, drillState } from "../src/lib/sat/serve.ts";
+import { answerOf, sessionState, drillState, summaryOf } from "../src/lib/sat/serve.ts";
 
 // Deterministic RNG so a run is reproducible and a failure is debuggable.
 function seeded(seed) {
@@ -74,6 +74,8 @@ assertNoLeak(state, "sessionState on a break");
 // --- finish the sitting: leave the break, then math.m1 and math.m2 -------
 s = beginStage(s, T0 + 70 * 60_000);
 s = submitStage(s, "math.m1", allA(s.plan["math.m1"]), [], T0 + 70 * 60_000, answerOf);
+const beforeMath2 = s;
+assert.equal(summaryOf(s).overtime, false, "an unfinished sitting is never flagged");
 s = submitStage(s, "math.m2", allA(s.plan["math.m2"]), [], T0 + 90 * 60_000, answerOf);
 assert.ok(s.finishedAt !== null, "the sitting must be finished after all four stages");
 
@@ -86,6 +88,15 @@ assert.ok(Array.isArray(state.report.review) && state.report.review.length > 0);
 const reportJson = JSON.stringify(state.report);
 assert.ok(reportJson.includes('"correct"'), "the finished report must reveal correctness per item");
 assert.ok(reportJson.includes('"answer"'), "the finished report must reveal the correct answer per item");
+
+// --- summaries carry overtime once finished (F6) ---
+assert.equal(summaryOf(s).overtime, false, "every module inside its limit");
+// Math Module 2 started at T0+70 min with 35 minutes; submitted 3 minutes
+// past its deadline (beyond the 90 s grace) it is recorded as overtime.
+const lateFinish = submitStage(beforeMath2, "math.m2", allA(beforeMath2.plan["math.m2"]), [], T0 + 108 * 60_000, answerOf);
+assert.equal(lateFinish.results["math.m2"].overtime, true);
+assert.equal(summaryOf(lateFinish).overtime, true, "a finished sitting with an overtime module is flagged");
+assert.equal(sessionState(lateFinish, T0 + 109 * 60_000).report.overtime, true, "and so is its report, as before");
 
 console.log("sat-serve session-state tests passed");
 
@@ -113,5 +124,7 @@ const uncheckedJson = JSON.stringify(dstate.questions);
 for (const key of LEAKY_KEYS) {
   assert.ok(!uncheckedJson.includes(`"${key}"`), `dstate.questions (public list) leaks "${key}"`);
 }
+
+assert.equal(summaryOf(checkedDrill).overtime, false, "drills are never flagged");
 
 console.log("sat-serve drill-state tests passed");

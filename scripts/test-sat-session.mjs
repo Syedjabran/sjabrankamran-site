@@ -4,7 +4,8 @@ import {
   settleBreak, saveAnswers, submitStage, beginStage, rawBySection, practiceQuestionId, domainBreakdown,
   isStaleStage,
 } from "../src/lib/sat/session.ts";
-import { startDrill, checkDrillAnswer, DRILL_MAX } from "../src/lib/sat/drills.ts";
+import { startDrill, checkDrillAnswer } from "../src/lib/sat/drills.ts";
+import { DRILL_COUNT_MAX, drillTitle } from "../src/lib/sat/client-types.ts";
 import { ROUTING } from "../src/lib/sat/adaptive.ts";
 
 const T0 = Date.parse("2026-10-01T09:00:00.000Z");
@@ -109,6 +110,7 @@ const test = {
 };
 const p = startPractice(test, { id: "p1", uid: "u1", now: T0 });
 assert.equal(p.kind, "practice");
+assert.equal(p.title, "Official Practice Test 4", "one name for practice tests, sittings and assignments alike");
 assert.equal(stageDeadline(p), T0 + 39 * 60_000, "the paper's own 39 minutes, not the digital 32");
 assert.deepEqual(p.plan["math.m1"], [practiceQuestionId(4, "math", 1, 1), practiceQuestionId(4, "math", 1, 2)], "questions in printed order");
 const pm = submitStage(p, "rw.m1", {}, [], T0 + 60_000, answerOf);
@@ -128,7 +130,7 @@ const pool = [...set("a", 20, "math"), ...set("b", 20, "rw")];
 const d = startDrill(pool, { section: "math" }, 8, seeded(1), { id: "d1", uid: "u1", now: T0 });
 assert.equal(d.questionIds.length, 8);
 assert.ok(d.questionIds.every((id) => id.startsWith("a")), "the filter is honoured");
-assert.equal(startDrill(pool, { section: "math" }, 999, seeded(1), { id: "d2", uid: "u1", now: T0 }).questionIds.length, Math.min(DRILL_MAX, 20));
+assert.equal(startDrill(pool, { section: "math" }, 999, seeded(1), { id: "d2", uid: "u1", now: T0 }).questionIds.length, Math.min(DRILL_COUNT_MAX, 20));
 assert.throws(() => startDrill(pool, { section: "math", domain: "psda" }, 5, seeded(1), { id: "d3", uid: "u1", now: T0 }), /No questions/);
 
 const first = checkDrillAnswer(d, d.questionIds[0], "A", answerOf, T0 + 1000);
@@ -149,5 +151,29 @@ const excludeSet = new Set(mathPool.slice(0, 15).map((x) => x.id));
 const excluded = startDrill(pool, { section: "math" }, 5, seeded(2), { id: "d4", uid: "u1", now: T0 }, excludeSet);
 assert.equal(excluded.questionIds.length, 5, "the 5 non-excluded math items are exactly enough to fill the drill");
 assert.ok(excluded.questionIds.every((id) => !excludeSet.has(id)), "excluded ids never appear in the drill");
+
+// --- drills: an invalid grid-in entry is refused and records nothing (F11) ---
+const sprKey = { kind: "spr", accepted: ["3/2", "1.5"] };
+const sprAnswerOf = () => sprKey;
+const sprDrill = startDrill(pool, { section: "math" }, 5, seeded(3), { id: "d5", uid: "u1", now: T0 });
+const sprId = sprDrill.questionIds[0];
+for (const bad of ["1 1/2", "123456", "3/0", "abc", "1.2.3"]) {
+  assert.throws(() => checkDrillAnswer(sprDrill, sprId, bad, sprAnswerOf, T0), Error, `"${bad}" is refused`);
+}
+assert.deepEqual(sprDrill.checked, {}, "a refused entry records nothing");
+assert.deepEqual(sprDrill.answers, {});
+const sprOk = checkDrillAnswer(sprDrill, sprId, "1.5", sprAnswerOf, T0 + 1000);
+assert.equal(sprOk.correct, true, "the first VALID entry is the recorded one");
+assert.equal(sprOk.drill.answers[sprId], "1.5");
+// MCQ checks are unaffected: any letter is judged as before.
+assert.equal(checkDrillAnswer(d, d.questionIds[1], "C", answerOf, T0).correct, false);
+
+// --- drill titles: one function for the stored title and the staff preview ---
+assert.equal(drillTitle({}), "Mixed drill");
+assert.equal(drillTitle({ section: "", domain: "", difficulty: "" }), "Mixed drill", "the client's empty fields");
+assert.equal(drillTitle({ section: "math", domain: "algebra", difficulty: "H" }), "Math · Algebra · Hard drill");
+assert.equal(drillTitle({ section: "rw", domain: "standard-english" }), "Reading and Writing · Standard English Conventions drill");
+assert.equal(drillTitle({ section: "math", domain: "algebra", skill: "Linear equations in one variable" }), "Math · Linear equations in one variable drill", "a skill names the drill over its domain");
+assert.equal(d.title, "Math drill");
 
 console.log("sat-session tests passed");

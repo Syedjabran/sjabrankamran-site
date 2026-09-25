@@ -9,13 +9,14 @@
 // question bank, using College Board's own E/M/H labels, and are scored as
 // *estimated* (spec 8) precisely because no published curve exists for them.
 import { byDomain, domainProportions } from "./bank.ts";
+import { BLUEPRINT } from "./client-types.ts";
+import { shuffle, type Rng } from "./shuffle.ts";
 import type { SATForm, SATFormKey, SATQuestion, SATSection } from "./types.ts";
 
-export const BLUEPRINT = {
-  rw: { perModule: 27, minutes: 32 },
-  math: { perModule: 22, minutes: 35 },
-  breakMinutes: 10,
-} as const;
+// The blueprint's numbers live in client-types.ts so the hub describes the
+// mock from the same values; re-exported for session/scoring/adaptive.
+export { BLUEPRINT };
+export type { Rng };
 
 /** Difficulty mix per module set. Module 1 is mixed; Module 2 splits into an
  *  easier and a harder variant. These weights are this module's own
@@ -25,8 +26,6 @@ const DIFFICULTY_WEIGHTS = {
   lower: { E: 0.50, M: 0.35, H: 0.15 },
   upper: { E: 0.15, M: 0.35, H: 0.50 },
 } as const;
-
-export type Rng = () => number;
 
 /**
  * Split `total` across domains by proportion, using largest remainder.
@@ -69,15 +68,6 @@ export function allocateByDomain(
   return out;
 }
 
-function shuffle<T>(items: T[], rng: Rng): T[] {
-  const out = [...items];
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
-  }
-  return out;
-}
-
 /**
  * Draw `n` questions from `pool` to a difficulty mix.
  *
@@ -106,13 +96,18 @@ export function pickWeighted(
 
 function buildSet(
   bank: SATQuestion[], section: SATSection, weights: Record<string, number>,
-  used: Set<string>, rng: Rng,
+  used: Set<string>, rng: Rng, exclude?: ReadonlySet<string>,
 ): SATQuestion[] {
   const groups = byDomain(bank, section);
   const allocation = allocateByDomain(BLUEPRINT[section].perModule, domainProportions(bank, section));
   const out: SATQuestion[] = [];
   for (const [domain, count] of Object.entries(allocation)) {
-    const available = (groups[domain] ?? []).filter((q) => !used.has(q.id));
+    const unused = (groups[domain] ?? []).filter((q) => !used.has(q.id));
+    // Keep `exclude` out of this domain's draw -- unless that would leave the
+    // domain's share of the module unfillable, when it falls back to the
+    // unrestricted pool: a short module is a broken form.
+    const allowed = exclude ? unused.filter((q) => !exclude.has(q.id)) : unused;
+    const available = allowed.length >= count ? allowed : unused;
     const chosen = pickWeighted(available, count, weights, rng);
     for (const q of chosen) used.add(q.id);
     out.push(...chosen);
@@ -127,18 +122,23 @@ function buildSet(
  * Module 1 and then exactly one Module 2 — meeting the same question twice
  * in one sitting would invalidate the score. The two Module 2 variants may
  * overlap each other: no student ever sees both.
+ *
+ * `exclude`: ids to keep out of the form -- the questions of the student's
+ * own unfinished sittings, so a second mock can't be blank-submitted to read
+ * answers to items of the one still running. Honoured per domain unless
+ * that domain could not then fill its share (see buildSet).
  */
-export function assembleForm(bank: SATQuestion[], rng: Rng): SATForm {
+export function assembleForm(bank: SATQuestion[], rng: Rng, exclude?: ReadonlySet<string>): SATForm {
   const sets = {} as Record<SATFormKey, SATQuestion[]>;
   for (const section of ["rw", "math"] as const) {
     const used = new Set<string>();
-    sets[`${section}.m1`] = buildSet(bank, section, DIFFICULTY_WEIGHTS.m1, used, rng);
+    sets[`${section}.m1`] = buildSet(bank, section, DIFFICULTY_WEIGHTS.m1, used, rng, exclude);
     // A fresh `used` per Module 2 variant, seeded with Module 1's ids: the
     // two variants are alternatives, so they may share questions with each
     // other but never with Module 1.
     const afterM1 = new Set(used);
-    sets[`${section}.m2.lower`] = buildSet(bank, section, DIFFICULTY_WEIGHTS.lower, new Set(afterM1), rng);
-    sets[`${section}.m2.upper`] = buildSet(bank, section, DIFFICULTY_WEIGHTS.upper, new Set(afterM1), rng);
+    sets[`${section}.m2.lower`] = buildSet(bank, section, DIFFICULTY_WEIGHTS.lower, new Set(afterM1), rng, exclude);
+    sets[`${section}.m2.upper`] = buildSet(bank, section, DIFFICULTY_WEIGHTS.upper, new Set(afterM1), rng, exclude);
   }
   return { id: `form-${Date.now().toString(36)}`, kind: "adaptive", sets };
 }
