@@ -58,7 +58,9 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".1764,"
+    ".1764",
+    ".1765",
+    "3/17"
    ],
    "source": "answer-line"
   },
@@ -343,7 +345,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "0.25,"
+    "0.25",
+    "1/4"
    ],
    "source": "answer-line"
   },
@@ -475,7 +478,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "16.25,"
+    "16.25",
+    "65/4"
    ],
    "source": "answer-line"
   },
@@ -770,7 +774,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "8.6,"
+    "8.6",
+    "43/5"
    ],
    "source": "answer-line"
   },
@@ -788,7 +793,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".5,"
+    ".5",
+    "1/2"
    ],
    "source": "answer-line"
   },
@@ -988,7 +994,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".2857,"
+    ".2857",
+    "2/7"
    ],
    "source": "answer-line"
   },
@@ -1594,7 +1601,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "0.25,"
+    "0.25",
+    "1/4"
    ],
    "source": "answer-line"
   },
@@ -2104,7 +2112,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".2,"
+    ".2",
+    "1/5"
    ],
    "source": "answer-line"
   },
@@ -2402,7 +2411,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "24.5,"
+    "24.5",
+    "49/2"
    ],
    "source": "answer-line"
   },
@@ -2714,7 +2724,9 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".9411,"
+    ".9411",
+    ".9412",
+    "16/17"
    ],
    "source": "answer-line"
   },
@@ -3688,7 +3700,9 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "14.66,"
+    "14.66",
+    "14.67",
+    "44/3"
    ],
    "source": "answer-line"
   },
@@ -4290,7 +4304,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "-.9333,"
+    "-.9333",
+    "-14/15"
    ],
    "source": "answer-line"
   },
@@ -5762,7 +5777,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".0465,"
+    ".0465",
+    "2/43"
    ],
    "source": "answer-line"
   },
@@ -6236,7 +6252,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "1.8,"
+    "1.8",
+    "9/5"
    ],
    "source": "answer-line"
   },
@@ -6302,7 +6319,9 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "59/9,"
+    "59/9",
+    "6.555",
+    "6.556"
    ],
    "source": "answer-line"
   },
@@ -6687,7 +6706,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "0.2,"
+    "0.2",
+    "1/5"
    ],
    "source": "answer-line"
   },
@@ -6803,7 +6823,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "1.2,"
+    "1.2",
+    "6/5"
    ],
    "source": "answer-line"
   },
@@ -7359,7 +7380,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".3846,"
+    ".3846",
+    "5/13"
    ],
    "source": "answer-line"
   },
@@ -7489,7 +7511,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".25,"
+    ".25",
+    "1/4"
    ],
    "source": "answer-line"
   },
@@ -7785,7 +7808,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "3.5,"
+    "3.5",
+    "7/2"
    ],
    "source": "answer-line"
   },
@@ -8704,7 +8728,9 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "-.3266,"
+    "-.3266",
+    "-.3267",
+    "-49/150"
    ],
    "source": "answer-line"
   },
@@ -9012,7 +9038,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "189/5,"
+    "189/5",
+    "37.8"
    ],
    "source": "answer-line"
   },
@@ -9163,7 +9190,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "13.75,"
+    "13.75",
+    "55/4"
    ],
    "source": "answer-line"
   },
@@ -9263,7 +9291,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "1.636,"
+    "1.636",
+    "18/11"
    ],
    "source": "answer-line"
   },
@@ -9969,7 +9998,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "4.51,"
+    "4.51",
+    "451/100"
    ],
    "source": "answer-line"
   },
@@ -11433,7 +11463,9 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".0177,"
+    ".0177",
+    ".0178",
+    "4/225"
    ],
    "source": "answer-line"
   },
@@ -11517,7 +11549,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "20.25,"
+    "20.25",
+    "81/4"
    ],
    "source": "answer-line"
   },
@@ -11583,7 +11616,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "30,"
+    "30",
+    "-30"
    ],
    "source": "answer-line"
   },
@@ -12476,7 +12510,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "17.5,"
+    "17.5",
+    "35/2"
    ],
    "source": "answer-line"
   },
@@ -12494,7 +12529,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "-4.9,"
+    "-4.9",
+    "-49/10"
    ],
    "source": "answer-line"
   },
@@ -12528,7 +12564,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "15.5,"
+    "15.5",
+    "31/2"
    ],
    "source": "answer-line"
   },
@@ -12578,7 +12615,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "10,"
+    "10",
+    "16"
    ],
    "source": "answer-line"
   },
@@ -12712,7 +12750,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "-6,"
+    "-6",
+    "4"
    ],
    "source": "answer-line"
   },
@@ -12782,7 +12821,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "10.33,"
+    "10.33",
+    "31/3"
    ],
    "source": "answer-line"
   },
@@ -12944,7 +12984,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".09,"
+    ".09",
+    "9/100"
    ],
    "source": "answer-line"
   },
@@ -13339,7 +13380,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "15,"
+    "15",
+    "-5"
    ],
    "source": "answer-line"
   },
@@ -13733,7 +13775,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "2,"
+    "2",
+    "-12"
    ],
    "source": "answer-line"
   },
@@ -13865,7 +13908,9 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".5061,"
+    ".5061",
+    ".5062",
+    "41/81"
    ],
    "source": "answer-line"
   },
@@ -13995,7 +14040,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "1.1,"
+    "1.1",
+    "11/10"
    ],
    "source": "answer-line"
   },
@@ -14447,7 +14493,9 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "29/3,"
+    "29/3",
+    "9.666",
+    "9.667"
    ],
    "source": "answer-line"
   },
@@ -14515,7 +14563,9 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".2916,"
+    ".2916",
+    ".2917",
+    "7/24"
    ],
    "source": "answer-line"
   },
@@ -15025,7 +15075,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "3.44,"
+    "3.44",
+    "86/25"
    ],
    "source": "answer-line"
   },
@@ -15059,7 +15110,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".5,"
+    ".5",
+    "1/2"
    ],
    "source": "answer-line"
   },
@@ -16291,7 +16343,9 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "14,"
+    "14",
+    "-5",
+    "-4"
    ],
    "source": "answer-line"
   },
@@ -16555,7 +16609,9 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "361/8,"
+    "361/8",
+    "45.12",
+    "45.13"
    ],
    "source": "answer-line"
   },
@@ -16623,7 +16679,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "11/4,"
+    "11/4",
+    "2.75"
    ],
    "source": "answer-line"
   },
@@ -16641,7 +16698,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".0625,"
+    ".0625",
+    "1/16"
    ],
    "source": "answer-line"
   },
@@ -16659,7 +16717,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "11,"
+    "11",
+    "-7"
    ],
    "source": "answer-line"
   },
@@ -17135,7 +17194,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "25/4,"
+    "25/4",
+    "6.25"
    ],
    "source": "answer-line"
   },
@@ -17235,7 +17295,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "-13/2,"
+    "-13/2",
+    "-6.5"
    ],
    "source": "answer-line"
   },
@@ -17523,7 +17584,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "14.5,"
+    "14.5",
+    "29/2"
    ],
    "source": "answer-line"
   },
@@ -19921,7 +19983,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "7.5,"
+    "7.5",
+    "15/2"
    ],
    "source": "answer-line"
   },
@@ -20231,7 +20294,9 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".6956,"
+    ".6956",
+    ".6957",
+    "16/23"
    ],
    "source": "answer-line"
   },
@@ -20379,7 +20444,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "6.5,"
+    "6.5",
+    "13/2"
    ],
    "source": "answer-line"
   },
@@ -21619,7 +21685,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "2.4,"
+    "2.4",
+    "12/5"
    ],
    "source": "answer-line"
   },
@@ -21687,7 +21754,9 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "284/3,"
+    "284/3",
+    "94.66",
+    "94.67"
    ],
    "source": "answer-line"
   },
@@ -21825,7 +21894,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "2592/5,"
+    "2592/5",
+    "518.4"
    ],
    "source": "answer-line"
   },
@@ -22129,7 +22199,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "4.41,"
+    "4.41",
+    "441/100"
    ],
    "source": "answer-line"
   },
@@ -22525,7 +22596,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "6.3,"
+    "6.3",
+    "63/10"
    ],
    "source": "answer-line"
   },
@@ -22611,7 +22683,9 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "14.66,"
+    "14.66",
+    "14.67",
+    "44/3"
    ],
    "source": "answer-line"
   },
@@ -23437,7 +23511,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".7241,"
+    ".7241",
+    "21/29"
    ],
    "source": "answer-line"
   },
@@ -23455,7 +23530,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "24.5,"
+    "24.5",
+    "49/2"
    ],
    "source": "answer-line"
   },
@@ -23609,7 +23685,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "101/2,"
+    "101/2",
+    "50.5"
    ],
    "source": "answer-line"
   },
@@ -23739,7 +23816,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".9811,"
+    ".9811",
+    "52/53"
    ],
    "source": "answer-line"
   },
@@ -23827,7 +23905,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".14,"
+    ".14",
+    "7/50"
    ],
    "source": "answer-line"
   },
@@ -24009,7 +24088,9 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".8823,"
+    ".8823",
+    ".8824",
+    "15/17"
    ],
    "source": "answer-line"
   },
@@ -24159,7 +24240,9 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".3928,"
+    ".3928",
+    ".3929",
+    "11/28"
    ],
    "source": "answer-line"
   },
@@ -24426,7 +24509,9 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "135/8,"
+    "135/8",
+    "16.87",
+    "16.88"
    ],
    "source": "answer-line"
   },
@@ -25626,7 +25711,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "0.5,"
+    "0.5",
+    "1/2"
    ],
    "source": "answer-line"
   },
@@ -26230,7 +26316,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".9538,"
+    ".9538",
+    "62/65"
    ],
    "source": "answer-line"
   },
@@ -26346,9 +26433,10 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "25.4"
+    "25.4",
+    "127/5"
    ],
-   "source": "rationale-stated"
+   "source": "entry-note"
   },
   "rationale": "The correct answer is 25.4. The average speed is the total distance divided by the total time. The total distance is 11 miles and the total time is\n\n26 minutes. Thus, the average speed is\n\nmiles per minute. The question asks for the average speed in miles per hour, and there are 60\n\nminutes in an hour; converting miles per minute to miles per hour gives the following:\n\nTherefore, to the nearest tenth of a mile per hour, the average speed of Paul Revere\u2019s ride would have been 25.4 miles per hour. Note that 25.4\nand 127/5 are examples of ways to enter a correct answer.",
   "img": "sat/math/fea831fc.jpg",
@@ -26837,7 +26925,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".0714,"
+    ".0714",
+    "1/14"
    ],
    "source": "answer-line"
   },
@@ -26887,7 +26976,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "423.5,"
+    "423.5",
+    "847/2"
    ],
    "source": "answer-line"
   },
@@ -27293,7 +27383,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".0625,"
+    ".0625",
+    "1/16"
    ],
    "source": "answer-line"
   },
@@ -27559,7 +27650,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".54,"
+    ".54",
+    "27/50"
    ],
    "source": "answer-line"
   },
@@ -27961,7 +28053,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "4.5,"
+    "4.5",
+    "9/2"
    ],
    "source": "answer-line"
   },
@@ -28239,7 +28332,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".3833,"
+    ".3833",
+    "23/60"
    ],
    "source": "answer-line"
   },
@@ -28273,7 +28367,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "1512/5,"
+    "1512/5",
+    "302.4"
    ],
    "source": "answer-line"
   },
@@ -28453,7 +28548,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "0.4,"
+    "0.4",
+    "2/5"
    ],
    "source": "answer-line"
   },
@@ -28603,7 +28699,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "0.32,"
+    "0.32",
+    "8/25"
    ],
    "source": "answer-line"
   },
@@ -28655,7 +28752,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "157.8,"
+    "157.8",
+    "789/5"
    ],
    "source": "answer-line"
   },
@@ -28919,7 +29017,9 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "14/3,"
+    "14/3",
+    "4.666",
+    "4.667"
    ],
    "source": "answer-line"
   },
@@ -29101,7 +29201,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".48,"
+    ".48",
+    "12/25"
    ],
    "source": "answer-line"
   },
@@ -29345,7 +29446,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "0.7,"
+    "0.7",
+    "7/10"
    ],
    "source": "answer-line"
   },
@@ -29545,7 +29647,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "4.05,"
+    "4.05",
+    "81/20"
    ],
    "source": "answer-line"
   },
@@ -29579,7 +29682,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "9.87,"
+    "9.87",
+    "987/100"
    ],
    "source": "answer-line"
   },
@@ -29965,7 +30069,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "189/4,"
+    "189/4",
+    "47.25"
    ],
    "source": "answer-line"
   },
@@ -30352,7 +30457,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "203/50,"
+    "203/50",
+    "4.06"
    ],
    "source": "answer-line"
   },
@@ -30889,7 +30995,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "1.8,"
+    "1.8",
+    "9/5"
    ],
    "source": "answer-line"
   },
@@ -30923,7 +31030,7 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "3"
+    "3540"
    ],
    "source": "rationale-stated"
   },
@@ -30991,7 +31098,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".26,"
+    ".26",
+    "13/50"
    ],
    "source": "answer-line"
   },
@@ -31369,7 +31477,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    ".88,"
+    ".88",
+    "22/25"
    ],
    "source": "answer-line"
   },
@@ -31517,7 +31626,8 @@
   "answer": {
    "kind": "spr",
    "accepted": [
-    "0.3,"
+    "0.3",
+    "3/10"
    ],
    "source": "answer-line"
   },
