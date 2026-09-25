@@ -9,6 +9,7 @@ import { loadQuestionBank } from "@/lib/sat/bank";
 import { startAdaptive, startPractice, type TimedPracticeTest } from "@/lib/sat/session";
 import { startDrill, DRILL_MAX, DRILL_MIN } from "@/lib/sat/drills";
 import { hasConversionTables, practiceTest, practiceTestList } from "@/lib/sat/serve";
+import { ROUTING_DISCLOSURE } from "@/lib/sat/adaptive";
 import { listSummaries, loadDoc, saveDoc } from "@/lib/sat/store";
 
 export const runtime = "nodejs";
@@ -56,7 +57,10 @@ export async function GET() {
   if (!access.ok) return NextResponse.json({ error: "The SAT Lab is not part of your courses." }, { status: 403 });
   const sessions = await listSummaries(user.id);
   if (sessions === null) return NextResponse.json({ error: "Your SAT history couldn't be loaded. Please try again." }, { status: 503 });
-  return NextResponse.json({ sessions, practiceTests: practiceTestList(), conversionTables: hasConversionTables() });
+  return NextResponse.json({
+    sessions, practiceTests: practiceTestList(), conversionTables: hasConversionTables(),
+    routingDisclosure: ROUTING_DISCLOSURE,
+  });
 }
 
 /** Question ids the student must not be drilled on right now: everything

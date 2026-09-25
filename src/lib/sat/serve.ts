@@ -68,12 +68,11 @@ export function hasConversionTables(): boolean {
   return loadPracticeTests().some((t) => isCompleteTable(t.conversion?.rw, "rw") && isCompleteTable(t.conversion?.math, "math"));
 }
 
-export function practiceTestList(): { testNo: number; questions: number; timed: boolean }[] {
-  return loadPracticeTests().map((t) => ({
-    testNo: t.testNo,
-    questions: t.questions.length,
-    timed: !!(t as typeof t & { minutes?: unknown }).minutes,
-  }));
+export function practiceTestList(): { testNo: number; questions: number; timed: boolean; minutes: { rw: [number, number]; math: [number, number] } | null }[] {
+  return loadPracticeTests().map((t) => {
+    const minutes = (t as typeof t & { minutes?: { rw: [number, number]; math: [number, number] } }).minutes ?? null;
+    return { testNo: t.testNo, questions: t.questions.length, timed: !!minutes, minutes };
+  });
 }
 
 const STAGE_LABEL: Record<SATStageKey, string> = {

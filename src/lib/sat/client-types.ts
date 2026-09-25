@@ -88,3 +88,11 @@ export type AssignmentView = {
   sessionId: string | null;
   assignedByName: string;
 };
+
+// practiceTestList()'s per-test summary, as GET /api/sat/sessions returns it.
+export type PracticeTestInfo = {
+  testNo: number;
+  questions: number;
+  timed: boolean;
+  minutes: { rw: [number, number]; math: [number, number] } | null;
+};
