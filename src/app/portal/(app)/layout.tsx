@@ -199,7 +199,7 @@ export default async function PortalLayout({ children }: { children: React.React
     <div className="container-x py-8">
       <AccessLockMonitor />
       <PresenceBeacon />
-      <PwaPortal />
+      <PwaPortal showInstallCard={!mustOnboard} />
       {previewing ? (
         <div className="el-noprint mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/30 bg-amber-300/[0.06] px-4 py-2.5">
           <p className="flex items-center gap-2 text-xs text-amber-300">
