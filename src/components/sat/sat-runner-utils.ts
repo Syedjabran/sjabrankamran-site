@@ -18,30 +18,61 @@ export function pickFlagged(flagged: string[], ids: string[]): string[] {
   return flagged.filter((id) => allowed.has(id));
 }
 
+/** The subset of a module's ids the local student has actually edited
+ *  (answered or flagged) since the last adopted server snapshot -- as
+ *  opposed to every id local merely *inherited* by copying the server's own
+ *  map during an earlier load/apply. Only THESE ids may have local win a
+ *  merge; a module the student has never looked at has touched none of its
+ *  ids at all, so the server's own copy for it always survives untouched. */
+function winningIds(ids: string[], touched: Iterable<string>): Set<string> {
+  const touchedSet = new Set(touched);
+  return new Set(ids.filter((id) => touchedSet.has(id)));
+}
+
 /** Seed a module's answers from the server's copy, but let any local answer
- *  the student already entered for THAT module's ids win -- never resurrect
+ *  the student actually TOUCHED for that module's ids win -- never resurrect
  *  a server value the student has since cleared, and never drop a value the
- *  student typed before the switch. Every other module's answers pass
- *  through from the server untouched. */
+ *  student typed before the switch. An id the student never touched (even
+ *  if local happens to carry a value for it, inherited from an earlier
+ *  snapshot) always keeps the server's copy. Every id outside `ids` -- i.e.
+ *  every other module -- passes through from the server untouched. */
 export function mergeAnswers(
-  serverAnswers: Record<string, string>, localAnswers: Record<string, string>, ids: string[],
+  serverAnswers: Record<string, string>, localAnswers: Record<string, string>, ids: string[], touched: Iterable<string>,
 ): Record<string, string> {
-  const allowed = new Set(ids);
+  const winIds = winningIds(ids, touched);
   const out: Record<string, string> = { ...serverAnswers };
   for (const [id, v] of Object.entries(localAnswers)) {
-    if (!allowed.has(id)) continue;
+    if (!winIds.has(id)) continue;
     if (v) out[id] = v;
     else delete out[id];
   }
   return out;
 }
 
-/** Same merge rule for the flagged set: for the target module's ids, the
- *  local flag state wins outright (the server's flags on those same ids are
- *  dropped); every other module's flags pass through from the server. */
-export function mergeFlagged(serverFlagged: string[], localFlagged: string[], ids: string[]): string[] {
-  const allowed = new Set(ids);
-  const keepServer = serverFlagged.filter((id) => !allowed.has(id));
-  const localForIds = localFlagged.filter((id) => allowed.has(id));
+/** Same merge rule for the flagged set: for the target module's TOUCHED
+ *  ids, the local flag state wins outright (the server's flag on those same
+ *  ids is dropped); every untouched id in the module -- and every id
+ *  outside it -- passes through from the server unchanged. */
+export function mergeFlagged(serverFlagged: string[], localFlagged: string[], ids: string[], touched: Iterable<string>): string[] {
+  const winIds = winningIds(ids, touched);
+  const keepServer = serverFlagged.filter((id) => !winIds.has(id));
+  const localForIds = localFlagged.filter((id) => winIds.has(id));
   return [...new Set([...keepServer, ...localForIds])];
+}
+
+/** Whether a merged answers map actually differs from the server's own copy
+ *  over a module's ids -- used to decide whether a stage-switch merge needs
+ *  to be resaved, rather than always assuming it does. */
+export function answersChangedFor(serverAnswers: Record<string, string>, merged: Record<string, string>, ids: string[]): boolean {
+  return ids.some((id) => (serverAnswers[id] ?? "") !== (merged[id] ?? ""));
+}
+
+/** Same comparison for the flagged set. */
+export function flaggedChangedFor(serverFlagged: string[], merged: string[], ids: string[]): boolean {
+  const allowed = new Set(ids);
+  const a = new Set(serverFlagged.filter((id) => allowed.has(id)));
+  const b = new Set(merged.filter((id) => allowed.has(id)));
+  if (a.size !== b.size) return true;
+  for (const id of a) if (!b.has(id)) return true;
+  return false;
 }

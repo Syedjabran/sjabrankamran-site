@@ -5,7 +5,7 @@ import type { SessionState } from "@/lib/sat/client-types";
 import { SprPad } from "./spr-pad";
 import { ScoreReport } from "./score-report";
 import { useSignedImages } from "./use-signed-images";
-import { mergeAnswers, mergeFlagged, pickAnswers, pickFlagged } from "./sat-runner-utils";
+import { answersChangedFor, flaggedChangedFor, mergeAnswers, mergeFlagged, pickAnswers, pickFlagged } from "./sat-runner-utils";
 
 type SaveState = "idle" | "saving" | "saved" | "failed";
 type PostResult = { kind: "ok"; state: SessionState } | { kind: "stale"; state: SessionState } | { kind: "error"; message: string };
@@ -29,6 +29,15 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   const expiredOnLoad = useRef(false);
   const dirty = useRef(false);
   const autoSubmitted = useRef<string | null>(null);
+  // Ids the student has actually edited (answered or flagged) since the
+  // last adopted server snapshot -- as opposed to an id local merely
+  // inherited by copying a server map. Only touched ids may win a
+  // stage-switch merge; cleared whenever a server snapshot is adopted for
+  // a stage (apply(), and applyStale's switch-to-a-different-module branch).
+  const touched = useRef<Set<string>>(new Set());
+  // Bumped by every edit; a save response is only trusted to mean "nothing
+  // left to save" if no edit happened after the request body was built.
+  const editSeq = useRef(0);
 
   // Refs mirroring the latest state/answers/flagged for use inside async
   // request handlers, which must always act on "the module now on screen"
@@ -70,39 +79,48 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
     setIdx(0);
     setConfirming(false);
     setNote(null);
+    setError(null);
     expiredOnLoad.current = !!s.stage && s.stage.deadline <= s.serverNow;
     dirty.current = false;
+    touched.current = new Set();
   }, [setStateBoth, setAnswersBoth, setFlaggedBoth]);
 
-  // A 409 (save or submit): adopt the server's stage/clock always. If the
+  // A 409 (save or submit): adopt the server's clock always. If the
   // server's stage still matches the module on screen, the local
   // answers/flagged for it are left completely untouched (and kept dirty,
   // so the next save resends them) -- never wiped just because a stale
-  // response landed. Only when the server has moved to a DIFFERENT module
-  // do we switch the screen, seeding that module's answers from the
-  // server's copy merged with any local answers already entered for it
-  // (local wins). Never shown as "saved" -- a neutral note explains it.
+  // response landed, and `expiredOnLoad` is left alone too (this module was
+  // already on screen; it isn't being freshly "loaded"). Only when the
+  // server has moved to a DIFFERENT module do we switch the screen,
+  // recompute `expiredOnLoad` for it, and seed its answers/flagged from the
+  // server's copy merged with any local answers/flags the student actually
+  // TOUCHED for it (touched wins; an id merely inherited from an earlier
+  // snapshot never overrides the server's own copy) -- dirty only if that
+  // merge actually changed something. Never shown as "saved" -- a neutral
+  // note explains it instead.
   const applyStale = useCallback((s: SessionState) => {
     skew.current = s.serverNow - Date.now();
-    expiredOnLoad.current = !!s.stage && s.stage.deadline <= s.serverNow;
     const onScreenKey = stateRef.current?.stage?.key ?? null;
     const serverKey = s.stage?.key ?? null;
+    setSave("idle");
     if (serverKey && serverKey === onScreenKey) {
       setStateBoth({ ...s, answers: answersRef.current, flagged: flaggedRef.current });
       dirty.current = true;
+      setNote("Your answers were re-synced — keep going.");
     } else {
+      expiredOnLoad.current = !!s.stage && s.stage.deadline <= s.serverNow;
       const ids = s.stage?.questions.map((q) => q.id) ?? [];
-      const mergedAnswers = mergeAnswers(s.answers, answersRef.current, ids);
-      const mergedFlagged = mergeFlagged(s.flagged, flaggedRef.current, ids);
+      const mergedAnswers = mergeAnswers(s.answers, answersRef.current, ids, touched.current);
+      const mergedFlagged = mergeFlagged(s.flagged, flaggedRef.current, ids, touched.current);
       setStateBoth({ ...s, answers: mergedAnswers, flagged: mergedFlagged });
       setAnswersBoth(mergedAnswers);
       setFlaggedBoth(mergedFlagged);
       setIdx(0);
       setConfirming(false);
-      dirty.current = true;
+      touched.current = new Set();
+      dirty.current = answersChangedFor(s.answers, mergedAnswers, ids) || flaggedChangedFor(s.flagged, mergedFlagged, ids);
+      setNote("This module was already submitted — showing the current module.");
     }
-    setSave("idle");
-    setNote("This module was already submitted — showing the current module.");
   }, [setStateBoth, setAnswersBoth, setFlaggedBoth]);
 
   const load = useCallback(async () => {
@@ -110,8 +128,7 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
       const res = await fetch(`/api/sat/sessions/${sessionId}`, { cache: "no-store" });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "This sitting couldn't be loaded.");
-      apply(j as SessionState);
-      setError(null);
+      apply(j as SessionState); // clears `error` too
     } catch (e) {
       setError((e as Error).message);
     }
@@ -122,7 +139,11 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
 
   const postRaw = useCallback(async (body: object): Promise<PostResult> => {
     try {
-      const res = await fetch(`/api/sat/sessions/${sessionId}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      // A hung request must never block the queued submit forever -- a
+      // timeout is caught below and treated exactly like a network failure.
+      const res = await fetch(`/api/sat/sessions/${sessionId}`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(20_000),
+      });
       const j = await res.json().catch(() => ({}));
       // The module already ended (another tab/device, or a racing request): the server hands back its current state.
       if (res.status === 409 && j.state) return { kind: "stale", state: j.state as SessionState };
@@ -136,20 +157,29 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   // The actual save network round-trip, looping once more in place whenever
   // a save was requested again while this one was in flight -- so at most
   // one save is ever queued, and it always sends the latest local answers.
+  // `editSeq` guards against a subtler case: an edit made after the request
+  // body was already built (but before its response lands) must not be
+  // wiped from `dirty` by that response's "ok" -- the loop treats it the
+  // same as a coalesced follow-up and sends one more save immediately.
   const runSaveCycle = useCallback(async () => {
     setSave("saving");
     try {
       for (;;) {
         const stageKey = stateRef.current?.stage?.key ?? null;
-        if (!stageKey || submittedStage.current === stageKey) break;
+        if (!stageKey) break;
+        if (submittedStage.current === stageKey) { setSave("idle"); saveAgain.current = false; break; } // a submit took over
         const ids = stateRef.current?.stage?.questions.map((x) => x.id) ?? [];
+        const seqAtSend = editSeq.current;
         const body = { action: "save" as const, stage: stageKey, answers: pickAnswers(answersRef.current, ids), flagged: pickFlagged(flaggedRef.current, ids) };
         const result = await postRaw(body);
-        // A submit for this stage was sent while this save was in flight -- its response is authoritative; drop this one.
-        if (submittedStage.current === stageKey) break;
+        if (submittedStage.current === stageKey) { setSave("idle"); saveAgain.current = false; break; } // ditto, while this request was in flight
         if (result.kind === "error") { dirty.current = true; setSave("failed"); }
         else if (result.kind === "stale") { applyStale(result.state); }
-        else { skew.current = result.state.serverNow - Date.now(); dirty.current = false; setSave("saved"); setNote(null); }
+        else {
+          skew.current = result.state.serverNow - Date.now();
+          if (editSeq.current === seqAtSend) { dirty.current = false; setSave("saved"); setNote(null); }
+          else { dirty.current = true; saveAgain.current = true; } // an edit landed after this body was built -- resend, don't show "Saved"
+        }
         if (!saveAgain.current) break;
         saveAgain.current = false;
       }
@@ -228,7 +258,8 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   // Break: reload once when it ends (the server starts Math at the break's
   // end), keyed by the break's own end time so this never re-fires every
   // tick; if the server still reports the break (a slow/failed reload), it
-  // retries only after a 5 s back-off.
+  // retries only after a 5 s back-off. Routed through the same promise
+  // chain as save/submit/begin so it can never race "Start Math now".
   useEffect(() => {
     if (state?.status !== "break" || !state.breakUntil) { breakReload.current = null; return; }
     const until = state.breakUntil;
@@ -237,8 +268,8 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
     const nowMs = Date.now();
     if (last && last.until === until && nowMs - last.at < 5000) return;
     breakReload.current = { until, at: nowMs };
-    void load();
-  }, [state, now, load]);
+    void enqueue(() => load());
+  }, [state, now, load, enqueue]);
 
   const questions = useMemo(() => state?.stage?.questions ?? [], [state]);
   const { urls, error: imgError } = useSignedImages(questions.map((q) => q.img));
@@ -264,10 +295,14 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   const unanswered = questions.filter((x) => !answers[x.id]).length;
   const setAnswer = (v: string) => {
     dirty.current = true;
+    editSeq.current += 1;
+    touched.current.add(q.id);
     setAnswersBoth({ ...answersRef.current, [q.id]: v });
   };
   const toggleFlag = () => {
     dirty.current = true;
+    editSeq.current += 1;
+    touched.current.add(q.id);
     const next = flaggedRef.current.includes(q.id) ? flaggedRef.current.filter((x) => x !== q.id) : [...flaggedRef.current, q.id];
     setFlaggedBoth(next);
   };
@@ -288,7 +323,7 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
         <div className="min-w-0 space-y-4 rounded-2xl border border-white/10 bg-space/60 p-4">
           <div className="flex items-center gap-2 text-sm text-fog">
             <span className="font-display text-ice">Question {q.n} of {questions.length}</span>
-            <button type="button" onClick={toggleFlag} className={"ml-auto inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs " + (flagged.includes(q.id) ? "border-amber-300/50 text-amber-200" : "border-white/15 text-dust")}><Flag size={12} /> {flagged.includes(q.id) ? "Marked for review" : "Mark for review"}</button>
+            <button type="button" disabled={busy} onClick={toggleFlag} className={"ml-auto inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs disabled:opacity-40 " + (flagged.includes(q.id) ? "border-amber-300/50 text-amber-200" : "border-white/15 text-dust")}><Flag size={12} /> {flagged.includes(q.id) ? "Marked for review" : "Mark for review"}</button>
           </div>
           {urls[q.img] ? <img src={urls[q.img]} alt={`Question ${q.n}`} className="w-full rounded-lg bg-white" /> : <div className="h-64 animate-pulse rounded-lg bg-white/[0.06]" />}
           {q.kind === "mcq" ? (
