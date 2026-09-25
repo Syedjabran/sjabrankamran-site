@@ -142,8 +142,8 @@ const orgSchema = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable} ${mono.variable}`}>
-      {/* Browser extensions (e.g. Grammarly) add attributes to <body> before React
+    <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable} ${mono.variable}`} suppressHydrationWarning>
+      {/* Browser extensions (e.g. Grammarly on <body>, QuillBot on <html>) add attributes before React
           hydrates; that is not an app mismatch, so don't report it as one. */}
       <body suppressHydrationWarning>
         <script
