@@ -4,6 +4,7 @@ import {shape,bounds} from './sprites.mjs';
 import {instrumentDisplay} from './instruments.mjs';
 import {applyPoses,dragControls} from './poses.mjs';
 import {quantityInfo} from './quantities.mjs';
+import {questionTasks} from './question-tasks.mjs';
 import {linearFit,readingsCSV} from '../lib/measurement.mjs';
 const $=id=>document.getElementById(id),NS='http://www.w3.org/2000/svg';
 const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -14,10 +15,18 @@ const room=rooms[id];
 if(!room){$('title').textContent='Experiment not found';throw new Error('Unknown experiment');}
 const definitions=await fetch('./settings.json').then(r=>{if(!r.ok)throw new Error('Settings unavailable');return r.json();});
 const engine=await createExperiment(id,definitions[id]);
+const question=questionTasks[id];
 document.title=`${room.title} · 9702 laboratory`;$('title').textContent=room.title;$('paper').textContent=id.replace('9702_','9702 · ').replace('-q',' · Q');
 $('provisional').hidden=!room.provisional;$('source-guide').href=`../practicals/${id}.html`;
 $('procedure').innerHTML=room.steps.map(s=>`<li>${escape(s)}</li>`).join('');
 $('limits').textContent=(room.cautions||[]).join(' ');
+if(question){
+  $('question-title').textContent=`${question.paper} · Question ${question.question}`;$('question-meta').textContent=`Original question-paper pages ${question.pages}`;$('question-overview').textContent=question.overview;
+  $('question-sections').innerHTML=question.sections.map(s=>`<article class="question-section"><h3>${escape(s.label)}</h3><p>${escape(s.text)}</p></article>`).join('');
+  $('question-checklist').innerHTML=question.checklist.map(s=>`<li>${escape(s)}</li>`).join('');$('original-paper').href=question.pdf;$('question-pdf').src=question.pdf;
+}else $('open-question').hidden=true;
+$('open-question').onclick=()=>{$('question-panel').hidden=false;document.body.classList.add('question-open');$('close-question').focus();};
+$('close-question').onclick=()=>{$('question-panel').hidden=true;document.body.classList.remove('question-open');$('open-question').focus();};
 const parts=room.parts.map(p=>({...p,placed:false,mounted:false,px:0,py:0,turn:p.rotation||0,dx:0,dy:0,angle:0}));
 const partMap=new Map(parts.map(p=>[p.id,p]));
 let selected=null,pendingPlacement=null,drag=null,terminal=null,links=[],running=false,paused=false,watchRunning=false,watchTime=0,tally=0,lastTime=null,lastSample=0,view={},observations={},instrumentKey='',liveInstrument=false,zoom=1,feedbackError=false,assemblyOpened=false;
@@ -38,6 +47,18 @@ function portNames(p){const refs=(room.connections||[]).flatMap(c=>[c.from,c.to]
 function neededConnections(){return(room.connections||[]).filter(c=>!c.optional);}
 function mountReady(p){return(p.requires||[]).every(x=>partMap.get(x)?.mounted);}
 function ready(){return parts.filter(p=>!p.optional).every(p=>p.mounted)&&neededConnections().every(c=>links.some(l=>connectKey(l.from,l.to)===connectKey(c.from,c.to)))&&!links.some(l=>!l.valid);}
+function endpointLabel(ref){const[pid,port]=ref.split(':');return`${partMap.get(pid)?.label||pid} (${port||'mount'})`;}
+function nextAction(){
+  const p=parts.find(x=>!x.mounted&&!x.optional&&mountReady(x));
+  if(p)return{kind:'part',part:p,title:`Place ${p.label}`,text:`Drag ${p.label} from the equipment tray to its translucent mounting guide. ${p.purpose||''}`};
+  const blocked=parts.find(x=>!x.mounted&&!x.optional);if(blocked)return{kind:'part',part:blocked,title:`Prepare ${blocked.label}`,text:`Mount ${blocked.requires.map(x=>partMap.get(x)?.label||x).join(' before ')} first, then place ${blocked.label}.`};
+  const c=neededConnections().find(x=>!links.some(l=>connectKey(l.from,l.to)===connectKey(x.from,x.to)));
+  if(c)return{kind:'connection',connection:c,title:c.label||'Make the next connection',text:`Turn on “Connect terminals”, then connect ${endpointLabel(c.from)} to ${endpointLabel(c.to)}.`};
+  if(!ready())return{kind:'error',title:'Correct the assembly',text:'Remove any orange incorrect lead, then complete the listed attachments.'};
+  return{kind:'ready',title:'Assembly complete',text:'Inspect b and d with the ruler. Level the strip, choose a small release angle, zero the stopwatch, then release and time at least five cycles.'};
+}
+function updateCoach(){const a=nextAction();$('coach-title').textContent=a.title;$('coach-text').textContent=a.text;$('coach-show').disabled=a.kind==='ready';}
+$('coach-show').onclick=()=>{const a=nextAction();document.querySelectorAll('.coach-highlight').forEach(e=>e.classList.remove('coach-highlight'));if(a.part){const b=document.querySelector(`[data-tray="${a.part.id}"]`);b?.classList.add('coach-highlight');b?.scrollIntoView({behavior:'smooth',block:'nearest'});feedback(a.text);}else if(a.connection){$('wire-mode').checked=true;$('connection-picker').hidden=false;$('connect-from').value=a.connection.from;$('connect-to').value=a.connection.to;$('connect-selected').focus();feedback(a.text);}else feedback(a.text,a.kind==='error');};
 function refresh(){
   let mounted=parts.filter(p=>p.mounted&&!p.optional).length,needed=parts.filter(p=>!p.optional).length;
   $('assembly-count').textContent=`${mounted} / ${needed} parts mounted`;$('tray-count').textContent=parts.filter(p=>!p.placed).length;
@@ -57,6 +78,7 @@ function refresh(){
   if(ready()&&!assemblyOpened){document.querySelector('.setup-card').open=false;assemblyOpened=true;}
   for(const field of[$('connect-from'),$('connect-to')]){const prior=field.value;field.innerHTML='<option value="">Choose a terminal</option>'+parts.filter(p=>p.mounted).flatMap(p=>portNames(p).map(name=>`<option value="${escape(p.id+':'+name)}">${escape(p.label+' · '+name)}</option>`)).join('');field.value=prior;}
   $('connect-selected').disabled=running;
+  updateCoach();
   for(const el of document.querySelectorAll('#controls input,#controls select'))el.disabled=running&&!canAdjustLive(el.id.replace('setting-',''));
   renderTerminals();draw();
 }

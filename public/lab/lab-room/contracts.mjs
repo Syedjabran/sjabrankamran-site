@@ -1532,22 +1532,22 @@ export const rooms = {
       },
       {
         "id": "mass-left",
-        "label": "Left load",
+        "label": "200 g load (2 × 100 g)",
         "kind": "mass",
         "x": 220,
         "y": 380,
-        "purpose": "Attach the specified load on one side.",
+        "purpose": "Attach both 100 g masses near one end with their common centre distance d from the central hole.",
         "requires": [
           "rod"
         ]
       },
       {
         "id": "mass-right",
-        "label": "Right load",
+        "label": "100 g load (2 × 50 g)",
         "kind": "mass",
         "x": 480,
         "y": 380,
-        "purpose": "Attach the different load opposite.",
+        "purpose": "Attach both 50 g masses at the other end with their common centre the same distance d from the hole.",
         "requires": [
           "rod"
         ]
@@ -1602,10 +1602,12 @@ export const rooms = {
       }
     ],
     "steps": [
-      "Place the stand, string and wooden strip.",
-      "Add the two loads individually and hang the spring vertically; level the strip before release.",
-      "Attach .2kg one side/.1kg opposite, adjust spring vertical and rod horizontal, release then time.",
-      "Read the instrument beside the apparatus and transcribe the raw observation before changing the trial."
+      "Mount the support stand, suspend the string from its hook, and attach the wooden strip through its central axis.",
+      "Attach 200 g at the left end and 100 g at the right end, with both mass centres the same distance d from the central hole.",
+      "Hang the spring vertically and attach it to the strip. Place the ruler and manual stopwatch beside the apparatus.",
+      "Set b to about 0.10 m. Adjust the level control until the strip is horizontal; then inspect and record b and d.",
+      "Move the 200 g end down by a small angle. Zero the stopwatch, release the strip, manually time at least five complete oscillations, and record the cycle count and elapsed time.",
+      "Reset, set b to about 0.20 m, level and remeasure the apparatus, then repeat the timing before calculating α=b/d, T=t/N, C=Tα and k."
     ],
     "measurementTargets": [
       {
