@@ -30,7 +30,7 @@ const PAPER_MAX: Record<SATSection, number> = { rw: 66, math: 54 };
  * partially-parsed table would pass that guard and get scored as official.
  * Completeness -- not mere presence -- is what "ingested" means here.
  */
-function isCompleteTable(
+export function isCompleteTable(
   table: SATConversionTable | undefined, section: SATSection,
 ): table is SATConversionTable {
   if (!table) return false;
