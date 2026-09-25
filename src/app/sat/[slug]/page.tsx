@@ -40,6 +40,7 @@ export default async function SatProgrammePage({ params }: { params: Promise<{ s
     description: p.summary,
     url: `${SITE.url}/sat/${p.slug}`,
     provider: { "@type": "Person", name: SITE.name, url: SITE.url },
+    ...(p.domains.length > 0 && { teaches: p.domains.join(", ") }),
     hasCourseInstance: {
       "@type": "CourseInstance",
       courseMode: "Online",

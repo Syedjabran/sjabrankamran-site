@@ -68,7 +68,7 @@ export const SAT_PROGRAMMES: SatProgramme[] = [
     provision: [
       "The Reading and Writing modules inside every adaptive mock exam and official practice test",
       "Drills filtered to Reading and Writing, down to a single domain, skill or difficulty band",
-      "Every drill question carries the College Board's own domain, skill and difficulty label",
+      "Every drill question carries the College Board's own domain, skill and difficulty labels",
     ],
     paperTimingNote:
       "The Reading and Writing modules on the 8 official College Board paper practice tests run 39 + 39 minutes — longer than the digital SAT's 32 + 32 minutes above — and are scored against that paper's own official conversion table.",
@@ -92,7 +92,7 @@ export const SAT_PROGRAMMES: SatProgramme[] = [
     provision: [
       "The Math modules inside every adaptive mock exam and official practice test",
       "Drills filtered to Math, down to a single domain, skill or difficulty band",
-      "Every drill question carries the College Board's own domain, skill and difficulty label",
+      "Every drill question carries the College Board's own domain, skill and difficulty labels",
     ],
     paperTimingNote:
       "The Math modules on the 8 official College Board paper practice tests run 43 + 43 minutes — longer than the digital SAT's 35 + 35 minutes above — and are scored against that paper's own official conversion table.",
