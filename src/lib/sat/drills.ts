@@ -7,6 +7,7 @@
 import { filterQuestions, type SATFilter } from "./bank.ts";
 import { isCorrect } from "./grade.ts";
 import type { Rng } from "./forms.ts";
+import { MAX_RESPONSE_CHARS } from "./session.ts";
 import type { SATAnswer, SATQuestion } from "./types.ts";
 
 export const DRILL_MIN = 5;
@@ -68,7 +69,7 @@ export function checkDrillAnswer(
   const correct = !!key && isCorrect(key, response);
   const drill: SATDrill = {
     ...d,
-    answers: { ...d.answers, [questionId]: response.trim().slice(0, 12) },
+    answers: { ...d.answers, [questionId]: response.trim().slice(0, MAX_RESPONSE_CHARS) },
     checked: { ...d.checked, [questionId]: correct },
   };
   if (drill.questionIds.every((id) => id in drill.checked)) drill.finishedAt = now;

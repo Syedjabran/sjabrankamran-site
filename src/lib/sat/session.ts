@@ -17,6 +17,10 @@ export const STAGES: SATStageKey[] = ["rw.m1", "rw.m2", "math.m1", "math.m2"];
  *  overtime. Nothing is ever rejected: the student's work is kept. */
 export const GRACE_MS = 90_000;
 
+/** A response is truncated to this many characters before it is stored — for
+ *  both a module answer and a drill answer. */
+export const MAX_RESPONSE_CHARS = 12;
+
 export type StageResult = { correct: number; total: number; answered: number; overtime: boolean; submittedAt: number };
 
 export type SATSession = {
@@ -121,31 +125,46 @@ export function settleBreak(s: SATSession, now: number): SATSession {
   return beginStage(s, s.breakUntil);
 }
 
-/** Keep only answers to the module being sat; a client cannot write into another module. */
-export function saveAnswers(s: SATSession, answers: Record<string, string>, flagged: string[]): SATSession {
-  const k = currentStage(s);
-  if (!k || s.stageStartedAt === null) return s;
-  const allowed = new Set(s.plan[k] ?? []);
+/** True when `stage` is not the module the session is currently sitting —
+ *  either a stale/duplicate request naming a module already passed (or not
+ *  yet reached), or a request arriving while the session is on a break or
+ *  finished (both leave `stageStartedAt` null). The route layer answers 409
+ *  with the current state rather than silently dropping the request. */
+export function isStaleStage(s: SATSession, stage: SATStageKey): boolean {
+  return stage !== currentStage(s) || s.stageStartedAt === null;
+}
+
+/** Keep only answers to the module being sat; a client cannot write into
+ *  another module, and a stale request naming a module the session has
+ *  already left (or not yet reached) is a no-op — same reference back. */
+export function saveAnswers(
+  s: SATSession, stage: SATStageKey, answers: Record<string, string>, flagged: string[],
+): SATSession {
+  if (isStaleStage(s, stage)) return s;
+  const allowed = new Set(s.plan[stage] ?? []);
   const next = { ...s.answers };
   for (const [id, v] of Object.entries(answers)) {
     if (!allowed.has(id)) continue;
-    if (typeof v === "string" && v.trim()) next[id] = v.trim().slice(0, 12);
+    if (typeof v === "string" && v.trim()) next[id] = v.trim().slice(0, MAX_RESPONSE_CHARS);
     else delete next[id];
   }
   return {
     ...s,
     answers: next,
-    flagged: [...s.flagged.filter((id) => !allowed.has(id)), ...flagged.filter((id) => allowed.has(id))],
+    flagged: [...new Set([...s.flagged.filter((id) => !allowed.has(id)), ...flagged.filter((id) => allowed.has(id))])],
   };
 }
 
 export function submitStage(
-  s: SATSession, answers: Record<string, string>, flagged: string[], now: number,
+  s: SATSession, stage: SATStageKey, answers: Record<string, string>, flagged: string[], now: number,
   answerOf: (id: string) => SATAnswer | null,
 ): SATSession {
-  const k = currentStage(s);
-  if (!k || s.stageStartedAt === null) return s; // finished, or on the break: nothing to submit
-  const saved = saveAnswers(s, answers, flagged);
+  // Finished, on the break, or a stale/duplicate submit (double-click, a
+  // retried fetch, a second tab) naming a module the session already left:
+  // never score a different module than the one the client named.
+  if (isStaleStage(s, stage)) return s;
+  const k = stage;
+  const saved = saveAnswers(s, stage, answers, flagged);
   const ids = saved.plan[k] ?? [];
   let correct = 0;
   let answered = 0;

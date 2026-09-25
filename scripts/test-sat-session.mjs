@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   STAGES, GRACE_MS, startAdaptive, startPractice, currentStage, stageDeadline, isOnBreak,
   settleBreak, saveAnswers, submitStage, beginStage, rawBySection, practiceQuestionId, domainBreakdown,
+  isStaleStage,
 } from "../src/lib/sat/session.ts";
 import { startDrill, checkDrillAnswer, DRILL_MAX } from "../src/lib/sat/drills.ts";
 import { ROUTING } from "../src/lib/sat/adaptive.ts";
@@ -27,40 +28,58 @@ assert.equal(currentStage(s), "rw.m1");
 assert.equal(stageDeadline(s), T0 + 32 * 60_000, "R&W module 1 is 32 minutes");
 assert.equal(s.plan["rw.m2"], undefined, "Module 2 is not chosen until Module 1 is scored");
 
+// --- isStaleStage ---
+assert.equal(isStaleStage(s, "rw.m1"), false, "the module actually being sat is not stale");
+assert.equal(isStaleStage(s, "rw.m2"), true, "a module other than the one being sat is stale");
+
 // --- answers are scoped to the module being sat ---
-s = saveAnswers(s, { "r1-0": "A", "m1-0": "A", "not-a-question": "B" }, ["r1-1", "m1-3"]);
+s = saveAnswers(s, "rw.m1", { "r1-0": "A", "m1-0": "A", "not-a-question": "B" }, ["r1-1", "m1-3"]);
 assert.deepEqual(Object.keys(s.answers), ["r1-0"], "answers for other modules are dropped");
 assert.deepEqual(s.flagged, ["r1-1"]);
-s = saveAnswers(s, { "r1-0": "" }, []);
+s = saveAnswers(s, "rw.m1", { "r1-0": "" }, []);
 assert.equal(s.answers["r1-0"], undefined, "clearing an answer removes it");
 
+// --- flagged is de-duplicated ---
+const flaggedTwice = saveAnswers(s, "rw.m1", {}, ["r1-2", "r1-2"]);
+assert.deepEqual(flaggedTwice.flagged, ["r1-2"], "a repeated id appears once");
+
+// --- a stale saveAnswers is a no-op ---
+assert.equal(saveAnswers(s, "rw.m2", { "ru-0": "A" }, []), s, "saveAnswers for a module not being sat returns the same reference");
+
 // --- routing: a strong Module 1 routes upper, a weak one lower ---
-const strong = submitStage(s, allA(form.sets["rw.m1"].map((x) => x.id)), [], T0 + 10 * 60_000, answerOf);
+const strong = submitStage(s, "rw.m1", allA(form.sets["rw.m1"].map((x) => x.id)), [], T0 + 10 * 60_000, answerOf);
 assert.equal(strong.results["rw.m1"].correct, 27);
 assert.equal(strong.routed.rw, "upper");
 assert.deepEqual(strong.plan["rw.m2"], form.sets["rw.m2.upper"].map((x) => x.id));
 assert.equal(currentStage(strong), "rw.m2");
 assert.equal(strong.stageStartedAt, T0 + 10 * 60_000, "Module 2's clock starts at submission");
 
+// --- a stale/duplicate submit of a module already left is a no-op ---
+const dup = submitStage(strong, "rw.m1", allA(form.sets["rw.m1"].map((x) => x.id)), [], T0 + 11 * 60_000, answerOf);
+assert.equal(dup, strong, "a duplicate submit of a module already passed returns the same reference");
+assert.equal(dup.results["rw.m2"], undefined, "the duplicate is never scored as the next module");
+assert.equal(dup.current, strong.current, "current is unchanged by the duplicate");
+
 const weakAnswers = allA(form.sets["rw.m1"].slice(0, ROUTING.rw.threshold - 1).map((x) => x.id));
-const weak = submitStage(s, weakAnswers, [], T0 + 5 * 60_000, answerOf);
+const weak = submitStage(s, "rw.m1", weakAnswers, [], T0 + 5 * 60_000, answerOf);
 assert.equal(weak.routed.rw, "lower");
 assert.deepEqual(weak.plan["rw.m2"], form.sets["rw.m2.lower"].map((x) => x.id));
 
 // --- overtime is recorded, never rejected ---
-const late = submitStage(s, {}, [], T0 + 32 * 60_000 + GRACE_MS + 1, answerOf);
+const late = submitStage(s, "rw.m1", {}, [], T0 + 32 * 60_000 + GRACE_MS + 1, answerOf);
 assert.equal(late.results["rw.m1"].overtime, true);
 assert.equal(late.results["rw.m1"].answered, 0);
-const onTime = submitStage(s, {}, [], T0 + 32 * 60_000 + GRACE_MS, answerOf);
+const onTime = submitStage(s, "rw.m1", {}, [], T0 + 32 * 60_000 + GRACE_MS, answerOf);
 assert.equal(onTime.results["rw.m1"].overtime, false, "the grace window is inclusive");
 
 // --- the break between sections ---
-let b = submitStage(strong, allA(strong.plan["rw.m2"]), [], T0 + 40 * 60_000, answerOf);
+let b = submitStage(strong, "rw.m2", allA(strong.plan["rw.m2"]), [], T0 + 40 * 60_000, answerOf);
 assert.equal(currentStage(b), "math.m1");
 assert.equal(isOnBreak(b), true);
 assert.equal(b.breakUntil, T0 + 50 * 60_000, "a 10-minute break");
 assert.equal(stageDeadline(b), null, "no module clock runs during the break");
-assert.equal(submitStage(b, {}, [], T0 + 41 * 60_000, answerOf), b, "nothing can be submitted on a break");
+assert.equal(isStaleStage(b, "math.m1"), true, "the current stage is still stale while on a break");
+assert.equal(submitStage(b, "math.m1", {}, [], T0 + 41 * 60_000, answerOf), b, "nothing can be submitted on a break");
 const early = beginStage(b, T0 + 43 * 60_000);
 assert.equal(early.stageStartedAt, T0 + 43 * 60_000, "a student may end the break early");
 assert.equal(settleBreak(b, T0 + 45 * 60_000), b, "a break still running is left alone");
@@ -69,13 +88,14 @@ assert.equal(settled.stageStartedAt, T0 + 50 * 60_000, "an expired break starts 
 
 // --- finishing ---
 let f = beginStage(b, T0 + 50 * 60_000);
-f = submitStage(f, allA(f.plan["math.m1"]), [], T0 + 60 * 60_000, answerOf);
+f = submitStage(f, "math.m1", allA(f.plan["math.m1"]), [], T0 + 60 * 60_000, answerOf);
 assert.equal(f.routed.math, "upper");
-f = submitStage(f, allA(f.plan["math.m2"]), [], T0 + 80 * 60_000, answerOf);
+f = submitStage(f, "math.m2", allA(f.plan["math.m2"]), [], T0 + 80 * 60_000, answerOf);
 assert.equal(currentStage(f), null);
 assert.equal(f.finishedAt, T0 + 80 * 60_000);
 assert.deepEqual(rawBySection(f), { rw: 54, math: 44 });
-assert.equal(submitStage(f, {}, [], T0 + 90 * 60_000, answerOf), f, "a finished sitting is frozen");
+assert.equal(isStaleStage(f, "math.m2"), true, "a finished sitting has no live stage");
+assert.equal(submitStage(f, "math.m2", {}, [], T0 + 90 * 60_000, answerOf), f, "a finished sitting is frozen");
 
 // --- practice tests use their own printed timings and question ids ---
 const test = {
@@ -91,7 +111,7 @@ const p = startPractice(test, { id: "p1", uid: "u1", now: T0 });
 assert.equal(p.kind, "practice");
 assert.equal(stageDeadline(p), T0 + 39 * 60_000, "the paper's own 39 minutes, not the digital 32");
 assert.deepEqual(p.plan["math.m1"], [practiceQuestionId(4, "math", 1, 1), practiceQuestionId(4, "math", 1, 2)], "questions in printed order");
-const pm = submitStage(p, {}, [], T0 + 60_000, answerOf);
+const pm = submitStage(p, "rw.m1", {}, [], T0 + 60_000, answerOf);
 assert.equal(pm.routed.rw, undefined, "a linear paper has no routing");
 assert.deepEqual(pm.plan["rw.m2"], [practiceQuestionId(4, "rw", 2, 1)]);
 assert.equal(STAGES.length, 4);
