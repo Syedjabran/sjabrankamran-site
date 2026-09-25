@@ -10,7 +10,7 @@
  * asked for a simple line-delimited format that needs NO escaping. Falls back to
  * the authored seed bank if the model is unavailable or returns nothing usable.
  */
-import { BANK, ALL_TOPICS_WITH_OL, TOPICS, type ELQuestion, type ELLevel, type ELType } from "./bank";
+import { BANK, ALL_TOPICS_WITH_OL, TOPICS, courseOf, type ELQuestion, type ELLevel, type ELType } from "./bank";
 import { PASTPAPER_BANK } from "./pastpaper-bank";
 import { groundingContext } from "@/lib/ai/web-search";
 
@@ -26,7 +26,24 @@ export type GenerateInput = {
   levels: ELLevel[];
   style: "mixed" | "mcq" | "structured";
   count: number;
+  /** Awarding-body course; omitted ⇒ inferred from the topics (see `inputCourse`). */
+  course?: "9702" | "5054";
 };
+
+const OL_TOPICS = new Set<string>(TOPICS.OL);
+const AL_TOPICS = new Set<string>([...TOPICS.AS, ...TOPICS.A2]);
+
+/**
+ * The course a request draws from. O Level only when every topic is an O Level
+ * tag AND at least one exists only in O Level ("Kinematics" is in both); no
+ * topics ⇒ 9702, the historical default. Without this the pool mixed both
+ * courses, so the O Level "Topical drill" preset (no topics) served 9702.
+ */
+function inputCourse(input: GenerateInput): "9702" | "5054" {
+  if (input.course) return input.course;
+  const t = input.topics;
+  return t.length && t.every((x) => OL_TOPICS.has(x)) && t.some((x) => !AL_TOPICS.has(x)) ? "5054" : "9702";
+}
 
 export type GenerateResult = { source: "ai" | "seed"; questions: ELQuestion[]; provider: string | null; error?: string };
 
@@ -41,7 +58,9 @@ function shuffle<T>(a: T[]): T[] {
 function seedFallback(input: GenerateInput, visibility: "public" | "portal"): ELQuestion[] {
   // Portal draws from the authored bank PLUS real ingested past-paper MCQs.
   const source = visibility === "portal" ? [...PASTPAPER_BANK, ...BANK] : BANK;
+  const course = inputCourse(input);
   const pool = source.filter((q) => {
+    if (courseOf(q) !== course) return false;
     if (visibility === "public" && !(q.visibility === "public" || q.visibility === "both")) return false;
     if (visibility === "portal" && !(q.visibility === "portal" || q.visibility === "both")) return false;
     if (input.topics.length && !input.topics.includes(q.t)) return false;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ShieldAlert, Lock, LockOpen, Loader2, Camera, Clock, User, RefreshCw, ChevronRight,
   AlertTriangle, CheckCircle2, MailQuestion,
@@ -22,6 +22,15 @@ type Session = {
 type Snap = { url: string; at: number; reason: string };
 
 const fmt = (t: number) => new Date(t).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const POLL_MS = 15_000;
+
+function UpdatedAgo({ at }: { at: number | null }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const iv = window.setInterval(() => setNow(Date.now()), 5000); return () => window.clearInterval(iv); }, []);
+  if (at === null) return null;
+  const s = Math.max(0, Math.round((now - at) / 1000));
+  return <span className="font-mono text-[10px] text-dust">updated {s < 5 ? "just now" : s < 60 ? `${s}s ago` : `${Math.floor(s / 60)}m ago`}</span>;
+}
 
 export function ProctoringClient({ canUnlock }: { canUnlock: boolean }) {
   const [locks, setLocks] = useState<Lock[]>([]);
@@ -33,27 +42,52 @@ export function ProctoringClient({ canUnlock }: { canUnlock: boolean }) {
   const [note, setNote] = useState("");
   const [unlocking, setUnlocking] = useState(false);
   const [msg, setMsg] = useState("");
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  const selRef = useRef<Lock | null>(null);
+  useEffect(() => { selRef.current = sel; }, [sel]);
 
-  const load = useCallback(async () => {
-    setLoading(true); setErr("");
+  // `quiet`: a background refresh — no spinner, and the open record is only
+  // re-fetched when its queue entry actually changed (re-signing snapshot URLs
+  // every poll would reload every image).
+  const open = useCallback(async (l: Lock, quiet = false) => {
+    if (!quiet) { setSel(l); setDetail(null); setDetailBusy(true); setNote(""); setMsg(""); }
     try {
-      const r = await fetch("/api/portal/admin/proctoring?list=1");
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error || "Could not load.");
-      setLocks(j.locks || []);
-    } catch (e) { setErr((e as Error).message); } finally { setLoading(false); }
-  }, []);
-  useEffect(() => { load(); }, [load]);
-
-  const open = useCallback(async (l: Lock) => {
-    setSel(l); setDetail(null); setDetailBusy(true); setNote(""); setMsg("");
-    try {
-      const r = await fetch(`/api/portal/admin/proctoring?uid=${encodeURIComponent(l.uid)}&attemptId=${encodeURIComponent(l.attemptId)}`);
+      const r = await fetch(`/api/portal/admin/proctoring?uid=${encodeURIComponent(l.uid)}&attemptId=${encodeURIComponent(l.attemptId)}`, { cache: "no-store" });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "Could not load session.");
+      if (quiet && selRef.current?.attemptId !== l.attemptId) return;
+      if (quiet) setSel(l);
       setDetail(j);
-    } catch (e) { setMsg((e as Error).message); } finally { setDetailBusy(false); }
+    } catch (e) { if (!quiet) setMsg((e as Error).message); } finally { if (!quiet) setDetailBusy(false); }
   }, []);
+
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) { setLoading(true); setErr(""); }
+    try {
+      const r = await fetch("/api/portal/admin/proctoring?list=1", { cache: "no-store" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Could not load.");
+      const next: Lock[] = j.locks || [];
+      setLocks(next);
+      setUpdatedAt(Date.now());
+      setErr("");
+      const cur = selRef.current;
+      const fresh = cur && next.find((l) => l.uid === cur.uid && l.attemptId === cur.attemptId);
+      if (quiet && cur && fresh && (fresh.status !== cur.status || fresh.unlockRequestedAt !== cur.unlockRequestedAt || fresh.at !== cur.at)) void open(fresh, true);
+    } catch (e) { if (!quiet) setErr((e as Error).message); } finally { if (!quiet) setLoading(false); }
+  }, [open]);
+  useEffect(() => { void load(); }, [load]);
+
+  // Live queue: poll every 15 s while the tab is visible, and refresh at once
+  // when it regains visibility or focus.
+  useEffect(() => {
+    const tick = () => { if (document.visibilityState !== "hidden") void load(true); };
+    const onShow = () => { if (document.visibilityState === "visible") void load(true); };
+    const iv = window.setInterval(tick, POLL_MS);
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("focus", onShow);
+    return () => { window.clearInterval(iv); document.removeEventListener("visibilitychange", onShow); window.removeEventListener("focus", onShow); };
+  }, [load]);
 
   async function unlock() {
     if (!sel) return;
@@ -80,7 +114,10 @@ export function ProctoringClient({ canUnlock }: { canUnlock: boolean }) {
             <p className="text-xs text-dust">Forensic records of proctored tests. {canUnlock ? "Review a lock, then unlock to let the student re-sit." : "Only a super-admin can unlock."}</p>
           </div>
         </div>
-        <button onClick={load} className="btn-ghost !px-3 !py-1.5 text-xs"><RefreshCw size={13} /> Refresh</button>
+        <div className="flex items-center gap-3">
+          <UpdatedAgo at={updatedAt} />
+          <button onClick={() => { void load(); }} className="btn-ghost !px-3 !py-1.5 text-xs"><RefreshCw size={13} /> Refresh</button>
+        </div>
       </div>
 
       {err ? <p className="rounded-xl border border-signal/30 bg-signal/5 p-3 text-sm text-signal">{err}</p> : null}

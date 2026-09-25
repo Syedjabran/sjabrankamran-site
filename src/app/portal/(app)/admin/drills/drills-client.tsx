@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Layers, Users, School, Clock3, FileText, ChevronLeft, Loader2, Hash, Printer, Search, CheckCircle2, AlertTriangle, Inbox } from "lucide-react";
@@ -13,9 +13,48 @@ type Row = {
 };
 type SnapQ = { id: string; ref: string; paperType: string; code: string; qnum: number; topic: string | null; level: string; marks: number | null; img: string; ms_img: string | null; answer: string | null };
 type DrillFull = Row & { snapshot: SnapQ[] };
-type SubRow = { uid: string; name: string; status: string; lateSubmission: boolean; unattempted: boolean; daily: boolean; completedAt: number | null };
+type SubRow = { uid: string; name: string; status: string; lateSubmission: boolean; unattempted: boolean; daily: boolean; startedAt?: number | null; completedAt: number | null };
+
+const POLL_MS = 15_000;
 
 function when(ts: number) { return new Date(ts).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }); }
+function statusLabel(s: SubRow) {
+  if (s.status === "submitted") return s.lateSubmission ? "submitted late" : "submitted";
+  return s.status === "in_progress" ? "in progress" : s.status;
+}
+
+/**
+ * Keep a staff view live: re-run `refresh` every 15 s while the tab is
+ * visible, and at once when the tab regains visibility or focus. Returns when
+ * data last arrived, for the "updated Ns ago" label.
+ */
+function useLiveRefresh(refresh: () => Promise<boolean>, enabled = true) {
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  const busy = useRef(false);
+  const run = useCallback(async () => {
+    if (busy.current || document.visibilityState === "hidden") return;
+    busy.current = true;
+    try { if (await refresh()) setUpdatedAt(Date.now()); } finally { busy.current = false; }
+  }, [refresh]);
+  useEffect(() => {
+    if (!enabled) return;
+    const iv = window.setInterval(run, POLL_MS);
+    const onShow = () => { if (document.visibilityState === "visible") void run(); };
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("focus", onShow);
+    return () => { window.clearInterval(iv); document.removeEventListener("visibilitychange", onShow); window.removeEventListener("focus", onShow); };
+  }, [run, enabled]);
+  const markUpdated = useCallback(() => setUpdatedAt(Date.now()), []);
+  return { updatedAt, markUpdated };
+}
+
+function UpdatedAgo({ at }: { at: number | null }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const iv = window.setInterval(() => setNow(Date.now()), 5000); return () => window.clearInterval(iv); }, []);
+  if (at === null) return null;
+  const s = Math.max(0, Math.round((now - at) / 1000));
+  return <span className="font-mono text-[10px] text-dust">updated {s < 5 ? "just now" : s < 60 ? `${s}s ago` : `${Math.floor(s / 60)}m ago`}</span>;
+}
 /** Records written before reference numbers existed simply show no chip. */
 function refOf(r: { ref?: string }) { return typeof r.ref === "string" && r.ref ? r.ref : ""; }
 /** The printable view is addressable by reference when there is one. */
@@ -33,21 +72,48 @@ export function DrillRecordsClient({ scoped = false }: { scoped?: boolean }) {
   const [imgs, setImgs] = useState<Record<string, string>>({});
   const [subs, setSubs] = useState<SubRow[] | null>(null);
   const [subsRoster, setSubsRoster] = useState(true);
+  const openIdRef = useRef<string | null>(null); // drops a late response for a drill no longer open
 
-  useEffect(() => {
-    fetch("/api/portal/admin/drills").then((r) => r.json()).then((j) => setRows(j.items || [])).catch(() => {}).finally(() => setLoading(false));
+  const loadList = useCallback(async () => {
+    try {
+      const r = await fetch("/api/portal/admin/drills", { cache: "no-store" });
+      if (!r.ok) return false;
+      const j = await r.json();
+      setRows(j.items || []);
+      return true;
+    } catch { return false; } finally { setLoading(false); }
   }, []);
 
-  const view = useCallback(async (id: string) => {
-    setOpenLoading(true); setImgs({}); setSubs(null);
-    // Per-student submission status with the late / unattempted integrity
-    // badges — fetched in parallel with the paper; failures stay silent.
-    fetch(`/api/portal/admin/drills/${encodeURIComponent(id)}/submissions`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => { if (j) { setSubs((j.items || []) as SubRow[]); setSubsRoster(j.roster !== false); } })
-      .catch(() => {});
+  // Per-student submission status with the late / unattempted integrity
+  // badges; a failed refresh keeps the last list on screen.
+  const loadSubs = useCallback(async (id: string) => {
     try {
-      const j = await (await fetch(`/api/portal/admin/drills/${id}`)).json();
+      const r = await fetch(`/api/portal/admin/drills/${encodeURIComponent(id)}/submissions`, { cache: "no-store" });
+      if (!r.ok) return false;
+      const j = await r.json();
+      if (openIdRef.current !== id) return false;
+      setSubs((j.items || []) as SubRow[]);
+      setSubsRoster(j.roster !== false);
+      return true;
+    } catch { return false; }
+  }, []);
+
+  // Live while the tab is visible: the open drill's submissions, else the list.
+  const openId = open?.id ?? null;
+  const refresh = useCallback(() => (openId ? loadSubs(openId) : loadList()), [openId, loadSubs, loadList]);
+  const { updatedAt, markUpdated } = useLiveRefresh(refresh);
+
+  useEffect(() => {
+    void loadList().then((ok) => { if (ok) markUpdated(); });
+  }, [loadList, markUpdated]);
+
+  const view = useCallback(async (id: string) => {
+    openIdRef.current = id;
+    setOpenLoading(true); setImgs({}); setSubs(null);
+    // Fetched in parallel with the paper; failures stay silent.
+    void loadSubs(id).then((ok) => { if (ok) markUpdated(); });
+    try {
+      const j = await (await fetch(`/api/portal/admin/drills/${encodeURIComponent(id)}`, { cache: "no-store" })).json();
       if (j.record) {
         setOpen(j.record);
         const paths = [...new Set((j.record.snapshot as SnapQ[]).map((q) => q.img).filter(Boolean))].slice(0, 80);
@@ -63,7 +129,7 @@ export function DrillRecordsClient({ scoped = false }: { scoped?: boolean }) {
     return (
       <div className="space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <button onClick={() => setOpen(null)} className="inline-flex items-center gap-1.5 text-sm text-cyan hover:underline"><ChevronLeft size={15} /> All drill records</button>
+          <button onClick={() => { openIdRef.current = null; setOpen(null); void loadList().then((ok) => { if (ok) markUpdated(); }); }} className="inline-flex items-center gap-1.5 text-sm text-cyan hover:underline"><ChevronLeft size={15} /> All drill records</button>
           <Link href={printHref(open)} className="btn-ghost !px-4 !py-2 text-xs"><Printer size={14} /> Print / Save as PDF</Link>
         </div>
         <div className="rounded-2xl border border-white/10 bg-space/60 p-5">
@@ -83,13 +149,14 @@ export function DrillRecordsClient({ scoped = false }: { scoped?: boolean }) {
         {subsRoster ? (
           <section className="rounded-2xl border border-white/10 bg-space/60 p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="flex items-center gap-2 font-display text-lg text-ice"><Inbox size={16} className="text-cyan" /> Submissions</h2>
+              <h2 className="flex items-center gap-2 font-display text-lg text-ice"><Inbox size={16} className="text-cyan" /> Submissions <UpdatedAgo at={subs ? updatedAt : null} /></h2>
               {subs ? (
                 <div className="flex flex-wrap gap-1.5 font-mono text-[10px]">
                   <span className="rounded-full border border-white/15 px-2 py-0.5 text-fog">{subs.length} students</span>
                   <span className="inline-flex items-center gap-1 rounded-full border border-emerald2/40 px-2 py-0.5 text-emerald2"><CheckCircle2 size={10} /> {subs.filter((s) => s.status === "submitted" && !s.lateSubmission && !s.unattempted).length} on time</span>
                   <span className="rounded-full border border-signal/50 px-2 py-0.5 text-signal">{subs.filter((s) => s.lateSubmission).length} late</span>
                   <span className="rounded-full border border-amber-400/50 px-2 py-0.5 text-amber-300">{subs.filter((s) => s.unattempted).length} unattempted</span>
+                  <span className="rounded-full border border-cyan/40 px-2 py-0.5 text-cyan">{subs.filter((s) => s.status === "in_progress").length} in progress</span>
                   <span className="rounded-full border border-white/15 px-2 py-0.5 text-dust">{subs.filter((s) => s.status === "pending").length} pending</span>
                 </div>
               ) : null}
@@ -97,7 +164,7 @@ export function DrillRecordsClient({ scoped = false }: { scoped?: boolean }) {
             {!subs ? (
               <p className="mt-3 flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading submission statuses…</p>
             ) : !subs.length ? (
-              <p className="mt-3 text-sm text-dust">No active students found in the target classes for this drill.</p>
+              <p className="mt-3 text-sm text-dust">No active students found for this drill.</p>
             ) : (
               <ul className="mt-3 divide-y divide-white/[0.06]">
                 {subs.map((s) => (
@@ -106,10 +173,10 @@ export function DrillRecordsClient({ scoped = false }: { scoped?: boolean }) {
                     <span className="flex flex-wrap items-center gap-1.5 font-mono text-[10px]">
                       {s.lateSubmission ? <span className="rounded-full border border-signal/50 px-2 py-0.5 text-signal">Late submission</span> : null}
                       {s.unattempted ? <span className="rounded-full border border-amber-400/50 px-2 py-0.5 text-amber-300" title="No answers were attempted — earns no points">Unattempted</span> : null}
-                      <span className={"rounded-full border px-2 py-0.5 " + (s.status === "submitted" ? "border-emerald2/40 text-emerald2" : s.status === "pending" ? "border-white/15 text-dust" : "border-white/25 text-fog")}>
-                        {s.status === "submitted" ? (s.lateSubmission ? "submitted late" : "submitted") : s.status}
+                      <span className={"rounded-full border px-2 py-0.5 " + (s.status === "submitted" ? "border-emerald2/40 text-emerald2" : s.status === "in_progress" ? "border-cyan/40 text-cyan" : s.status === "locked" ? "border-red-400/40 text-red-300" : s.status === "pending" ? "border-white/15 text-dust" : "border-white/25 text-fog")}>
+                        {statusLabel(s)}
                       </span>
-                      {s.completedAt ? <span className="text-dust">{when(s.completedAt)}</span> : null}
+                      {s.completedAt ? <span className="text-dust">{when(s.completedAt)}</span> : s.status === "in_progress" && s.startedAt ? <span className="text-dust">started {when(s.startedAt)}</span> : null}
                     </span>
                   </li>
                 ))}
@@ -117,7 +184,7 @@ export function DrillRecordsClient({ scoped = false }: { scoped?: boolean }) {
             )}
           </section>
         ) : (
-          <p className="text-xs text-dust">Per-student submission status is available for drills assigned to classes, schools or the network.</p>
+          <p className="text-xs text-dust">Per-student submission status is not available for this drill: it was assigned to individual students before recipients were recorded.</p>
         )}
         {openLoading ? <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading paper…</p> : null}
         <ol className="space-y-4">
@@ -150,7 +217,7 @@ export function DrillRecordsClient({ scoped = false }: { scoped?: boolean }) {
       <div className="flex items-center gap-3">
         <span className="grid h-10 w-10 place-items-center rounded-xl border border-cyan/30 text-cyan"><Layers size={18} /></span>
         <div>
-          <h1 className="font-display text-2xl text-ice">Drill Records</h1>
+          <h1 className="flex flex-wrap items-baseline gap-2 font-display text-2xl text-ice">Drill Records <UpdatedAgo at={updatedAt} /></h1>
           <p className="text-sm text-dust">
             {scoped
               ? "Drills you conducted and drills set for your classes — each with its exact question paper, kept on record."

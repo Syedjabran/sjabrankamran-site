@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FileText, Layers, Play, Zap, Library, Coffee, ShieldAlert, Video, ClipboardList, Lock, CheckCircle2, Send, Loader2, Clock, Sparkles } from "lucide-react";
-import { IMAGE_BANK, IMAGE_PAPERS, FULL_BANK, type ImgQuestion } from "@/lib/exam-lab/image-bank";
+import { IMAGE_BANK, IMAGE_PAPERS, type ImgQuestion } from "@/lib/exam-lab/image-bank";
 import { OLEVEL_IMAGE_BANK, OLEVEL_IMAGE_PAPERS, OLEVEL_PAPER_NAMES, olevelTopics } from "@/lib/exam-lab/image-bank-olevel";
+import { ALL_QUESTIONS, questionById } from "@/lib/exam-lab/bank-all";
 import { PaperRunner, type AttemptKind } from "./paper-runner";
 import { ExamRunner } from "./exam-runner";
 import { requestExamFullscreen } from "@/lib/exam-lab/fullscreen";
@@ -16,6 +17,9 @@ const PAPER_NAME: Record<string, string> = { P1: "Paper 1 · Multiple Choice", P
 const PT_ACCENT: Record<string, string> = { P1: "#3DE1F0", P2: "#12D48C", P4: "#8B5CF6" };
 
 function yearOf(code: string) { const m = code.match(/9702_[smw](\d\d)_/); return m ? 2000 + parseInt(m[1]) : 0; }
+function plural(n: number, word: string) { return `${n} ${word}${n === 1 ? "" : "s"}`; }
+/** Allocations sit these; a started one resumes its clock (see PaperRunner). */
+const LAUNCHABLE = ["assigned", "in_progress", "unlocked", "cancelled"];
 function label(code: string) {
   const m = code.match(/9702_([smw])(\d\d)_(\d\d)/);
   if (!m) return code;
@@ -86,7 +90,7 @@ function AssignedBoard({ allocations, onStart }: { allocations: Allocation[]; on
       <p className="mb-3 flex items-center gap-2 font-display text-sm text-ice"><ClipboardList size={16} className="text-cyan" /> Assigned to you</p>
       <ul className="space-y-2">
         {allocations.map((al) => {
-          const launchable = ["assigned", "unlocked", "cancelled"].includes(al.status);
+          const launchable = LAUNCHABLE.includes(al.status);
           const due = al.dueAt ? new Date(al.dueAt) : null;
           const opens = al.startsAt ? new Date(al.startsAt) : null;
           const scheduled = !!opens && opens.getTime() > Date.now();
@@ -115,7 +119,7 @@ function AssignedBoard({ allocations, onStart }: { allocations: Allocation[]; on
                 <span className="inline-flex items-center gap-1 text-xs text-dust"><Clock size={13} /> Opens {opens!.toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
               ) : (
                 <button onClick={() => onStart(al)} disabled={!launchable} className={"!px-3.5 !py-1.5 text-xs " + (al.mode === "test" ? "btn-primary" : "btn-primary")}>
-                  {al.mode === "test" ? <Video size={13} /> : <Play size={13} />} {al.status === "unlocked" ? "Re-sit" : al.mode === "test" ? "Begin test" : "Start"}
+                  {al.mode === "test" ? <Video size={13} /> : <Play size={13} />} {al.status === "unlocked" ? "Re-sit" : al.status === "in_progress" ? "Resume" : al.mode === "test" ? "Begin test" : "Start"}
                 </button>
               )}
             </li>
@@ -167,7 +171,7 @@ function OLevelHub({ canTest, onStart }: { canTest: boolean; onStart: (a: Active
     // Paper 1 is 40 marks in 60 min (1.5 min/Q); the structured 5054 papers run
     // at roughly 1.3 min per mark, so a whole question is budgeted by its marks.
     const mins = Math.max(5, Math.round(pType === "P1" ? qs.length * 1.5 : qs.reduce((s, q) => s + (q.marks ?? 8) * 1.3, 0)));
-    onStart({ questions: qs, title: `Topic drill · ${OLEVEL_PAPER_NAMES[pType].name.split(" · ")[0]}`, subtitle: `${qs.length} questions · ${mins} min`, duration: mins, timed: true, logMeta: { mode: "drill", paperType: pType }, ...modeCfg(sitMode) });
+    onStart({ questions: qs, title: `Topic drill · ${OLEVEL_PAPER_NAMES[pType].name.split(" · ")[0]}`, subtitle: `${plural(qs.length, "question")} · ${mins} min`, duration: mins, timed: true, logMeta: { mode: "drill", paperType: pType }, ...modeCfg(sitMode) });
   }
 
   function dailyChallenge() {
@@ -375,7 +379,8 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
     let alive = true;
     const refresh = () => {
       if (document.visibilityState === "hidden") return;
-      fetch("/api/exam-lab/allocations", { cache: "no-store" }).then((r) => r.ok ? r.json() : { items: [] }).then((j) => { if (alive) setAllocations(j.items || []); }).catch(() => {});
+      // A failed refresh keeps the last list rather than blanking the board.
+      fetch("/api/exam-lab/allocations", { cache: "no-store" }).then((r) => r.ok ? r.json() : null).then((j) => { if (alive && j) setAllocations(j.items || []); }).catch(() => {});
     };
     refresh();
     const timer = active ? null : window.setInterval(refresh, 15000);
@@ -411,19 +416,22 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
     // tab-switch/blur). Absent => the mode's default guard.
     const common = { ...cfg, integrity: al.integrity ?? cfg.integrity, timed: true, lockOnExpiry: al.lockOnExpiry !== false, attemptId: al.attemptId, allocationId: al.id, daily: isDailyTask };
     if (al.content.type === "paper") {
+      // Either course: 9702 and O Level 5054 papers are both assignable.
       const code = al.content.code;
-      const qs = IMAGE_BANK.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
-      const meta = IMAGE_PAPERS.find((p) => p.code === code);
-      if (!qs.length || !meta) return;
-      enter({ questions: qs, title: al.title || PAPER_NAME[meta.paperType], subtitle: `${meta.ref} · ${label(code)}`, duration: al.durationMin || meta.duration, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType }, ...common });
+      const olevel = code.startsWith("5054_");
+      const qs = ALL_QUESTIONS.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
+      const meta = (olevel ? OLEVEL_IMAGE_PAPERS : IMAGE_PAPERS).find((p) => p.code === code);
+      if (!qs.length || !meta) { setLaunchError(`The paper for “${al.title}” is not available. Contact the teacher.`); return; }
+      const paperTitle = olevel ? OLEVEL_PAPER_NAMES[meta.paperType].name : PAPER_NAME[meta.paperType];
+      enter({ questions: qs, title: al.title || paperTitle, subtitle: `${meta.ref} · ${olevel ? olLabel(code) : label(code)}`, duration: al.durationMin || meta.duration, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType }, ...common });
     } else if (al.content.type === "drillref") {
       // DETERMINISTIC DRILL. The paper was frozen once, at allocation time, and
       // its exact question ids travel with the allocation — so every student in
       // the class sits the same paper in the same order, and closing and
-      // reopening replays that identical paper instead of reshuffling.
+      // reopening replays that identical paper instead of reshuffling. Ids
+      // resolve across every course (9702, secure bank, O Level 5054).
       const { ids, ref } = al.content;
-      const byId = new Map(FULL_BANK.map((q) => [q.id, q] as const));
-      const qs = ids.map((qid) => byId.get(qid)).filter((q): q is ImgQuestion => !!q);
+      const qs = ids.map((qid) => questionById(qid)).filter((q): q is ImgQuestion => !!q);
       if (!qs.length || qs.length !== ids.length) {
         setLaunchError("This stored drill has unavailable questions. Contact the teacher; no replacement paper has been generated.");
         return;
@@ -432,7 +440,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
       const pt: "P1" | "P2" | "P4" | "mixed" = pts.size === 1 ? qs[0].paperType : "mixed";
       const mins = al.durationMin || Math.max(5, Math.round(qs.length * (pt === "P1" ? 1.5 : 9)));
       const title = al.title || (pt === "mixed" ? "Drill" : `Topic drill · ${PAPER_NAME[pt].split(" · ")[0]}`);
-      enter({ questions: qs, title, subtitle: `${qs.length} questions · ${mins} min${ref ? ` · Ref ${ref}` : ""}`, duration: mins, logMeta: { mode: "drill", ref: ref || undefined, paperType: pt }, ...common });
+      enter({ questions: qs, title, subtitle: `${plural(qs.length, "question")} · ${mins} min${ref ? ` · Ref ${ref}` : ""}`, duration: mins, logMeta: { mode: "drill", ref: ref || undefined, paperType: pt }, ...common });
     } else if (al.content.type === "drill") {
       // LEGACY spec-based drill (allocations saved before freezing existed).
       // Left exactly as it was: re-resolved per sitting.
@@ -443,18 +451,18 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
       }
       const paperType = al.content.paperType;
       const mins = al.durationMin || Math.max(5, Math.round(qs.length * (paperType === "P1" ? 1.5 : 9)));
-      enter({ questions: qs, title: al.title || `Topic drill · ${PAPER_NAME[paperType].split(" · ")[0]}`, subtitle: `${qs.length} questions · ${mins} min`, duration: mins, logMeta: { mode: "drill", paperType }, ...common });
+      enter({ questions: qs, title: al.title || `Topic drill · ${PAPER_NAME[paperType].split(" · ")[0]}`, subtitle: `${plural(qs.length, "question")} · ${mins} min`, duration: mins, logMeta: { mode: "drill", paperType }, ...common });
     } else if (al.content.type === "custom") {
-      // Custom allocations may reference the secure (allocation-only) bank.
-      // Preserve staff selection order for older custom allocations too.
-      const byId = new Map(FULL_BANK.map((q) => [q.id, q] as const));
-      const qs = al.content.ids.map((id) => byId.get(id)).filter((q): q is ImgQuestion => !!q);
+      // Custom allocations may reference the secure (allocation-only) bank or
+      // O Level questions. Preserve staff selection order for older custom
+      // allocations too.
+      const qs = al.content.ids.map((id) => questionById(id)).filter((q): q is ImgQuestion => !!q);
 
-      if (!qs.length) return;
+      if (!qs.length) { setLaunchError(`The questions for “${al.title}” are not available. Contact the teacher.`); return; }
       const pts = new Set(qs.map((q) => q.paperType));
       const pt: "P1" | "P2" | "P4" | "mixed" = pts.size === 1 ? qs[0].paperType : "mixed";
       const mins = al.durationMin || Math.max(5, Math.round(qs.reduce((s, q) => s + (q.paperType === "P1" ? 1.5 : 9), 0)));
-      enter({ questions: qs, title: al.title || "Selected questions", subtitle: `${qs.length} hand-picked questions · ${mins} min`, duration: mins, logMeta: { mode: "drill", paperType: pt }, ...common });
+      enter({ questions: qs, title: al.title || "Selected questions", subtitle: `${qs.length} hand-picked question${qs.length === 1 ? "" : "s"} · ${mins} min`, duration: mins, logMeta: { mode: "drill", paperType: pt }, ...common });
     } else {
       const p1 = shuffle(IMAGE_BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
       enter({ questions: p1, title: al.title || "Daily Challenge", subtitle: "10 mixed Paper-1 questions", duration: al.durationMin || 15, logMeta: { mode: "drill", paperType: "P1" }, ...common });
@@ -477,7 +485,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
       setLaunchError(`This activity opens ${new Date(allocation.startsAt!).toLocaleString("en-GB")}.`);
       return;
     }
-    if (!["assigned", "unlocked", "cancelled"].includes(allocation.status)) return;
+    if (!LAUNCHABLE.includes(allocation.status)) return;
     startAllocation(allocation);
     // startAllocation deliberately stays local to this component; the ref
     // prevents repeated launches when allocation state refreshes.
@@ -522,7 +530,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
     enter({
       questions: qs,
       title: "Focus drill · your weak topics",
-      subtitle: `${qs.length} questions on ${names.slice(0, 3).join(", ")}${names.length > 3 ? "…" : ""}`,
+      subtitle: `${plural(qs.length, "question")} on ${names.slice(0, 3).join(", ")}${names.length > 3 ? "…" : ""}`,
       duration: mins, timed: true, logMeta: { mode: "drill", paperType: pt }, ...modeCfg("practice"),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -534,7 +542,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
     const qs = shuffle([...drillPool]).slice(0, count);
     // Timed drill: P1 ~1.5 min/Q, structured ~1.8 min/mark-weighted question.
     const mins = Math.max(5, Math.round(qs.length * (pType === "P1" ? 1.5 : 9)));
-    enter({ questions: qs, title: `Topic drill · ${PAPER_NAME[pType].split(" · ")[0]}`, subtitle: `${qs.length} questions · ${mins} min`, duration: mins, timed: true, logMeta: { mode: "drill", paperType: pType }, ...modeCfg(sitMode) });
+    enter({ questions: qs, title: `Topic drill · ${PAPER_NAME[pType].split(" · ")[0]}`, subtitle: `${plural(qs.length, "question")} · ${mins} min`, duration: mins, timed: true, logMeta: { mode: "drill", paperType: pType }, ...modeCfg(sitMode) });
   }
 
   function dailyChallenge() {

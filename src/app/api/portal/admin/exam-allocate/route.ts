@@ -1,15 +1,32 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { audit } from "@/lib/portal/admin";
-import { allocateToStudents, newAllocId, type AllocMode, type AllocContent } from "@/lib/exam-lab/allocations";
+import { allocateToStudentsDetailed, newAllocId, type AllocMode, type AllocContent, type FanoutResult } from "@/lib/exam-lab/allocations";
 import { notify } from "@/lib/portal/notifications";
-import { saveDrillRecord, resolveSnapshot, newDrillId, reserveDrillRef, type DrillTargetType } from "@/lib/exam-lab/drill-records";
+import { saveDrillRecord, resolveSnapshot, newDrillId, reserveDrillRef, getDrillRecordStrict, type DrillRecord, type DrillTargetType } from "@/lib/exam-lab/drill-records";
+import { questionById } from "@/lib/exam-lab/bank-all";
+import type { ImgQuestion } from "@/lib/exam-lab/image-bank";
 import { getPortalUser, isAdmin, isExamLabStaff } from "@/lib/edu/auth";
 import { visibleClassIdsForUid } from "@/lib/portal/timetable";
 import { coveredTopicsForTarget, DEFAULT_COURSE } from "@/lib/exam-lab/syllabus-coverage";
+import { formatPk, pkDateTimeToIso } from "@/lib/portal/pk-time";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
+
+const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9_-]{8,100}$/;
+
+/**
+ * Deterministic allocation + drill ids for one client idempotency key, scoped
+ * to the staff member: a retried request (e.g. after a timeout halfway through
+ * a big group) lands on the SAME allocation and the SAME frozen paper, so
+ * students who already have it are skipped instead of receiving a duplicate.
+ */
+async function idempotentIds(staffId: string, key: string): Promise<{ id: string; drillId: string }> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${staffId}:${key}`));
+  const hex = [...new Uint8Array(digest)].slice(0, 10).map((b) => b.toString(16).padStart(2, "0")).join("");
+  return { id: `ik-${hex}`, drillId: `drill-ik-${hex}` };
+}
 
 /**
  * POST — allocate an Exam Lab drill to a target.
@@ -18,8 +35,13 @@ export const maxDuration = 30;
  *   class_ids?: string[],        // for class/school/network (resolved by the client)
  *   student_email?: string,      // for individual
  *   scope_label?: string,        // human label shown to the student
- *   mode, content, title, instructions?, duration_min?, due_at?, starts_at?, notify?
+ *   mode, content, title, instructions?, duration_min?, due_at?, starts_at?, notify?,
+ *   idempotency_key?,            // optional; also read from the Idempotency-Key header
  * }
+ *   due_at / starts_at: datetime-local values are Pakistan wall-clock time.
+ *   A retry with the same idempotency_key reuses the allocation id + frozen
+ *   paper and only fills in the students still missing. Partial fan-out
+ *   failures return 200 with { partial: true, failedCount, warning }.
  *   mode: assignment_help | assignment_nohelp | test  (test = super_admin/admin/TA)
  *
  * Drills are FROZEN here: the exact question paper is resolved once, stored on
@@ -43,9 +65,21 @@ export async function POST(req: Request) {
     target_type?: string; class_ids?: string[]; student_email?: string; student_ids?: string[]; scope_label?: string;
     mode?: string; content?: AllocContent; title?: string;
     instructions?: string; duration_min?: number; due_at?: string; starts_at?: string; notify?: boolean;
+    idempotency_key?: string;
   } | null;
   if (!b?.title?.trim() || !b.mode || !b.content) {
     return NextResponse.json({ error: "title, mode and content are required." }, { status: 400 });
+  }
+  // datetime-local values carry no zone: they are Pakistan wall-clock time.
+  // (`new Date()` on a UTC server read them as UTC — tests opened 5 h late.)
+  const dueAt = b.due_at ? pkDateTimeToIso(b.due_at) : null;
+  const startsAt = b.starts_at ? pkDateTimeToIso(b.starts_at) : null;
+  if ((b.due_at && !dueAt) || (b.starts_at && !startsAt)) {
+    return NextResponse.json({ error: "Invalid due / start date." }, { status: 400 });
+  }
+  const idemKey = String(b.idempotency_key || req.headers?.get?.("idempotency-key") || "").trim();
+  if (idemKey && !IDEMPOTENCY_KEY_RE.test(idemKey)) {
+    return NextResponse.json({ error: "Invalid idempotency key." }, { status: 400 });
   }
   const mode = b.mode as AllocMode;
   if (!["assignment_help", "assignment_nohelp", "test"].includes(mode)) {
@@ -157,18 +191,33 @@ export async function POST(req: Request) {
     coveredForSnapshot = covered;
   }
 
-  // Freeze every assigned paper once, preserving the on-screen order.
-  const drillId = newDrillId();
-  const drillRef = await reserveDrillRef();
-  const snapshotQs = resolveSnapshot(c, coveredForSnapshot);
-  if (!snapshotQs.length || (c.type === "custom" && snapshotQs.length !== c.ids.length)) {
+  // Freeze every assigned paper once, preserving the on-screen order. A retry
+  // under the same idempotency key reuses the paper frozen the first time, so
+  // every student in the group still sits the identical questions.
+  let id = newAllocId();
+  let drillId = newDrillId();
+  let existing: DrillRecord | null = null;
+  if (idemKey) {
+    ({ id, drillId } = await idempotentIds(staff.id, idemKey));
+    try { existing = await getDrillRecordStrict(drillId); } catch {
+      return NextResponse.json({ error: "Could not check the earlier attempt at this assignment. Please retry." }, { status: 503 });
+    }
+    if (existing && (existing.mode !== mode || existing.allocationId !== id)) {
+      return NextResponse.json({ error: "That idempotency key was already used for a different assignment." }, { status: 409 });
+    }
+  }
+  const drillRef = existing?.ref || await reserveDrillRef();
+  const snapshotQs = existing
+    ? existing.snapshot.map((s) => questionById(s.id)).filter((q): q is ImgQuestion => !!q)
+    : resolveSnapshot(c, coveredForSnapshot);
+  if (!snapshotQs.length || (existing && snapshotQs.length !== existing.snapshot.length) || (!existing && c.type === "custom" && snapshotQs.length !== c.ids.length)) {
     return NextResponse.json({ error: "The selected paper contains unavailable questions. Reopen the drill and try again." }, { status: 400 });
   }
   const frozen: AllocContent = { type: "drillref", drillId, ref: drillRef, ids: snapshotQs.map((q) => q.id), spec: c };
 
-  const id = newAllocId();
   // Permanent, viewable-after Drill Record with a frozen snapshot of the exact
-  // question paper + which class/group it was conducted for.
+  // question paper + which class/group it was conducted for. The recipient
+  // uids are kept so an individually-assigned drill still has a roster.
   let savedDrillId: string | null = null;
   try {
     savedDrillId = drillId;
@@ -179,35 +228,45 @@ export async function POST(req: Request) {
       scopeLabel: (b.scope_label || "").slice(0, 120) || null,
       classId: tt === "class" ? (classIds[0] || null) : null,
       className: tt === "class" ? ((b.scope_label || "").slice(0, 120) || null) : null,
-      classIds, studentCount: uids.length,
+      classIds, studentCount: uids.length, recipientIds: uids,
       createdBy: staff.id, createdByName: staff.fullName || staff.email,
     });
     if (!saved) throw new Error("Drill could not be saved.");
   } catch { return NextResponse.json({ error: "Could not save the drill. Please retry." }, { status: 503 }); }
 
+  let fan: FanoutResult;
   try {
-  await allocateToStudents([...new Set([...uids, staff.id])], {
-    id, mode, content: frozen,
-    title: b.title.trim().slice(0, 160),
-    instructions: (b.instructions || "").trim().slice(0, 2000) || null,
-    durationMin: b.duration_min && b.duration_min > 0 ? Math.round(b.duration_min) : null,
-    dueAt: b.due_at ? new Date(b.due_at).toISOString() : null,
-    startsAt: b.starts_at ? new Date(b.starts_at).toISOString() : null,
-    classId: tt === "class" ? (b.class_ids?.[0] || null) : null,
-    className: (b.scope_label || "").slice(0, 120) || null,
-    createdBy: staff.id,
-    createdByName: staff.fullName || staff.email,
-  });
-
+    fan = await allocateToStudentsDetailed([...new Set([...uids, staff.id])], {
+      id, mode, content: frozen,
+      title: b.title.trim().slice(0, 160),
+      instructions: (b.instructions || "").trim().slice(0, 2000) || null,
+      durationMin: b.duration_min && b.duration_min > 0 ? Math.round(b.duration_min) : null,
+      dueAt,
+      startsAt,
+      classId: tt === "class" ? (b.class_ids?.[0] || null) : null,
+      className: (b.scope_label || "").slice(0, 120) || null,
+      createdBy: staff.id,
+      createdByName: staff.fullName || staff.email,
+    });
   } catch { return NextResponse.json({ error: "Not every recipient could be saved. Please retry the assignment." }, { status: 503 }); }
+  const failed = new Set(fan.failed);
+  const failedStudents = uids.filter((u) => failed.has(u));
+  const savedStudents = uids.filter((u) => !failed.has(u));
+  if (!savedStudents.length) {
+    return NextResponse.json({ error: "Not every recipient could be saved. Please retry the assignment." }, { status: 503 });
+  }
+  // Notify each student once: only those who received the allocation in THIS
+  // call (a retry skips — and does not re-notify — those who already had it).
+  const created = new Set(fan.created);
+  const notifyUids = uids.filter((u) => created.has(u));
 
-  if (b.notify) {
+  if (b.notify && notifyUids.length) {
     try {
       const kindLabel = mode === "test" ? "test" : "assignment";
-      const dueTxt = b.due_at
-        ? `, due ${new Date(b.due_at).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}`
+      const dueTxt = dueAt
+        ? `, due ${formatPk(dueAt, { weekday: "short", day: "numeric", month: "short" })}`
         : "";
-      await notify({ uids }, {
+      await notify({ uids: notifyUids }, {
         type: kindLabel,
         title: `New ${kindLabel}: ${b.title!.trim()}${dueTxt}`,
         body: mode === "test" ? "A proctored test has been set in Exam Lab." : "A new Exam Lab assignment has been set.",
@@ -217,6 +276,13 @@ export async function POST(req: Request) {
   }
 
 
-  await audit(staff.id, "exam.allocate", "exam_allocation", id, { target: tt, mode, students: uids.length, title: b.title.trim(), drillId: savedDrillId, drillRef });
-  return NextResponse.json({ ok: true, id, drillId: savedDrillId, drillRef, frozen: frozen.type === "drillref", students: uids.length, mode, target: tt }, { status: 200 });
+  await audit(staff.id, "exam.allocate", "exam_allocation", id, { target: tt, mode, students: savedStudents.length, failed: failedStudents.length, title: b.title.trim(), drillId: savedDrillId, drillRef, retry: !!existing });
+  return NextResponse.json({
+    ok: true, id, drillId: savedDrillId, drillRef, frozen: frozen.type === "drillref", students: savedStudents.length, mode, target: tt,
+    ...(failedStudents.length ? {
+      partial: true,
+      failedCount: failedStudents.length,
+      warning: `${failedStudents.length} of ${uids.length} students could not be saved. Retry the same assignment${idemKey ? "" : " (with an idempotency key)"} to reach them.`,
+    } : {}),
+  }, { status: 200 });
 }

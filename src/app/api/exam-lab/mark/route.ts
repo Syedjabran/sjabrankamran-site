@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getPortalUser } from "@/lib/edu/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { IMAGE_BANK } from "@/lib/exam-lab/image-bank";
+import { questionById } from "@/lib/exam-lab/bank-all";
 import { markWithMaxwell } from "@/lib/ai/maxwell";
 
 export const runtime = "nodejs";
@@ -35,7 +35,9 @@ export async function POST(request: Request) {
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
 
-  const q = IMAGE_BANK.find((x) => x.id === parsed.data.id);
+  // Every course (9702, secure bank, O Level 5054) — IMAGE_BANK alone meant
+  // O Level structured answers could never be AI-marked.
+  const q = questionById(parsed.data.id);
   if (!q) return NextResponse.json({ error: "Unknown question." }, { status: 404 });
   if (q.paperType === "P1" || !q.ms_img) {
     return NextResponse.json({ error: "Maxwell marks structured questions only." }, { status: 400 });

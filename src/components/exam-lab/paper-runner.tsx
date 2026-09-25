@@ -7,7 +7,7 @@ import {
   Maximize2,
 } from "lucide-react";
 import type { ImgQuestion } from "@/lib/exam-lab/image-bank";
-import { questionSeconds, formatDuration } from "@/lib/portal/timing";
+import { questionSeconds, formatDuration, splitSeconds } from "@/lib/portal/timing";
 import { AnswerPad } from "./answer-pad";
 import { useExamGuard, type GuardEvent, type GuardMode } from "./use-exam-guard";
 import { exitExamFullscreen, fullscreenSupported, isFullscreen, onFullscreenChange, requestExamFullscreen } from "@/lib/exam-lab/fullscreen";
@@ -19,6 +19,31 @@ type LogMeta = { mode: "paper" | "drill"; code?: string; ref?: string; paperType
 export type AttemptKind = "practice" | "assignment" | "test";
 
 function newId() { return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }
+function plural(n: number, word: string) { return `${n} ${word}${n === 1 ? "" : "s"}`; }
+function dropKey<T>(m: Record<string, T>, key: string): Record<string, T> {
+  const next = { ...m };
+  delete next[key];
+  return next;
+}
+
+// ---- per-sitting clock cache ----
+// Fallback for the server-recorded start (allocations only: their attemptId,
+// `alloc-<id>`, is stable across reloads). Holds timing only — never answers,
+// since one class drill shares that id across every student on a lab PC.
+type ClockCache = { startedAt: number; perQ: Record<string, number>; pausedMs?: number };
+const clockKey = (attemptId: string) => `el-clock:${attemptId}`;
+function readClock(attemptId: string): ClockCache | null {
+  try {
+    const c = JSON.parse(localStorage.getItem(clockKey(attemptId)) || "null") as ClockCache | null;
+    return c && typeof c.startedAt === "number" && c.perQ && typeof c.perQ === "object" ? c : null;
+  } catch { return null; }
+}
+function writeClock(attemptId: string, c: ClockCache) {
+  try { localStorage.setItem(clockKey(attemptId), JSON.stringify(c)); } catch { /* storage full / disabled */ }
+}
+function clearClock(attemptId: string) {
+  try { localStorage.removeItem(clockKey(attemptId)); } catch { /* storage disabled */ }
+}
 
 export function PaperRunner({
   questions,
@@ -73,10 +98,19 @@ export function PaperRunner({
   const [err, setErr] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [structAnswers, setStructAnswers] = useState<Record<string, string>>({});
+  // `answer` = the exact (trimmed) text Maxwell marked; a mark is only ever
+  // recorded against that text, so editing afterwards cannot keep a stale mark.
   const [maxwell, setMaxwell] = useState<
-    Record<string, { loading?: boolean; awarded?: number; outOf?: number; feedback?: string; points?: { earned: boolean; text: string }[]; error?: string }>
+    Record<string, { loading?: boolean; answer?: string; awarded?: number; outOf?: number; feedback?: string; points?: { earned: boolean; text: string }[]; error?: string }>
   >({});
+  const structRef = useRef<Record<string, string>>({});
+  useEffect(() => { structRef.current = structAnswers; }, [structAnswers]);
   const [submitted, setSubmitted] = useState(false);
+  // Saving the submission: the attempt is stored first, THEN the allocation is
+  // marked submitted (its handler reads the stored attempt). A failure is shown
+  // with a retry — never silently dropped.
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveErr, setSaveErr] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const topRef = useRef<HTMLDivElement>(null);
 
@@ -99,6 +133,8 @@ export function PaperRunner({
   const [camStatus, setCamStatus] = useState<{ ready: boolean; faceOk: boolean; calibrated?: boolean } | null>(null);
   const [consent, setConsent] = useState(false);
   const attemptPostedRef = useRef(false);
+  const attemptInFlightRef = useRef<Promise<boolean> | null>(null);
+  const submissionIdRef = useRef<string>(newId()); // same value on every retry → stored once
 
   // ---- per-question time tracking ----
   const [perQ, setPerQ] = useState<Record<string, number>>({});
@@ -133,20 +169,31 @@ export function PaperRunner({
   const isMcq = (q: ImgQuestion) => q.paperType === "P1";
   const totalMarks = useMemo(() => questions.reduce((s, q) => s + (q.marks || 0), 0), [questions]);
 
-  // Per-question time budget (seconds). In open Practice this is guidance only:
-  // the counter continues into overtime so returning to/editing a question is
-  // always possible and the extra time is recorded.
+  // Per-question time budget (seconds) — the ONE figure used by the chip, the
+  // lock and the saved expectedSec. A timed attempt splits its own countdown
+  // across the questions in proportion to each question's CAIE weight
+  // (questionSeconds), so the budgets always add up to the drill's duration —
+  // a one-question drill's budget IS its countdown. Untimed / open practice
+  // keeps the raw CAIE figures. In open Practice this is guidance only: the
+  // counter continues into overtime and the extra time is recorded.
   const qBudget = useMemo(() => {
+    const raw = questions.map((q) => questionSeconds({ paper: q.paperType, difficulty: q.level, marks: q.marks }));
+    const secs = !timed || openPractice ? raw : splitSeconds(raw, totalSec);
     const m: Record<string, number> = {};
-    for (const q of questions) m[q.id] = questionSeconds({ paper: q.paperType, difficulty: q.level, marks: q.marks });
+    questions.forEach((q, i) => { m[q.id] = secs[i]; });
     return m;
-  }, [questions]);
+  }, [questions, timed, openPractice, totalSec]);
+  // Help-allowed assignments treat a structured question's budget as a pacing
+  // guide (overtime shows, nothing locks); the paper's own cutoff still applies.
+  const pacingOnly = kind === "assignment" && help;
+  const mcqIds = useMemo(() => new Set(questions.filter((q) => q.paperType === "P1").map((q) => q.id)), [questions]);
   const qLocked = useCallback((id: string) => {
     // Relaxed (practice / daily) attempts never lock a question — the budget
     // stays a pacing guide and overtime is simply recorded.
     if (relaxed || !timed || !lockOnExpiry || !begun || submitted) return false;
+    if (pacingOnly && !mcqIds.has(id)) return false;
     return (perQ[id] || 0) >= (qBudget[id] || 90);
-  }, [relaxed, timed, lockOnExpiry, begun, submitted, perQ, qBudget]);
+  }, [relaxed, timed, lockOnExpiry, begun, submitted, pacingOnly, mcqIds, perQ, qBudget]);
 
   // Track full-screen, and always leave it behind when the runner unmounts
   // (Back, or a cancelled/locked attempt) so the rest of the portal is normal.
@@ -182,12 +229,42 @@ export function PaperRunner({
     return () => { alive = false; };
   }, [questions]);
 
-  // start the clock once the paper is on screen (non-strict) or once begun (strict)
+  // Start the clock once the paper is on screen (non-strict) or once begun
+  // (strict). An ALLOCATION's start is recorded on the server (first call
+  // wins), so a reload or Back-and-reopen resumes the same clock instead of
+  // granting a fresh one; the local cache covers a failed call. The server
+  // reports its own `now`, so the resumed clock is immune to device clock skew.
+  const clockInitRef = useRef(false);
   useEffect(() => {
-    if (!loading && !err && begun && startedAt === null) setStartedAt(Date.now());
-  }, [loading, err, begun, startedAt]);
+    if (loading || err || !begun || startedAt !== null || clockInitRef.current) return;
+    clockInitRef.current = true;
+    const cached = allocationId ? readClock(attemptIdRef.current) : null;
+    const apply = (start: number) => {
+      // Same sitting as the cache (a reload): restore per-question time too.
+      if (cached && Math.abs(cached.startedAt - start) < 60_000) {
+        setPerQ(cached.perQ);
+        if (cached.pausedMs) setPausedMs(cached.pausedMs);
+      }
+      setStartedAt((s) => s ?? start);
+    };
+    if (!allocationId) { apply(Date.now()); return; }
+    void (async () => {
+      let start: number | null = null;
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 8000);
+        const r = await fetch("/api/exam-lab/allocations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: allocationId, action: "started" }), signal: ctrl.signal });
+        clearTimeout(timer);
+        const j = await r.json().catch(() => null);
+        if (r.ok && typeof j?.startedAt === "number" && typeof j?.now === "number") start = Date.now() - Math.max(0, j.now - j.startedAt);
+      } catch { /* offline / slow: fall back to the local cache */ }
+      apply(start ?? cached?.startedAt ?? Date.now());
+    })();
+  }, [loading, err, begun, startedAt, allocationId]);
 
-  const running = timed && begun && startedAt !== null && !submitted && !voided && !taskCompleted && (relaxed || remaining > 0);
+  // A countdown that does not lock on expiry (and relaxed attempts) keeps the
+  // attempt live into overtime; only a locking one stops at 0 and auto-submits.
+  const running = timed && begun && startedAt !== null && !submitted && !voided && !taskCompleted && (relaxed || !lockOnExpiry || remaining > 0);
   // A super-admin pause is a real pause: while ANY question is paused the
   // overall countdown freezes too, otherwise the paper still auto-submits
   // mid-intervention and "pause" only cosmetically stops one budget counter.
@@ -203,8 +280,9 @@ export function PaperRunner({
   const pauseStartRef = useRef<number | null>(null);
   const clockFrozenByPause = running && !openPractice && anyPaused;
   // Late is only observable when a real countdown is running (open practice
-  // has no session deadline at all).
-  const canGoLate = timed && !openPractice;
+  // has no session deadline at all) AND the attempt may run past it: a
+  // locking countdown auto-submits at 0, which is on time, never "late".
+  const canGoLate = timed && !openPractice && (relaxed || !lockOnExpiry);
   const lateRef = useRef(false);
   const [late, setLate] = useState(false);
   const markLate = useCallback(() => {
@@ -232,27 +310,34 @@ export function PaperRunner({
   const buildQLog = useCallback(() => questions.map((q) => {
     const ai = q.answer ? "ABCD".indexOf(q.answer) : -1;
     const mcq = isMcq(q);
-    const earned = mcq ? (answers[q.id] === ai ? q.marks || 1 : 0) : (maxwell[q.id]?.awarded ?? null);
+    const chosen = answers[q.id];
+    // A Maxwell mark counts only where help is allowed, and only for the exact
+    // text it marked (the server re-applies both rules).
+    const mx = maxwell[q.id];
+    const marked = !mcq && help && mx?.awarded != null && mx.answer === (structAnswers[q.id] || "").trim() ? mx : null;
+    const earned = mcq ? (chosen === ai ? q.marks || 1 : 0) : (marked?.awarded ?? null);
     return {
       id: q.id, topic: q.topic, level: q.level, paperType: q.paperType, marks: q.marks || 1,
-      earned: earned as number | null, correct: mcq ? answers[q.id] === ai : null,
-      spentSec: perQ[q.id] ?? null, expectedSec: questionSeconds({ paper: q.paperType, difficulty: q.level, marks: q.marks }),
-      response: mcq ? (answers[q.id] == null ? null : "ABCD"[answers[q.id]]) : (structAnswers[q.id] || null),
-      feedback: maxwell[q.id]?.feedback || null,
+      // A blank MCQ is NOT attempted (null), it is not a wrong answer (false).
+      earned: earned as number | null, correct: mcq ? (chosen == null ? null : chosen === ai) : null,
+      spentSec: perQ[q.id] == null ? null : Math.round(perQ[q.id]), expectedSec: qBudget[q.id],
+      response: mcq ? (chosen == null ? null : "ABCD"[chosen]) : (structAnswers[q.id] || null),
+      feedback: marked?.feedback || null,
     };
     // structAnswers MUST stay in the dep list: without it the closure captured a
     // stale (often empty) answer map, so typed self-test / proctored responses
     // could be saved blank. Every submitted response is now recorded.
-  }), [questions, answers, maxwell, perQ, structAnswers]);
+  }), [questions, answers, maxwell, perQ, structAnswers, qBudget, help]);
 
-  const postAttempt = useCallback((cancelled: boolean, lockedReason: string | null) => {
-    if (!logMeta || attemptPostedRef.current) return;
-    attemptPostedRef.current = true;
+  /** Store the attempt. Resolves true once it is saved (or nothing to save). */
+  const postAttempt = useCallback((cancelled: boolean, lockedReason: string | null): Promise<boolean> => {
+    if (!logMeta || attemptPostedRef.current) return Promise.resolve(true);
+    if (attemptInFlightRef.current) return attemptInFlightRef.current;
     const qlog = buildQLog();
     const scored = qlog.filter((q) => q.earned !== null);
     const score = scored.reduce((s, q) => s + (q.earned || 0), 0);
     const totalScored = scored.reduce((s, q) => s + q.marks, 0);
-    fetch("/api/exam-lab/attempt", {
+    const p = fetch("/api/exam-lab/attempt", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({
         mode: logMeta.mode, paperType: logMeta.paperType, code: logMeta.code, ref: logMeta.ref,
@@ -260,6 +345,7 @@ export function PaperRunner({
         durationSec: startedAt ? Math.max(0, Math.round((Date.now() - startedAt) / 1000)) : undefined, questions: qlog,
         context: {
           integrity, kind, help, revealsUsed: revealsRef.current, proctored: strict, cancelled, lockedReason, flags: flagsRef.current, allocationId, attemptId: attemptIdRef.current,
+          submissionId: submissionIdRef.current,
           // Scoring integrity + staff audit trail (owner rules):
           //  - late: finished past the countdown (practice "late attempt" /
           //    daily task "late submission"). Never blocks the student.
@@ -270,17 +356,27 @@ export function PaperRunner({
           pausedSec: pausedMs > 0 ? Math.round(pausedMs / 1000) : undefined,
         },
       }),
-    }).catch(() => {});
-  }, [logMeta, buildQLog, questions.length, startedAt, integrity, kind, help, strict, allocationId, daily, lateKind, pausedMs]);
+    })
+      .then(async (r) => {
+        const ok = r.ok && (await r.json().catch(() => null))?.ok === true;
+        if (ok) attemptPostedRef.current = true;
+        return ok;
+      })
+      .catch(() => false)
+      .finally(() => { attemptInFlightRef.current = null; });
+    attemptInFlightRef.current = p;
+    return p;
+  }, [logMeta, buildQLog, questions.length, startedAt, integrity, kind, help, strict, allocationId, lateKind, pausedMs]);
 
   const seize = useCallback((reason: string) => {
     if (voidedRef.current) return;
     voidedRef.current = true;
     setVoided(reason);
+    clearClock(attemptIdRef.current);
     // The attempt is over: hand the screen back rather than leaving the student
     // pinned in a full-screen dead end.
     void exitExamFullscreen();
-    postAttempt(true, reason);
+    void postAttempt(true, reason);
     if (strict) postProctor({ action: "end", status: "submitted" }); // server keeps the locked state; this just closes the clock
   }, [postAttempt, postProctor, strict]);
 
@@ -310,9 +406,34 @@ export function PaperRunner({
     // They are about to go and find a file: drop full-screen along with the
     // guard so the file picker and other apps are reachable.
     void exitExamFullscreen();
-    postAttempt(false, null);
+    void postAttempt(false, null); // a failure here is retried by Submit
     if (strict) postProctor({ action: "end", status: "task_completed" });
   }, [taskCompleted, submitted, voided, postAttempt, postProctor, strict]);
+
+  // Store the attempt FIRST and only then mark the allocation submitted: the
+  // allocation handler reads the stored attempt to flag late / unattempted,
+  // and firing both at once let it read the previous sitting (or nothing).
+  const finalizeSubmission = useCallback(async () => {
+    setSaveState("saving");
+    setSaveErr(null);
+    if (!await postAttempt(false, null)) {
+      setSaveState("error");
+      setSaveErr("Your answers have not been saved yet.");
+      return;
+    }
+    if (allocationId) {
+      const ok = await fetch("/api/exam-lab/allocations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: allocationId, action: "submitted" }) })
+        .then((r) => r.ok || r.status === 404) // 404: the allocation was withdrawn — nothing left to mark
+        .catch(() => false);
+      if (!ok) {
+        setSaveState("error");
+        setSaveErr("Your answers are saved, but the assignment is not marked submitted yet.");
+        return;
+      }
+    }
+    clearClock(attemptIdRef.current);
+    setSaveState("saved");
+  }, [postAttempt, allocationId]);
 
   const submit = useCallback((timeUp = false) => {
     setSubmitted(true);
@@ -320,36 +441,53 @@ export function PaperRunner({
     const rev: Record<string, boolean> = {};
     questions.forEach((q) => { if (!isMcq(q) && !strict) rev[q.id] = true; });
     setRevealed((r) => ({ ...r, ...rev }));
-    postAttempt(false, null);
     if (strict) postProctor({ action: "end", status: "submitted" });
-    if (allocationId) fetch("/api/exam-lab/allocations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: allocationId, action: "submitted" }) }).catch(() => {});
+    void finalizeSubmission();
     if (!timeUp) setTimeout(() => topRef.current?.querySelector(".pr-result")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
-  }, [questions, strict, postAttempt, postProctor, allocationId]);
+  }, [questions, strict, postProctor, finalizeSubmission]);
+
+  // While a submission is unsaved, warn before the tab is closed or reloaded.
+  useEffect(() => {
+    if (!submitted || !logMeta || saveState === "saved") return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [submitted, logMeta, saveState]);
+
+  // Mirror the clock locally so a reload can resume it even if the server's
+  // start could not be fetched (see the clock-start effect).
+  useEffect(() => {
+    if (!allocationId || startedAt === null || submitted || voided) return;
+    writeClock(attemptIdRef.current, { startedAt, perQ, pausedMs });
+  }, [allocationId, startedAt, perQ, pausedMs, submitted, voided]);
 
   const remainingRef = useRef(remaining);
   useEffect(() => { remainingRef.current = remaining; }, [remaining]);
 
-  // tick the countdown display off the wall clock. Relaxed attempts run into
-  // negative time (overtime) so the student can simply continue; formal
-  // attempts clamp at 0 and auto-submit from the separate effect below.
+  // tick the countdown display off the wall clock. Relaxed attempts, and any
+  // countdown that does not lock on expiry, run into negative time (overtime,
+  // shown as +mm:ss) so the student can simply continue; locking attempts
+  // clamp at 0 and auto-submit from the separate effect below.
   useEffect(() => {
     if (!clockRunning) return;
     const tick = () => {
       if (startedAt === null) return;
       const spentSec = (Date.now() - startedAt - pausedMs) / 1000;
       const n = Math.round(totalSec - spentSec);
-      if (!paceFired.current && totalSec > 15 * 60 && n <= 15 * 60) {
+      // Only at the actual 15:00 crossing — a resumed attempt that reopens
+      // with 3 minutes left must not flash "15:00 remaining".
+      if (!paceFired.current && totalSec > 15 * 60 && n <= 15 * 60 && n > 15 * 60 - 10) {
         paceFired.current = true;
         setPaceAlert(true);
         setTimeout(() => setPaceAlert(false), 3000);
       }
       if (canGoLate && !lateRef.current && n <= 0 && remainingRef.current > 0) markLate();
-      setRemaining(n <= 0 && !relaxed ? 0 : n);
+      setRemaining(n <= 0 && !relaxed && lockOnExpiry ? 0 : n);
     };
     tick();
     const iv = setInterval(tick, 1000);
     return () => clearInterval(iv);
-  }, [clockRunning, totalSec, canGoLate, relaxed, markLate, startedAt, pausedMs]);
+  }, [clockRunning, totalSec, canGoLate, relaxed, lockOnExpiry, markLate, startedAt, pausedMs]);
 
   // auto-submit when time is up — formal attempts only. Practice & daily tasks
   // never get a hard cutoff; they continue into overtime and are recorded late.
@@ -384,56 +522,98 @@ export function PaperRunner({
     return () => { window.removeEventListener("scroll", onScroll); window.removeEventListener("resize", onScroll); clearInterval(iv); cancelAnimationFrame(raf); };
   }, [loading, submitted, begun, questions]);
 
-  // Accumulate time on the active question. Open Practice deliberately does
-  // not auto-advance or lock at the recommended budget.
+  // Accumulate time on the active question off the SAME wall clock as the
+  // countdown: the interval only decides when to credit, the credit is the
+  // real time since the last tick. Throttled / hidden-tab time goes to the
+  // question last on screen instead of vanishing, so Σ spentSec tracks the
+  // elapsed time (minus pauses) and a one-question drill's spentSec equals its
+  // elapsed time. A visible tab is credited at most 5 s per tick (a longer gap
+  // means the device slept). Open Practice deliberately does not auto-advance
+  // or lock at the recommended budget.
+  const lastTickRef = useRef<number | null>(null);
+  const lastActiveRef = useRef<string | null>(null);
+  const hiddenSinceTickRef = useRef(false);
   useEffect(() => {
-    if (!running) return;
-    const iv = setInterval(() => {
-      const id = activeIdRef.current;
-      if (!id || pausedQuestions.has(id) || document.visibilityState === "hidden") return;
-      setPerQ((prev) => {
-        const next = { ...prev, [id]: (prev[id] || 0) + 1 };
+    if (!running) { lastTickRef.current = null; return; }
+    lastTickRef.current = Date.now();
+    hiddenSinceTickRef.current = document.visibilityState === "hidden";
+    const tick = () => {
+      const now = Date.now();
+      const prev = lastTickRef.current ?? now;
+      lastTickRef.current = now;
+      const hidden = hiddenSinceTickRef.current || document.visibilityState === "hidden";
+      hiddenSinceTickRef.current = document.visibilityState === "hidden";
+      const delta = Math.max(0, (now - prev) / 1000);
+      const credit = hidden ? delta : Math.min(5, delta);
+      if (activeIdRef.current) lastActiveRef.current = activeIdRef.current;
+      const id = lastActiveRef.current ?? questions[0]?.id ?? null;
+      if (!id || credit <= 0 || pausedQuestions.has(id)) return;
+      setPerQ((p) => {
+        const before = p[id] || 0;
+        const after = before + credit;
         const budget = qBudget[id] || 90;
-        if (!openPractice && next[id] >= budget) {
+        if (!openPractice && before < budget && after >= budget) {
           // Question just expired — auto-scroll to the next unanswered, unlocked question.
           requestAnimationFrame(() => {
             const idx = questions.findIndex((q) => q.id === id);
             for (let j = idx + 1; j < questions.length; j++) {
               const nq = questions[j];
-              if ((next[nq.id] || 0) < (qBudget[nq.id] || 90)) {
+              if ((p[nq.id] || 0) < (qBudget[nq.id] || 90)) {
                 liRefs.current[nq.id]?.scrollIntoView({ behavior: "smooth", block: "center" });
                 break;
               }
             }
           });
         }
-        return next;
+        return { ...p, [id]: after };
       });
-    }, 1000);
-    return () => clearInterval(iv);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") hiddenSinceTickRef.current = true;
+      else tick(); // credit the hidden stretch the moment the student is back
+    };
+    const iv = setInterval(tick, 1000);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(iv);
+      document.removeEventListener("visibilitychange", onVisibility);
+      tick(); // credit the last partial second to the state it belonged to
+    };
   }, [running, pausedQuestions, openPractice, questions, qBudget]);
 
   async function beginStrict() {
     if (!consent || !camStatus?.calibrated) return;
-    // Open the forensic session, then start the clock.
-    postProctor({ action: "start", kind, integrity, cameraConsent: true, meta: { title, subtitle, code: logMeta?.code, ref: logMeta?.ref, paperType: logMeta?.paperType } });
+    // Open the forensic session, then start the clock. The session must exist
+    // before the clock-start call: that call compares the two start times to
+    // tell a re-sit after a super-admin unlock (fresh clock) from a reload.
+    const sessionReady = fetch("/api/exam-lab/proctor", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ attemptId: attemptIdRef.current, action: "start", kind, integrity, cameraConsent: true, meta: { title, subtitle, code: logMeta?.code, ref: logMeta?.ref, paperType: logMeta?.paperType } }) }).catch(() => null);
     // Refusal is survivable — a proctored test still starts, and the guard's
     // existing fullscreen_exit rule only bites once full-screen was granted.
+    // (Requested before awaiting anything: browsers only grant it in the click.)
     await requestExamFullscreen();
+    await sessionReady;
     setBegun(true);
   }
 
   async function markMaxwell(id: string) {
-    if (strict) return; // help is locked in a proctored test
+    if (strict || !help) return; // Maxwell is help: locked in tests and no-help assignments
     const answer = (structAnswers[id] || "").trim();
     if (answer.length < 3) { setMaxwell((m) => ({ ...m, [id]: { error: "Write your answer first." } })); return; }
-    setMaxwell((m) => ({ ...m, [id]: { loading: true } }));
+    setMaxwell((m) => ({ ...m, [id]: { loading: true, answer } }));
     try {
       const res = await fetch("/api/exam-lab/mark", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, answer }) });
       const j = await res.json();
+      // Edited while Maxwell was marking: that mark is for text that is gone.
+      if ((structRef.current[id] || "").trim() !== answer) { setMaxwell((m) => dropKey(m, id)); return; }
       if (!res.ok) setMaxwell((m) => ({ ...m, [id]: { error: j.error || "Marking failed." } }));
-      else setMaxwell((m) => ({ ...m, [id]: { awarded: j.awarded, outOf: j.outOf, feedback: j.feedback, points: j.points } }));
+      else setMaxwell((m) => ({ ...m, [id]: { answer, awarded: j.awarded, outOf: j.outOf, feedback: j.feedback, points: j.points } }));
     } catch { setMaxwell((m) => ({ ...m, [id]: { error: "Network error." } })); }
+  }
+
+  function onStructChange(id: string, v: string) {
+    setStructAnswers((s) => ({ ...s, [id]: v }));
+    // A Maxwell mark belongs to the exact text it marked: editing drops it.
+    setMaxwell((m) => (m[id] && !m[id].loading ? dropKey(m, id) : m));
   }
 
   function toggleReveal(id: string) {
@@ -456,6 +636,9 @@ export function PaperRunner({
   const structCount = questions.length - mcqs.length;
   const structMarks = questions.filter((q) => !isMcq(q)).reduce((s, q) => s + (q.marks || 0), 0);
   const pct = mcqs.length ? Math.round((got / mcqs.length) * 100) : 0;
+  // The countdown turns red for the last quarter (1–15 min), not from the
+  // first second of every drill of 15 minutes or less.
+  const warnAt = Math.min(900, Math.max(60, totalSec * 0.25));
 
   const watermark = useMemo(() => {
     const txt = `physics@sjabrankamran.com`;
@@ -568,7 +751,7 @@ export function PaperRunner({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {openPractice ? <span className="rounded-xl border border-emerald2/30 px-3 py-1.5 font-mono text-xs text-emerald2">Practice · no deadline</span> : timed && startedAt !== null && !submitted && <ClockPill left={remaining} warn={remaining <= 15 * 60 && remaining > 0} paused={anyPaused} />}
+          {openPractice ? <span className="rounded-xl border border-emerald2/30 px-3 py-1.5 font-mono text-xs text-emerald2">Practice · no deadline</span> : timed && startedAt !== null && !submitted && <ClockPill left={remaining} warn={remaining <= warnAt && remaining > 0} paused={anyPaused} />}
           {fsAvailable && !fsOn && !submitted && !taskCompleted && (
             <button onClick={() => { void requestExamFullscreen(); }} className="btn-ghost !px-3 !py-1.5 text-xs el-noprint" title="Sit this paper full-screen">
               <Maximize2 size={13} /> Full screen
@@ -595,7 +778,7 @@ export function PaperRunner({
       )}
 
       <div className="mb-4 flex flex-wrap gap-2 font-mono text-[11px] text-dust">
-        <span className="rounded-full border border-white/10 px-2.5 py-0.5">{questions.length} questions</span>
+        <span className="rounded-full border border-white/10 px-2.5 py-0.5">{plural(questions.length, "question")}</span>
         <span className="rounded-full border border-white/10 px-2.5 py-0.5">{totalMarks} marks</span>
         <span className="rounded-full border border-white/10 px-2.5 py-0.5">exact CAIE images · diagrams included</span>
         {kind !== "practice" && <span className="rounded-full border border-cyan/25 px-2.5 py-0.5 text-cyan">{kind === "test" ? "Test" : help ? "Assignment · help allowed" : "Assignment · no help"}</span>}
@@ -625,6 +808,17 @@ export function PaperRunner({
         </div>
       )}
 
+      {submitted && logMeta && saveState === "saving" && (
+        <p className="el-noprint mb-4 flex items-center gap-2 text-xs text-dust"><Loader2 size={13} className="animate-spin" /> Saving your answers…</p>
+      )}
+      {submitted && saveState === "error" && (
+        <div className="el-noprint mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-signal/40 bg-signal/[0.06] px-4 py-3 text-sm text-signal">
+          <ShieldAlert size={16} className="shrink-0" />
+          <span className="min-w-0 flex-1"><b>{saveErr}</b> Keep this page open, check your connection and retry — nothing is lost while it stays open.</span>
+          <button onClick={() => { void finalizeSubmission(); }} className="btn-primary !px-3.5 !py-1.5 text-xs"><RotateCcw size={13} /> Retry saving</button>
+        </div>
+      )}
+
       {taskCompleted && !submitted && (
         <div className="el-noprint mb-4 flex items-start gap-2 rounded-xl border border-emerald2/30 bg-emerald2/[0.06] px-4 py-3 text-sm text-emerald2">
           <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
@@ -640,8 +834,9 @@ export function PaperRunner({
         {questions.map((q, i) => {
           const chosen = answers[q.id];
           const ai = q.answer ? "ABCD".indexOf(q.answer) : -1;
-          const expSec = questionSeconds({ paper: q.paperType, difficulty: q.level, marks: q.marks });
+          const expSec = qBudget[q.id] || 90;
           const spentSec = perQ[q.id] || 0;
+          const locked = qLocked(q.id);
           const overTime = spentSec > expSec;
           const isActive = !submitted && activeId === q.id;
           const questionPaused = pausedQuestions.has(q.id);
@@ -654,15 +849,15 @@ export function PaperRunner({
                 <span className="rounded-full border border-white/15 px-2.5 py-0.5 font-mono text-[10px] text-fog">{q.paperType}</span>
                 <span title="Time budget for this question" className="inline-flex items-center gap-1 rounded-full border border-white/15 px-2.5 py-0.5 font-mono text-[10px] text-dust"><Timer size={10} /> {formatDuration(expSec)}</span>
                 {!submitted ? (
-                  <span title={openPractice ? (overTime ? "Recommended time passed — keep working; overtime is recorded" : isActive ? "Recommended time; keep working if needed" : "Recommended time starts when this question is on screen") : qLocked(q.id) ? "Time expired — answer locked" : isActive ? "Counting down" : "Countdown starts when this question is on screen"}
-                    className={"inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-[10px] " + (questionPaused ? "border-amber-400/60 bg-amber-400/10 text-amber-300" : qLocked(q.id) ? "border-signal/60 bg-signal/10 text-signal" : overTime ? "border-signal/50 text-signal" : isActive ? "border-cyan/60 text-cyan" : "border-white/10 text-fog")}>
-                    {questionPaused ? <Pause size={10} /> : qLocked(q.id) ? <Lock size={10} /> : isActive ? <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" /> : null}
-                    {questionPaused ? `Paused · ${formatDuration(Math.max(0, expSec - spentSec))}` : qLocked(q.id) ? "Locked" : overTime ? `+${formatDuration(spentSec - expSec)}` : formatDuration(Math.max(0, expSec - spentSec))}
+                  <span title={openPractice || pacingOnly ? (overTime ? "Recommended time passed — keep working; overtime is recorded" : isActive ? "Recommended time; keep working if needed" : "Recommended time starts when this question is on screen") : locked ? "Time expired — answer locked" : isActive ? "Counting down" : "Countdown starts when this question is on screen"}
+                    className={"inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-[10px] " + (questionPaused ? "border-amber-400/60 bg-amber-400/10 text-amber-300" : locked ? "border-signal/60 bg-signal/10 text-signal" : overTime ? "border-signal/50 text-signal" : isActive ? "border-cyan/60 text-cyan" : "border-white/10 text-fog")}>
+                    {questionPaused ? <Pause size={10} /> : locked ? <Lock size={10} /> : isActive ? <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" /> : null}
+                    {questionPaused ? `Paused · ${formatDuration(Math.max(0, expSec - spentSec))}` : locked ? "Locked" : overTime ? `+${formatDuration(spentSec - expSec)}` : formatDuration(Math.max(0, expSec - spentSec))}
                   </span>
                 ) : (
                   <span title="Time you spent vs expected" className={"inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-[10px] " + (overTime ? "border-signal/40 text-signal" : "border-emerald2/40 text-emerald2")}>{formatDuration(spentSec)} / {formatDuration(expSec)}</span>
                 )}
-                {canPause && startedAt !== null && !submitted && !voided && !qLocked(q.id) && (
+                {canPause && startedAt !== null && !submitted && !voided && !locked && (
                   <button
                     type="button"
                     onClick={() => toggleQuestionPause(q.id)}
@@ -687,8 +882,8 @@ export function PaperRunner({
                     return (
                       <button
                         key={L}
-                        disabled={submitted || taskCompleted || qLocked(q.id)}
-                        onClick={() => { if (!qLocked(q.id) && !taskCompleted) setAnswers((a) => ({ ...a, [q.id]: k })); }}
+                        disabled={submitted || taskCompleted || locked}
+                        onClick={() => { if (!locked && !taskCompleted) setAnswers((a) => ({ ...a, [q.id]: k })); }}
                         className={
                           "h-10 w-12 rounded-lg border font-display text-base font-bold transition " +
                           (isCorrect ? "border-emerald2 bg-emerald2 text-space" :
@@ -708,20 +903,25 @@ export function PaperRunner({
                 <div className="mt-3">
                   <AnswerPad
                     value={structAnswers[q.id] || ""}
-                    onChange={(v) => setStructAnswers((s) => ({ ...s, [q.id]: v }))}
+                    onChange={(v) => { if (!locked) onStructChange(q.id, v); }}
                     imageUrl={urls[q.img]}
                     qid={q.id}
                     code={logMeta?.code || logMeta?.ref || "exam"}
-                    disabled={submitted || taskCompleted}
+                    disabled={submitted || taskCompleted || locked}
                     onModeChange={(m) => setAnswerMode((s) => ({ ...s, [q.id]: m }))}
                   />
+                  {locked && !submitted && (
+                    <p className="mt-2 flex items-center gap-1.5 text-xs text-signal el-noprint"><Lock size={12} /> Locked — this question’s time is up. Your answer so far is kept and will be submitted.</p>
+                  )}
                   {strict ? (
                     <p className="mt-2 flex items-center gap-1.5 text-xs text-dust el-noprint"><Lock size={12} className="text-cyan" /> Marking &amp; mark schemes are locked during a proctored test.</p>
                   ) : (
                     <div className="mt-2 flex flex-wrap gap-2 el-noprint">
-                      <button onClick={() => markMaxwell(q.id)} disabled={maxwell[q.id]?.loading} className="btn-primary !px-3.5 !py-1.5 text-xs disabled:opacity-50">
-                        {maxwell[q.id]?.loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} Mark with Maxwell
-                      </button>
+                      {help && (
+                        <button onClick={() => markMaxwell(q.id)} disabled={maxwell[q.id]?.loading} className="btn-primary !px-3.5 !py-1.5 text-xs disabled:opacity-50">
+                          {maxwell[q.id]?.loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} Mark with Maxwell
+                        </button>
+                      )}
                       <button onClick={() => toggleReveal(q.id)} className="btn-ghost !px-3 !py-1.5 text-xs">
                         <Eye size={13} /> {revealed[q.id] ? "Hide" : "Reveal"} mark scheme
                       </button>
@@ -865,7 +1065,7 @@ function ScriptUpload({ logMeta, startedAt, durationSec, pausedMs }: { logMeta: 
   // Time the clock spent frozen by a super-admin pause extends the window; the
   // server judges late from startedAt + durationSec, so the paused seconds are
   // folded into the durationSec it is sent (clamped to its schema max).
-  const allowedSec = Math.min(20000, durationSec + Math.round(pausedMs / 1000));
+  const allowedSec = Math.min(43200, durationSec + Math.round(pausedMs / 1000));
   const deadline = startedAt + (allowedSec + 300) * 1000;
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
