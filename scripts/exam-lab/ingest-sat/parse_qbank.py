@@ -97,13 +97,13 @@ _CHOICE_CORRECT = re.compile(r"Choice ([A-D]) is correct\b")
 # 5-11 and bank id 9ee22c16). Several values may be stated with "or" ("15 or
 # -5", practice test 4, Math module 2 Q6); every one of them is an answer.
 # The minus may be printed as an en dash or U+2212; `_forms` normalises it.
-_NUMBER = r"[-–−]?\d+(?:,\d{3}(?!\d))*(?:\.\d+)?(?:/\d+)?"
+_NUMBER = r"[-\u2013\u2212]?\d+(?:,\d{3}(?!\d))*(?:\.\d+)?(?:/\d+)?"
 _IN_RATIONALE = re.compile(rf"The correct answer is\s+({_NUMBER}(?:\s+or\s+{_NUMBER})*)")
 # A number printed with thousands separators: 1-3 digits not continuing a
 # fraction or decimal, then comma-and-exactly-three-digit groups. "3,540" is
 # one value; "3/2,1.5" is two.
 _GROUPED = re.compile(r"(?<![\d./])(\d{1,3})((?:,\d{3})+)(?!\d)")
-_DASHES = str.maketrans({"–": "-", "−": "-"})
+_DASHES = str.maketrans({"\u2013": "-", "\u2212": "-"})
 # What separates the forms of one answer, measured on every answer line,
 # entry note and "either" list in both corpora: a comma (with or without
 # whitespace, optionally then "and"/"or"), or "and"/"or" between spaces.

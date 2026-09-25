@@ -172,7 +172,7 @@ def test_a_stated_answer_joined_with_or_ships_both_values():
 TEST_4_MATH_M2_Q6 = (
     "The correct answer is 15 or -5 . By the definition of absolute value, if x - 5 = 10 ,\n"
     "then x - 5 = 10 or x - 5 = -10. Thus, the\n"
-    "given equation has two possible solutions, 15 and -5 . Note that 15 and –5 are\n"
+    "given equation has two possible solutions, 15 and -5 . Note that 15 and \u20135 are\n"
     "examples of ways to enter a correct answer.\n"
 )
 

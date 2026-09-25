@@ -587,9 +587,9 @@ def test_forms_keep_a_thousands_separator_apart_from_a_list_comma():
 
 
 def test_forms_read_an_en_dash_or_minus_sign_as_a_minus():
-    assert _forms("15 and –5") == ["15", "-5"]
-    assert _forms("−13/2, −6.5") == ["-13/2", "-6.5"]
-    record = parse_block(_spr_block("abcd0005", "Rationale\nThe correct answer is –5. Adding 5 to both sides.\n"))
+    assert _forms("15 and \u20135") == ["15", "-5"]
+    assert _forms("\u221213/2, \u22126.5") == ["-13/2", "-6.5"]
+    record = parse_block(_spr_block("abcd0005", "Rationale\nThe correct answer is \u20135. Adding 5 to both sides.\n"))
     assert record["answer"]["accepted"] == ["-5"]
 
 
