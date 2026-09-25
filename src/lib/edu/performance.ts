@@ -34,8 +34,10 @@ export async function getMyPerformance(): Promise<EduPerformance> {
       .maybeSingle();
     if (!student?.id) return empty;
 
+    // Every mark (no row limit), like the learn/family pages, rankings and the
+    // Saturday email — a "last 120" window made this % disagree with them.
     const [{ data: att }, { data: results }] = await Promise.all([
-      supabase.from("edu_attendance").select("status, recorded_at, edu_lessons(lesson_date, title)").eq("student_id", student.id).order("recorded_at", { ascending: false }).limit(120),
+      supabase.from("edu_attendance").select("status, recorded_at, edu_lessons(lesson_date, title)").eq("student_id", student.id).order("recorded_at", { ascending: false }),
       supabase
         .from("edu_results")
         .select("score, grade, breakdown, created_at, edu_assessments(title, kind, total_marks, starts_at)")
@@ -58,7 +60,7 @@ export async function getMyPerformance(): Promise<EduPerformance> {
       const absent = counted.filter((s) => s === "absent").length;
       const total = counted.length;
       attendance = { total, present, late, online, absent, excluded: excludedCount, pct: attendancePercent(counted) ?? 0 };
-      attendanceLog = att.map((r) => {
+      attendanceLog = att.slice(0, 120).map((r) => {
         const l = (r as { edu_lessons?: { lesson_date?: string; title?: string } }).edu_lessons || {};
         return { date: l.lesson_date || (r as { recorded_at?: string }).recorded_at || null, status: r.status as string, title: l.title || null };
       });

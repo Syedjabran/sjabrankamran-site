@@ -15,7 +15,17 @@ export default async function StudyPlanPage() {
   const { roles, previewing } = await effectiveRoles(user);
   if (!roles.includes("student")) redirect("/portal");
   const isRealStudent = user.roles.includes("student");
-  const plan = await ensureStudyPlan(isRealStudent ? user.id : DEMO_STUDENT_UID);
+  // Storage reads now fail loudly rather than returning empty data, so a blip
+  // must not take the whole page down.
+  const plan = await ensureStudyPlan(isRealStudent ? user.id : DEMO_STUDENT_UID).catch(() => null);
+  if (!plan) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-space/60 p-6 text-sm text-fog">
+        <p className="font-semibold text-ice">Your study plan couldn&apos;t be loaded just now.</p>
+        <p className="mt-1">Nothing has been lost. Please refresh the page in a moment.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-7">

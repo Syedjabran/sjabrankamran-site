@@ -16,6 +16,7 @@ import { ensureStudyPlan } from "@/lib/portal/study-plan";
 import { DEMO_STUDENT_UID } from "@/lib/portal/demo-student";
 import { listAllocations } from "@/lib/exam-lab/allocations";
 import { listTasks } from "@/lib/portal/tasks";
+import { formatPk, pkToday } from "@/lib/portal/pk-time";
 
 export const metadata = { title: "Portal Dashboard" };
 
@@ -81,7 +82,7 @@ function relTime(iso: string): string {
   const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
   const d = Math.floor(h / 24); if (d < 7) return `${d}d ago`;
-  return new Date(iso).toLocaleDateString();
+  return formatPk(iso, { day: "numeric", month: "short", year: "numeric" });
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -161,7 +162,7 @@ export default async function PortalDashboard() {
     const schools = reg.schools || [];
     const first = (user.fullName || user.email || "").split(" ")[0];
     const roleBadge = user.roles.map((r) => ROLE_LABELS[r as EduRole]).join(" · ");
-    const today = new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+    const today = formatPk(Date.now(), { weekday: "long", day: "numeric", month: "long" });
 
     return (
       <div className="space-y-8">
@@ -277,7 +278,9 @@ export default async function PortalDashboard() {
   const isStudent = effRoles.includes("student");
   const [studentPlan, allocations, tasks] = isStudent
     ? await Promise.all([
-        ensureStudyPlan(planUid),
+        // A storage blip while generating the plan must not take down the
+        // dashboard — the plan card is simply hidden until the next load.
+        ensureStudyPlan(planUid).catch(() => null),
         listAllocations(planUid).catch(() => []),
         listTasks(planUid).catch(() => []),
       ])
@@ -287,20 +290,24 @@ export default async function PortalDashboard() {
   // deadlines, then the plan. Open allocations sort by due date; a missing
   // due date sorts last. Tasks fill in when no allocation is open.
   const openAllocs = (allocations as Awaited<ReturnType<typeof listAllocations>>)
-    .filter((a) => a.status === "assigned" || a.status === "unlocked")
+    .filter((a) => a.status === "assigned" || a.status === "in_progress" || a.status === "unlocked")
     .sort((a, b) => (a.dueAt ? Date.parse(a.dueAt) : Infinity) - (b.dueAt ? Date.parse(b.dueAt) : Infinity));
   const openTasks = (tasks as Awaited<ReturnType<typeof listTasks>>)
     .filter((t) => t.status !== "done")
     .sort((a, b) => (a.dueAt ? Date.parse(a.dueAt) : Infinity) - (b.dueAt ? Date.parse(b.dueAt) : Infinity));
   const heroAlloc = openAllocs[0] || null;
   const heroTask = heroAlloc ? null : openTasks[0] || null;
+  // Labels by Pakistan calendar day: past the due instant → overdue; else
+  // today / tomorrow / in N days.
+  const todayPk = Date.parse(`${pkToday()}T00:00:00Z`);
   const fmtDue = (iso: string | null) => {
     if (!iso) return null;
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return null;
-    const days = Math.ceil((d.getTime() - Date.now()) / 86400000);
-    const when = d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
-    return days < 0 ? `${when} · overdue` : days === 0 ? `${when} · today` : `${when}`;
+    const days = Math.round((Date.parse(`${pkToday(d)}T00:00:00Z`) - todayPk) / 86400000);
+    const when = formatPk(d, { weekday: "short", day: "numeric", month: "short" });
+    if (d.getTime() < Date.now()) return `${when} · overdue`;
+    return days <= 0 ? `${when} · today` : days === 1 ? `${when} · tomorrow` : `${when} · in ${days} days`;
   };
   const deadlines: { key: string; label: string; kind: string; due: string | null; href: string; overdue: boolean }[] = [
     ...openAllocs.map((a) => ({

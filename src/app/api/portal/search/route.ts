@@ -159,7 +159,7 @@ export async function GET(req: Request) {
     if (m) hits.push({ type: "task", title: t.title, subtitle: t.mandatory ? "Mandatory task" : "Task", href: `/portal/tasks/${encodeURIComponent(t.id)}`, why: m.why, due: t.dueAt, score: m.score + 1 });
   }
   for (const a of allocations) {
-    if (a.status !== "assigned" && a.status !== "unlocked") continue;
+    if (a.status !== "assigned" && a.status !== "in_progress" && a.status !== "unlocked") continue;
     const m = match(q, [
       { text: a.title, name: "the assignment title", weight: 6 },
       { text: a.mode === "test" ? "test proctored" : "assignment", name: "the kind", weight: 2 },

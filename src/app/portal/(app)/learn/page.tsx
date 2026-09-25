@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getPortalUser } from "@/lib/edu/auth";
 import { effectiveRoles } from "@/lib/portal/view-as";
 import { getMyStudent } from "@/lib/edu/student";
+import { attendancePercent } from "@/lib/edu/attendance";
+import { formatPk, pkToday } from "@/lib/portal/pk-time";
 import { MyTasks } from "./my-tasks";
 
 export const metadata = { title: "My Learning" };
@@ -29,8 +31,10 @@ export default async function LearnHome() {
   }
 
   const supabase = await createClient();
-  const today = new Date().toISOString().slice(0, 10);
-  const weekAhead = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
+  // Lesson dates are Pakistan calendar dates.
+  const today = pkToday();
+  const weekAhead = pkToday(Date.now() + 7 * 864e5);
+  const nowIso = new Date().toISOString();
 
   const [{ data: enrolments }, { data: results }, { data: attendance }] = await Promise.all([
     supabase
@@ -49,7 +53,10 @@ export default async function LearnHome() {
 
   const classIds = (enrolments ?? []).map((e) => e.class_id);
 
-  const [{ data: lessons }, { data: assignments }] = await Promise.all([
+  const assignmentSelect = "id, title, due_at, max_marks, edu_classes(name), edu_submissions(id, status, marks, student_id)";
+  // Two windows so open work is never cut off by the row limit: everything
+  // due from now on (plus undated), soonest first, then recent past work.
+  const [{ data: lessons }, { data: upcoming }, { data: past }] = await Promise.all([
     classIds.length
       ? supabase
           .from("edu_lessons")
@@ -62,17 +69,26 @@ export default async function LearnHome() {
     classIds.length
       ? supabase
           .from("edu_assignments")
-          .select("id, title, due_at, max_marks, edu_classes(name), edu_submissions(id, status, marks, student_id)")
+          .select(assignmentSelect)
           .in("class_id", classIds)
+          .or(`due_at.gte."${nowIso}",due_at.is.null`)
           .order("due_at", { ascending: true, nullsFirst: false })
+          .limit(200)
+      : Promise.resolve({ data: [] as never[] }),
+    classIds.length
+      ? supabase
+          .from("edu_assignments")
+          .select(assignmentSelect)
+          .in("class_id", classIds)
+          .lt("due_at", nowIso)
+          .order("due_at", { ascending: false })
           .limit(25)
       : Promise.resolve({ data: [] as never[] }),
   ]);
+  const assignments = [...(upcoming ?? []), ...(past ?? [])];
 
-  const att = attendance ?? [];
-  const attTotal = att.length;
-  const attPresent = att.filter((a) => ["present", "late"].includes(a.status)).length;
-  const attPct = attTotal ? Math.round((attPresent / attTotal) * 100) : null;
+  // Same rule as the Saturday email: online counts, excused/leave/exempt are excluded.
+  const attPct = attendancePercent((attendance ?? []).map((a) => a.status as string));
 
   return (
     <div className="space-y-10">
@@ -171,7 +187,7 @@ export default async function LearnHome() {
                       <span className="text-dust">{(a.edu_classes as unknown as { name: string } | null)?.name}</span>
                       {a.due_at ? (
                         <span className={overdue ? "text-signal" : "text-dust"}>
-                          due {new Date(a.due_at).toLocaleDateString()}
+                          due {formatPk(a.due_at, { day: "numeric", month: "short", year: "numeric" })}
                         </span>
                       ) : null}
                       <span className="font-mono text-[10px] uppercase tracking-widest text-cyan">

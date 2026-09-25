@@ -113,20 +113,32 @@ export async function buildRankings(): Promise<RankingsData> {
   const byScoreThenAttempts = <T extends { score: number; attempts?: number; totalAttempts?: number }>(a: T, b: T) =>
     b.score - a.score || ((b.attempts ?? b.totalAttempts ?? 0) - (a.attempts ?? a.totalAttempts ?? 0));
 
+  // A student with two active enrolments appears once per class in the report.
+  // Rank each student ONCE (first class listed) so ranks never collide and the
+  // "out of" counts are students, not seats.
+  const seenStudent = new Set<string>();
+  const rankable = studentsFlat.filter((s) => {
+    const key = s.uid || s.studentId;
+    if (!key) return true;
+    if (seenStudent.has(key)) return false;
+    seenStudent.add(key);
+    return true;
+  });
+
   // ---- Rank students: overall, in-class, in-school ----
-  const stuOverall = assignRanks([...studentsFlat].sort(byScoreThenAttempts));
+  const stuOverall = assignRanks([...rankable].sort(byScoreThenAttempts));
   const rankMap = new Map<string, RankedStudent>();
   for (const s of stuOverall) { s.rankOverall = s._rank; s.outOfOverall = stuOverall.length; rankMap.set(s.studentId, s); }
   // in-class
   const byClass = new Map<string, SFlat[]>();
-  for (const s of studentsFlat) { const a = byClass.get(s._classId) || []; a.push(s); byClass.set(s._classId, a); }
+  for (const s of rankable) { const a = byClass.get(s._classId) || []; a.push(s); byClass.set(s._classId, a); }
   for (const [, arr] of byClass) {
     const ranked = assignRanks([...arr].sort(byScoreThenAttempts));
     for (const s of ranked) { const t = rankMap.get(s.studentId)!; t.rankInClass = s._rank; t.outOfClass = ranked.length; }
   }
   // in-school
   const bySchool = new Map<string, SFlat[]>();
-  for (const s of studentsFlat) { const a = bySchool.get(s.school) || []; a.push(s); bySchool.set(s.school, a); }
+  for (const s of rankable) { const a = bySchool.get(s.school) || []; a.push(s); bySchool.set(s.school, a); }
   for (const [, arr] of bySchool) {
     const ranked = assignRanks([...arr].sort(byScoreThenAttempts));
     for (const s of ranked) { const t = rankMap.get(s.studentId)!; t.rankInSchool = s._rank; t.outOfSchool = ranked.length; }

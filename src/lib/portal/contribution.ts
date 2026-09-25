@@ -9,6 +9,8 @@
  *   { uid, name, total, month: "YYYY-MM", monthPoints, breakdown{kind:count}, updatedAt }
  */
 import { createAdminClient } from "@/lib/supabase/admin";
+import { readStorageJson } from "@/lib/portal/forum";
+import { pkToday } from "@/lib/portal/pk-time";
 
 const BUCKET = "portal-data";
 const DIR = "contrib";
@@ -31,30 +33,20 @@ export const POINTS_GUIDE: { kind: ContribKind; label: string; pts: number }[] =
 
 export type Contrib = { uid: string; name: string; total: number; month: string; monthPoints: number; breakdown: Record<string, number>; updatedAt: number };
 
-function thisMonth(): string { return new Date().toISOString().slice(0, 7); }
+/** The contribution month key ("YYYY-MM") — a Pakistan calendar month. */
+export function thisMonth(): string { return pkToday().slice(0, 7); }
 function path(uid: string) { return `${DIR}/${uid}.json`; }
 
+/** Cache-busted read (see readStorageJson). null = no doc yet; a failed read throws. */
 async function read(uid: string): Promise<Contrib | null> {
-  try {
-    // Cache-busted read — see src/lib/portal/forum.ts readJson for why.
-    const enc = `${DIR}/${uid}.json`.split("/").map(encodeURIComponent).join("/");
-    const cb = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-    const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/${BUCKET}/${enc}?cb=${cb}`;
-    const res = await fetch(url, {
-      cache: "no-store",
-      headers: {
-        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}`,
-      },
-    });
-    if (res.ok) return (await res.json()) as Contrib;
-  } catch { /* none */ }
-  return null;
+  return (await readStorageJson<Contrib>(BUCKET, path(uid))) ?? null;
 }
 
 export async function award(uid: string, name: string, kind: ContribKind, times = 1): Promise<void> {
   try {
     const sb = createAdminClient();
+    // A failed read throws out of here (caught below) — never overwrite a
+    // member's points with a fresh zeroed doc.
     const cur = (await read(uid)) || { uid, name, total: 0, month: thisMonth(), monthPoints: 0, breakdown: {}, updatedAt: 0 };
     const pts = (POINTS[kind] || 0) * times;
     const m = thisMonth();
@@ -65,7 +57,7 @@ export async function award(uid: string, name: string, kind: ContribKind, times 
     cur.breakdown[kind] = (cur.breakdown[kind] || 0) + times;
     cur.updatedAt = Date.now();
     const body = new Blob([JSON.stringify(cur)], { type: "application/json" });
-    await sb.storage.from(BUCKET).upload(path(uid), body, { upsert: true, contentType: "application/json" });
+    await sb.storage.from(BUCKET).upload(path(uid), body, { upsert: true, contentType: "application/json", cacheControl: "0" });
   } catch { /* best effort */ }
 }
 

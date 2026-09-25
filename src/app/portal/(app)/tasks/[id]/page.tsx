@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { Clock, Target, Trophy } from "lucide-react";
 import { getPortalUser } from "@/lib/edu/auth";
 import { getTask } from "@/lib/portal/tasks";
+import { formatPk } from "@/lib/portal/pk-time";
 import { TaskActions } from "./task-actions";
 
 export const metadata = { title: "Assigned task" };
@@ -12,7 +13,16 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
   if (!user) redirect("/portal/login");
   if (!user.roles.includes("student")) redirect("/portal");
   const { id } = await params;
-  const task = await getTask(user.id, id);
+  // undefined = the task store could not be read (distinct from "no such task").
+  const task = await getTask(user.id, id).catch(() => undefined);
+  if (task === undefined) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-space/60 p-8 text-center">
+        <h1 className="text-xl font-semibold text-ice">Couldn&apos;t load this task</h1>
+        <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-fog">Something went wrong reading your tasks. Please refresh in a moment.</p>
+      </div>
+    );
+  }
   if (!task) notFound();
 
   const launchHref = task.sourceId && (task.activityType === "daily_challenge" || task.activityType === "short_test")
@@ -31,7 +41,7 @@ export default async function TaskPage({ params }: { params: Promise<{ id: strin
           <span>Set by {task.createdByName}</span>
           {task.topic ? <span>· {task.topic}</span> : null}
           {task.expectedMinutes ? <span className="inline-flex items-center gap-1"><Clock size={12} /> {task.expectedMinutes} min</span> : null}
-          {task.dueAt ? <span>· due {new Date(task.dueAt).toLocaleString("en-GB")}</span> : null}
+          {task.dueAt ? <span>· due {formatPk(task.dueAt, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}</span> : null}
           {task.mandatory ? <span className="rounded-full border border-signal/35 px-2 py-0.5 uppercase tracking-wider text-signal">mandatory</span> : null}
         </p>
       </div>

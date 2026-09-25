@@ -8,7 +8,9 @@ export const runtime = "nodejs";
 export async function GET() {
   const user = await getPortalUser();
   if (!user) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
-  const [board, mine] = await Promise.all([leaderboard(), getContrib(user.id)]);
+  const loaded = await Promise.all([leaderboard(), getContrib(user.id)]).catch(() => null);
+  if (!loaded) return NextResponse.json({ error: "The community board couldn't be loaded. Please try again." }, { status: 503 });
+  const [board, mine] = loaded;
   const monthlyTop5 = board.monthly.slice(0, 5).map((r, i) => ({ ...r, rank: i + 1, isMe: r.uid === user.id }));
   return NextResponse.json({
     month: board.month,
