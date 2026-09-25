@@ -36,6 +36,21 @@ assert.equal(BLUEPRINT.breakMinutes, 10);
 const alloc = allocateByDomain(27, { a: 0.3, b: 0.3, c: 0.2, d: 0.2 });
 assert.equal(Object.values(alloc).reduce((x, y) => x + y, 0), 27);
 
+// Fix round 1, finding 1: an empty proportions map cannot allocate a
+// positive total -- that is a data error (a section with zero questions),
+// and must throw rather than crash on `order[i % 0]`.
+assert.throws(() => allocateByDomain(27, {}), /allocateByDomain/);
+
+// Weights need not already sum to 1: they are normalised by their own sum,
+// so the result still totals exactly 27 even when the input sums to 2.
+const overWeighted = allocateByDomain(27, { a: 0.6, b: 0.6, c: 0.4, d: 0.4 });
+assert.equal(Object.values(overWeighted).reduce((x, y) => x + y, 0), 27);
+
+// A domain with zero weight gets zero questions, not a share of the total.
+const zeroWeighted = allocateByDomain(10, { a: 1, b: 0 });
+assert.equal(zeroWeighted.b, 0);
+assert.equal(zeroWeighted.a, 10);
+
 const form = assembleForm(bank, seeded(7));
 for (const key of ["rw.m1", "rw.m2.lower", "rw.m2.upper"]) {
   assert.equal(form.sets[key].length, 27, `${key} must hold 27 questions`);

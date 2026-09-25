@@ -34,12 +34,28 @@ export type Rng = () => number;
  * Plain rounding does not work: four domains rounded independently can total
  * 26 or 28 against a 27-question module, and a module that is one question
  * short is a broken form, not a rounding detail.
+ *
+ * Proportions are normalised by their own sum before allocating, so any set
+ * of positive weights works (not just ones that already sum to 1) and the
+ * result is guaranteed to sum to exactly `total`. An empty proportions map
+ * (or one whose weights sum to nothing) throws rather than silently
+ * returning `{}`, {} with no allocation at all: `assembleForm` cannot build
+ * a module from a domain with zero share of the bank, and that is a data
+ * error to surface, not paper over with `order[i % 0]` and a TypeError.
  */
 export function allocateByDomain(
   total: number, proportions: Record<string, number>,
 ): Record<string, number> {
   const domains = Object.keys(proportions);
-  const exact = domains.map((d) => ({ d, want: total * proportions[d] }));
+  if (total <= 0) return Object.fromEntries(domains.map((d) => [d, 0]));
+  const sum = domains.reduce((s, d) => s + proportions[d], 0);
+  if (domains.length === 0 || sum <= 0) {
+    throw new Error(
+      `allocateByDomain: cannot allocate ${total} across ` +
+      `${domains.length === 0 ? "an empty proportions map" : "proportions that sum to zero"}`,
+    );
+  }
+  const exact = domains.map((d) => ({ d, want: total * (proportions[d] / sum) }));
   const out: Record<string, number> = {};
   let used = 0;
   for (const { d, want } of exact) {
