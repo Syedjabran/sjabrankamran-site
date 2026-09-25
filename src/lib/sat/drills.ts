@@ -43,8 +43,13 @@ export function drillTitle(f: SATFilter): string {
 export function startDrill(
   bank: SATQuestion[], filter: SATFilter, count: number, rng: Rng,
   ids: { id: string; uid: string; now: number; assignmentId?: string | null },
+  // Ids to keep out of the pool -- e.g. every question already planned for
+  // one of the student's own unfinished adaptive/practice sittings, so a
+  // drill in another tab can never become a way to look up a mid-exam
+  // answer. Filtered before the pool is shuffled.
+  exclude?: Set<string>,
 ): SATDrill {
-  const pool = filterQuestions(bank, filter);
+  const pool = filterQuestions(bank, filter).filter((q) => !exclude?.has(q.id));
   if (!pool.length) throw new Error("No questions match that drill.");
   const n = Math.min(Math.max(Math.round(count) || DRILL_MIN, DRILL_MIN), DRILL_MAX, pool.length);
   const order = [...pool];

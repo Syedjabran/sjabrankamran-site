@@ -141,4 +141,13 @@ let done = d;
 for (const id of d.questionIds) done = checkDrillAnswer(done, id, "A", answerOf, T0 + 5000).drill;
 assert.equal(done.finishedAt, T0 + 5000);
 
+// --- drills: an `exclude` set is filtered out of the pool before shuffling ---
+// (a question already planned for one of the student's own unfinished
+// sittings must never be drawable into a drill in another tab).
+const mathPool = pool.filter((x) => x.section === "math"); // 20 items: a0..a19
+const excludeSet = new Set(mathPool.slice(0, 15).map((x) => x.id));
+const excluded = startDrill(pool, { section: "math" }, 5, seeded(2), { id: "d4", uid: "u1", now: T0 }, excludeSet);
+assert.equal(excluded.questionIds.length, 5, "the 5 non-excluded math items are exactly enough to fill the drill");
+assert.ok(excluded.questionIds.every((id) => !excludeSet.has(id)), "excluded ids never appear in the drill");
+
 console.log("sat-session tests passed");

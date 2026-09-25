@@ -138,13 +138,14 @@ export function sessionState(s: SATSession, now: number): SessionState {
     ...base, status: "running", breakUntil: null, report: null,
     stage: {
       key: k, label: STAGE_LABEL[k], index: s.current, minutes: s.minutes[k], deadline: stageDeadline(s)!,
-      // Difficulty is hidden while a module is running: the real digital SAT
-      // shows none, and on Module 2 it would reveal which route (lower/upper)
-      // the student was sent down. Drills (drillState, below) keep it — the
-      // student chose that filter themselves.
+      // Domain, skill and difficulty are all hidden while a module is
+      // running: the real digital SAT shows none of them, and on Module 2
+      // difficulty in particular would reveal which route (lower/upper) the
+      // student was sent down. Drills (drillState, below) keep all three —
+      // the student chose that filter themselves.
       questions: ids.map((id, i) => publicQuestion(id, i + 1))
         .filter((q): q is PublicQuestion => !!q)
-        .map((q) => ({ ...q, difficulty: null })),
+        .map((q) => ({ ...q, domain: null, skill: null, difficulty: null })),
     },
   };
 }

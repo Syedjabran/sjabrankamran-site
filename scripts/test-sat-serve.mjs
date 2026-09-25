@@ -39,6 +39,8 @@ assert.equal(state.report, null, "no report while running");
 assertNoLeak(state, "sessionState while running");
 assert.ok(state.stage.questions.length > 0);
 for (const q of state.stage.questions) {
+  assert.equal(q.domain, null, "domain must be hidden while a module is running -- the real SAT shows none");
+  assert.equal(q.skill, null, "skill must be hidden while a module is running -- the real SAT shows none");
   assert.equal(q.difficulty, null, "difficulty must be hidden while a module is running (it would reveal routing on Module 2)");
 }
 
@@ -56,6 +58,8 @@ assert.equal(state.stage.key, "rw.m2", "must have routed into a Module 2 stage")
 assertNoLeak(state, "sessionState on the rw.m2 (Module 2) stage");
 assert.ok(state.stage.questions.length > 0);
 for (const q of state.stage.questions) {
+  assert.equal(q.domain, null, "domain must be hidden on a Module 2 stage too");
+  assert.equal(q.skill, null, "skill must be hidden on a Module 2 stage too");
   assert.equal(q.difficulty, null, "difficulty must be hidden on a Module 2 stage too -- this is where it would reveal the route");
 }
 
