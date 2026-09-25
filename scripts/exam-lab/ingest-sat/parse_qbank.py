@@ -79,7 +79,9 @@ LABELS = {"Assessment", "Test", "Question", "Domain", "Skill", "Difficulty", "SA
 SECTIONS = {"Math": "math", "Reading and Writing": "rw"}
 
 _ID = re.compile(r"^\s*([0-9a-f]{8})\b")
-_ANSWER = re.compile(r"Correct Answer:\s*(\S+)")
+# The whole line, not one token: 91 grid-in answer lines list several forms
+# (".1764, .1765, 3/17"), and a single-token capture kept only ".1764,".
+_ANSWER = re.compile(r"Correct Answer:\s*([^\n]+)")
 # Some MCQ exports omit the `Correct Answer:` line altogether; the rationale
 # still names the right choice explicitly, and never says "is incorrect" for
 # the correct one, so this is safe to trust as a fallback.
@@ -87,7 +89,19 @@ _CHOICE_CORRECT = re.compile(r"Choice ([A-D]) is correct\b")
 # Grid-in (SPR) answers are numeric, so anchor on digits rather than free text:
 # the brief's original `[^.]*?` is lazy and stops at the decimal point, so
 # "The correct answer is 2.6." would only capture "2" instead of "2.6".
-_IN_RATIONALE = re.compile(r"The correct answer is\s+(-?\d+(?:\.\d+)?(?:/\d+)?)")
+# A comma between digits with exactly three digits after it is a thousands
+# separator, so "The correct answer is 4,205." is 4205, not 4 (practice tests
+# 5-11 and bank id 9ee22c16). Several values may be stated with "or" ("15 or
+# -5", practice test 4, Math module 2 Q6); every one of them is an answer.
+_NUMBER = r"-?\d+(?:,\d{3}(?!\d))*(?:\.\d+)?(?:/\d+)?"
+_IN_RATIONALE = re.compile(rf"The correct answer is\s+({_NUMBER}(?:\s+or\s+{_NUMBER})*)")
+_THOUSANDS = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
+# What separates the forms of one answer, measured on every answer line,
+# entry note and "either" list in both corpora: a comma followed by
+# whitespace (optionally then "and"/"or"), or "and"/"or" between spaces.
+# A comma with no space after it is never a separator -- it is a thousands
+# separator, stripped by `_forms`.
+_FORM_SEPARATOR = re.compile(r",\s+(?:(?:and|or)\s+)?|\s+(?:and|or)\s+")
 # The trailing "of ways to enter a correct answer" is dropped: pdftotext's
 # column layout sometimes reorders this sentence so that half lands earlier
 # in the block than "Note that ... are examples" itself (see
@@ -112,6 +126,19 @@ _ENTRY_NOTE = re.compile(r"Note\s+that\s+(.+?)\s+are examples")
 _EITHER = re.compile(r"The correct answer is either\s+(.+?)\.\s")
 
 
+def _forms(listing: str) -> list[str]:
+    """The separate accepted forms in a printed list of them, each as a
+    student enters it: trimmed, no trailing punctuation, no thousands
+    separator ("3,540" -> "3540"; College Board's own answer lines print
+    these values without one, e.g. 2850 and 11875).
+
+    Every answer path below splits through this one function, so the bank
+    and the practice tests can never disagree on how a list is read.
+    """
+    parts = (_THOUSANDS.sub("", p.strip().rstrip(".,;:").strip()) for p in _FORM_SEPARATOR.split(listing))
+    return [p for p in parts if p]
+
+
 def _entry_note_values(text: str) -> list[str]:
     """Every accepted form an entry note lists, or [] when there is none.
 
@@ -121,10 +148,7 @@ def _entry_note_values(text: str) -> list[str]:
     Shared with parse_answers so both corpora split a note identically.
     """
     note = _ENTRY_NOTE.search(text)
-    if not note:
-        return []
-    parts = re.split(r"\s*(?:,|and|or)\s*", note.group(1))
-    return [p.strip() for p in parts if p.strip()]
+    return _forms(note.group(1)) if note else []
 
 
 def _either_values(text: str) -> list[str]:
@@ -137,10 +161,14 @@ def _either_values(text: str) -> list[str]:
     tests 5, 7 and 9.
     """
     either = _EITHER.search(text)
-    if not either:
-        return []
-    parts = re.split(r"\s*,\s*(?:or\s+)?|\s+or\s+", either.group(1))
-    return [p.strip() for p in parts if p.strip()]
+    return _forms(either.group(1)) if either else []
+
+
+def _stated_values(text: str) -> list[str]:
+    """Every value "The correct answer is ..." states, or [] when there is
+    none. Shared with parse_answers."""
+    stated = _IN_RATIONALE.search(text)
+    return _forms(stated.group(1)) if stated else []
 
 
 def _lines(text: str) -> list[str]:
@@ -268,7 +296,10 @@ def _answer_from(text: str) -> tuple[dict | None, str | None]:
             if choice and choice.group(1) != line_letter:
                 return None, f"answer-source-conflict: line={line_letter} rationale={choice.group(1)}"
             return {"kind": "mcq", "correct": "ABCD".index(line_letter), "source": "answer-line"}, None
-        return {"kind": "spr", "accepted": [raw], "source": "answer-line"}, None
+        vals = _forms(raw)
+        if not vals:
+            return None, "no-answer"
+        return {"kind": "spr", "accepted": vals, "source": "answer-line"}, None
 
     # No `Correct Answer:` line at all: MCQ's rationale-stated "Choice X is
     # correct" is tried before SPR's rationale patterns below, on purpose.
@@ -288,9 +319,9 @@ def _answer_from(text: str) -> tuple[dict | None, str | None]:
     if vals:
         return {"kind": "spr", "accepted": vals, "source": "rationale-either"}, None
 
-    stated = _IN_RATIONALE.search(text)
-    if stated:
-        return {"kind": "spr", "accepted": [stated.group(1)], "source": "rationale-stated"}, None
+    vals = _stated_values(text)
+    if vals:
+        return {"kind": "spr", "accepted": vals, "source": "rationale-stated"}, None
 
     return None, "no-answer"
 

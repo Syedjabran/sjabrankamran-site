@@ -33,7 +33,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import poppler
-from parse_qbank import _CHOICE_CORRECT, _IN_RATIONALE, _either_values, _entry_note_values
+from parse_qbank import _CHOICE_CORRECT, _either_values, _entry_note_values, _stated_values
 
 # The bullet between "EXPLANATIONS" and the section name extracts as a bare
 # letter n; accept any short run of non-alphabetic filler so a different
@@ -90,9 +90,9 @@ def _answer_from(block: str) -> tuple[dict | None, str | None]:
     if vals:
         return {"kind": "spr", "accepted": vals, "source": "rationale-either"}, None
 
-    stated = _IN_RATIONALE.search(block)
-    if stated:
-        return {"kind": "spr", "accepted": [stated.group(1)], "source": "rationale-stated"}, None
+    vals = _stated_values(block)
+    if vals:
+        return {"kind": "spr", "accepted": vals, "source": "rationale-stated"}, None
 
     return None, "no-answer"
 

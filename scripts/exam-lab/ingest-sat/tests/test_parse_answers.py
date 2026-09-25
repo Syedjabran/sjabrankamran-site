@@ -135,3 +135,30 @@ def test_an_entry_note_joined_with_or_ships_each_form_separately():
     assert answers[("math", 2, 7)] == {
         "kind": "spr", "accepted": ["11/4", "2.75"], "source": "entry-note",
     }
+
+
+def test_a_stated_answer_with_a_thousands_separator_keeps_every_digit():
+    """Test 5, Math Module 2, Q14: "The correct answer is 4,205." shipped as
+    "4". The bank's own key for these items prints no separator (e.g. 2850)."""
+    text = (
+        "SAT ANSWER EXPLANATIONS n MATH: MODULE 2\n\nQUESTION 14\n\n"
+        "The correct answer is 4,205. The exterior surface area of a figure is the sum of the\n"
+        "areas of its faces.\n"
+    )
+    answers, _ = parse_answers.parse_answers(text)
+    assert answers[("math", 2, 14)] == {"kind": "spr", "accepted": ["4205"], "source": "rationale-stated"}
+
+
+def test_a_stated_answer_joined_with_or_ships_both_values():
+    """Test 4, Math Module 2, Q6: its entry note wraps between "are" and
+    "examples" and prints an en dash for the minus, so the stated "15 or -5"
+    is the only readable statement -- and it names two answers, not one."""
+    text = (
+        "SAT ANSWER EXPLANATIONS n MATH: MODULE 2\n\nQUESTION 6\n\n"
+        "The correct answer is 15 or -5 . By the definition of absolute value, if x - 5 = 10 ,\n"
+        "then x - 5 = 10 or x - 5 = -10. Thus, the\n"
+        "given equation has two possible solutions, 15 and -5 . Note that 15 and –5 are\n"
+        "examples of ways to enter a correct answer.\n"
+    )
+    answers, _ = parse_answers.parse_answers(text)
+    assert answers[("math", 2, 6)] == {"kind": "spr", "accepted": ["15", "-5"], "source": "rationale-stated"}

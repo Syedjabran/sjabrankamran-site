@@ -527,3 +527,41 @@ def test_entry_note_forms_joined_by_or_are_split():
     )
     record = parse_block(block)
     assert record["answer"] == {"kind": "spr", "accepted": ["11/4", "2.75"], "source": "entry-note"}
+
+
+def _spr_block(ident, tail):
+    return (
+        f"{ident}\nAssessment\nSAT\nTest\nMath\nDomain\nAlgebra\nSkill\n"
+        f"Linear functions\nDifficulty\nMedium\nQuestion\nEvaluate.\n{tail}"
+    )
+
+
+def test_answer_line_ships_every_form_it_lists():
+    """91 bank rows print several forms on the answer line, comma-space
+    separated (e.g. 002dba45 ".1764, .1765, 3/17"); a single-token capture
+    kept only ".1764," -- trailing comma included."""
+    record = parse_block(_spr_block("002dba45", "Correct Answer: .1764, .1765, 3/17\n\nRationale\nThe correct answer is\n\n.\n"))
+    assert record["answer"] == {"kind": "spr", "accepted": [".1764", ".1765", "3/17"], "source": "answer-line"}
+
+
+def test_answer_line_keeps_a_negative_form_in_a_list():
+    record = parse_block(_spr_block("abcd0001", "Correct Answer: -13/2, -6.5\n\nRationale\nText.\n"))
+    assert record["answer"]["accepted"] == ["-13/2", "-6.5"]
+
+
+def test_answer_line_thousands_separator_is_stripped_not_split():
+    """A comma with exactly three digits after it and no space is a
+    thousands separator: one value, entered without the comma."""
+    record = parse_block(_spr_block("abcd0002", "Correct Answer: 3,540\n\nRationale\nText.\n"))
+    assert record["answer"]["accepted"] == ["3540"]
+
+
+def test_stated_answer_keeps_every_digit_past_a_thousands_separator():
+    """Bank id 9ee22c16: "The correct answer is 3,540." shipped as "3"."""
+    record = parse_block(_spr_block("9ee22c16", "Rationale\nThe correct answer is 3,540. According to the table, of 400 voters.\n"))
+    assert record["answer"] == {"kind": "spr", "accepted": ["3540"], "source": "rationale-stated"}
+
+
+def test_stated_answer_with_or_ships_both_values():
+    record = parse_block(_spr_block("abcd0003", "Rationale\nThe correct answer is 15 or -5 . By the definition.\n"))
+    assert record["answer"]["accepted"] == ["15", "-5"]
