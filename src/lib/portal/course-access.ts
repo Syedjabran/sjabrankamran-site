@@ -19,56 +19,54 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRegistry } from "@/lib/portal/institutions";
 import { isExamLabStaff, type PortalUser } from "@/lib/edu/auth";
-import { courseFromYear, COURSE_LABEL, type Course } from "@/lib/portal/course-labels";
+import {
+  courseFromYear, coursesForEnrolment, primaryCourse, studentCourseAccess, COURSE_LABEL, type Course,
+} from "@/lib/portal/course-labels";
 
 export type { Course };
 export { courseFromYear, COURSE_LABEL };
 
+/** `strict` (the SAT path): a failed read throws instead of reading as "no
+ *  enrolment". Without it -- every physics / Exam Lab caller, unchanged --
+ *  a failed read resolves to null, exactly as before. */
+export type CourseAccessOptions = { strict?: boolean };
+
 /** Every awarding-body course a student is actively enrolled into, keyed off
- * class `year` labels, or null when the student has no active enrolment at
- * all. Shared by `studentCourse` and `studentCourses` so the enrolment
- * lookup lives in exactly one place.
+ * class `year` labels (see `coursesForEnrolment`), or null when the student
+ * has no active enrolment at all. The one enrolment lookup behind
+ * `studentCourse`, `studentCourses` and `resolveCourseAccess`.
+ *
+ * Strict: a Supabase query error throws, and so does an empty registry --
+ * `getRegistry()` turns a failed storage read into an empty one, and a live
+ * registry always has classes (the same rule /api/sat/results applies).
+ * The SAT routes turn that throw into a retryable 503 rather than a 403.
  */
-async function enrolledCourses(uid: string): Promise<Set<Course> | null> {
+async function enrolledCourses(uid: string, { strict = false }: CourseAccessOptions = {}): Promise<Set<Course> | null> {
   try {
     const db = createAdminClient();
-    const { data: student } = await db.from("edu_students").select("id").eq("profile_id", uid).maybeSingle();
+    const { data: student, error: studentError } = await db.from("edu_students").select("id").eq("profile_id", uid).maybeSingle();
+    if (strict && studentError) throw new Error(`The student lookup failed: ${studentError.message}`);
     if (!student?.id) return null;
-    const { data: enrolments } = await db
+    const { data: enrolments, error: enrolmentError } = await db
       .from("edu_enrolments")
       .select("class_id")
       .eq("student_id", student.id)
       .eq("status", "active");
+    if (strict && enrolmentError) throw new Error(`The enrolment lookup failed: ${enrolmentError.message}`);
     const ids = new Set((enrolments || []).map((e) => e.class_id as string));
     if (!ids.size) return null;
     const registry = await getRegistry();
-    const courses = new Set<Course>();
-    for (const c of registry.classes) {
-      if (!ids.has(c.id)) continue;
-      const co = courseFromYear(c.year);
-      if (co) courses.add(co);
-    }
-    // Enrolled but no class year names a course => default to A Level (9702),
-    // the existing behaviour, so a real enrolment is never locked out over an
-    // unrecognised label. Only a student with NO active enrolment gets null
-    // (checked above, before this default applies).
-    if (courses.size === 0) courses.add("9702");
-    return courses;
-  } catch {
+    if (strict && !registry.classes.length) throw new Error("The class registry couldn't be read.");
+    return coursesForEnrolment(ids, registry.classes);
+  } catch (e) {
+    if (strict) throw e;
     return null;
   }
 }
 
 /** The single awarding-body course a student is enrolled into, or null. */
 export async function studentCourse(uid: string): Promise<Course | null> {
-  const courses = await enrolledCourses(uid);
-  if (!courses) return null;
-  // O-Level precedence when a student is (unusually) in both, matching
-  // courseStage. SAT is primary only when it is the student's only course --
-  // an SAT student who is also enrolled in physics still opens physics first.
-  if (courses.has("5054")) return "5054";
-  if (courses.has("9702")) return "9702";
-  return "SAT";
+  return primaryCourse(await enrolledCourses(uid));
 }
 
 /** Every awarding-body course this student is enrolled into.
@@ -79,8 +77,7 @@ export async function studentCourse(uid: string): Promise<Course | null> {
  * for callers that want one.
  */
 export async function studentCourses(uid: string): Promise<Course[]> {
-  const courses = await enrolledCourses(uid);
-  return courses ? [...courses] : [];
+  return studentCourseAccess(await enrolledCourses(uid)).allowed;
 }
 
 export type CourseAccess = {
@@ -98,16 +95,15 @@ export type CourseAccess = {
  * - Exam-lab staff: all tracks, switchable.
  * - Student: every course they are enrolled into; `primary` is the existing
  *   precedence (5054 > 9702 > SAT); `locked` when only one course applies.
+ *   One enrolment lookup serves all three.
  * - Anyone else (e.g. parent): no course access.
  */
-export async function resolveCourseAccess(user: PortalUser): Promise<CourseAccess> {
+export async function resolveCourseAccess(user: PortalUser, options: CourseAccessOptions = {}): Promise<CourseAccess> {
   if (isExamLabStaff(user.roles)) {
     return { allowed: ["9702", "5054", "SAT"], primary: "9702", locked: false, isStaff: true };
   }
   if (user.roles.includes("student")) {
-    const courses = await studentCourses(user.id);
-    const primary = await studentCourse(user.id);
-    return { allowed: courses, primary, locked: courses.length <= 1, isStaff: false };
+    return { ...studentCourseAccess(await enrolledCourses(user.id, options)), isStaff: false };
   }
   return { allowed: [], primary: null, locked: true, isStaff: false };
 }

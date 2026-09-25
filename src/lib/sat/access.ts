@@ -8,8 +8,12 @@ import { resolveCourseAccess, courseFromYear } from "@/lib/portal/course-access"
 import { visibleClassIdsForUid } from "@/lib/portal/timetable";
 import { getRegistry, type Registry } from "@/lib/portal/institutions";
 
+/** Throws when the enrolment or registry read fails (strict course access),
+ *  so a transient read failure reaches the SAT routes' 503 branch -- which
+ *  the runner retries -- instead of reading as "not enrolled" (403, which
+ *  the runner treats as final). */
 export async function satAccess(user: PortalUser): Promise<{ ok: boolean; isStaff: boolean }> {
-  const access = await resolveCourseAccess(user);
+  const access = await resolveCourseAccess(user, { strict: true });
   return { ok: access.isStaff || access.allowed.includes("SAT"), isStaff: access.isStaff };
 }
 

@@ -23,8 +23,15 @@ export async function POST(request: Request) {
   // Course guardrail (defence-in-depth): a student may only ever fetch images
   // for a course they are enrolled into. O Level assets live under o-level/*,
   // SAT assets under sat/*; everything else is 9702. Staff (all courses) pass
-  // unrestricted.
-  const access = await resolveCourseAccess(user);
+  // unrestricted. A request for SAT images checks access strictly: a failed
+  // enrolment/registry read answers 503 (retryable), never a false 403 --
+  // the same rule as the SAT routes. Physics requests are unchanged.
+  let access;
+  try {
+    access = await resolveCourseAccess(user, { strict: parsed.data.paths.some((p) => p.startsWith("sat/")) });
+  } catch {
+    return NextResponse.json({ error: "Your access couldn't be checked. Please try again." }, { status: 503 });
+  }
   const courseOf = (p: string): Course => {
     if (p.startsWith("o-level/")) return "5054";
     if (p.startsWith("sat/")) return "SAT";
