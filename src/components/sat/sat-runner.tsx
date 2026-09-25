@@ -391,8 +391,27 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
     );
   }
 
-  const stage = state.stage!;
-  const q = questions[idx];
+  const stage = state.stage;
+  if (!stage) {
+    return <p className="rounded-2xl border border-signal/30 bg-signal/5 p-5 text-sm text-fog">This module couldn&rsquo;t be shown. <button className="ml-2 text-cyan underline" onClick={() => void load()}>Reload</button></p>;
+  }
+  // Every question id of this module has gone from a rebuilt bank: say so
+  // instead of indexing into an empty list. Submitting still moves the
+  // sitting on (the server scores an empty module as 0 of 0).
+  if (!questions.length) {
+    return (
+      <div className="mx-auto max-w-md space-y-4">
+        {haltBanner}
+        <div className="rounded-2xl border border-white/10 bg-space/60 p-6 text-center">
+          <p className="font-display text-ice">{stage.label}</p>
+          <p className="mt-2 text-sm text-fog">This module has no questions to show — they are no longer in the question bank. Submit it to continue.</p>
+          <button disabled={busy} onClick={() => void submit()} className="btn-primary mt-4 !px-4 !py-2 text-sm">{busy ? "Submitting…" : "Submit module"}</button>
+          {error ? <p className="mt-3 text-xs text-signal">{error}</p> : null}
+        </div>
+      </div>
+    );
+  }
+  const q = questions[Math.min(idx, questions.length - 1)];
   const unanswered = questions.filter((x) => !answers[x.id]).length;
   // Every edit: mark it unsaved, let one save try again even after a
   // 401/403/404, and save it 1.5 s after the last change.

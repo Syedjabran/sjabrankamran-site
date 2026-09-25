@@ -14,10 +14,22 @@ export function SatDrill({ initial }: { initial: DrillState }) {
   const [response, setResponse] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const q = state.questions[idx];
-  const done: ReviewItem | undefined = state.checked[q.id];
   const { urls, error: imgError, missing: imgMissing } = useSignedImages(state.questions.flatMap((x) => [x.img, state.checked[x.id]?.rationaleImg ?? ""]));
   useEffect(() => setResponse(""), [idx]);
+
+  const correct = Object.values(state.checked).filter((r) => r.correct).length;
+  // Every question id of this drill has gone from a rebuilt bank: say so
+  // instead of indexing into an empty list.
+  if (!state.questions.length) {
+    return <div className="rounded-2xl border border-white/10 bg-space/60 p-6 text-center"><p className="text-sm text-fog">This drill has no questions to show — they are no longer in the question bank.</p><Link href="/portal/sat-lab" className="btn-primary mt-4 inline-flex !px-4 !py-2 text-sm">Back to SAT Lab</Link></div>;
+  }
+  // "Finish" moves idx one past the last question; this must be checked
+  // before anything reads state.questions[idx].
+  if (state.finished && idx === state.questions.length) {
+    return <div className="rounded-2xl border border-white/10 bg-space/60 p-6 text-center"><p className="font-display text-2xl text-ice">{correct}/{state.questions.length}</p><p className="mt-1 text-sm text-fog">{state.title} complete</p><Link href="/portal/sat-lab" className="btn-primary mt-4 inline-flex !px-4 !py-2 text-sm">Back to SAT Lab</Link></div>;
+  }
+  const q = state.questions[Math.min(idx, state.questions.length - 1)];
+  const done: ReviewItem | undefined = state.checked[q.id];
 
   async function check() {
     setBusy(true); setError(null);
@@ -29,10 +41,6 @@ export function SatDrill({ initial }: { initial: DrillState }) {
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
 
-  const correct = Object.values(state.checked).filter((r) => r.correct).length;
-  if (state.finished && idx === state.questions.length) {
-    return <div className="rounded-2xl border border-white/10 bg-space/60 p-6 text-center"><p className="font-display text-2xl text-ice">{correct}/{state.questions.length}</p><p className="mt-1 text-sm text-fog">{state.title} complete</p><Link href="/portal/sat-lab" className="btn-primary mt-4 inline-flex !px-4 !py-2 text-sm">Back to SAT Lab</Link></div>;
-  }
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-space/60 px-4 py-3 text-sm">
