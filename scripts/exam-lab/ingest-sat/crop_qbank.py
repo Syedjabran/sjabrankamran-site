@@ -45,12 +45,12 @@ import os
 import re
 import subprocess
 import tempfile
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from PIL import Image
 
 import poppler
+from bbox import bbox_xml, page_sizes, words_by_page  # noqa: F401  (re-exported)
 
 DIFFICULTY_WORDS = {"Easy", "Medium", "Hard"}
 _HEX8 = re.compile(r"^[0-9a-f]{8}$")
@@ -71,47 +71,6 @@ ROW_EPSILON = 1.0
 GLYPH_DEPTH = 12.0
 
 
-def bbox_xml(pdf: Path) -> str:
-    # encoding="utf-8" is required, not optional: pdftotext -bbox emits
-    # UTF-8, but subprocess.run(text=True) without an explicit encoding
-    # decodes with locale.getpreferredencoding() -- cp1252 on this
-    # machine -- which raises UnicodeDecodeError on real question-bank
-    # pages (confirmed: byte 0x9d on math export page 255) and would
-    # silently mangle other non-ASCII text (smart quotes etc.) even on
-    # pages that happen not to crash.
-    out = subprocess.run(
-        [poppler.tool("pdftotext"), "-bbox", str(pdf), "-"],
-        capture_output=True, encoding="utf-8", check=True,
-    )
-    return out.stdout
-
-
-def _strip_namespace(root: ET.Element) -> ET.Element:
-    """Drop the XHTML namespace pdftotext's real `-bbox` output declares
-    (`<html xmlns="http://www.w3.org/1999/xhtml">`), so plain tag names
-    like "page" and "word" match regardless of whether it's present.
-    Without this, `root.iter("page")` silently finds nothing against real
-    output, since every tag is actually `{http://www.w3.org/1999/xhtml}page`
-    -- confirmed by running this against the real corpus, where it returned
-    empty anchors for every page.
-    """
-    for el in root.iter():
-        if "}" in el.tag:
-            el.tag = el.tag.split("}", 1)[1]
-    return root
-
-
-def _words(page) -> list[dict]:
-    return [
-        {
-            "text": (w.text or "").strip(),
-            "top": float(w.get("yMin")),
-            "bottom": float(w.get("yMax")),
-        }
-        for w in page.iter("word")
-    ]
-
-
 def anchors(xml_text: str) -> dict:
     """Extract question-id, difficulty, answer and rationale anchors per page.
 
@@ -121,14 +80,10 @@ def anchors(xml_text: str) -> dict:
     (e.g. US Letter) -- see `render_span`, which needs the true height to
     validate its point-to-pixel mapping.
     """
-    root = _strip_namespace(ET.fromstring(xml_text))
+    pages = words_by_page(xml_text)
+    page_size = page_sizes(xml_text)
     ids, diffs, answers, rationales, questions = [], [], [], [], []
-    pages: dict[int, list[dict]] = {}
-    page_size: dict[int, tuple[float, float]] = {}
-    for pageno, page in enumerate(root.iter("page"), start=1):
-        words = _words(page)
-        pages[pageno] = words
-        page_size[pageno] = (float(page.get("width")), float(page.get("height")))
+    for pageno, words in pages.items():
         for i, w in enumerate(words):
             nxt = words[i + 1]["text"] if i + 1 < len(words) else None
             if w["text"] == "Question" and nxt == "ID:" and i + 2 < len(words):

@@ -1,0 +1,24 @@
+{
+  "practice_tests": [
+    { "test_no": 4,  "dir": "full-length-sat-paper-practice-test_-bundle-4" },
+    { "test_no": 5,  "dir": "full-length-sat-paper-practice-test_-bundle-5" },
+    { "test_no": 6,  "dir": "full-length-sat-paper-practice-test_-bundle-6" },
+    { "test_no": 7,  "dir": "full-length-sat-paper-practice-test_-bundle-7" },
+    { "test_no": 8,  "dir": "full-length-sat-paper-practice-test_-bundle-8" },
+    { "test_no": 9,  "dir": "full-length-sat-paper-practice-test_-bundle-9" },
+    { "test_no": 10, "dir": "full-length-sat-paper-practice-test_-bundle-10" },
+    { "test_no": 11, "dir": "full-length-sat-paper-practice-test_-bundle-11" }
+  ],
+  "module_structure": [
+    { "section": "rw",   "module": 1, "questions": 33 },
+    { "section": "rw",   "module": 2, "questions": 33 },
+    { "section": "math", "module": 1, "questions": 27 },
+    { "section": "math", "module": 2, "questions": 27 }
+  ],
+  "file_pattern": {
+    "test":    "sat-practice-test-{n}-digital.pdf",
+    "answers": "sat-practice-test-{n}-answers-digital.pdf",
+    "scoring": "scoring-sat-practice-test-{n}-digital.pdf"
+  },
+  "note": "Tests 1-3 are not published in paper form and are absent. Adding them later is a manifest edit, not a code change."
+}
