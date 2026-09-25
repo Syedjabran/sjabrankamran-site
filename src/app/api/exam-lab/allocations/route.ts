@@ -30,7 +30,8 @@ export async function POST(req: Request) {
 
   if (b.action === "started") {
     // Persist the sitting's start on the server (first call wins) so a reload
-    // or Back-and-reopen resumes the same clock instead of a full new one.
+    // or Back-and-reopen of a proctored test resumes the same clock instead of
+    // a full new one; other kinds only take the in-progress status from it.
     // `now` lets the runner convert to its own clock without trusting it.
     try {
       const alloc = await getAllocation(user.id, b.id);

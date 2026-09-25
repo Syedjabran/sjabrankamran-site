@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { formatPk, parsePkDateTime, pkDateTimeToIso, pkToday } from "../src/lib/portal/pk-time.ts";
 import { isOnboardingDocComplete, validateOnboarding } from "../src/lib/portal/onboarding-shared.ts";
+import { expiredOnResume, finishedLate, secondsLeft } from "../src/lib/exam-lab/sitting-clock.ts";
 
 // --- Pakistan time -----------------------------------------------------------
 // A datetime-local value is Pakistan wall-clock time, not UTC: 09:00 PKT = 04:00Z.
@@ -38,5 +39,32 @@ assert.equal(isOnboardingDocComplete({ ...complete, city: "" }), false);
 assert.equal(isOnboardingDocComplete({ ...complete, consent: false }), false);
 assert.equal(isOnboardingDocComplete({ ...complete, completed_at: null }), false);
 assert.equal(isOnboardingDocComplete(null), false);
+
+// --- Exam Lab sitting clock --------------------------------------------------
+const MIN = 60_000;
+const monday = Date.parse("2026-09-28T04:00:00.000Z"); // 09:00 PKT
+// A 60-minute test started Monday and resumed Wednesday ran out Monday 10:00
+// PKT; the runner shows that instead of auto-submitting an empty sitting.
+assert.equal(expiredOnResume(monday, monday + 2 * 24 * 60 * MIN, 3600), monday + 60 * MIN);
+// Resumed with 20 minutes left: not expired, the clock simply continues.
+assert.equal(expiredOnResume(monday, monday + 40 * MIN, 3600), null);
+assert.equal(secondsLeft(monday, monday + 40 * MIN, 3600), 20 * 60);
+// Staff-pause time is credited back before deciding.
+assert.equal(expiredOnResume(monday, monday + 65 * MIN, 3600, 10 * MIN), null);
+assert.equal(expiredOnResume(monday, monday + 70 * MIN, 3600, 10 * MIN), monday + 70 * MIN);
+// Same rounding as the countdown display: 00:00 on screen counts as run out.
+assert.equal(expiredOnResume(monday, monday + 60 * MIN - 400, 3600), monday + 60 * MIN);
+// A relaxed daily challenge due 20:00 PKT, opened at 09:00 and handed in at
+// 09:20 (5 minutes past its 15-minute countdown), is on time...
+const due = Date.parse("2026-09-28T15:00:00.000Z"); // 20:00 PKT
+const nine20 = monday + 20 * MIN;
+assert.equal(finishedLate({ relaxed: true, dueAt: due, now: nine20, secondsLeft: secondsLeft(monday, nine20, 900) }), false);
+// ...and late once the due time has passed, whatever its countdown says.
+assert.equal(finishedLate({ relaxed: true, dueAt: due, now: due + 1000, secondsLeft: 600 }), true);
+// Without a due time (self-serve practice / daily challenge) the countdown decides.
+assert.equal(finishedLate({ relaxed: true, dueAt: null, now: nine20, secondsLeft: -300 }), true);
+assert.equal(finishedLate({ relaxed: true, dueAt: null, now: nine20, secondsLeft: 60 }), false);
+// A non-relaxed run is judged by its countdown even when it has a due time.
+assert.equal(finishedLate({ relaxed: false, dueAt: due, now: nine20, secondsLeft: -1 }), true);
 
 console.log("portal rules tests passed");

@@ -66,7 +66,10 @@ const schema = z.object({
 
 /** The exact question ids an allocation sits, or null for a legacy randomised spec. */
 function allocationIds(c: AllocContent): string[] | null {
-  if (c.type === "drillref" || c.type === "custom") return c.ids;
+  if (c.type === "drillref") return c.ids;
+  // The runner sits a legacy custom allocation without any id the bank no
+  // longer has, so those ids cannot be demanded back from it.
+  if (c.type === "custom") return c.ids.filter((id) => questionById(id));
   if (c.type === "paper") return ALL_QUESTIONS.filter((q) => q.code === c.code).map((q) => q.id);
   return null;
 }

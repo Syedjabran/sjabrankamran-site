@@ -53,7 +53,7 @@ export type AllocContent =
    */
   | { type: "drillref"; drillId: string; ref: string; ids: string[]; spec: DrillSpecContent | { type: "paper"; code: string } | { type: "custom"; ids: string[] } };
 
-/** `in_progress`: the student has begun (see `startedAt`); a reload resumes the same clock. */
+/** `in_progress`: the student has begun (see `startedAt`); a proctored test resumes the same clock on reload. */
 export type AllocStatus = "assigned" | "in_progress" | "submitted" | "locked" | "unlocked" | "cancelled";
 
 export type ExamAllocation = {
@@ -159,7 +159,9 @@ export async function allocateToStudents(
 /**
  * The student began this allocation. The FIRST call records the server start
  * time and moves the allocation to `in_progress`; later calls (reload, Back and
- * reopen) return that same start so the clock resumes instead of restarting.
+ * reopen) return that same start so a proctored test's clock resumes instead
+ * of restarting. Other kinds only use it for the status: each open of those
+ * starts a fresh clock in the runner.
  * `restart` = a sanctioned fresh sitting (a super-admin unlocked the test).
  * Returns null when the allocation does not exist; throws on storage failure.
  */

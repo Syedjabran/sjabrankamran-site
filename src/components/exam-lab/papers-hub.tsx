@@ -18,7 +18,7 @@ const PT_ACCENT: Record<string, string> = { P1: "#3DE1F0", P2: "#12D48C", P4: "#
 
 function yearOf(code: string) { const m = code.match(/9702_[smw](\d\d)_/); return m ? 2000 + parseInt(m[1]) : 0; }
 function plural(n: number, word: string) { return `${n} ${word}${n === 1 ? "" : "s"}`; }
-/** Allocations sit these; a started one resumes its clock (see PaperRunner). */
+/** Allocations sit these; a started proctored test resumes its clock (see PaperRunner). */
 const LAUNCHABLE = ["assigned", "in_progress", "unlocked", "cancelled"];
 function label(code: string) {
   const m = code.match(/9702_([smw])(\d\d)_(\d\d)/);
@@ -46,7 +46,7 @@ const TOPICS_AS = ["Physical quantities & units","Kinematics","Dynamics","Forces
 const TOPICS_A2 = ["Circular motion","Gravitational fields","Thermal physics","Ideal gases","Oscillations","Electric fields","Capacitance","Magnetic fields","Alternating currents","Quantum physics","Nuclear physics","Astronomy & cosmology"];
 
 type ActiveMeta = { mode: "paper" | "drill"; code?: string; ref?: string; paperType: "P1" | "P2" | "P4" | "mixed" };
-type Active = { questions: ImgQuestion[]; title: string; subtitle?: string; duration: number; timed: boolean; lockOnExpiry?: boolean; logMeta: ActiveMeta; integrity: GuardMode; kind: AttemptKind; help: boolean; attemptId?: string; allocationId?: string | null; daily?: boolean };
+type Active = { questions: ImgQuestion[]; title: string; subtitle?: string; duration: number; timed: boolean; lockOnExpiry?: boolean; logMeta: ActiveMeta; integrity: GuardMode; kind: AttemptKind; help: boolean; attemptId?: string; allocationId?: string | null; daily?: boolean; dueAt?: string | null };
 
 type DrillSpec = { type: "drill"; paperType: "P1" | "P2" | "P4"; topics: string[]; levels: ("LOT" | "HOT")[]; count: number } | { type: "daily" };
 // `drillref` = a drill whose paper was frozen at allocation time. `drill` and
@@ -313,7 +313,7 @@ function OLevelHub({ canTest, onStart }: { canTest: boolean; onStart: (a: Active
   );
 }
 
-export function PapersHub({ canTest = false, canPause = false, canConduct = false, allowedCourses = ["9702", "5054"], initialCourse }: { canTest?: boolean; canPause?: boolean; canConduct?: boolean; allowedCourses?: ("9702" | "5054")[]; initialCourse?: "9702" | "5054" }) {
+export function PapersHub({ canTest = false, canPause = false, canConduct = false, allowedCourses = ["9702", "5054"], initialCourse, userId }: { canTest?: boolean; canPause?: boolean; canConduct?: boolean; allowedCourses?: ("9702" | "5054")[]; initialCourse?: "9702" | "5054"; userId?: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -414,7 +414,8 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
     // locks answers. Absent/true => the historical locking behaviour.
     // An allocation may override the proctoring guard ("off" => never cancels on
     // tab-switch/blur). Absent => the mode's default guard.
-    const common = { ...cfg, integrity: al.integrity ?? cfg.integrity, timed: true, lockOnExpiry: al.lockOnExpiry !== false, attemptId: al.attemptId, allocationId: al.id, daily: isDailyTask };
+    // The due time travels with it: a relaxed (daily) run is late only past it.
+    const common = { ...cfg, integrity: al.integrity ?? cfg.integrity, timed: true, lockOnExpiry: al.lockOnExpiry !== false, attemptId: al.attemptId, allocationId: al.id, daily: isDailyTask, dueAt: al.dueAt };
     if (al.content.type === "paper") {
       // Either course: 9702 and O Level 5054 papers are both assignable.
       const code = al.content.code;
@@ -552,7 +553,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
 
   if (active) return <>
     {canConduct && <ClassDrillAssign questions={active.questions} title={active.title} duration={active.duration} onAssigned={(ref) => setActive((a) => a ? { ...a, subtitle: `Shared class drill · Ref ${ref}`, logMeta: { ...a.logMeta, ref } } : a)} />}
-    <PaperRunner {...active} canPause={canPause} onExit={exit} />
+    <PaperRunner {...active} canPause={canPause} userId={userId} onExit={exit} />
   </>;
 
   const availTopics = pType === "P4" ? TOPICS_A2 : TOPICS_AS;

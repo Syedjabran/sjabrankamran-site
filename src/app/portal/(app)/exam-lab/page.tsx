@@ -88,7 +88,7 @@ export default async function PortalExamLabPage() {
       </div>
 
       <Suspense fallback={<div className="text-sm text-dust">Loading Exam Lab…</div>}>
-        <PapersHub canConduct={canConduct} canTest={canTest} canPause={canPause} allowedCourses={access.allowed} initialCourse={access.primary ?? access.allowed[0]} />
+        <PapersHub canConduct={canConduct} canTest={canTest} canPause={canPause} allowedCourses={access.allowed} initialCourse={access.primary ?? access.allowed[0]} userId={user.id} />
       </Suspense>
     </div>
   );

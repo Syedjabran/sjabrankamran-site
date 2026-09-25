@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import type { ImgQuestion } from "@/lib/exam-lab/image-bank";
 import { questionSeconds, formatDuration, splitSeconds } from "@/lib/portal/timing";
+import { formatPk } from "@/lib/portal/pk-time";
+import { expiredOnResume, finishedLate, secondsLeft } from "@/lib/exam-lab/sitting-clock";
 import { AnswerPad } from "./answer-pad";
 import { useExamGuard, type GuardEvent, type GuardMode } from "./use-exam-guard";
 import { exitExamFullscreen, fullscreenSupported, isFullscreen, onFullscreenChange, requestExamFullscreen } from "@/lib/exam-lab/fullscreen";
@@ -27,22 +29,25 @@ function dropKey<T>(m: Record<string, T>, key: string): Record<string, T> {
 }
 
 // ---- per-sitting clock cache ----
-// Fallback for the server-recorded start (allocations only: their attemptId,
-// `alloc-<id>`, is stable across reloads). Holds timing only — never answers,
-// since one class drill shares that id across every student on a lab PC.
+// Fallback for the server-recorded start of a proctored test — the only kind
+// that resumes its clock (its attemptId, `alloc-<id>`, is stable across
+// reloads). Keyed by the signed-in user too: one class test shares that id
+// across every student, and lab PCs are shared. Holds timing only — never answers.
 type ClockCache = { startedAt: number; perQ: Record<string, number>; pausedMs?: number };
-const clockKey = (attemptId: string) => `el-clock:${attemptId}`;
-function readClock(attemptId: string): ClockCache | null {
+const clockKey = (uid: string, attemptId: string) => `el-clock:${uid}:${attemptId}`;
+function readClock(key: string | null): ClockCache | null {
+  if (!key) return null;
   try {
-    const c = JSON.parse(localStorage.getItem(clockKey(attemptId)) || "null") as ClockCache | null;
+    const c = JSON.parse(localStorage.getItem(key) || "null") as ClockCache | null;
     return c && typeof c.startedAt === "number" && c.perQ && typeof c.perQ === "object" ? c : null;
   } catch { return null; }
 }
-function writeClock(attemptId: string, c: ClockCache) {
-  try { localStorage.setItem(clockKey(attemptId), JSON.stringify(c)); } catch { /* storage full / disabled */ }
+function writeClock(key: string, c: ClockCache) {
+  try { localStorage.setItem(key, JSON.stringify(c)); } catch { /* storage full / disabled */ }
 }
-function clearClock(attemptId: string) {
-  try { localStorage.removeItem(clockKey(attemptId)); } catch { /* storage disabled */ }
+function clearClock(key: string | null) {
+  if (!key) return;
+  try { localStorage.removeItem(key); } catch { /* storage disabled */ }
 }
 
 export function PaperRunner({
@@ -61,6 +66,8 @@ export function PaperRunner({
   attemptId,
   canPause = false,
   daily = false,
+  dueAt = null,
+  userId = null,
 }: {
   questions: ImgQuestion[];
   title: string;
@@ -77,6 +84,8 @@ export function PaperRunner({
   attemptId?: string;               // stable forensic id (allocations use alloc-<id>)
   canPause?: boolean;               // STAFF ONLY (server-verified role set): pause question timers
   daily?: boolean;                  // daily task: like practice, overtime is recorded as a "late submission"
+  dueAt?: string | null;            // allocation due time; a relaxed run is late only past it
+  userId?: string | null;           // signed-in user: scopes the local clock cache
 }) {
   const strict = integrity === "strict";
   // Open Practice is intentionally untimed at the session level: the per-
@@ -88,10 +97,18 @@ export function PaperRunner({
   // proctor cancellation, no tab-switch blocking and no hard cutoff. When the
   // countdown runs out the student simply keeps working into overtime, and
   // the stored record is flagged a "late attempt" (practice) or "late
-  // submission" (daily task) so staff can see it. Formal proctored TESTS
-  // (kind "test") are NOT relaxed — their integrity rules are unchanged.
+  // submission" (daily task) so staff can see it — except that a run with a
+  // due time is only late once that due time has passed. Formal proctored
+  // TESTS (kind "test") are NOT relaxed — their integrity rules are unchanged.
   const relaxed = openPractice || kind === "practice" || daily;
   const attemptIdRef = useRef<string>(attemptId || newId());
+  // Only a proctored test resumes its clock across a reload or Back-and-reopen;
+  // every other sitting (assignments, drills, daily challenges, practice)
+  // starts a fresh clock each time it is opened.
+  const resumable = strict && !!allocationId;
+  const clockCacheKey = resumable && userId && attemptId ? clockKey(userId, attemptId) : null;
+  const dueMs = dueAt ? Date.parse(dueAt) : NaN;
+  const lateByDue = relaxed && Number.isFinite(dueMs);
 
   const [urls, setUrls] = useState<UrlMap>({});
   const [loading, setLoading] = useState(true);
@@ -126,6 +143,9 @@ export function PaperRunner({
   const paceFired = useRef(false);
   const [voided, setVoided] = useState<string | null>(null);
   const voidedRef = useRef(false);
+  // A resumed proctored test whose countdown ran out while the student was
+  // away: the instant it ran out. Such a sitting is never auto-submitted.
+  const [expiredAt, setExpiredAt] = useState<number | null>(null);
   const totalSec = duration * 60;
   // ---- integrity / forensic state ----
   const revealsRef = useRef(0);
@@ -190,10 +210,12 @@ export function PaperRunner({
   const qLocked = useCallback((id: string) => {
     // Relaxed (practice / daily) attempts never lock a question — the budget
     // stays a pacing guide and overtime is simply recorded.
-    if (relaxed || !timed || !lockOnExpiry || !begun || submitted) return false;
+    // Nor does a test that ran out while the student was away: its budgets
+    // are spent, and whatever they now answer is recorded late.
+    if (relaxed || !timed || !lockOnExpiry || !begun || submitted || expiredAt !== null) return false;
     if (pacingOnly && !mcqIds.has(id)) return false;
     return (perQ[id] || 0) >= (qBudget[id] || 90);
-  }, [relaxed, timed, lockOnExpiry, begun, submitted, pacingOnly, mcqIds, perQ, qBudget]);
+  }, [relaxed, timed, lockOnExpiry, begun, submitted, expiredAt, pacingOnly, mcqIds, perQ, qBudget]);
 
   // Track full-screen, and always leave it behind when the runner unmounts
   // (Back, or a cancelled/locked attempt) so the rest of the portal is normal.
@@ -229,25 +251,51 @@ export function PaperRunner({
     return () => { alive = false; };
   }, [questions]);
 
+  // The script-upload window is wall-clock (startedAt + duration + grace), so
+  // every millisecond the countdown spends frozen by a pause must be credited
+  // back, or a paused exam gets its upload wrongly marked late.
+  const [pausedMs, setPausedMs] = useState(0);
+  const lateRef = useRef(false);
+  const [late, setLate] = useState(false);
+  const markLate = useCallback(() => {
+    if (lateRef.current) return;
+    lateRef.current = true;
+    setLate(true);
+  }, []);
+
   // Start the clock once the paper is on screen (non-strict) or once begun
-  // (strict). An ALLOCATION's start is recorded on the server (first call
+  // (strict). A PROCTORED TEST's start is recorded on the server (first call
   // wins), so a reload or Back-and-reopen resumes the same clock instead of
   // granting a fresh one; the local cache covers a failed call. The server
   // reports its own `now`, so the resumed clock is immune to device clock skew.
+  // A test whose resumed clock has already run out is never auto-submitted
+  // (that would store an empty sitting): it stays open, flagged late, until
+  // the student submits it.
   const clockInitRef = useRef(false);
   useEffect(() => {
     if (loading || err || !begun || startedAt !== null || clockInitRef.current) return;
     clockInitRef.current = true;
-    const cached = allocationId ? readClock(attemptIdRef.current) : null;
+    if (!resumable) {
+      // Recorded so staff see the allocation in progress, but this sitting
+      // always gets a fresh clock.
+      if (allocationId) {
+        fetch("/api/exam-lab/allocations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: allocationId, action: "started" }) }).catch(() => {});
+      }
+      setStartedAt(Date.now());
+      return;
+    }
+    const cached = readClock(clockCacheKey);
     const apply = (start: number) => {
+      let paused = 0;
       // Same sitting as the cache (a reload): restore per-question time too.
       if (cached && Math.abs(cached.startedAt - start) < 60_000) {
         setPerQ(cached.perQ);
-        if (cached.pausedMs) setPausedMs(cached.pausedMs);
+        if (cached.pausedMs) { setPausedMs(cached.pausedMs); paused = cached.pausedMs; }
       }
+      const ranOut = expiredOnResume(start, Date.now(), totalSec, paused);
+      if (ranOut !== null) { setExpiredAt(ranOut); markLate(); }
       setStartedAt((s) => s ?? start);
     };
-    if (!allocationId) { apply(Date.now()); return; }
     void (async () => {
       let start: number | null = null;
       try {
@@ -260,36 +308,30 @@ export function PaperRunner({
       } catch { /* offline / slow: fall back to the local cache */ }
       apply(start ?? cached?.startedAt ?? Date.now());
     })();
-  }, [loading, err, begun, startedAt, allocationId]);
+  }, [loading, err, begun, startedAt, allocationId, resumable, clockCacheKey, totalSec, markLate]);
 
   // A countdown that does not lock on expiry (and relaxed attempts) keeps the
   // attempt live into overtime; only a locking one stops at 0 and auto-submits.
-  const running = timed && begun && startedAt !== null && !submitted && !voided && !taskCompleted && (relaxed || !lockOnExpiry || remaining > 0);
+  // A test that ran out while the student was away stays live — and
+  // proctored — until they submit it.
+  const running = timed && begun && startedAt !== null && !submitted && !voided && !taskCompleted && (relaxed || !lockOnExpiry || expiredAt !== null || remaining > 0);
   // A super-admin pause is a real pause: while ANY question is paused the
   // overall countdown freezes too, otherwise the paper still auto-submits
   // mid-intervention and "pause" only cosmetically stops one budget counter.
   const anyPaused = pausedQuestions.size > 0;
   const clockRunning = running && !openPractice && !anyPaused;
-  // The script-upload window is wall-clock (startedAt + duration + grace), so
-  // every millisecond the countdown spends frozen by a pause must be credited
-  // back, or a paused exam gets its upload wrongly marked late.
   // A submission that finishes past the countdown is never blocked — it is
   // RECORDED. lateKind is the exact phrase staff see in the stored record.
-  const lateKind = daily ? "late submission" : "late attempt";
-  const [pausedMs, setPausedMs] = useState(0);
+  const lateKind = daily || expiredAt !== null ? "late submission" : "late attempt";
+  // What the student finished past, in the late notices.
+  const latePast = expiredAt !== null ? "the time limit" : lateByDue ? "the due time" : "the countdown";
   const pauseStartRef = useRef<number | null>(null);
   const clockFrozenByPause = running && !openPractice && anyPaused;
   // Late is only observable when a real countdown is running (open practice
   // has no session deadline at all) AND the attempt may run past it: a
   // locking countdown auto-submits at 0, which is on time, never "late".
+  // (A test found already expired on resume is flagged late directly.)
   const canGoLate = timed && !openPractice && (relaxed || !lockOnExpiry);
-  const lateRef = useRef(false);
-  const [late, setLate] = useState(false);
-  const markLate = useCallback(() => {
-    if (lateRef.current) return;
-    lateRef.current = true;
-    setLate(true);
-  }, []);
   useEffect(() => {
     if (!clockFrozenByPause) return;
     pauseStartRef.current = Date.now();
@@ -372,13 +414,13 @@ export function PaperRunner({
     if (voidedRef.current) return;
     voidedRef.current = true;
     setVoided(reason);
-    clearClock(attemptIdRef.current);
+    clearClock(clockCacheKey);
     // The attempt is over: hand the screen back rather than leaving the student
     // pinned in a full-screen dead end.
     void exitExamFullscreen();
     void postAttempt(true, reason);
     if (strict) postProctor({ action: "end", status: "submitted" }); // server keeps the locked state; this just closes the clock
-  }, [postAttempt, postProctor, strict]);
+  }, [clockCacheKey, postAttempt, postProctor, strict]);
 
   // A single funnel for guard + camera integrity signals.
   const handleEvent = useCallback((ev: GuardEvent, source: "guard" | "camera") => {
@@ -431,9 +473,9 @@ export function PaperRunner({
         return;
       }
     }
-    clearClock(attemptIdRef.current);
+    clearClock(clockCacheKey);
     setSaveState("saved");
-  }, [postAttempt, allocationId]);
+  }, [postAttempt, allocationId, clockCacheKey]);
 
   const submit = useCallback((timeUp = false) => {
     setSubmitted(true);
@@ -454,15 +496,12 @@ export function PaperRunner({
     return () => window.removeEventListener("beforeunload", warn);
   }, [submitted, logMeta, saveState]);
 
-  // Mirror the clock locally so a reload can resume it even if the server's
-  // start could not be fetched (see the clock-start effect).
+  // Mirror a proctored test's clock locally so a reload can resume it even if
+  // the server's start could not be fetched (see the clock-start effect).
   useEffect(() => {
-    if (!allocationId || startedAt === null || submitted || voided) return;
-    writeClock(attemptIdRef.current, { startedAt, perQ, pausedMs });
-  }, [allocationId, startedAt, perQ, pausedMs, submitted, voided]);
-
-  const remainingRef = useRef(remaining);
-  useEffect(() => { remainingRef.current = remaining; }, [remaining]);
+    if (!clockCacheKey || startedAt === null || submitted || voided) return;
+    writeClock(clockCacheKey, { startedAt, perQ, pausedMs });
+  }, [clockCacheKey, startedAt, perQ, pausedMs, submitted, voided]);
 
   // tick the countdown display off the wall clock. Relaxed attempts, and any
   // countdown that does not lock on expiry, run into negative time (overtime,
@@ -472,8 +511,8 @@ export function PaperRunner({
     if (!clockRunning) return;
     const tick = () => {
       if (startedAt === null) return;
-      const spentSec = (Date.now() - startedAt - pausedMs) / 1000;
-      const n = Math.round(totalSec - spentSec);
+      const now = Date.now();
+      const n = secondsLeft(startedAt, now, totalSec, pausedMs);
       // Only at the actual 15:00 crossing — a resumed attempt that reopens
       // with 3 minutes left must not flash "15:00 remaining".
       if (!paceFired.current && totalSec > 15 * 60 && n <= 15 * 60 && n > 15 * 60 - 10) {
@@ -481,19 +520,24 @@ export function PaperRunner({
         setPaceAlert(true);
         setTimeout(() => setPaceAlert(false), 3000);
       }
-      if (canGoLate && !lateRef.current && n <= 0 && remainingRef.current > 0) markLate();
+      // A relaxed run with a due time is late only past that due time; its
+      // countdown is a pacing guide (a morning daily challenge that runs over
+      // its 15 minutes but is in by 20:00 is on time).
+      if (canGoLate && !lateRef.current && finishedLate({ relaxed, dueAt: lateByDue ? dueMs : null, now, secondsLeft: n })) markLate();
       setRemaining(n <= 0 && !relaxed && lockOnExpiry ? 0 : n);
     };
     tick();
     const iv = setInterval(tick, 1000);
     return () => clearInterval(iv);
-  }, [clockRunning, totalSec, canGoLate, relaxed, lockOnExpiry, markLate, startedAt, pausedMs]);
+  }, [clockRunning, totalSec, canGoLate, relaxed, lockOnExpiry, lateByDue, dueMs, markLate, startedAt, pausedMs]);
 
   // auto-submit when time is up — formal attempts only. Practice & daily tasks
   // never get a hard cutoff; they continue into overtime and are recorded late.
+  // A test whose clock had already run out when it was resumed is never
+  // auto-submitted: that would store an empty sitting and close it for good.
   useEffect(() => {
-    if (!relaxed && timed && lockOnExpiry && begun && startedAt !== null && remaining <= 0 && !submitted && !voided) submit(true);
-  }, [relaxed, remaining, timed, lockOnExpiry, begun, startedAt, submitted, voided, submit]);
+    if (!relaxed && timed && lockOnExpiry && begun && startedAt !== null && expiredAt === null && remaining <= 0 && !submitted && !voided) submit(true);
+  }, [relaxed, remaining, timed, lockOnExpiry, begun, startedAt, expiredAt, submitted, voided, submit]);
 
   // Active question = the one at the viewport centre.
   useEffect(() => {
@@ -770,10 +814,17 @@ export function PaperRunner({
         </div>
       )}
 
-      {late && !submitted && (
+      {expiredAt !== null && !submitted && (
         <div className="el-noprint mb-4 flex items-start gap-2 rounded-xl border border-signal/35 bg-signal/[0.06] px-3.5 py-2 text-xs text-signal">
           <Timer size={14} className="mt-0.5 shrink-0" />
-          <span><b>You're past the countdown — keep working as long as you need.</b> Nothing is locked and you won't be kicked out; the extra time is recorded and this will be marked a <b>{lateKind}</b> for your teacher to see.</span>
+          <span><b>Time ran out on {formatPk(expiredAt)} (Pakistan time).</b> Nothing has been submitted for you, and answers from before you left were not saved. Answer what you can, then tap <b>Submit test</b> — it will be recorded as a <b>{lateKind}</b> for your teacher to review.</span>
+        </div>
+      )}
+
+      {late && !submitted && expiredAt === null && (
+        <div className="el-noprint mb-4 flex items-start gap-2 rounded-xl border border-signal/35 bg-signal/[0.06] px-3.5 py-2 text-xs text-signal">
+          <Timer size={14} className="mt-0.5 shrink-0" />
+          <span><b>You're past {latePast} — keep working as long as you need.</b> Nothing is locked and you won't be kicked out; the extra time is recorded and this will be marked a <b>{lateKind}</b> for your teacher to see.</span>
         </div>
       )}
 
@@ -801,7 +852,7 @@ export function PaperRunner({
             </p>
             {late && (
               <p className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-signal/40 bg-signal/[0.08] px-2.5 py-1 font-mono text-[11px] text-signal">
-                <Timer size={12} /> Recorded as a {lateKind} — finished past the countdown.
+                <Timer size={12} /> Recorded as a {lateKind} — finished past {latePast}.
               </p>
             )}
           </div>
