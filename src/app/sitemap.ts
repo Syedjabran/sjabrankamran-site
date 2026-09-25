@@ -15,6 +15,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     "physics/ib",
     "physics-studio",
     "physics-studio/library",
+    "physics-studio/exam-lab",
     "enterprise",
     "ai-technology",
     "insights",

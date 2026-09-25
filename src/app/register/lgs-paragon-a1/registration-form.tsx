@@ -3,13 +3,18 @@
 import { useState } from "react";
 import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 
+const INPUT_CLASS =
+  "w-full rounded-xl border border-white/10 bg-abyss/60 px-4 py-2.5 text-sm text-ice placeholder:text-dust/50 focus:border-cyan focus:outline-none focus:ring-1 focus:ring-cyan";
+
 type Props = {
-  enrollmentCode: string;
+  /** Class to enrol into. The enrollment code itself is typed by the student and checked server-side. */
+  classId: string;
   schoolName: string;
   className: string;
 };
 
-export function RegistrationForm({ enrollmentCode, schoolName, className }: Props) {
+export function RegistrationForm({ classId, schoolName, className }: Props) {
+  const [enrollmentCode, setEnrollmentCode] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -20,6 +25,13 @@ export function RegistrationForm({ enrollmentCode, schoolName, className }: Prop
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (status === "loading") return;
+
+    // Mirror the server, which trims before checking the length.
+    if (fullName.trim().length < 3) {
+      setStatus("error");
+      setMessage("Please enter your full name (at least 3 characters).");
+      return;
+    }
 
     setStatus("loading");
     setMessage("");
@@ -32,7 +44,8 @@ export function RegistrationForm({ enrollmentCode, schoolName, className }: Prop
           full_name: fullName.trim(),
           email: email.trim().toLowerCase(),
           phone: phone.trim(),
-          enrollment_code: enrollmentCode,
+          class_id: classId,
+          enrollment_code: enrollmentCode.trim(),
           website, // honeypot
         }),
       });
@@ -80,6 +93,25 @@ export function RegistrationForm({ enrollmentCode, schoolName, className }: Prop
         </p>
       </div>
 
+      {/* Enrollment code */}
+      <div>
+        <label htmlFor="enrollmentCode" className="mb-1.5 block text-xs font-medium uppercase tracking-widest text-dust">
+          Enrollment code (from your teacher) <span className="text-signal">*</span>
+        </label>
+        <input
+          type="text"
+          id="enrollmentCode"
+          required
+          maxLength={40}
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+          value={enrollmentCode}
+          onChange={(e) => setEnrollmentCode(e.target.value)}
+          className={INPUT_CLASS}
+        />
+      </div>
+
       {/* Full Name */}
       <div>
         <label htmlFor="fullName" className="mb-1.5 block text-xs font-medium uppercase tracking-widest text-dust">
@@ -94,7 +126,7 @@ export function RegistrationForm({ enrollmentCode, schoolName, className }: Prop
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
           placeholder="e.g. Ayesha Khan"
-          className="w-full rounded-xl border border-white/10 bg-abyss/60 px-4 py-2.5 text-sm text-ice placeholder:text-dust/50 focus:border-cyan focus:outline-none focus:ring-1 focus:ring-cyan"
+          className={INPUT_CLASS}
         />
       </div>
 
@@ -110,7 +142,7 @@ export function RegistrationForm({ enrollmentCode, schoolName, className }: Prop
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="your.email@gmail.com"
-          className="w-full rounded-xl border border-white/10 bg-abyss/60 px-4 py-2.5 text-sm text-ice placeholder:text-dust/50 focus:border-cyan focus:outline-none focus:ring-1 focus:ring-cyan"
+          className={INPUT_CLASS}
         />
         <p className="mt-1.5 text-xs text-dust">Your login credentials will be sent to this email.</p>
       </div>
@@ -123,10 +155,11 @@ export function RegistrationForm({ enrollmentCode, schoolName, className }: Prop
         <input
           type="tel"
           id="phone"
+          maxLength={20}
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
           placeholder="03XX XXXXXXX"
-          className="w-full rounded-xl border border-white/10 bg-abyss/60 px-4 py-2.5 text-sm text-ice placeholder:text-dust/50 focus:border-cyan focus:outline-none focus:ring-1 focus:ring-cyan"
+          className={INPUT_CLASS}
         />
       </div>
 

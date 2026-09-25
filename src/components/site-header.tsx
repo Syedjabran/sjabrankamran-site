@@ -72,8 +72,9 @@ export function SiteHeader() {
       </div>
       <div
         className={cn(
-          "overflow-hidden border-t border-white/[0.06] transition-all duration-300 lg:hidden",
-          open ? "max-h-[420px]" : "max-h-0"
+          "border-t border-white/[0.06] transition-all duration-300 lg:hidden",
+          // Viewport-relative cap + scroll: a fixed px cap clipped the last links.
+          open ? "max-h-[80vh] overflow-y-auto" : "max-h-0 overflow-hidden"
         )}
       >
         <nav className="container-x flex flex-col gap-1 py-4">

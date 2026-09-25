@@ -35,10 +35,14 @@ const nextConfig = {
       // 'wasm-unsafe-eval' + the MediaPipe CDN power the on-device exam proctor
       // (FaceLandmarker). All face analysis runs locally in the browser; only the
       // model/wasm are fetched from these hosts.
-      "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://va.vercel-scripts.com https://cdn.jsdelivr.net",
+      // React's development build needs eval() for its debugging tools; production never uses it.
+      `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""} https://va.vercel-scripts.com https://cdn.jsdelivr.net`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.supabase.co https://ops.sjabrankamran.com",
-      "media-src 'self' blob: https://ops.sjabrankamran.com",
+      "media-src 'self' blob: https://ops.sjabrankamran.com https://*.supabase.co",
+      // Embedded lesson material: YouTube players, Google Drive/Docs previews and
+      // signed Supabase Storage URLs (PDFs, video, audio) rendered in iframes.
+      "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://drive.google.com https://docs.google.com https://*.supabase.co",
       "font-src 'self' data:",
       "connect-src 'self' blob: https://*.supabase.co https://va.vercel-scripts.com https://cdn.jsdelivr.net https://storage.googleapis.com",
       "manifest-src 'self'",

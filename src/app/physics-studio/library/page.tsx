@@ -4,7 +4,7 @@ import { ArrowRight, BadgeCheck, Library } from "lucide-react";
 import { PageHero } from "@/components/page-hero";
 import { Section } from "@/components/ui/section";
 import { Reveal } from "@/components/ui/reveal";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 import { SITE } from "@/lib/utils";
 
 export const metadata: Metadata = {
@@ -29,18 +29,33 @@ type LibRow = {
   created_at: string;
 };
 
-export default async function LibraryPage() {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("physics_questions")
-    .select("id, slug, question, curriculum, topic, teacher_answer, ai_answer, reviewed_at, created_at")
-    .eq("is_public", true)
-    .eq("review_status", "approved")
-    .eq("moderation_status", "ok")
-    .order("reviewed_at", { ascending: false })
-    .limit(100);
+/**
+ * Approved answers via a cookie-free anon client (RLS limits it to public rows).
+ * No cookies keeps the page static so `revalidate` applies; any failure
+ * (missing env, DB down) falls back to the empty state instead of a 500.
+ */
+async function fetchLibrary(): Promise<LibRow[]> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return [];
+  try {
+    const supabase = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+    const { data } = await supabase
+      .from("physics_questions")
+      .select("id, slug, question, curriculum, topic, teacher_answer, ai_answer, reviewed_at, created_at")
+      .eq("is_public", true)
+      .eq("review_status", "approved")
+      .eq("moderation_status", "ok")
+      .order("reviewed_at", { ascending: false })
+      .limit(100);
+    return ((data ?? []) as LibRow[]).filter((r) => r.slug);
+  } catch {
+    return [];
+  }
+}
 
-  const rows = ((data ?? []) as LibRow[]).filter((r) => r.slug);
+export default async function LibraryPage() {
+  const rows = await fetchLibrary();
 
   return (
     <>

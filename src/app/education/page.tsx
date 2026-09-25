@@ -17,6 +17,7 @@ export const metadata: Metadata = {
   title: "Education — A-Level, O-Level & IBDP Physics",
   description:
     "16+ years teaching Cambridge A-Level, O-Level and IBDP Physics in Lahore. Conceptual understanding, exam craft, practical skills, and mentoring that builds independent physicists.",
+  alternates: { canonical: "/education" },
 };
 
 const courseSchema = {

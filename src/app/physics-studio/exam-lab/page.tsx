@@ -22,6 +22,7 @@ export const metadata: Metadata = {
   title: "Exam Lab — On-demand CAIE 9702 Physics Practice Tests",
   description:
     "Generate a short Cambridge A-Level Physics (9702) practice test on demand, tagged by topic and thinking level (LOT/HOT). Answer on screen, get auto-marked, reveal examiner mark schemes, and export to PDF.",
+  alternates: { canonical: "/physics-studio/exam-lab" },
 };
 
 const FEAT = [

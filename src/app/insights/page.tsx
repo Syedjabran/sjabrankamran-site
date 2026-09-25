@@ -9,6 +9,7 @@ export const metadata: Metadata = {
   title: "Insights — Physics, Teaching, Entrepreneurship & AI",
   description:
     "Writing by Syed Jabran Ali Kamran on physics concepts, A-Level & O-Level exam technique, teaching, entrepreneurship, and applied AI. Physics and education first.",
+  alternates: { canonical: "/insights" },
 };
 
 export default function InsightsPage() {

@@ -84,6 +84,7 @@ export function PhysicsStudioForm() {
             onChange={(e) => setQuestion(e.target.value)}
             rows={5}
             required
+            maxLength={4000}
             placeholder="e.g. Why does a satellite in a higher orbit have a lower speed?"
             className="w-full rounded-xl border border-white/10 bg-abyss/60 px-4 py-3 text-sm text-ice placeholder:text-dust focus:border-cyan focus:outline-none"
           />
@@ -138,13 +139,13 @@ export function PhysicsStudioForm() {
         {requestReview ? (
           <div className="space-y-3">
             <input
-              type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-              placeholder="Email (to notify you when reviewed)"
+              type="email" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={200}
+              placeholder="Email (optional)"
               className="w-full rounded-xl border border-white/10 bg-abyss/60 px-4 py-2.5 text-sm text-ice placeholder:text-dust focus:border-cyan focus:outline-none"
             />
             <label className="flex items-start gap-2.5 text-xs text-dust">
               <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-0.5" />
-              I consent to my email being stored to receive the reviewed answer.
+              I consent to my email being stored with this question.
             </label>
           </div>
         ) : null}
@@ -187,7 +188,7 @@ export function PhysicsStudioForm() {
               </div>
             ) : (
               <p className="text-sm leading-relaxed text-fog">
-                Your question has been sent for personal review. You&rsquo;ll be notified when the reviewed answer is ready.
+                Your question has been sent for personal review. Reviewed answers may be added to the Physics Studio Library.
               </p>
             )}
           </div>

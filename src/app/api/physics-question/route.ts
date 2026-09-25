@@ -40,7 +40,6 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Please check your question and options." }, { status: 400 });
 
   const d = parsed.data;
-  const supabase = createAdminClient();
 
   // Ask the AI tutor (provider-independent).
   const ai = await askPhysicsTutor({
@@ -50,33 +49,45 @@ export async function POST(request: Request) {
     responseMode: d.responseMode,
   });
 
-  const reviewStatus = d.requestReview ? "review_requested" : ai.answer ? "ai_answered" : "review_requested";
+  let reviewStatus = d.requestReview ? "review_requested" : ai.answer ? "ai_answered" : "review_requested";
 
-  const { data: row, error } = await supabase
-    .from("physics_questions")
-    .insert({
-      question: d.question,
-      curriculum: d.curriculum,
-      topic: d.topic || null,
-      response_mode: d.responseMode,
-      student_email: d.consent && d.email ? d.email : null,
-      consent: d.consent,
-      ai_answer: ai.answer,
-      ai_provider: ai.provider,
-      review_status: reviewStatus,
-      is_public: false,
-      moderation_status: "ok",
-    })
-    .select("id")
-    .single();
+  // Store the question. The AI answer is already paid for, so a storage failure
+  // (including a missing admin env var) must not discard it.
+  let rowId: string | null = null;
+  try {
+    const supabase = createAdminClient();
+    const { data: row, error } = await supabase
+      .from("physics_questions")
+      .insert({
+        question: d.question,
+        curriculum: d.curriculum,
+        topic: d.topic || null,
+        response_mode: d.responseMode,
+        student_email: d.consent && d.email ? d.email : null,
+        consent: d.consent,
+        ai_answer: ai.answer,
+        ai_provider: ai.provider,
+        review_status: reviewStatus,
+        is_public: false,
+        moderation_status: "ok",
+      })
+      .select("id")
+      .single();
+    if (error) console.error("physics_question storage failed", error.code);
+    else rowId = row.id;
+  } catch (err) {
+    console.error("physics_question storage failed", err instanceof Error ? err.message : "unknown error");
+  }
 
-  if (error) {
-    console.error("physics_question storage failed", error.code);
-    return NextResponse.json({ error: "Storage unavailable" }, { status: 503 });
+  if (!rowId) {
+    // Nothing to show and nothing queued for review.
+    if (!ai.answer) return NextResponse.json({ error: "Storage unavailable" }, { status: 503 });
+    // Unsaved, so it cannot enter the review queue: report it as the AI answer it is.
+    reviewStatus = "ai_answered";
   }
 
   // Notify teacher on review request (best-effort; never blocks the response).
-  if (d.requestReview && process.env.RESEND_API_KEY && process.env.CONTACT_TO_EMAIL) {
+  if (rowId && d.requestReview && process.env.RESEND_API_KEY && process.env.CONTACT_TO_EMAIL) {
     try {
       await fetch("https://api.resend.com/emails", {
         method: "POST",
@@ -88,7 +99,7 @@ export async function POST(request: Request) {
           from: process.env.CONTACT_FROM_EMAIL || "onboarding@resend.dev",
           to: process.env.CONTACT_TO_EMAIL,
           subject: `Physics Studio — teacher review requested (${d.curriculum})`,
-          text: `A student requested your review.\n\nCurriculum: ${d.curriculum}\nTopic: ${d.topic || "—"}\n\nQuestion:\n${d.question}\n\nReview in the admin queue (id: ${row.id}).`,
+          text: `A student requested your review.\n\nCurriculum: ${d.curriculum}\nTopic: ${d.topic || "—"}\n\nQuestion:\n${d.question}\n\nReview in the admin queue (id: ${rowId}).`,
         }),
       });
     } catch {
@@ -99,7 +110,7 @@ export async function POST(request: Request) {
   return NextResponse.json(
     {
       ok: true,
-      id: row.id,
+      id: rowId,
       answer: ai.answer,
       provider: ai.provider,
       status: reviewStatus,

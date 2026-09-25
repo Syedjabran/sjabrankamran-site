@@ -19,13 +19,21 @@ const TYPES = [
 ];
 
 export function ContactForm({ defaultType = "" }: { defaultType?: string }) {
-  const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [state, setState] = useState<"idle" | "invalid" | "sending" | "sent" | "error">("idle");
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    // Capture the element now: React clears e.currentTarget once dispatch ends,
+    // so reading it after the await would throw and report a false failure.
+    const form = e.currentTarget;
+    const body = Object.fromEntries(new FormData(form).entries());
+    // The server trims before checking lengths; mirror that so padded input
+    // gets a clear message instead of a generic failure.
+    if (String(body.name ?? "").trim().length < 2 || String(body.message ?? "").trim().length < 20) {
+      setState("invalid");
+      return;
+    }
     setState("sending");
-    const form = new FormData(e.currentTarget);
-    const body = Object.fromEntries(form.entries());
     try {
       const res = await fetch("/api/contact", {
         method: "POST",
@@ -34,7 +42,7 @@ export function ContactForm({ defaultType = "" }: { defaultType?: string }) {
       });
       if (res.ok) {
         setState("sent");
-        e.currentTarget.reset();
+        form.reset();
       } else {
         setState("error");
       }
@@ -92,6 +100,11 @@ export function ContactForm({ defaultType = "" }: { defaultType?: string }) {
       >
         {state === "sending" ? <><Loader2 size={16} className="animate-spin" /> Sending…</> : <><Send size={16} /> Send enquiry</>}
       </button>
+      {state === "invalid" ? (
+        <p aria-live="polite" className="text-sm text-signal">
+          Please enter your name and a message of at least 20 characters.
+        </p>
+      ) : null}
       {state === "error" ? (
         <p aria-live="polite" className="text-sm text-signal">
           The enquiry could not be sent. Please try again later.

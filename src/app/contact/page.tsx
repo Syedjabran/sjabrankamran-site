@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   title: "Contact",
   description:
     "Contact Syed Jabran Ali Kamran — student and parent physics enquiries, academic collaboration, consulting, partnerships, speaking, and technology.",
+  alternates: { canonical: "/contact" },
 };
 
 const PATHS = [

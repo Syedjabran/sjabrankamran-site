@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, BadgeCheck } from "lucide-react";
 import { Section } from "@/components/ui/section";
 import { MarkdownRenderer } from "@/components/markdown-renderer";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 import { SITE } from "@/lib/utils";
 
 export const revalidate = 300;
@@ -21,17 +21,33 @@ type Detail = {
   created_at: string;
 };
 
+// Cookie-free anon client (RLS limits it to public rows): keeps the page
+// static so `revalidate` applies, and a failure resolves to "not found"
+// instead of a 500.
 async function fetchQuestion(slug: string): Promise<Detail | null> {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("physics_questions")
-    .select("id, slug, question, curriculum, topic, teacher_answer, ai_answer, reviewed_at, created_at")
-    .eq("slug", slug)
-    .eq("is_public", true)
-    .eq("review_status", "approved")
-    .eq("moderation_status", "ok")
-    .maybeSingle();
-  return (data as Detail | null) ?? null;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  try {
+    const supabase = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+    const { data } = await supabase
+      .from("physics_questions")
+      .select("id, slug, question, curriculum, topic, teacher_answer, ai_answer, reviewed_at, created_at")
+      .eq("slug", slug)
+      .eq("is_public", true)
+      .eq("review_status", "approved")
+      .eq("moderation_status", "ok")
+      .maybeSingle();
+    return (data as Detail | null) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// JSON.stringify leaves "<" unescaped, and the question text is student-written:
+// a "</script>" in it would close the tag. Escape HTML-significant characters.
+function toJsonLd(value: unknown) {
+  return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -78,7 +94,7 @@ export default async function LibraryAnswerPage({ params }: { params: Promise<{ 
 
   return (
     <Section tone="void">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(qaSchema) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: toJsonLd(qaSchema) }} />
       <div className="mx-auto max-w-3xl">
         <Link href="/physics-studio/library" className="inline-flex items-center gap-1.5 text-sm text-dust hover:text-ice">
           <ArrowLeft size={14} /> Physics Studio Library

@@ -11,6 +11,7 @@ export const metadata: Metadata = {
   title: "Physics Studio — AI-Assisted, Teacher-Reviewed Physics Help",
   description:
     "Ask a physics question and get AI-assisted, teacher-reviewed guidance for Cambridge A-Level, O-Level and IBDP Physics. The tutor teaches — it doesn't just hand over answers.",
+  alternates: { canonical: "/physics-studio" },
 };
 
 const FLOW = [

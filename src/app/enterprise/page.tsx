@@ -10,6 +10,7 @@ export const metadata: Metadata = {
   title: "Enterprise — Ventures, Strategy & Leadership",
   description:
     "The ventures Syed Jabran Ali Kamran has built and leads across Pakistan and the United Kingdom — strategic advisory, industrial performance, global trade, and technology.",
+  alternates: { canonical: "/enterprise" },
 };
 
 export default function EnterprisePage() {

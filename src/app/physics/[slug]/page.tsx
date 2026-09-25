@@ -7,6 +7,12 @@ import { Section, SectionHeading } from "@/components/ui/section";
 import { SITE } from "@/lib/utils";
 import { QUALIFICATIONS, getQualification } from "../qualifications";
 
+// JSON.stringify leaves "<" unescaped, so a "</script>" inside any value would
+// close the tag. Escape the HTML-significant characters for inline JSON-LD.
+function toJsonLd(value: unknown) {
+  return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
+}
+
 export function generateStaticParams() {
   return QUALIFICATIONS.map((q) => ({ slug: q.slug }));
 }
@@ -53,7 +59,7 @@ export default async function QualificationPage({ params }: { params: Promise<{ 
 
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify([courseSchema, breadcrumbSchema]) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: toJsonLd([courseSchema, breadcrumbSchema]) }} />
       <PageHero eyebrow="Physics Course" title={q.name} intro={q.summary} />
       <Section tone="void">
         <nav aria-label="Breadcrumb" className="mb-8 text-xs text-dust">

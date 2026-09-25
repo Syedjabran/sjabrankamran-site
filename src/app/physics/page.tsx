@@ -13,6 +13,12 @@ export const metadata: Metadata = {
   alternates: { canonical: `${SITE.url}/physics` },
 };
 
+// JSON.stringify leaves "<" unescaped, so a "</script>" inside any value would
+// close the tag. Escape the HTML-significant characters for inline JSON-LD.
+function toJsonLd(value: unknown) {
+  return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
+}
+
 const listSchema = {
   "@context": "https://schema.org",
   "@type": "ItemList",
@@ -37,7 +43,7 @@ const breadcrumbSchema = {
 export default function PhysicsCoursesPage() {
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify([listSchema, breadcrumbSchema]) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: toJsonLd([listSchema, breadcrumbSchema]) }} />
       <PageHero
         eyebrow="Physics Courses"
         title="Master physics. Think like an examiner."
