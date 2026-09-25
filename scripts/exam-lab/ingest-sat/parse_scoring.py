@@ -36,16 +36,13 @@ spans its centre; the section label printed above each LOWER/UPPER pair
 decides whether that pair is Reading and Writing or Math -- not its
 position, and not how far its raw scores run.
 """
-import json
 import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bbox
-
-# Hand-verified exceptions to the sanity checks below (spec section 6).
-REVIEWED = Path(__file__).resolve().parent / "reviewed.json"
+import reviewed
 
 # Raw scores top out at 66 and scaled scores at 800, so no cell is wider
 # than three digits; the footer's copyright year, which sits in the raw
@@ -218,10 +215,7 @@ def parse_tables(pages: dict[int, list[dict]]) -> dict[str, dict[int, tuple[int,
 
 def conversion_exceptions(test: int) -> list[dict]:
     """reviewed.json's hand-verified conversion-table exceptions for `test`."""
-    if not REVIEWED.exists():
-        return []
-    entries = json.loads(REVIEWED.read_text(encoding="utf-8")).get("conversion_exceptions", [])
-    return [e for e in entries if e["test"] == test]
+    return reviewed.entries("conversion_exceptions", test)
 
 
 def check_tables(
@@ -239,14 +233,15 @@ def check_tables(
     test 6 really prints R&W raw 40 -> 41 as (540, 580) -> (530, 590). Such a
     break is tolerated only when `exceptions` (by default reviewed.json's, for
     `test`) lists exactly that test, section, raw score and rule, and only
-    while the parsed cell still equals the verified `printed` values -- a
-    different reading is reported, never excused. Without `test`, nothing is
+    while the parsed cells on both sides of the break still equal the
+    verified `from` (raw - 1) and `printed` (raw) values -- a different
+    reading of either is reported, never excused. Without `test`, nothing is
     excused.
     """
     if exceptions is None:
         exceptions = conversion_exceptions(test) if test is not None else []
     listed = {
-        (e["section"], e["raw"], e["rule"]): tuple(e["printed"])
+        (e["section"], e["raw"], e["rule"]): (tuple(e["from"]), tuple(e["printed"]))
         for e in exceptions if e["test"] == test
     }
     problems: list[str] = []
@@ -273,20 +268,21 @@ def check_tables(
         ordered = sorted(table.items())
         for (raw, (lo, hi)), (nraw, (nlo, nhi)) in zip(ordered, ordered[1:]):
             if nlo < lo or nhi < hi:
-                if listed.get((section, nraw, "non-monotonic")) == (nlo, nhi):
+                if listed.get((section, nraw, "non-monotonic")) == ((lo, hi), (nlo, nhi)) and nraw == raw + 1:
                     continue
                 problems.append(
                     f"{section}: curve is not monotonic from raw {raw} ({lo}, {hi}) "
                     f"to raw {nraw} ({nlo}, {nhi})"
                 )
                 break
-    for (section, raw, rule), printed in sorted(listed.items()):
-        parsed = (tables.get(section) or {}).get(raw)
-        if parsed != printed:
-            problems.append(
-                f"{section} raw {raw}: reviewed.json verified test {test} as printing "
-                f"{printed} ({rule}), parsed {parsed}"
-            )
+    for (section, raw, rule), cells in sorted(listed.items()):
+        for at, printed in zip((raw - 1, raw), cells):
+            parsed = (tables.get(section) or {}).get(at)
+            if parsed != printed:
+                problems.append(
+                    f"{section} raw {at}: reviewed.json verified test {test} as printing "
+                    f"{printed} ({rule} at raw {raw}), parsed {parsed}"
+                )
     return problems
 
 

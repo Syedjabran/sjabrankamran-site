@@ -205,32 +205,35 @@ def _with_drop_at(raw):
     """GRID's tables with R&W's lower bound falling by 10 into `raw` -- the
     shape test 6 really prints at raw 40 -> 41 (540, 580) -> (530, 590)."""
     tables = parse_scoring.parse_tables({5: GRID})
-    lower, upper = tables["rw"][raw]
-    tables["rw"][raw] = (tables["rw"][raw - 1][0] - 10, upper)
+    tables["rw"][raw] = (tables["rw"][raw - 1][0] - 10, tables["rw"][raw][1])
     return tables
 
 
-def _exception(raw, printed, test=6):
-    return {"test": test, "section": "rw", "raw": raw, "printed": list(printed),
+def _exception(tables, raw, test=6, **cells):
+    """A reviewed entry for the break into `raw`, pinned by default to the
+    cells `tables` really holds on both sides of it."""
+    return {"test": test, "section": "rw", "raw": raw,
+            "from": list(cells.get("from_", tables["rw"][raw - 1])),
+            "printed": list(cells.get("printed", tables["rw"][raw])),
             "rule": "non-monotonic", "verified": "fixture"}
 
 
 def test_a_listed_verified_break_is_tolerated():
     tables = _with_drop_at(41)
     assert parse_scoring.check_tables(tables) != []  # strict without the list
-    listed = [_exception(41, tables["rw"][41])]
+    listed = [_exception(tables, 41)]
     assert parse_scoring.check_tables(tables, test=6, exceptions=listed) == []
 
 
 def test_the_same_break_at_an_unlisted_raw_score_fails():
     tables = _with_drop_at(30)
-    listed = [_exception(41, tables["rw"][41])]
+    listed = [_exception(tables, 41)]
     assert any("monotonic" in p for p in parse_scoring.check_tables(tables, test=6, exceptions=listed))
 
 
 def test_a_listed_break_only_covers_its_own_test():
     tables = _with_drop_at(41)
-    listed = [_exception(41, tables["rw"][41], test=6)]
+    listed = [_exception(tables, 41, test=6)]
     assert any("monotonic" in p for p in parse_scoring.check_tables(tables, test=5, exceptions=listed))
 
 
@@ -239,15 +242,27 @@ def test_a_listed_entry_whose_printed_values_differ_from_the_parse_fails():
     verification no longer describes what was parsed and must not excuse it."""
     tables = _with_drop_at(41)
     lower, upper = tables["rw"][41]
-    listed = [_exception(41, (lower - 10, upper))]
+    listed = [_exception(tables, 41, printed=(lower - 10, upper))]
     problems = parse_scoring.check_tables(tables, test=6, exceptions=listed)
-    assert any("reviewed.json" in p for p in problems)
+    assert any("reviewed.json" in p and "raw 41" in p for p in problems)
+    assert any("monotonic" in p for p in problems)
+
+
+def test_a_listed_entry_whose_from_cell_differs_from_the_parse_fails():
+    """Pinning only the cell after the break would still excuse a misread of
+    the cell before it; both sides are pinned."""
+    tables = _with_drop_at(41)
+    lower, upper = tables["rw"][40]
+    listed = [_exception(tables, 41, from_=(lower, upper - 10))]
+    problems = parse_scoring.check_tables(tables, test=6, exceptions=listed)
+    assert any("reviewed.json" in p and "raw 40" in p for p in problems)
     assert any("monotonic" in p for p in problems)
 
 
 def test_reviewed_json_lists_test_6s_printed_break_and_nothing_else():
     assert parse_scoring.conversion_exceptions(6) == [{
-        "test": 6, "section": "rw", "raw": 41, "printed": [530, 590], "rule": "non-monotonic",
+        "test": 6, "section": "rw", "raw": 41, "from": [540, 580], "printed": [530, 590],
+        "rule": "non-monotonic",
         "verified": "rendered page 5 of scoring-sat-practice-test-6-digital.pdf, 2026-09-25",
     }]
     assert all(parse_scoring.conversion_exceptions(n) == [] for n in (4, 5, 7, 8, 9, 10, 11))

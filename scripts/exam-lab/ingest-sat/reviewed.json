@@ -1,10 +1,11 @@
 {
-  "about": "Hand-verified corrections and exceptions (spec section 6); they ship over any parsed value. Every entry says what was verified and how.",
+  "about": "Hand-verified entries (spec section 6), each for one practice test and each citing what was verified and how. answer_overrides ship over the parsed answer. conversion_exceptions excuse one sanity check for exactly the printed cells they name; they never change a value.",
   "conversion_exceptions": [
     {
       "test": 6,
       "section": "rw",
       "raw": 41,
+      "from": [540, 580],
       "printed": [530, 590],
       "rule": "non-monotonic",
       "verified": "rendered page 5 of scoring-sat-practice-test-6-digital.pdf, 2026-09-25"
