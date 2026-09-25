@@ -1,8 +1,13 @@
+import functools
+import io
+import itertools
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import bbox
@@ -63,24 +68,42 @@ def test_question_numbers_are_found_and_the_running_header_is_not():
     assert [(a["qnum"], a["col"]) for a in anchors] == [(3, 0), (4, 1)]
 
 
+# The brief's two region tests, ported from the retired per-page `regions`
+# to `span` over the same page: columns (55, 300) and (333, 580) on page 5.
+# The assertions are the brief's; the slots now say what text each column
+# holds, which is what lets `span` tell an overflow from an empty strip.
+
 def test_a_question_ends_where_the_next_one_in_its_column_begins():
-    anchors = [{"qnum": 3, "col": 0, "top": 117.5, "page": 5},
-               {"qnum": 5, "col": 0, "top": 400.0, "page": 5}]
-    cols = [(55.0, 300.0), (333.0, 580.0)]
-    regions = crop_tests.regions(anchors, 0, cols, PAGE_BOTTOM)
+    slots = [_slot(5, 0, 55.0, 300.0, [(117.5, 127.3), (135.5, 145.3), (400.0, 409.8)],
+                   bottom=PAGE_BOTTOM),
+             _slot(5, 1, 333.0, 580.0, [(117.5, 127.3)], bottom=PAGE_BOTTOM)]
+    anchors = [{"qnum": 3, "col": 0, "top": 117.5, "page": 5, "slot": 0},
+               {"qnum": 5, "col": 0, "top": 400.0, "page": 5, "slot": 0}]
+    regions = crop_tests.span(anchors, 0, slots)
     assert len(regions) == 1 and regions[0]["bottom"] < 400.0
 
 
 def test_a_question_running_past_its_column_stitches_into_the_next_one():
     """Spec 10.4 drops the whole test if a question is missing, so an
     overflowing question must be stitched, never skipped."""
-    anchors = [{"qnum": 3, "col": 0, "top": 600.0, "page": 5},
-               {"qnum": 4, "col": 1, "top": 300.0, "page": 5}]
-    cols = [(55.0, 300.0), (333.0, 580.0)]
-    regions = crop_tests.regions(anchors, 0, cols, PAGE_BOTTOM)
+    slots = [_slot(5, 0, 55.0, 300.0, [(600.0, 609.8), (620.0, 700.0)], bottom=PAGE_BOTTOM),
+             _slot(5, 1, 333.0, 580.0, [(120.0, 129.8), (200.0, 209.8), (300.0, 309.8)],
+                   bottom=PAGE_BOTTOM)]
+    anchors = [{"qnum": 3, "col": 0, "top": 600.0, "page": 5, "slot": 0},
+               {"qnum": 4, "col": 1, "top": 300.0, "page": 5, "slot": 1}]
+    regions = crop_tests.span(anchors, 0, slots)
     assert len(regions) == 2
     assert regions[0]["bottom"] == PAGE_BOTTOM
     assert regions[1]["left"] == 333.0 and regions[1]["bottom"] < 300.0
+
+
+def test_there_is_no_per_page_regions():
+    """A page on its own cannot know where its module's directions end,
+    where its STOP line is, or that its last question carries on overleaf.
+    The per-page form cropped half the directions into test 4's Q1, ran
+    Q33 past the STOP line and left test 10 Math 1 Q4's four graph choices
+    behind; `locate` + `span` is the only way in."""
+    assert not hasattr(crop_tests, "regions")
 
 
 # ---------------------------------------------------------------------------
@@ -396,6 +419,33 @@ def test_render_stitches_slices_and_trims_only_white(tmp_path):
     assert not dest.with_name("q.jpg.tmp").exists()
 
 
+@pytest.mark.skipif(not _poppler_available(), reason="poppler not installed")
+def test_render_refuses_a_raster_that_does_not_match_the_page_size(tmp_path):
+    """A rotated page or an offset MediaBox renders at a different height
+    than the page size the regions were measured against; every crop from
+    it would be shifted. Same rule as crop_qbank.render_span."""
+    page = Image.new("1", (792, 612), 1)            # a landscape page
+    page.paste(0, (100, 100, 200, 150))
+    pdf = tmp_path / "landscape.pdf"
+    page.save(pdf, resolution=72.0)
+    dest = tmp_path / "q.jpg"
+    region = {"page": 1, "left": 50.0, "right": 300.0, "top": 90.0, "bottom": 500.0}
+    with pytest.raises(RuntimeError, match="rendered page height"):
+        crop_tests.render_regions(pdf, [{**region, "page_height": 792.0}], dest, dpi=72)
+    with pytest.raises(RuntimeError):
+        crop_tests.render_regions(pdf, [region], dest, dpi=72)  # US Letter assumed
+    assert not dest.exists() and not dest.with_name("q.jpg.tmp").exists()
+    crop_tests.render_regions(pdf, [{**region, "page_height": 612.0}], dest, dpi=72)
+    assert dest.exists()
+
+
+def test_span_regions_carry_their_page_height():
+    slots = [_slot(36, 0, 28.0, 568.0, [(118.0, 128.0)]),
+             {**_slot(37, 0, 46.0, 586.0, [(150.0, 160.0)]), "page_height": 700.0}]
+    anchors = [{"qnum": 4, "page": 36, "col": 0, "top": 117.5, "slot": 0}]
+    assert [r["page_height"] for r in crop_tests.span(anchors, 0, slots)] == [792.0, 700.0]
+
+
 _REAL = manifest.load()
 
 
@@ -406,15 +456,183 @@ def _real_tests():
             yield entry["test_no"], path
 
 
-@pytest.mark.skipif(not list(_real_tests()) or not _poppler_available(),
-                    reason="practice-test PDFs or poppler not on this machine")
+@functools.lru_cache(maxsize=None)
+def _real_book(path):
+    """(pages, sizes, located) for one real test PDF, read once per run."""
+    xml = bbox.bbox_xml(path)
+    pages, sizes = bbox.words_by_page(xml), bbox.page_sizes(xml)
+    return pages, sizes, crop_tests.locate(pages, sizes, _REAL["module_structure"])
+
+
+_NEEDS_REAL = pytest.mark.skipif(not list(_real_tests()) or not _poppler_available(),
+                                 reason="practice-test PDFs or poppler not on this machine")
+
+
+@pytest.mark.slow
+@_NEEDS_REAL
 @pytest.mark.parametrize("test_no,path", list(_real_tests()))
 def test_every_real_test_reads_as_its_printed_structure(test_no, path):
     """Spec 10.4's gate on the real books: every module's numbers read
     exactly 1..K in reading order, found by page geometry alone."""
-    xml = bbox.bbox_xml(path)
-    located = crop_tests.locate(bbox.words_by_page(xml), bbox.page_sizes(xml),
-                                _REAL["module_structure"])
+    _, _, located = _real_book(path)
     assert crop_tests.check(located) == []
     assert [(m["section"], m["module"], len(m["anchors"])) for m in located] == \
         [("rw", 1, 33), ("rw", 2, 33), ("math", 1, 27), ("math", 2, 27)]
+
+
+# A rendered pixel darker than this is ink. 100 dpi keeps a test's run to
+# seconds while a 1pt rule still covers a whole pixel row.
+_PIXEL_DPI = 100
+_PIXEL_INK = 200
+# The dotted gutter rule is about 1pt wide; anything wider in the gutter is
+# content that neither column's crop holds.
+_RULE_WIDTH = 3.0
+
+
+def _ink_masks(pdf, first, last, dpi):
+    """{page: L-mode image, 255 where ink} for pages first..last."""
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run([poppler.tool("pdftoppm"), "-gray", "-r", str(dpi),
+                        "-f", str(first), "-l", str(last), str(pdf), f"{tmp}/p"],
+                       check=True, capture_output=True)
+        masks = {}
+        for f in Path(tmp).glob("p-*.pgm"):
+            # Decoded from bytes, not the path: PIL memory-maps a PGM opened
+            # by name, and on Windows the live map blocks the temp dir's
+            # cleanup.
+            with Image.open(io.BytesIO(f.read_bytes())) as im:
+                masks[int(f.stem.rsplit("-", 1)[1])] = im.point(
+                    lambda v: 255 if v < _PIXEL_INK else 0)
+        return masks
+
+
+def _pixel_problems(pages, sizes, located, masks, dpi):
+    """Everything wrong with the crops of one test, measured on the render.
+
+    From each module's first question to its STOP page, every page is
+    checked -- including a page with no text at all, which `locate` gives
+    no slot, so image-only material a question should have carried is still
+    caught as ink left outside every question."""
+    scale = dpi / 72.0
+
+    def box(left, top, right, bottom):
+        # The same point-to-pixel mapping render_regions crops with.
+        return int(left * scale), int(top * scale), int(right * scale), int(bottom * scale)
+
+    problems = []
+    for mod in located:
+        name = f"{mod['section']} module {mod['module']}"
+        anchors, slots = mod["anchors"], mod["slots"]
+        placed = {}
+        for i, a in enumerate(anchors):
+            for r in crop_tests.span(anchors, i, slots):
+                placed.setdefault(r["page"], []).append((a["qnum"], r))
+        title_page = mod["pages"][0]
+        for pno in (p for p in mod["pages"] if p >= anchors[0]["page"]):
+            mask = masks[pno]
+            rects = placed.get(pno, [])
+            width, height = sizes[pno]
+            for q, r in rects:
+                x0, y0, x1, y1 = box(r["left"], r["top"], r["right"], r["bottom"])
+                for edge, line in (("top", (x0, y0, x1, y0 + 1)),
+                                   ("bottom", (x0, y1 - 1, x1, y1)),
+                                   ("left", (x0, y0, x0 + 1, y1)),
+                                   ("right", (x1 - 1, y0, x1, y1))):
+                    if mask.crop(line).getbbox():
+                        problems.append(f"{name} Q{q} p{pno}: ink on the crop's {edge} edge")
+            for (qa, ra), (qb, rb) in itertools.combinations(rects, 2):
+                if qa != qb and (min(ra["right"], rb["right"]) > max(ra["left"], rb["left"])
+                                 and min(ra["bottom"], rb["bottom"]) > max(ra["top"], rb["top"])):
+                    problems.append(f"{name} p{pno}: Q{qa} and Q{qb} overlap")
+
+            top, bottom = crop_tests.zone(pages[pno], height)
+            cols = crop_tests.columns(pages[pno], width, height)
+            left_over = mask.copy()
+            draw = ImageDraw.Draw(left_over)
+
+            def blank(b):
+                if b[2] > b[0] and b[3] > b[1]:
+                    draw.rectangle((b[0], b[1], b[2] - 1, b[3] - 1), fill=0)
+
+            blank(box(0, 0, width, top))
+            blank(box(0, bottom, width, height))
+            if pno == title_page == anchors[0]["page"]:
+                # A Reading and Writing title page rules its directions off
+                # from its questions: one thin line across nearly the whole
+                # page, and the only ink between the two. Anything else
+                # there makes the band taller than a rule and is reported.
+                between = box(0, top, width, anchors[0]["top"] - crop_tests.PAD)
+                rule = left_over.crop(between).getbbox()
+                if (rule and rule[3] - rule[1] <= 2 * scale
+                        and rule[2] - rule[0] >= 0.75 * width * scale):
+                    blank(between)
+            if len(cols) == 2:
+                gutter = box(cols[0][1], top, cols[1][0], bottom)
+                inked = left_over.crop(gutter).getbbox()
+                if inked and inked[2] - inked[0] > _RULE_WIDTH * scale:
+                    problems.append(f"{name} p{pno}: {inked[2] - inked[0]}px of ink across the "
+                                    "gutter, wider than its dotted rule")
+                blank(gutter)
+            for _, r in rects:
+                blank(box(r["left"], r["top"], r["right"], r["bottom"]))
+            stray = left_over.getbbox()
+            if stray:
+                pt = tuple(round(v / scale) for v in stray)
+                problems.append(f"{name} p{pno}: ink in the question zone outside every "
+                                f"question, bounding box {pt}pt")
+    return problems
+
+
+@pytest.mark.slow
+@_NEEDS_REAL
+@pytest.mark.parametrize("test_no,path", list(_real_tests()))
+def test_every_real_crop_is_clean_on_the_rendered_page(test_no, path):
+    """The pixel-level proof behind the gate: on the render of every module
+    page, no crop edge cuts through ink, no two questions share pixels,
+    nothing sits in the gutter but its rule, and no ink in the question zone
+    belongs to no question. A text-layer check cannot see a vector figure;
+    this can (plan 1's difficulty-glyph lesson)."""
+    pages, sizes, located = _real_book(path)
+    assert crop_tests.check(located) == []
+    first = min(m["anchors"][0]["page"] for m in located)
+    last = max(m["pages"][-1] for m in located)
+    masks = _ink_masks(path, first, last, _PIXEL_DPI)
+    assert _pixel_problems(pages, sizes, located, masks, _PIXEL_DPI) == []
+
+
+def _real_path(test_no):
+    return dict(_real_tests()).get(test_no)
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(_real_path(10) is None or not _poppler_available(),
+                    reason="test 10's PDF or poppler not on this machine")
+def test_the_pixel_check_sees_what_the_text_layer_cannot(monkeypatch):
+    """The check above must not be vacuous. Test 10 Math 1 Q4 carries its
+    four graph choices over onto page 37. Strip that page's words, as if the
+    graphs were pure images: `locate` then gives the page no slot, Q4 stops
+    at the foot of page 36, and only the render can say the graphs are
+    stranded. Then narrow the columns: crops cut through text and the cut
+    text lands in the gutter."""
+    path = _real_path(10)
+    pages, sizes, _ = _real_book(path)
+    structure = _REAL["module_structure"]
+
+    def math1(book):
+        return [m for m in crop_tests.locate(book, sizes, structure)
+                if (m["section"], m["module"]) == ("math", 1)]
+
+    mod = math1(pages)[0]
+    masks = _ink_masks(path, mod["anchors"][0]["page"], mod["pages"][-1], _PIXEL_DPI)
+    assert _pixel_problems(pages, sizes, [mod], masks, _PIXEL_DPI) == []
+
+    blind_pages = {**pages, 37: []}
+    blind = math1(blind_pages)
+    assert crop_tests.check(blind) == []
+    stranded = _pixel_problems(blind_pages, sizes, blind, masks, _PIXEL_DPI)
+    assert any(p.startswith("math module 1 p37: ink in the question zone") for p in stranded)
+
+    monkeypatch.setattr(crop_tests, "COLUMN_REACH", 200.0)
+    narrow = _pixel_problems(pages, sizes, math1(pages), masks, _PIXEL_DPI)
+    assert any("ink on the crop's right edge" in p for p in narrow)
+    assert any("across the gutter" in p for p in narrow)

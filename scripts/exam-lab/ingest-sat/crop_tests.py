@@ -49,6 +49,12 @@ How the page is read -- every number below was measured on all 8 tests
    on the next. A column or page in between is included only if it holds
    text within the span, so a question ending at the foot of a left column
    does not drag an empty right-column strip with it.
+
+The supported path for a whole test is `locate` -> `check` (must return no
+complaints) -> `span` for each anchor -> `render_regions`. There is
+deliberately no per-page form: a page on its own cannot know where its
+module's directions end, where its STOP line is, or that its last question
+carries on over the page.
 """
 import re
 import statistics
@@ -63,6 +69,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bbox
 import manifest
 import poppler
+from crop_qbank import expected_render_height
 
 PAD = 6.0
 # The running header and the page-number footer sit outside the question
@@ -386,12 +393,16 @@ def locate(pages: dict[int, list[dict]], sizes: dict[int, tuple[float, float]],
            structure: list[dict]) -> list[dict]:
     """Every module with its question anchors and its reading-order slots.
 
-    [{"section", "module", "count", "slots": [...], "anchors": [...]}] where
-    a slot is one column of one page -- {"page", "col", "left", "right",
-    "top", "bottom", "text": [(top, bottom), ...]} -- and an anchor is
-    {"qnum", "page", "col", "top", "slot"} with `slot` indexing `slots`.
-    Anchors are exactly what the page geometry finds; `check` says whether
-    they are the printed 1..K.
+    [{"section", "module", "count", "pages", "slots": [...], "anchors":
+    [...]}] where a slot is one column of one page -- {"page", "col",
+    "left", "right", "top", "bottom", "page_height", "text": [(top, bottom),
+    ...]} -- and an anchor is {"qnum", "page", "col", "top", "slot"} with
+    `slot` indexing `slots`. Anchors are exactly what the page geometry
+    finds; `check` says whether they are the printed 1..K.
+
+    This and `span` are the only supported way to get a question's regions:
+    `check(locate(...))` must come back empty, then each question is
+    `span(mod["anchors"], i, mod["slots"])`.
     """
     out = []
     for mod in modules(pages, structure):
@@ -407,7 +418,7 @@ def locate(pages: dict[int, list[dict]], sizes: dict[int, tuple[float, float]],
             for ci, (left, right) in enumerate(cols):
                 slots.append({
                     "page": pno, "col": ci, "left": left, "right": right,
-                    "top": top, "bottom": bottom,
+                    "top": top, "bottom": bottom, "page_height": height,
                     "text": sorted((w["top"], w["bottom"]) for w in text
                                    if w["right"] > left and w["left"] < right),
                 })
@@ -440,6 +451,11 @@ def span(anchors: list[dict], i: int, slots: list[dict]) -> list[dict]:
     unknown (`"text": None`), in which case it is kept rather than risk
     cutting a question short. After the module's last question, the span
     runs to the end of the module's last slot.
+
+    `anchors` and `slots` are one module's, as `locate` returns them; this
+    and `locate` are the only supported way to get a question's regions.
+    Each region carries its page's height so `render_regions` can refuse a
+    raster that does not match it.
     """
     a = anchors[i]
     nxt = anchors[i + 1] if i + 1 < len(anchors) else None
@@ -455,29 +471,9 @@ def span(anchors: list[dict], i: int, slots: list[dict]) -> list[dict]:
                 t < bottom and b > top for t, b in slot["text"]):
             continue
         out.append({"page": slot["page"], "left": slot["left"], "right": slot["right"],
-                    "top": top, "bottom": bottom})
+                    "top": top, "bottom": bottom,
+                    "page_height": slot.get("page_height", LETTER_HEIGHT)})
     return out
-
-
-def regions(anchors: list[dict], i: int, cols: list[tuple[float, float]],
-            page_bottom: float) -> list[dict]:
-    """The one or two rectangles making up question `anchors[i]` when all
-    of `anchors` are on one page laid out as `cols`.
-
-    One region when the next question starts in the same column. Two when it
-    starts in the next column -- the question ran past the bottom of its own
-    column and continues at the top of the next, and both halves are needed.
-    This knows nothing of the page's text, so a column between the two is
-    always kept; `locate` + `span` is the whole-module form that can tell a
-    real continuation from an empty strip, and follows a question onto the
-    next page.
-    """
-    page = anchors[i]["page"]
-    slots = [{"page": page, "col": c, "left": left, "right": right,
-              "top": HEADER_TRIM, "bottom": page_bottom, "text": None}
-             for c, (left, right) in enumerate(cols)]
-    indexed = [{**a, "slot": a["col"]} for a in anchors]
-    return span(indexed, i, slots)
 
 
 # A pixel darker than this is ink. The grey question bars are ~215, page
@@ -513,6 +509,12 @@ def render_regions(pdf: Path, regions: list[dict], dest: Path, dpi: int = 150) -
     Each slice is trimmed to its ink before stacking, so a stitched
     question reads as one block rather than two islands separated by the
     white foot of a column.
+
+    Raises RuntimeError, before anything is written, when a rendered page's
+    height is not the one its region was measured against (the region's
+    `page_height`, US Letter if absent) -- a rotated page or an offset
+    MediaBox would otherwise shift every crop silently. The rule is
+    crop_qbank.render_span's, through the same `expected_render_height`.
     """
     scale = dpi / 72.0
     with tempfile.TemporaryDirectory() as tmp:
@@ -527,7 +529,17 @@ def render_regions(pdf: Path, regions: list[dict], dest: Path, dpi: int = 150) -
                      "-singlefile", str(pdf), str(stem)],
                     check=True, capture_output=True,
                 )
-            img = Image.open(page_png).convert("RGB")
+            page_height = r.get("page_height", LETTER_HEIGHT)
+            with Image.open(page_png) as raster:
+                expected = expected_render_height(page_height, dpi)
+                if abs(raster.height - expected) > 1:
+                    raise RuntimeError(
+                        f"rendered page height {raster.height}px != expected {expected}px "
+                        f"for page_height={page_height}pt at {dpi} dpi ({pdf.name} "
+                        f"p{r['page']}); the point-to-pixel mapping is wrong -- check for "
+                        "page rotation or an offset MediaBox before trusting this crop"
+                    )
+                img = raster.convert("RGB")
             piece = img.crop((
                 int(r["left"] * scale), int(r["top"] * scale),
                 min(img.width, int(r["right"] * scale)),
