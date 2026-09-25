@@ -35,7 +35,7 @@ plan; the directory exists but nothing here reads it.
 ## Run
 
 ```bash
-cd scripts/exam-lab/ingest-SAT
+cd scripts/exam-lab/ingest-sat
 
 # 1. parse both PDFs and see coverage -- no crop, no network, no credentials
 python report_qbank.py

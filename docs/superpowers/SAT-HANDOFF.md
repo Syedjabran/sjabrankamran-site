@@ -13,7 +13,7 @@ College Board material, not assumed.
 | Plan 1 — question-bank ingestion (executed) | `docs/superpowers/plans/2026-09-22-sat-ingestion-pipeline.md` |
 | Plan 2 — practice tests + TypeScript core (written, not executed) | `docs/superpowers/plans/2026-09-23-sat-practice-tests-and-core.md` |
 | Execution ledger, every ruling | `.superpowers/sdd/2026-09-22-sat-ingestion-pipeline/progress.md` (gitignored, local) |
-| Pipeline README | `scripts/exam-lab/ingest-SAT/README.md` |
+| Pipeline README | `scripts/exam-lab/ingest-sat/README.md` |
 
 The ledger is the detailed record: every decision, every finding, every ruling with its cost
 if wrong. It is local and gitignored — read it before re-litigating anything.
@@ -86,7 +86,7 @@ mathematical expression the text layer drops.
 ## THE TWO THINGS BLOCKING PROGRESS — both need the user
 
 1. **Sign-off on the sample crops.** 12 re-rendered at
-   `scripts/exam-lab/ingest-SAT/out/samples/`, spanning both sections, all three difficulties
+   `scripts/exam-lab/ingest-sat/out/samples/`, spanning both sections, all three difficulties
    and both answer kinds. All 12 were inspected on 2026-09-23 and are clean — no difficulty
    glyph, no domain/skill, no answer key, figures and data tables intact — and an automated
    scan of all 3,730 crops agrees. **The user has still not looked.** That sign-off is the
@@ -99,16 +99,16 @@ Until then: `--dry-run` only. Never write to that bucket without being told to.
 
 ## What plan 1 built
 
-`scripts/exam-lab/ingest-SAT/` — `poppler.py`, `parse_qbank.py`, `report_qbank.py`,
+`scripts/exam-lab/ingest-sat/` — `poppler.py`, `parse_qbank.py`, `report_qbank.py`,
 `crop_qbank.py`, `upload.py`, `extract_sat.py`, `build_sat_bank.py`, `tests/`.
 
 Run order (only the last needs credentials):
 
 ```bash
-python scripts/exam-lab/ingest-SAT/report_qbank.py          # parse + coverage report
-python scripts/exam-lab/ingest-SAT/extract_sat.py --dry-run # crop everything, no upload
-python scripts/exam-lab/ingest-SAT/extract_sat.py           # LIVE — needs authorisation
-python scripts/exam-lab/ingest-SAT/build_sat_bank.py out/rows.json
+python scripts/exam-lab/ingest-sat/report_qbank.py          # parse + coverage report
+python scripts/exam-lab/ingest-sat/extract_sat.py --dry-run # crop everything, no upload
+python scripts/exam-lab/ingest-sat/extract_sat.py           # LIVE — needs authorisation
+python scripts/exam-lab/ingest-sat/build_sat_bank.py out/rows.json
 ```
 
 Use `python`, not `python3` — `python3` is shadowed by a Windows Store alias that prints an
@@ -125,7 +125,7 @@ Cold run ~15m20s, warm rerun ~40s (crops cached, resumable).
    rationale region yet. Plan 2 needs a second crop pass; the anchors already locate the region
    (the question crop stops exactly at `Correct Answer:` / `Rationale`).
 2. **Directory casing.** Spec §6 says `ingest-sat/` and `crop_sat.py`; delivered as
-   `ingest-SAT/` and `crop_qbank.py`. A lowercase rename was blocked by a stale Windows file
+   `ingest-sat/` and `crop_qbank.py`. A lowercase rename was blocked by a stale Windows file
    handle and deferred. **This would break on case-sensitive CI.** Retry the rename when
    nothing holds the directory.
 3. **`tests/test_poppler.py` is not hermetic** — two tests need a real conda poppler at
