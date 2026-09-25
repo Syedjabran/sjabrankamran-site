@@ -1110,7 +1110,7 @@ git commit -m "feat(sat): server views that hide the key, per-sitting storage, S
   - `GET /api/sat/sessions` → `{ sessions: SessionSummary[], practiceTests: {testNo, questions, timed}[], conversionTables: boolean }`
   - `POST /api/sat/sessions` body `{ kind: "adaptive" } | { kind: "practice", testNo: number } | { kind: "drill", section?, domain?, skill?, difficulty?, count: number }` (+ optional `assignmentId`) → `{ id, kind }`
   - `GET /api/sat/sessions/[id]` (`?uid=` for staff viewing a student) → `SessionState | DrillState`
-  - `POST /api/sat/sessions/[id]` body `{ action: "save", answers, flagged } | { action: "submit", answers, flagged } | { action: "begin" } | { action: "check", questionId, response }` → `SessionState | DrillState` (for `check`: `{ state: DrillState, item: ReviewItem }`)
+  - `POST /api/sat/sessions/[id]` body `{ action: "save", stage, answers, flagged } | { action: "submit", stage, answers, flagged } | { action: "begin" } | { action: "check", questionId, response }` (a `stage` that is no longer current → 409 `{ stale: true, state }`) → `SessionState | DrillState` (for `check`: `{ state: DrillState, item: ReviewItem }`)
 
 - [ ] **Step 1: Write the collection route**
 
@@ -1197,7 +1197,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getPortalUser } from "@/lib/edu/auth";
 import { canViewStudent, satAccess } from "@/lib/sat/access";
-import { beginStage, saveAnswers, settleBreak, submitStage, type SATSession } from "@/lib/sat/session";
+import { beginStage, isStaleStage, saveAnswers, settleBreak, submitStage, type SATSession } from "@/lib/sat/session";
 import { checkDrillAnswer, type SATDrill } from "@/lib/sat/drills";
 import { answerOf, drillState, finishSession, reviewItem, sessionState } from "@/lib/sat/serve";
 import { loadDoc, saveDoc } from "@/lib/sat/store";
@@ -1206,9 +1206,10 @@ export const runtime = "nodejs";
 
 const answersSchema = z.record(z.string().max(80), z.string().max(12)).refine((a) => Object.keys(a).length <= 60);
 const flaggedSchema = z.array(z.string().max(80)).max(60);
+const stageSchema = z.enum(["rw.m1", "rw.m2", "math.m1", "math.m2"]);
 const action = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("save"), answers: answersSchema, flagged: flaggedSchema }),
-  z.object({ action: z.literal("submit"), answers: answersSchema, flagged: flaggedSchema }),
+  z.object({ action: z.literal("save"), stage: stageSchema, answers: answersSchema, flagged: flaggedSchema }),
+  z.object({ action: z.literal("submit"), stage: stageSchema, answers: answersSchema, flagged: flaggedSchema }),
   z.object({ action: z.literal("begin") }),
   z.object({ action: z.literal("check"), questionId: z.string().max(80), response: z.string().min(1).max(12) }),
 ]);
@@ -1271,8 +1272,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   let next: SATSession = settleBreak(doc, now);
-  if (a.action === "save") next = saveAnswers(next, a.answers, a.flagged);
-  else if (a.action === "submit") next = finishSession(submitStage(next, a.answers, a.flagged, now, answerOf));
+  // A stale tab, a double click or a retried request names a module that has
+  // already ended: never apply it to the module the student is now in.
+  if ((a.action === "save" || a.action === "submit") && isStaleStage(next, a.stage)) {
+    if (next !== doc) await saveDoc(next);
+    return NextResponse.json({ stale: true, state: sessionState(next, now) }, { status: 409 });
+  }
+  if (a.action === "save") next = saveAnswers(next, a.stage, a.answers, a.flagged);
+  else if (a.action === "submit") next = finishSession(submitStage(next, a.stage, a.answers, a.flagged, now, answerOf));
   else if (a.action === "begin") next = beginStage(next, now);
   else return NextResponse.json({ error: "Only drills are checked question by question." }, { status: 400 });
 
@@ -1636,6 +1643,8 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   const post = useCallback(async (body: object) => {
     const res = await fetch(`/api/sat/sessions/${sessionId}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     const j = await res.json().catch(() => ({}));
+    // The module already ended (another tab, a double click): adopt the server's state.
+    if (res.status === 409 && j.state) return j.state as SessionState;
     if (!res.ok) throw new Error(j.error || "Please try again.");
     return j as SessionState;
   }, [sessionId]);
@@ -1643,7 +1652,11 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   const doSave = useCallback(async () => {
     if (!state?.stage || !dirty.current) return;
     setSave("saving");
-    try { await post({ action: "save", answers, flagged }); dirty.current = false; setSave("saved"); }
+    try {
+      const s = await post({ action: "save", stage: state.stage.key, answers, flagged });
+      if (s.stage?.key !== state.stage.key) apply(s); // the module moved on elsewhere
+      dirty.current = false; setSave("saved");
+    }
     catch { setSave("failed"); }
   }, [state, answers, flagged, post]);
 
@@ -1653,10 +1666,10 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
 
   const submit = useCallback(async () => {
     setBusy(true);
-    try { apply(await post({ action: "submit", answers, flagged })); }
+    try { apply(await post({ action: "submit", stage: state?.stage?.key, answers, flagged })); }
     catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
-  }, [answers, flagged, post, apply]);
+  }, [answers, flagged, post, apply, state]);
 
   const remaining = state?.stage ? state.stage.deadline - (now + skew.current) : 0;
   const expired = !!state?.stage && remaining <= 0;
