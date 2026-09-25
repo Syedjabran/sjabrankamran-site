@@ -4,34 +4,25 @@ import { ChevronLeft, ChevronRight, Clock, Coffee, Flag, Info, Loader2 } from "l
 import type { SessionState } from "@/lib/sat/client-types";
 import { SprPad } from "./spr-pad";
 import { ScoreReport } from "./score-report";
+import { QuestionImage } from "./question-image";
 import { useSignedImages } from "./use-signed-images";
 import {
-  answersChangedFor, flaggedChangedFor, isTimeoutError, looksLikeSessionState, mergeAnswers, mergeFlagged, pickAnswers, pickFlagged,
+  SAVE_DEBOUNCE_MS, answersChangedFor, flaggedChangedFor, isTimeoutError, looksLikeSessionState, mergeAnswers, mergeFlagged,
+  pickAnswers, pickFlagged, retryDelayMs, stopMessage,
 } from "./sat-runner-utils";
 
-type SaveState = "idle" | "saving" | "saved" | "unsaved" | "failed";
-type PostResult = { kind: "ok"; state: SessionState } | { kind: "stale"; state: SessionState } | { kind: "error"; message: string };
+type SaveState = "idle" | "saving" | "saved" | "unsaved" | "failed" | "stopped";
+// `halted`: the failure was a 401/403/404, so nothing retries it automatically.
+type PostResult = { kind: "ok"; state: SessionState } | { kind: "stale"; state: SessionState } | { kind: "error"; message: string; halted: boolean };
+const SAVE_LABEL: Record<SaveState, string> = {
+  idle: "", saving: "Saving…", saved: "Saved", unsaved: "Unsaved changes", failed: "Not saved — retrying", stopped: "Not saved",
+};
+const BACKSTOP_MS = 30_000;
+const BREAK_RELOAD_MIN_GAP_MS = 5000;
 const fmt = (ms: number) => {
   const t = Math.max(0, Math.ceil(ms / 1000));
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
 };
-
-/** A question's image. The drill's pulsing placeholder stays until the
- *  signed URL exists AND the image itself has loaded (an <img> still
- *  fetching has no height, leaving an empty area); if signing failed, the
- *  signing error shows in its place instead of a placeholder pulsing forever. */
-function QuestionImage({ src, alt, error }: { src: string | undefined; alt: string; error: string | null }) {
-  const [status, setStatus] = useState<"loading" | "loaded" | "failed">("loading");
-  const placeholder = <div className="h-64 animate-pulse rounded-lg bg-white/[0.06]" />;
-  if (!src) return error ? <p className="text-sm text-signal">{error}</p> : placeholder;
-  return (
-    <>
-      {status === "loading" ? placeholder : null}
-      {status === "failed" ? <p className="text-sm text-signal">This question&apos;s image couldn&apos;t be loaded.</p> : null}
-      <img src={src} alt={alt} onLoad={() => setStatus("loaded")} onError={() => setStatus("failed")} className={"w-full rounded-lg bg-white" + (status === "loaded" ? "" : " hidden")} />
-    </>
-  );
-}
 
 export function SatRunner({ sessionId }: { sessionId: string }) {
   const [state, setState] = useState<SessionState | null>(null);
@@ -81,13 +72,49 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   // Marks whether a save is currently in flight -- an edit (or the 30 s
   // backstop, or a debounce timer) that lands while one is running just keeps
   // `dirty` true. When that save's response lands still dirty, it re-arms the
-  // 1.5 s debounce once (bumping `saveRearm` below), so back-to-back saves are
+  // debounce once (bumping `saveRearm` below), so back-to-back saves are
   // never sent and a slow save never leaves an edit waiting for the backstop.
   const saveBusy = useRef(false);
-  // Bumped to restart the 1.5 s debounce: the autosave effect clears any
-  // pending timer and sets a fresh one.
+
+  // Failed requests back off instead of hammering the server (and Supabase's
+  // per-IP auth limit) during an outage. `failures` counts consecutive failed
+  // requests of any kind; an ok or stale (409) response resets it. After a
+  // failure, automatic retries wait retryDelayMs(failures): 3 s, 6 s, 12 s,
+  // 24 s, then 30 s. `retryAt` is when the next one may go, which the 30 s
+  // backstop honours too.
+  const failures = useRef(0);
+  const retryAt = useRef(0);
+  // A 401/403/404 won't change by asking again: `halted` stops every
+  // automatic request (re-armed save, backstop, break-end reload) until a
+  // request succeeds or the student edits (typing or Submit still try once).
+  // `halt` is the message shown meanwhile; only a success clears it.
+  const halted = useRef(false);
+  const [halt, setHalt] = useState<string | null>(null);
+  const noteSuccess = useCallback(() => {
+    failures.current = 0;
+    retryAt.current = 0;
+    halted.current = false;
+    setHalt(null);
+  }, []);
+  /** Counts a failed request; true when it stops automatic retries. */
+  const noteFailure = useCallback((status: number | null) => {
+    failures.current += 1;
+    retryAt.current = Date.now() + retryDelayMs(failures.current);
+    const stop = stopMessage(status);
+    if (stop) { halted.current = true; setHalt(stop); }
+    return stop !== null;
+  }, []);
+
+  // Bumped to restart the debounce: the autosave effect clears any pending
+  // timer and sets a fresh one, `nextSaveDelay` from now. An edit sets it to
+  // the ordinary 1.5 s; a re-arm to the current back-off (1.5 s when nothing
+  // has failed).
+  const nextSaveDelay = useRef(SAVE_DEBOUNCE_MS);
   const [saveRearm, setSaveRearm] = useState(0);
-  const rearmSave = useCallback(() => setSaveRearm((n) => n + 1), []);
+  const rearmSave = useCallback(() => {
+    nextSaveDelay.current = retryDelayMs(failures.current);
+    setSaveRearm((n) => n + 1);
+  }, []);
   // The stage key a submit has been sent for -- blocks any further save for
   // that same stage until the submit settles (success, stale, or error).
   const submittedStage = useRef<string | null>(null);
@@ -151,18 +178,27 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   }, [setStateBoth, setAnswersBoth, setFlaggedBoth, rearmSave]);
 
   const load = useCallback(async () => {
+    const fallback = "This sitting couldn't be loaded.";
+    let res: Response;
+    let j: { error?: string } | null; // a JSON `null` body parses too
     try {
       // A hung GET must never wedge the queue it now runs through -- a
       // timeout is caught below and treated like any other load failure.
-      const res = await fetch(`/api/sat/sessions/${sessionId}`, { cache: "no-store", signal: AbortSignal.timeout(20_000) });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error || "This sitting couldn't be loaded.");
-      if (!looksLikeSessionState(j)) throw new Error("This sitting couldn't be loaded.");
-      apply(j as SessionState); // clears `error` too
+      res = await fetch(`/api/sat/sessions/${sessionId}`, { cache: "no-store", signal: AbortSignal.timeout(20_000) });
+      j = await res.json().catch(() => ({}));
     } catch (e) {
-      setError(isTimeoutError(e) ? "The connection timed out — please try again." : (e as Error).message || "This sitting couldn't be loaded.");
+      noteFailure(null);
+      setError(isTimeoutError(e) ? "The connection timed out — please try again." : (e as Error).message || fallback);
+      return;
     }
-  }, [sessionId, apply]);
+    if (!res.ok || !looksLikeSessionState(j)) {
+      noteFailure(res.ok ? null : res.status);
+      setError((!res.ok && j?.error) || fallback);
+      return;
+    }
+    noteSuccess();
+    apply(j as SessionState); // clears `error` too
+  }, [sessionId, apply, noteSuccess, noteFailure]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
@@ -178,25 +214,27 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
       });
       const j = await res.json().catch(() => ({}));
       // The module already ended (another tab/device, or a racing request): the server hands back its current state.
-      if (res.status === 409 && j.state && looksLikeSessionState(j.state)) return { kind: "stale", state: j.state as SessionState };
-      if (!res.ok) return { kind: "error", message: j.error || "Please try again." };
+      if (res.status === 409 && j.state && looksLikeSessionState(j.state)) { noteSuccess(); return { kind: "stale", state: j.state as SessionState }; }
+      if (!res.ok) return { kind: "error", message: j.error || "Please try again.", halted: noteFailure(res.status) };
       // A 2xx whose body doesn't actually parse into a session state (a
       // malformed/empty body) must never be applied -- treat it as a failure.
-      if (!looksLikeSessionState(j)) return { kind: "error", message: "Please try again." };
+      if (!looksLikeSessionState(j)) return { kind: "error", message: "Please try again.", halted: noteFailure(null) };
+      noteSuccess();
       return { kind: "ok", state: j as SessionState };
     } catch (e) {
-      return { kind: "error", message: isTimeoutError(e) ? timeoutMessage : (e as Error).message || "Please try again." };
+      return { kind: "error", message: isTimeoutError(e) ? timeoutMessage : (e as Error).message || "Please try again.", halted: noteFailure(null) };
     }
-  }, [sessionId]);
+  }, [sessionId, noteSuccess, noteFailure]);
 
   // The actual save network round-trip -- a single attempt, never looping.
   // `editSeq` guards against a subtler case: an edit made after the request
   // body was already built (but before its response lands) must not be
   // wiped from `dirty` by that response's "ok" -- if the sequence moved on,
-  // this stays dirty instead. Whatever the response (ok, stale, failure), a
-  // module still dirty re-arms the 1.5 s debounce once -- the edit's own
-  // timer may already have fired (and been skipped) while this save was in
-  // flight -- rather than resending back to back.
+  // this stays dirty instead. Whatever the response (ok, stale, retryable
+  // failure), a module still dirty re-arms the debounce once -- the edit's
+  // own timer may already have fired (and been skipped) while this save was
+  // in flight -- rather than resending back to back. After a failure the
+  // re-arm waits the back-off; after a 401/403/404 nothing re-arms at all.
   const runSaveCycle = useCallback(async () => {
     try {
       const stageKey = stateRef.current?.stage?.key ?? null;
@@ -208,7 +246,11 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
       const body = { action: "save" as const, stage: stageKey, answers: pickAnswers(answersRef.current, ids), flagged: pickFlagged(flaggedRef.current, ids) };
       const result = await postRaw(body);
       if (submittedStage.current === stageKey) { setSave("idle"); return; } // ditto, while this request was in flight
-      if (result.kind === "error") { dirty.current = true; setSave("failed"); rearmSave(); }
+      if (result.kind === "error") {
+        dirty.current = true;
+        if (result.halted) setSave("stopped");
+        else { setSave("failed"); rearmSave(); } // noteFailure already raised the back-off this re-arm waits
+      }
       else if (result.kind === "stale") { applyStale(result.state); } // re-arms itself when it leaves the module dirty
       else {
         skew.current = result.state.serverNow - Date.now();
@@ -224,18 +266,24 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
     const stageKey = stateRef.current?.stage?.key ?? null;
     if (!stageKey || !dirty.current) return;
     if (submittedStage.current === stageKey) return;
+    if (halted.current) return; // a 401/403/404: only an edit (or a success) lets a save go again
     if (saveBusy.current) { dirty.current = true; return; } // stays dirty; the in-flight save's response re-arms the debounce
     saveBusy.current = true;
     void enqueue(() => runSaveCycle());
   }, [enqueue, runSaveCycle]);
 
-  // Autosave: shortly after a change (or a re-arm), and every 30 s as a backstop.
+  // Autosave: 1.5 s after a change, or the back-off after a re-arm; and every
+  // 30 s as a backstop, which never goes sooner than the back-off allows and
+  // never while halted.
   useEffect(() => {
     if (!dirty.current) return;
-    saveTimer.current = setTimeout(() => { saveTimer.current = null; requestSave(); }, 1500);
+    saveTimer.current = setTimeout(() => { saveTimer.current = null; requestSave(); }, nextSaveDelay.current);
     return () => { if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; } };
   }, [answers, flagged, saveRearm, requestSave]);
-  useEffect(() => { const t = setInterval(() => requestSave(), 30_000); return () => clearInterval(t); }, [requestSave]);
+  useEffect(() => {
+    const t = setInterval(() => { if (Date.now() >= retryAt.current) requestSave(); }, BACKSTOP_MS);
+    return () => clearInterval(t);
+  }, [requestSave]);
 
   const submit = useCallback(async () => {
     const stageKey = stateRef.current?.stage?.key ?? null;
@@ -252,10 +300,11 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
         const result = await postRaw(body, "The connection timed out — your answers are kept. Press Submit again.");
         if (result.kind === "error") {
           // We don't know if this submit actually reached the server -- keep
-          // the module dirty so the 30 s backstop save fires; if the submit
-          // DID land, that save gets a 409 back and re-syncs the screen.
+          // the module dirty so the 30 s backstop save fires (after the
+          // back-off, and not at all when halted); if the submit DID land,
+          // that save gets a 409 back and re-syncs the screen.
           dirty.current = true;
-          setError(result.message);
+          setError(result.halted ? null : result.message); // a halt explains itself in the banner
           return;
         }
         if (result.kind === "stale") { applyStale(result.state); return; }
@@ -272,7 +321,7 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
     try {
       await enqueue(async () => {
         const result = await postRaw({ action: "begin" });
-        if (result.kind === "error") { setError(result.message); return; }
+        if (result.kind === "error") { setError(result.halted ? null : result.message); return; }
         if (result.kind === "stale") { applyStale(result.state); return; }
         apply(result.state);
       });
@@ -297,37 +346,47 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   // Break: reload once when it ends (the server starts Math at the break's
   // end), keyed by the break's own end time so this never re-fires every
   // tick; if the server still reports the break (a slow/failed reload), it
-  // retries only after a 5 s back-off. Routed through the same promise
-  // chain as save/submit/begin so it can never race "Start Math now" --
-  // and guarded so that if it was queued BEHIND a begin/submit that already
+  // retries only after at least 5 s, or the failure back-off when that is
+  // longer, and not at all after a 401/403/404 ("Start Math now" still
+  // works). Routed through the same promise chain as save/submit/begin so
+  // it can never race "Start Math now" -- and guarded so that if it was
+  // queued BEHIND a begin/submit that already
   // ran, it becomes a no-op instead of re-fetching and stomping on
   // whatever the student has typed into the module that's now on screen.
   useEffect(() => {
     if (state?.status !== "break" || !state.breakUntil) { breakReload.current = null; return; }
     const until = state.breakUntil;
-    if (now + skew.current < until) return;
+    if (now + skew.current < until || halted.current) return;
     const last = breakReload.current;
     const nowMs = Date.now();
-    if (last && last.until === until && nowMs - last.at < 5000) return;
+    const gap = Math.max(BREAK_RELOAD_MIN_GAP_MS, retryDelayMs(failures.current));
+    if (last && last.until === until && nowMs - last.at < gap) return;
     breakReload.current = { until, at: nowMs };
     void enqueue(() => (stateRef.current?.status === "break" ? load() : Promise.resolve()));
   }, [state, now, load, enqueue]);
 
   const questions = useMemo(() => state?.stage?.questions ?? [], [state]);
-  const { urls, error: imgError } = useSignedImages(questions.map((q) => q.img));
+  const { urls, error: imgError, missing: imgMissing } = useSignedImages(questions.map((q) => q.img));
 
   if (error && !state) return <p className="rounded-2xl border border-signal/30 bg-signal/5 p-5 text-sm text-fog">{error} <button className="ml-2 text-cyan underline" onClick={() => void load()}>Retry</button></p>;
   if (!state) return <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading your sitting…</p>;
   if (state.status === "finished" && state.report) return <ScoreReport report={state.report} />;
 
+  // Why nothing is being saved or reloaded automatically (a 401/403/404).
+  const haltBanner = halt ? <p role="alert" className="rounded-xl border border-signal/30 bg-signal/5 p-3 text-sm text-fog">{halt}</p> : null;
+
   if (state.status === "break") {
     const left = (state.breakUntil ?? 0) - (now + skew.current);
     return (
-      <div className="mx-auto max-w-md rounded-2xl border border-white/10 bg-space/60 p-8 text-center">
-        <Coffee className="mx-auto text-cyan" />
-        <p className="mt-3 font-display text-xl text-ice">Break · {fmt(left)}</p>
-        <p className="mt-2 text-sm text-fog">Reading and Writing is done. Math begins when the break ends.</p>
-        <button disabled={busy} onClick={() => void beginModule()} className="btn-primary mt-5 !px-4 !py-2 text-sm">Start Math now</button>
+      <div className="mx-auto max-w-md space-y-4">
+        {haltBanner}
+        <div className="rounded-2xl border border-white/10 bg-space/60 p-8 text-center">
+          <Coffee className="mx-auto text-cyan" />
+          <p className="mt-3 font-display text-xl text-ice">Break · {fmt(left)}</p>
+          <p className="mt-2 text-sm text-fog">Reading and Writing is done. Math begins when the break ends.</p>
+          <button disabled={busy} onClick={() => void beginModule()} className="btn-primary mt-5 !px-4 !py-2 text-sm">Start Math now</button>
+          {error ? <p className="mt-3 text-xs text-signal">{error}</p> : null}
+        </div>
       </div>
     );
   }
@@ -335,16 +394,21 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   const stage = state.stage!;
   const q = questions[idx];
   const unanswered = questions.filter((x) => !answers[x.id]).length;
-  const setAnswer = (v: string) => {
+  // Every edit: mark it unsaved, let one save try again even after a
+  // 401/403/404, and save it 1.5 s after the last change.
+  const noteEdit = () => {
     dirty.current = true;
     editSeq.current += 1;
     touched.current.add(q.id);
+    halted.current = false;
+    nextSaveDelay.current = SAVE_DEBOUNCE_MS;
+  };
+  const setAnswer = (v: string) => {
+    noteEdit();
     setAnswersBoth({ ...answersRef.current, [q.id]: v });
   };
   const toggleFlag = () => {
-    dirty.current = true;
-    editSeq.current += 1;
-    touched.current.add(q.id);
+    noteEdit();
     const next = flaggedRef.current.includes(q.id) ? flaggedRef.current.filter((x) => x !== q.id) : [...flaggedRef.current, q.id];
     setFlaggedBoth(next);
   };
@@ -354,9 +418,10 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
       <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-space/60 px-4 py-3">
         <div className="min-w-0"><p className="truncate text-sm font-semibold text-ice">{stage.label}</p><p className="text-xs text-dust">{state.title}</p></div>
         <span className={"ml-auto flex items-center gap-1.5 rounded-xl border px-3 py-1.5 font-mono text-sm " + (remaining <= 5 * 60_000 ? "border-amber-300/40 text-amber-200" : "border-white/15 text-ice")}><Clock size={14} /> {fmt(remaining)}</span>
-        <span className="text-xs text-dust">{save === "saving" ? "Saving…" : save === "saved" ? "Saved" : save === "unsaved" ? "Unsaved changes" : save === "failed" ? "Not saved — retrying" : ""}</span>
+        <span className="text-xs text-dust">{SAVE_LABEL[save]}</span>
       </div>
 
+      {haltBanner}
       {expired ? <p className="rounded-xl border border-amber-300/30 bg-amber-300/[0.05] p-3 text-sm text-amber-100">Time is up for this module. Your saved answers are kept — submit the module to continue.</p> : null}
       {note ? <p className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-sm text-dust"><Info size={14} className="shrink-0" />{note}</p> : null}
 
@@ -366,7 +431,7 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
             <span className="font-display text-ice">Question {q.n} of {questions.length}</span>
             <button type="button" disabled={busy} onClick={toggleFlag} className={"ml-auto inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs disabled:opacity-40 " + (flagged.includes(q.id) ? "border-amber-300/50 text-amber-200" : "border-white/15 text-dust")}><Flag size={12} /> {flagged.includes(q.id) ? "Marked for review" : "Mark for review"}</button>
           </div>
-          <QuestionImage key={q.img} src={urls[q.img]} alt={`Question ${q.n}`} error={imgError} />
+          <QuestionImage key={q.img} src={urls[q.img]} alt={`Question ${q.n}`} error={imgMissing[q.img] ?? imgError} />
           {q.kind === "mcq" ? (
             <div className="grid grid-cols-4 gap-2">
               {["A", "B", "C", "D"].map((l) => (

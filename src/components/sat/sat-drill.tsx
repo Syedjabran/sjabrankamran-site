@@ -4,6 +4,7 @@ import Link from "next/link";
 import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import type { DrillState, ReviewItem } from "@/lib/sat/client-types";
 import { SprPad } from "./spr-pad";
+import { QuestionImage } from "./question-image";
 import { useSignedImages } from "./use-signed-images";
 
 export function SatDrill({ initial }: { initial: DrillState }) {
@@ -15,7 +16,7 @@ export function SatDrill({ initial }: { initial: DrillState }) {
   const [error, setError] = useState<string | null>(null);
   const q = state.questions[idx];
   const done: ReviewItem | undefined = state.checked[q.id];
-  const { urls, error: imgError } = useSignedImages(state.questions.flatMap((x) => [x.img, state.checked[x.id]?.rationaleImg ?? ""]));
+  const { urls, error: imgError, missing: imgMissing } = useSignedImages(state.questions.flatMap((x) => [x.img, state.checked[x.id]?.rationaleImg ?? ""]));
   useEffect(() => setResponse(""), [idx]);
 
   async function check() {
@@ -38,10 +39,9 @@ export function SatDrill({ initial }: { initial: DrillState }) {
         <span className="font-semibold text-ice">{state.title}</span>
         <span className="ml-auto font-mono text-dust">{Object.keys(state.checked).length}/{state.questions.length} · {correct} correct</span>
       </div>
-      {imgError ? <p className="text-sm text-signal">{imgError}</p> : null}
       <div className="space-y-4 rounded-2xl border border-white/10 bg-space/60 p-4">
         <p className="font-display text-ice">Question {q.n} of {state.questions.length}</p>
-        {urls[q.img] ? <img src={urls[q.img]} alt={`Question ${q.n}`} className="w-full rounded-lg bg-white" /> : <div className="h-64 animate-pulse rounded-lg bg-white/[0.06]" />}
+        <QuestionImage key={q.img} src={urls[q.img]} alt={`Question ${q.n}`} error={imgMissing[q.img] ?? imgError} />
         {done ? (
           <div className={"space-y-3 rounded-xl border p-3 " + (done.correct ? "border-emerald2/30" : "border-signal/30")}>
             <p className="flex items-center gap-2 text-sm">{done.correct ? <CheckCircle2 size={16} className="text-emerald2" /> : <XCircle size={16} className="text-signal" />}<span className="text-ice">You answered {done.response}. The answer is {done.answer}.</span></p>

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import {
-  answersChangedFor, flaggedChangedFor, isTimeoutError, looksLikeSessionState, mergeAnswers, mergeFlagged, mixedNumberWarning,
-  nextTypedSPR, pickAnswers, pickFlagged, sprAnswerPreview, stripSPR,
+  RETRY_CAP_MS, SAVE_DEBOUNCE_MS, answersChangedFor, classifyFailure, flaggedChangedFor, isTimeoutError, looksLikeSessionState,
+  mergeAnswers, mergeFlagged, mixedNumberWarning, nextTypedSPR, pickAnswers, pickFlagged, retryDelayMs, splitSignedUrls,
+  sprAnswerPreview, stopMessage, stripSPR,
 } from "../src/components/sat/sat-runner-utils.ts";
 
 // --- pickAnswers / pickFlagged: a save/submit body carries only the module
@@ -138,6 +139,66 @@ assert.deepEqual(
   );
 }
 
+// --- retryDelayMs: min(1.5 s · 2ⁿ, 30 s) for n consecutive failures. ---
+assert.equal(SAVE_DEBOUNCE_MS, 1500);
+assert.equal(RETRY_CAP_MS, 30_000);
+assert.equal(retryDelayMs(0), 1500, "nothing failed: the ordinary debounce");
+assert.equal(retryDelayMs(1), 3000, "the first failure doubles it");
+assert.equal(retryDelayMs(2), 6000);
+assert.equal(retryDelayMs(3), 12_000);
+assert.equal(retryDelayMs(4), 24_000);
+assert.equal(retryDelayMs(5), 30_000, "capped at 30 s from the fifth failure");
+assert.equal(retryDelayMs(6), 30_000);
+assert.equal(retryDelayMs(10_000), 30_000, "2ⁿ overflowing to Infinity is still capped");
+assert.equal(retryDelayMs(-3), 1500, "a negative count is treated as none");
+assert.equal(retryDelayMs(Number.NaN), 1500, "so is a non-number");
+{
+  // The delay never shrinks as failures pile up, and never passes the cap.
+  let last = 0;
+  for (let n = 0; n < 40; n++) {
+    const d = retryDelayMs(n);
+    assert.ok(d >= last && d <= RETRY_CAP_MS, `delay for ${n} is monotonic and capped`);
+    last = d;
+  }
+}
+
+// --- classifyFailure / stopMessage: 401 stops as "auth", 403/404 as
+// "gone"; everything else (network, timeout, 5xx, 429, a 409 without a
+// usable state, a 400) is retried with back-off. ---
+assert.equal(classifyFailure(401), "auth");
+assert.equal(classifyFailure(403), "gone");
+assert.equal(classifyFailure(404), "gone");
+for (const status of [null, 400, 408, 409, 429, 500, 502, 503, 504]) {
+  assert.equal(classifyFailure(status), "retryable", `${status} is retried`);
+  assert.equal(stopMessage(status), null, `${status} shows no stop message`);
+}
+assert.equal(stopMessage(401), "You've been signed out — sign in again in another tab; your answers on this screen are kept.");
+assert.equal(stopMessage(404), "This sitting isn't available to you any more.");
+assert.equal(stopMessage(403), "Your access to the SAT Lab has changed.");
+
+// --- splitSignedUrls: a requested path the signing endpoint answered
+// without a URL is reported, never silently dropped. ---
+assert.deepEqual(
+  splitSignedUrls(["sat/a.png", "sat/b.png"], { urls: { "sat/a.png": "https://x/a" } }),
+  { urls: { "sat/a.png": "https://x/a" }, missing: ["sat/b.png"] },
+  "a path left out of `urls` (its signedUrl was null) is missing",
+);
+assert.deepEqual(
+  splitSignedUrls(["a", "b", "c", "d"], { urls: { a: null, b: "", c: 42, d: "https://x/d" } }),
+  { urls: { d: "https://x/d" }, missing: ["a", "b", "c"] },
+  "a null, empty or non-string URL counts as missing too",
+);
+assert.deepEqual(
+  splitSignedUrls(["a"], { urls: { a: "https://x/a", extra: "https://x/extra" } }),
+  { urls: { a: "https://x/a" }, missing: [] },
+  "only requested paths are taken",
+);
+assert.deepEqual(splitSignedUrls(["toString"], { urls: {} }), { urls: {}, missing: ["toString"] }, "inherited keys are not URLs");
+assert.equal(splitSignedUrls(["a"], {}), null, "a body with no `urls` map is a failed request, not an answer");
+assert.equal(splitSignedUrls(["a"], null), null);
+assert.equal(splitSignedUrls(["a"], { urls: ["https://x/a"] }), null);
+assert.equal(splitSignedUrls(["a"], "oops"), null);
+
 // --- stripSPR: the box keeps digits, ".", "/" and "-" only (Bluebook parity). ---
 assert.equal(stripSPR("1 1/2"), "11/2", "a mixed number is read as one fraction");
 assert.equal(stripSPR(" a-1.5\t"), "-1.5");
@@ -186,6 +247,11 @@ assert.equal(mixedNumberWarning("1 2/2"), "Mixed numbers aren't allowed — “1
 assert.equal(mixedNumberWarning("1 1/0"), "Mixed numbers aren't allowed — “1 1/0” is read as 11/0.", "no entry to offer for a zero denominator");
 assert.equal(mixedNumberWarning(" 1   1/2 "), "Mixed numbers aren't allowed — “1 1/2” is read as 11/2. Enter 3/2 or 1.5.", "whitespace runs are shown as one space");
 assert.equal(mixedNumberWarning("1 1"), "Spaces aren't allowed — “1 1” is read as 11.", "digits split by a space, not (yet) a mixed number");
+assert.equal(mixedNumberWarning("1 1."), "Spaces aren't allowed — “1 1.” is read as 11.", "a value ending in a point takes no second full stop");
+assert.equal(mixedNumberWarning("1 1.5"), "Spaces aren't allowed — “1 1.5” is read as 11.5.");
+for (const typed of ["1 1.", "1 2.", "-1 1.", "1 1 1."]) {
+  assert.ok(!mixedNumberWarning(typed).includes(".."), `no double full stop for “${typed}”`);
+}
 assert.equal(mixedNumberWarning("11/2"), null);
 assert.equal(mixedNumberWarning("1. 5"), null, "only digit-space-digit is flagged");
 assert.equal(mixedNumberWarning("1 "), null, "a trailing space alone is not flagged");

@@ -1,32 +1,89 @@
 "use client";
 import { useEffect, useState } from "react";
+import { isTimeoutError, splitSignedUrls } from "./sat-runner-utils";
 
-/** Signs private SAT image paths in batches of 80 via /api/exam-lab/asset. */
-export function useSignedImages(paths: string[]): { urls: Record<string, string>; error: string | null } {
+const BATCH_SIZE = 80; // the signing endpoint's per-request limit
+const SIGN_TIMEOUT_MS = 20_000;
+const RETRY_AFTER_MS = 3_000;
+const SIGN_FAILED = "Images couldn't be loaded.";
+const SIGN_TIMED_OUT = "Images couldn't be loaded — the connection timed out.";
+const NOT_AVAILABLE = "This question's image isn't available yet.";
+
+export type SignedImages = {
+  /** Signed URL per path. URLs from an earlier set of paths are kept, so an
+   *  image already on screen stays while a new set is being signed. */
+  urls: Record<string, string>;
+  /** The signing request itself failed, after its one retry. It applies to
+   *  every requested path that still has no URL. */
+  error: string | null;
+  /** Requested paths the server answered for without a URL, each with the
+   *  message to show where that image would be. */
+  missing: Record<string, string>;
+};
+
+type Settled = { key: string; error: string | null; missing: Record<string, string> };
+type Attempt = { ok: true; urls: Record<string, string>; missing: string[] } | { ok: false; message: string };
+
+/** One signing request, bounded by a timeout. */
+async function signBatch(paths: string[]): Promise<Attempt> {
+  try {
+    const res = await fetch("/api/exam-lab/asset", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ paths }),
+      signal: AbortSignal.timeout(SIGN_TIMEOUT_MS),
+    });
+    const j: unknown = await res.json().catch(() => null);
+    if (!res.ok) {
+      const message = (j as { error?: unknown } | null)?.error;
+      return { ok: false, message: typeof message === "string" && message ? message : SIGN_FAILED };
+    }
+    const split = splitSignedUrls(paths, j);
+    return split ? { ok: true, ...split } : { ok: false, message: SIGN_FAILED };
+  } catch (e) {
+    return { ok: false, message: isTimeoutError(e) ? SIGN_TIMED_OUT : SIGN_FAILED };
+  }
+}
+
+/** Signs private SAT image paths in batches of 80 via /api/exam-lab/asset.
+ *  A failed or timed-out request is retried once, 3 s later; if that fails
+ *  too, `error` says so. A path the server answers without a URL is listed in
+ *  `missing`. Either way a path never stays pending for longer than two
+ *  timed-out attempts. */
+export function useSignedImages(paths: string[]): SignedImages {
   const [urls, setUrls] = useState<Record<string, string>>({});
-  const [error, setError] = useState<string | null>(null);
+  const [settled, setSettled] = useState<Settled | null>(null);
   const key = paths.join("|");
   useEffect(() => {
     let alive = true;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     const todo = Array.from(new Set(paths.filter(Boolean)));
     if (!todo.length) return;
+    const pause = (ms: number) => new Promise<void>((resolve) => { retryTimer = setTimeout(resolve, ms); });
     (async () => {
-      try {
-        const out: Record<string, string> = {};
-        for (let i = 0; i < todo.length; i += 80) {
-          const res = await fetch("/api/exam-lab/asset", {
-            method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ paths: todo.slice(i, i + 80) }),
-          });
-          const j = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(j.error || "Images couldn't be loaded.");
-          Object.assign(out, j.urls || {});
+      const signed: Record<string, string> = {};
+      const missing: Record<string, string> = {};
+      let error: string | null = null;
+      for (let i = 0; i < todo.length; i += BATCH_SIZE) {
+        const batch = todo.slice(i, i + BATCH_SIZE);
+        let attempt = await signBatch(batch);
+        if (!attempt.ok && alive) {
+          await pause(RETRY_AFTER_MS);
+          if (alive) attempt = await signBatch(batch);
         }
-        if (alive) { setUrls(out); setError(null); }
-      } catch (e) {
-        if (alive) setError((e as Error).message);
+        if (!alive) return;
+        if (attempt.ok) {
+          Object.assign(signed, attempt.urls);
+          for (const path of attempt.missing) missing[path] = NOT_AVAILABLE;
+        } else {
+          error = attempt.message;
+        }
       }
+      setUrls((prev) => ({ ...prev, ...signed }));
+      setSettled({ key, error, missing });
     })();
-    return () => { alive = false; };
+    return () => { alive = false; clearTimeout(retryTimer); };
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
-  return { urls, error };
+  // Only the answer for the paths asked for now counts; until it lands, every
+  // path without a URL is still pending.
+  const current = settled?.key === key ? settled : null;
+  return { urls, error: current?.error ?? null, missing: current?.missing ?? {} };
 }

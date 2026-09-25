@@ -8,7 +8,7 @@ const SECTION = { rw: "Reading and Writing", math: "Math" } as const;
 
 export function ScoreReport({ report }: { report: SATReport }) {
   const [open, setOpen] = useState<string | null>(null);
-  const { urls, error: imgError } = useSignedImages(report.review.flatMap((r) => [r.img, r.rationaleImg ?? ""]));
+  const { urls, error: imgError, missing: imgMissing } = useSignedImages(report.review.flatMap((r) => [r.img, r.rationaleImg ?? ""]));
   const s = report.score;
   return (
     <div className="space-y-6">
@@ -69,7 +69,8 @@ export function ScoreReport({ report }: { report: SATReport }) {
               </button>
               {open === r.id ? (
                 <div className="space-y-3 border-t border-white/10 p-3">
-                  {urls[r.img] ? <img src={urls[r.img]} alt={`Question ${r.n}`} className="w-full rounded-lg bg-white" /> : null}
+                  {urls[r.img] ? <img src={urls[r.img]} alt={`Question ${r.n}`} className="w-full rounded-lg bg-white" />
+                    : imgMissing[r.img] ? <p className="text-sm text-signal">{imgMissing[r.img]}</p> : null}
                   {r.rationaleImg && urls[r.rationaleImg] ? <img src={urls[r.rationaleImg]} alt="Official rationale" className="w-full rounded-lg bg-white" />
                     : r.rationale ? <p className="whitespace-pre-line text-sm text-fog">{r.rationale}</p> : null}
                 </div>

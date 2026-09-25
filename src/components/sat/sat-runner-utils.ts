@@ -1,7 +1,8 @@
 // src/components/sat/sat-runner-utils.ts
 //
-// Pure helpers for sat-runner.tsx (request bodies, merges) and spr-pad.tsx
-// (grid-in warnings and preview) -- no React import, and nothing but the pure
+// Pure helpers for sat-runner.tsx (request bodies, merges, retry back-off),
+// spr-pad.tsx (grid-in warnings and preview) and use-signed-images.ts (what a
+// signing response gave) -- no React import, and nothing but the pure
 // grade.ts, so these can be unit-tested directly with Node (see
 // scripts/test-sat-runner-utils.mjs).
 import { SPR_MAX_NEGATIVE, SPR_MAX_POSITIVE, sprNumber, validateSPR } from "../../lib/sat/grade.ts";
@@ -89,6 +90,63 @@ export function flaggedChangedFor(serverFlagged: string[], merged: string[], ids
 export function isTimeoutError(e: unknown): boolean {
   const name = (e as { name?: unknown } | null)?.name;
   return name === "TimeoutError" || name === "AbortError";
+}
+
+// --- Failed requests: back-off and when to stop ---
+
+/** The autosave debounce after an edit, and the base of the retry back-off. */
+export const SAVE_DEBOUNCE_MS = 1500;
+/** The longest the back-off ever waits between automatic retries. */
+export const RETRY_CAP_MS = 30_000;
+
+/** How long to wait before the next automatic retry after `failures`
+ *  consecutive failed requests: min(1.5 s · 2ⁿ, 30 s). n = 0 (nothing has
+ *  failed) is the ordinary 1.5 s debounce; the first failure waits 3 s, then
+ *  6 s, 12 s, 24 s, and 30 s from the fifth on. */
+export function retryDelayMs(failures: number): number {
+  const n = Number.isFinite(failures) && failures > 0 ? Math.floor(failures) : 0;
+  return Math.min(SAVE_DEBOUNCE_MS * 2 ** n, RETRY_CAP_MS);
+}
+
+/** What a failed request's HTTP status means for retrying it. `null` is a
+ *  request that never got a usable answer (network down, timeout, a body
+ *  that isn't a session state). "auth" (401) and "gone" (403/404) won't
+ *  change by asking again, so nothing retries them automatically; everything
+ *  else (5xx, 429, a malformed 409, ...) is retried with back-off. */
+export type RequestFailure = "retryable" | "auth" | "gone";
+export function classifyFailure(status: number | null): RequestFailure {
+  if (status === 401) return "auth";
+  if (status === 403 || status === 404) return "gone";
+  return "retryable";
+}
+
+/** The message shown when a failure stops automatic retries; null when the
+ *  failure is retryable. */
+export function stopMessage(status: number | null): string | null {
+  const kind = classifyFailure(status);
+  if (kind === "auth") return "You've been signed out — sign in again in another tab; your answers on this screen are kept.";
+  if (kind === "gone") return status === 403 ? "Your access to the SAT Lab has changed." : "This sitting isn't available to you any more.";
+  return null;
+}
+
+// --- Signed images (use-signed-images.ts) ---
+
+/** Splits a signing response for `requested` into the URLs it gave and the
+ *  requested paths it gave none for (the endpoint leaves out a path whose
+ *  signedUrl came back null). A body with no `urls` map at all isn't an
+ *  answer about any path: null, so the caller treats the request as failed. */
+export function splitSignedUrls(requested: string[], body: unknown): { urls: Record<string, string>; missing: string[] } | null {
+  const given = body && typeof body === "object" ? (body as { urls?: unknown }).urls : undefined;
+  if (!given || typeof given !== "object" || Array.isArray(given)) return null;
+  const map = given as Record<string, unknown>;
+  const urls: Record<string, string> = {};
+  const missing: string[] = [];
+  for (const path of requested) {
+    const url = Object.prototype.hasOwnProperty.call(map, path) ? map[path] : undefined;
+    if (typeof url === "string" && url) urls[path] = url;
+    else missing.push(path);
+  }
+  return { urls, missing };
 }
 
 /** A light shape check on a parsed 2xx response body before it's trusted as
@@ -189,6 +247,11 @@ function mixedNumberEntries(negative: boolean, w: number, n: number, d: number):
   return out;
 }
 
+/** "… is read as <value>." -- the value ends the sentence, so a value that
+ *  already ends in "." (the box keeps "11." as typed, graded as 11) takes no
+ *  second full stop. */
+const readAs = (value: string) => `is read as ${value}${value.endsWith(".") ? "" : "."}`;
+
 /** The warning for typed text with whitespace between two digits -- the box
  *  silently joins them ("1 1/2" becomes 11/2) -- quoting the student's own
  *  digits; null when there is no such sequence. */
@@ -197,9 +260,9 @@ export function mixedNumberWarning(typed: string): string | null {
   if (!/\d \d/.test(text)) return null;
   const read = stripSPR(text);
   const mixed = /^(-?)(\d+) (\d+)\/(\d+)$/.exec(text);
-  if (!mixed) return `Spaces aren't allowed — “${text}” is read as ${read}.`;
+  if (!mixed) return `Spaces aren't allowed — “${text}” ${readAs(read)}`;
   const entries = mixedNumberEntries(mixed[1] === "-", Number(mixed[2]), Number(mixed[3]), Number(mixed[4]));
-  return `Mixed numbers aren't allowed — “${text}” is read as ${read}.` + (entries.length ? ` Enter ${entries.join(" or ")}.` : "");
+  return `Mixed numbers aren't allowed — “${text}” ${readAs(read)}` + (entries.length ? ` Enter ${entries.join(" or ")}.` : "");
 }
 
 /** The entry exactly as it will be graded: a fraction as "n/d" with its
