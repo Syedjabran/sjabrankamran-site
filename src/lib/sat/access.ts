@@ -3,10 +3,10 @@
 // SERVER-ONLY. The SAT Lab is gated exactly like the physics tracks (spec 9):
 // enrolment in a class whose year label names SAT grants it; staff always have it.
 import { createAdminClient } from "@/lib/supabase/admin";
-import { isAdmin, isExamLabStaff, type PortalUser } from "@/lib/edu/auth";
+import { isAdmin, isExamLabStaff, isStaff, type EduRole, type PortalUser } from "@/lib/edu/auth";
 import { resolveCourseAccess, courseFromYear } from "@/lib/portal/course-access";
 import { visibleClassIdsForUid } from "@/lib/portal/timetable";
-import { getRegistry, staffRoleMap, type Registry } from "@/lib/portal/institutions";
+import { getRegistry, type Registry } from "@/lib/portal/institutions";
 
 export async function satAccess(user: PortalUser): Promise<{ ok: boolean; isStaff: boolean }> {
   const access = await resolveCourseAccess(user);
@@ -75,15 +75,17 @@ export async function canViewStudent(user: PortalUser, studentUid: string): Prom
   return (data ?? []).some((r) => classIds.has(r.class_id as string));
 }
 
-export type ScopedSatStudent = { uid: string; name: string; classId: string };
+// A student in more than one of the caller's SAT classes (unusual but
+// possible) carries every one of them; "which one is `the` class" (for a
+// UI that shows one name) is the FIRST of these, and only meaningful
+// because the query below is now explicitly ordered.
+export type ScopedSatStudent = { uid: string; name: string; classIds: string[] };
 
 /**
  * Every active-enrolment student in the caller's SAT class scope
- * (`satClassScope`), staff excluded -- one row per uid, attributed to
- * whichever of their active SAT-class enrolments is seen first (matches the
- * long-standing dedupe in the staff results roster below). Returns null on
- * any read failure (fail closed): a genuine Supabase error must never be
- * read as "no SAT students in scope".
+ * (`satClassScope`), staff excluded. Returns null on any read failure (fail
+ * closed): a genuine Supabase error must never be read as "no SAT students
+ * in scope".
  *
  * Shared by the staff results list (src/app/api/sat/results/route.ts) and
  * the assign-recipients resolver (src/app/api/sat/assignments/route.ts) so
@@ -95,23 +97,42 @@ export async function scopedSatStudents(user: PortalUser, registry?: Registry): 
   if (!classIds.length) return [];
   try {
     const db = createAdminClient();
+    // Ordered by class_id: an unordered select through this join gives no
+    // guarantee which row for a multi-class student comes back first, so
+    // without an explicit ORDER BY, "their first class" (classIds[0], what
+    // the results list shows as THE class) could vary call to call.
     const { data, error } = await db
       .from("edu_enrolments")
       .select("class_id, edu_students(profile_id, edu_profiles!edu_students_profile_id_fkey(full_name))")
       .in("class_id", classIds)
-      .eq("status", "active");
+      .eq("status", "active")
+      .order("class_id", { ascending: true });
     if (error) throw error;
     type EnrolRow = { class_id: string; edu_students?: { profile_id: string; edu_profiles?: { full_name?: string } } | null };
     const rows = (data ?? []) as unknown as EnrolRow[];
-    const byUid = new Map<string, ScopedSatStudent>();
+    const byUid = new Map<string, { name: string; classIds: string[] }>();
     for (const r of rows) {
       const uid = r.edu_students?.profile_id;
-      if (!uid || byUid.has(uid)) continue;
-      byUid.set(uid, { uid, name: r.edu_students?.edu_profiles?.full_name || "Student", classId: r.class_id });
+      if (!uid) continue;
+      const entry = byUid.get(uid);
+      if (entry) entry.classIds.push(r.class_id);
+      else byUid.set(uid, { name: r.edu_students?.edu_profiles?.full_name || "Student", classIds: [r.class_id] });
     }
     const uids = [...byUid.keys()];
-    const roleMap = await staffRoleMap(uids);
-    return uids.filter((uid) => !roleMap.has(uid)).map((uid) => byUid.get(uid)!);
+    if (!uids.length) return [];
+    // Staff filter fails CLOSED: a prior version destructured only `data`
+    // here, so a failed role read silently fell through as "nobody among
+    // these uids is staff" -- letting a coordinator/facilitator enrolled
+    // for class access appear as an assignable "student". The error is now
+    // checked and propagates to the outer catch -> null, same as every
+    // other read in this function.
+    const { data: roleRows, error: roleError } = await db.from("edu_user_roles").select("user_id, role").in("user_id", uids);
+    if (roleError) throw roleError;
+    const staffUids = new Set((roleRows ?? []).filter((r) => isStaff([r.role as EduRole])).map((r) => r.user_id as string));
+    return uids.filter((uid) => !staffUids.has(uid)).map((uid) => {
+      const entry = byUid.get(uid)!;
+      return { uid, name: entry.name, classIds: entry.classIds };
+    });
   } catch {
     return null;
   }

@@ -61,7 +61,9 @@ export async function GET() {
 
     const students = scoped
       .map((s) => ({
-        uid: s.uid, name: s.name, className: classNameById.get(s.classId) || "SAT class",
+        // A student in more than one of the caller's SAT classes shows
+        // under the first (now deterministic -- see scopedSatStudents).
+        uid: s.uid, name: s.name, className: classNameById.get(s.classIds[0]) || "SAT class",
         sessions: sessionsByUid.get(s.uid) ?? null,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));

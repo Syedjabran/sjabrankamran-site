@@ -2,10 +2,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Info, Loader2 } from "lucide-react";
-import { DOMAIN_LABEL, DOMAIN_SECTIONS, type AssignmentView, type PracticeTestInfo, type SessionSummary } from "@/lib/sat/client-types";
+import { DRILL_COUNT_DEFAULT, type AssignmentView, type PracticeTestInfo, type SessionSummary } from "@/lib/sat/client-types";
 import { formatPk } from "@/lib/portal/pk-time";
 import { ScoreBadge } from "./score-badge";
 import { SatAssign } from "./sat-assign";
+import { DrillFields, type DifficultyFilter, type SectionFilter } from "./drill-fields";
 
 type SessionsPayload = {
   sessions: SessionSummary[];
@@ -13,19 +14,6 @@ type SessionsPayload = {
   conversionTables: boolean;
   routingDisclosure: string;
 };
-
-// String-literal unions kept local (not imported from lib/sat/types.ts) so
-// this client component never reaches past client-types.ts into the
-// answer-key-carrying side of src/lib/sat/.
-type SectionFilter = "" | "rw" | "math";
-type DifficultyFilter = "" | "E" | "M" | "H";
-
-// Server enforces the same 5–30 bound (drills.ts DRILL_MIN/DRILL_MAX); kept
-// as plain numbers here rather than imported, since drills.ts pulls in
-// bank.ts (the answer key) and must never reach a client bundle.
-const DRILL_COUNT_MIN = 5;
-const DRILL_COUNT_MAX = 30;
-const DRILL_COUNT_DEFAULT = 10;
 
 function statusLabel(s: SessionSummary): string {
   return s.finishedAt === null ? "In progress" : `${s.correct}/${s.total}`;
@@ -88,11 +76,13 @@ export function SatHub({ isStaff }: { isStaff: boolean }) {
     }
   }
 
+  // Fix round 1 ruling: the client sends ONLY kind + assignmentId -- never
+  // testNo/filter/count, even for a practice/drill assignment whose values
+  // it already knows. The server takes those from the caller's OWN stored
+  // assignment (never trusting the body), so sending them here would be
+  // dead weight at best and a misleading (ignored) value at worst.
   function startAssignment(a: AssignmentView) {
-    const key = `assign-${a.id}`;
-    if (a.kind === "adaptive") void start(key, { kind: "adaptive", assignmentId: a.id });
-    else if (a.kind === "practice") void start(key, { kind: "practice", testNo: a.testNo, assignmentId: a.id });
-    else void start(key, { kind: "drill", count: DRILL_COUNT_DEFAULT, assignmentId: a.id });
+    void start(`assign-${a.id}`, { kind: a.kind, assignmentId: a.id });
   }
 
   if (loadError && !data) {
@@ -103,8 +93,6 @@ export function SatHub({ isStaff }: { isStaff: boolean }) {
     );
   }
   if (!data) return <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading the SAT Lab…</p>;
-
-  const domainOptions = DOMAIN_SECTIONS.filter((d) => !drillSection || d.section === drillSection);
 
   return (
     <div className="space-y-6">
@@ -173,45 +161,15 @@ export function SatHub({ isStaff }: { isStaff: boolean }) {
       <section className="min-w-0 rounded-2xl border border-white/10 bg-space/60 p-5">
         <h2 className="font-display text-lg text-ice">Drill</h2>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-4">
-          <label className="block min-w-0 text-xs text-fog">
-            Section
-            <select value={drillSection} onChange={(e) => { setDrillSection(e.target.value as SectionFilter); setDrillDomain(""); }} className="mt-1 w-full rounded-xl border border-white/15 bg-void px-3 py-2 text-sm text-ice focus:border-cyan focus:outline-none">
-              <option value="">Any</option>
-              <option value="rw">Reading and Writing</option>
-              <option value="math">Math</option>
-            </select>
-          </label>
-          <label className="block min-w-0 text-xs text-fog">
-            Domain
-            <select value={drillDomain} onChange={(e) => setDrillDomain(e.target.value)} className="mt-1 w-full rounded-xl border border-white/15 bg-void px-3 py-2 text-sm text-ice focus:border-cyan focus:outline-none">
-              <option value="">Any domain</option>
-              {domainOptions.map((d) => <option key={d.value} value={d.value}>{DOMAIN_LABEL[d.value] ?? d.value}</option>)}
-            </select>
-          </label>
-          <label className="block min-w-0 text-xs text-fog">
-            Difficulty
-            <select value={drillDifficulty} onChange={(e) => setDrillDifficulty(e.target.value as DifficultyFilter)} className="mt-1 w-full rounded-xl border border-white/15 bg-void px-3 py-2 text-sm text-ice focus:border-cyan focus:outline-none">
-              <option value="">Any</option>
-              <option value="E">Easy</option>
-              <option value="M">Medium</option>
-              <option value="H">Hard</option>
-            </select>
-          </label>
-          <label className="block min-w-0 text-xs text-fog">
-            Questions
-            <input
-              type="number" min={DRILL_COUNT_MIN} max={DRILL_COUNT_MAX} step={1} value={drillCount}
-              onChange={(e) => {
-                const n = Math.round(Number(e.target.value));
-                setDrillCount(Number.isFinite(n) ? Math.min(DRILL_COUNT_MAX, Math.max(DRILL_COUNT_MIN, n)) : DRILL_COUNT_DEFAULT);
-              }}
-              className="mt-1 w-full rounded-xl border border-white/15 bg-void px-3 py-2 text-sm text-ice focus:border-cyan focus:outline-none"
-            />
-          </label>
+          <DrillFields
+            section={drillSection} domain={drillDomain} difficulty={drillDifficulty} count={drillCount}
+            onSectionChange={setDrillSection} onDomainChange={setDrillDomain}
+            onDifficultyChange={setDrillDifficulty} onCountChange={setDrillCount}
+          />
         </div>
         <button
           disabled={busyKey === "drill"}
-          onClick={() => void start("drill", { kind: "drill", section: drillSection || undefined, domain: drillDomain || undefined, difficulty: drillDifficulty || undefined, count: drillCount })}
+          onClick={() => void start("drill", { kind: "drill", filter: { section: drillSection || undefined, domain: drillDomain || undefined, difficulty: drillDifficulty || undefined }, count: drillCount })}
           className="btn-primary mt-4 !px-4 !py-2 text-sm disabled:opacity-40"
         >
           {busyKey === "drill" ? <Loader2 size={14} className="animate-spin" /> : "Start drill"}

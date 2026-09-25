@@ -126,3 +126,16 @@ export const DOMAIN_SECTIONS: { value: string; section: "rw" | "math" }[] = [
   { value: "psda", section: "math" },
   { value: "geometry-trig", section: "math" },
 ];
+
+// Server enforces the same 5–30 bound (drills.ts DRILL_MIN/DRILL_MAX); kept
+// as plain numbers here rather than imported, since drills.ts pulls in
+// bank.ts (the answer key) and must never reach a client bundle. Shared by
+// the hub's own drill form and the staff assign panel (both via
+// DrillFields) so the bound and the default can't drift between them.
+export const DRILL_COUNT_MIN = 5;
+export const DRILL_COUNT_MAX = 30;
+export const DRILL_COUNT_DEFAULT = 10;
+
+// Same convention as DOMAIN_LABEL above -- plain UI copy, shared by the
+// drill filter (DrillFields) and the assign panel's title preview.
+export const DIFFICULTY_LABEL: Record<"E" | "M" | "H", string> = { E: "Easy", M: "Medium", H: "Hard" };

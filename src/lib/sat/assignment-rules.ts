@@ -30,16 +30,18 @@ export type SATAssignment = {
 
 /**
  * Merge one assignment into a student's list, idempotent on `a.id`: an
- * existing entry with that id is replaced in place (never duplicated); a
- * new one is prepended. A retried POST (same idempotencyKey) therefore never
- * grows the list.
+ * existing entry with that id is left UNTOUCHED -- not rewritten, even if
+ * `a`'s fields differ from the stored copy. A retried POST reuses the same
+ * idempotencyKey only for the SAME payload (the Assign panel rotates the
+ * key the moment anything about the assignment changes), so a same-id
+ * re-POST is always a retry of an identical assignment, and this way it can
+ * never clobber a status/sessionId the ASSIGNMENT HOOKs have since written
+ * (e.g. the student already started it in the few seconds before staff
+ * retried the request). A new id is prepended.
  */
 export function mergeAssignment(items: SATAssignment[], a: SATAssignment): SATAssignment[] {
-  const idx = items.findIndex((x) => x.id === a.id);
-  if (idx === -1) return [a, ...items];
-  const next = [...items];
-  next[idx] = a;
-  return next;
+  if (items.some((x) => x.id === a.id)) return items;
+  return [a, ...items];
 }
 
 /**

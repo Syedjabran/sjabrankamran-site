@@ -88,6 +88,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     if (summaries && (!entry || entry.finishedAt === null)) {
       await saveDoc(doc); // best effort; a repeat failure just retries on the next GET
     }
+    // Assignment self-healing, same idea: the ASSIGNMENT HOOK on the POST
+    // that finished this sitting/drill is best-effort and can miss (a lost
+    // update not recovered by its own one retry, a transient failure).
+    // markAssignment is itself a cheap no-op once "done" is already applied,
+    // so this costs one read on every finished-doc GET and never fails it.
+    if (doc.assignmentId) await markAssignment(ownerUid, doc.assignmentId, { status: "done" });
   }
   return NextResponse.json(stateOf(doc, now));
 }

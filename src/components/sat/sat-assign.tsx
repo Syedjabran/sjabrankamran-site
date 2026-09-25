@@ -1,7 +1,8 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { Loader2, Send } from "lucide-react";
-import { DOMAIN_LABEL, DOMAIN_SECTIONS, type PracticeTestInfo } from "@/lib/sat/client-types";
+import { DIFFICULTY_LABEL, DOMAIN_LABEL, type PracticeTestInfo } from "@/lib/sat/client-types";
+import { DrillFields, type DifficultyFilter, type SectionFilter } from "./drill-fields";
 // course-labels.ts is pure and isomorphic (no server imports, no `@/lib/sat/*`
 // answer-key modules) -- safe here even though course-access.ts (which
 // re-exports it) is not. See scripts/test-sat-access.mjs for the same split.
@@ -9,20 +10,9 @@ import { courseFromYear } from "@/lib/portal/course-labels";
 
 type Kind = "adaptive" | "practice" | "drill";
 type Mode = "class" | "students";
-type SectionFilter = "" | "rw" | "math";
-type DifficultyFilter = "" | "E" | "M" | "H";
 
 type ClassRow = { id: string; name: string; school: string; year: string | null; students: number; active: boolean };
 type StudentRow = { uid: string; name: string; className: string };
-
-// Server enforces the same 5–30 bound (drills.ts DRILL_MIN/DRILL_MAX) and the
-// same domain/difficulty literals -- kept as plain values here rather than
-// imported, since drills.ts/bank.ts pull in the question bank and must never
-// reach a client bundle (same convention as sat-hub.tsx's drill filter).
-const DRILL_COUNT_MIN = 5;
-const DRILL_COUNT_MAX = 30;
-const DRILL_COUNT_DEFAULT = 10;
-const DIFFICULTY_LABEL: Record<"E" | "M" | "H", string> = { E: "Easy", M: "Medium", H: "Hard" };
 
 const FIELD = "mt-1 w-full min-w-0 rounded-xl border border-white/15 bg-void px-3 py-2 text-sm text-ice focus:border-cyan focus:outline-none";
 const LABEL = "block min-w-0 text-xs text-fog";
@@ -47,12 +37,17 @@ function drillTitle(section: SectionFilter, domain: string, difficulty: Difficul
  * a new endpoint.
  */
 export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[] }) {
+  // Fix round 1 minor: only a practice test whose timings are actually
+  // loaded can be started at all (sat-hub.tsx's own list disables the
+  // untimed ones the same way) -- never offer staff a test nobody could sit.
+  const timedTests = useMemo(() => practiceTests.filter((t) => t.minutes), [practiceTests]);
+
   const [kind, setKind] = useState<Kind>("adaptive");
-  const [testNo, setTestNo] = useState<number | null>(practiceTests[0]?.testNo ?? null);
+  const [testNo, setTestNo] = useState<number | null>(timedTests[0]?.testNo ?? null);
   const [drillSection, setDrillSection] = useState<SectionFilter>("");
   const [drillDomain, setDrillDomain] = useState("");
   const [drillDifficulty, setDrillDifficulty] = useState<DifficultyFilter>("");
-  const [drillCount, setDrillCount] = useState(DRILL_COUNT_DEFAULT);
+  const [drillCount, setDrillCount] = useState(10);
 
   const [mode, setMode] = useState<Mode>("class");
   const [classes, setClasses] = useState<ClassRow[] | null>(null);
@@ -66,11 +61,19 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ added: number; failed: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // One key per assignment: a retry after a failure reuses it, so a retried
-  // POST is recognised server-side as the same assignment (adds nothing
-  // twice, re-notifies nobody who already had it) instead of creating a
-  // second one. Only rotated after a successful Assign.
+  // One key per DISTINCT assignment: reused across a retry of that exact
+  // payload (a network failure, or -- fix round 1 ruling 2 -- a partial
+  // failure's "Retry the N that failed"), so the server recognises it as
+  // the same assignment and, since a same-id entry is now left untouched
+  // rather than rewritten, the retry only ever reaches students who don't
+  // already have it. Only rotated after a FULLY successful send, or the
+  // moment the payload actually changes (markDirty below) -- never mid-retry.
   const idemKey = useRef(crypto.randomUUID());
+  // The exact payload last sent, kept only while a retry of it is still
+  // possible (a partial failure); cleared on a full success (nothing left
+  // to retry) or the moment anything changes (a stale payload must never
+  // be resent under a key that no longer describes it).
+  const lastPayloadRef = useRef<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -97,17 +100,29 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
     })();
   }, []);
 
+  // Fix round 1 ruling 1/2: any change to what would actually be sent
+  // invalidates a pending retry -- rotate to a fresh key and drop the old
+  // result/payload so a stale "Retry" can never fire under the wrong key
+  // (or resend a payload the visible form no longer matches).
+  function markDirty() {
+    if (lastPayloadRef.current) {
+      idemKey.current = crypto.randomUUID();
+      lastPayloadRef.current = null;
+      setResult(null);
+    }
+  }
+
   function switchMode(m: Mode) {
+    markDirty();
     setMode(m);
     setSelectedClassIds([]);
     setSelectedUids([]);
   }
 
   function toggle(list: string[], setList: (v: string[]) => void, id: string) {
+    markDirty();
     setList(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
   }
-
-  const domainOptions = DOMAIN_SECTIONS.filter((d) => !drillSection || d.section === drillSection);
 
   const title = useMemo(() => {
     if (kind === "adaptive") return "Adaptive mock exam";
@@ -132,32 +147,63 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
   const hasRecipients = mode === "class" ? selectedClassIds.length > 0 : selectedUids.length > 0;
   const canAssign = !busy && title !== null && hasRecipients && (kind !== "practice" || testNo !== null);
 
-  async function assign() {
-    if (!canAssign || !title) return;
+  function buildPayload(): Record<string, unknown> {
+    const payload: Record<string, unknown> = {
+      kind,
+      idempotencyKey: idemKey.current,
+      dueAt: dueAt || undefined,
+      classIds: mode === "class" ? selectedClassIds : undefined,
+      studentUids: mode === "students" ? selectedUids : undefined,
+    };
+    if (kind === "practice") payload.testNo = testNo;
+    if (kind === "drill") {
+      payload.count = drillCount;
+      payload.filter = { section: drillSection || undefined, domain: drillDomain || undefined, difficulty: drillDifficulty || undefined };
+    }
+    return payload;
+  }
+
+  async function send(payload: Record<string, unknown>) {
     setBusy(true); setError(null);
     try {
-      const payload: Record<string, unknown> = {
-        kind,
-        idempotencyKey: idemKey.current,
-        dueAt: dueAt || undefined,
-        classIds: mode === "class" ? selectedClassIds : undefined,
-        studentUids: mode === "students" ? selectedUids : undefined,
-      };
-      if (kind === "practice") payload.testNo = testNo;
-      if (kind === "drill") {
-        payload.count = drillCount;
-        payload.filter = { section: drillSection || undefined, domain: drillDomain || undefined, difficulty: drillDifficulty || undefined };
-      }
       const res = await fetch("/api/sat/assignments", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error || "Please try again.");
-      setResult({ added: j.added ?? 0, failed: j.failed ?? 0 });
-      idemKey.current = crypto.randomUUID();
+      const added = Number(j.added ?? 0);
+      const failed = Number(j.failed ?? 0);
+      setResult({ added, failed });
+      if (failed > 0) {
+        // Partial failure: keep the key AND the exact payload so "Retry
+        // the N that failed" resends it unchanged -- now that a same-id
+        // entry is left untouched (fix round 1 ruling 1), that retry only
+        // ever reaches the students who are still missing it.
+        lastPayloadRef.current = payload;
+      } else {
+        // Fully successful: nothing left to retry. Rotate the key so the
+        // NEXT Assign (a genuinely different assignment) never reuses it.
+        idemKey.current = crypto.randomUUID();
+        lastPayloadRef.current = null;
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
     }
+  }
+
+  function assign() {
+    if (!canAssign) return;
+    void send(buildPayload());
+  }
+
+  function retryFailed() {
+    if (lastPayloadRef.current) void send(lastPayloadRef.current);
+  }
+
+  function assignAnother() {
+    setResult(null);
+    lastPayloadRef.current = null;
+    idemKey.current = crypto.randomUUID();
   }
 
   return (
@@ -168,7 +214,7 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <label className={LABEL}>
           What
-          <select value={kind} onChange={(e) => setKind(e.target.value as Kind)} className={FIELD}>
+          <select value={kind} onChange={(e) => { markDirty(); setKind(e.target.value as Kind); }} className={FIELD}>
             <option value="adaptive">Adaptive mock exam</option>
             <option value="practice">Official practice test</option>
             <option value="drill">Drill</option>
@@ -178,57 +224,28 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
         {kind === "practice" ? (
           <label className={LABEL}>
             Test
-            {practiceTests.length ? (
-              <select value={testNo ?? ""} onChange={(e) => setTestNo(e.target.value ? Number(e.target.value) : null)} className={FIELD}>
-                {practiceTests.map((t) => <option key={t.testNo} value={t.testNo}>Practice Test {t.testNo}</option>)}
+            {timedTests.length ? (
+              <select value={testNo ?? ""} onChange={(e) => { markDirty(); setTestNo(e.target.value ? Number(e.target.value) : null); }} className={FIELD}>
+                {timedTests.map((t) => <option key={t.testNo} value={t.testNo}>Practice Test {t.testNo}</option>)}
               </select>
             ) : <p className="mt-1 text-xs text-fog">Official practice tests are being prepared.</p>}
           </label>
         ) : null}
 
         {kind === "drill" ? (
-          <>
-            <label className={LABEL}>
-              Section
-              <select value={drillSection} onChange={(e) => { setDrillSection(e.target.value as SectionFilter); setDrillDomain(""); }} className={FIELD}>
-                <option value="">Any</option>
-                <option value="rw">Reading and Writing</option>
-                <option value="math">Math</option>
-              </select>
-            </label>
-            <label className={LABEL}>
-              Domain
-              <select value={drillDomain} onChange={(e) => setDrillDomain(e.target.value)} className={FIELD}>
-                <option value="">Any domain</option>
-                {domainOptions.map((d) => <option key={d.value} value={d.value}>{DOMAIN_LABEL[d.value] ?? d.value}</option>)}
-              </select>
-            </label>
-            <label className={LABEL}>
-              Difficulty
-              <select value={drillDifficulty} onChange={(e) => setDrillDifficulty(e.target.value as DifficultyFilter)} className={FIELD}>
-                <option value="">Any</option>
-                <option value="E">Easy</option>
-                <option value="M">Medium</option>
-                <option value="H">Hard</option>
-              </select>
-            </label>
-            <label className={LABEL}>
-              Questions
-              <input
-                type="number" min={DRILL_COUNT_MIN} max={DRILL_COUNT_MAX} step={1} value={drillCount}
-                onChange={(e) => {
-                  const n = Math.round(Number(e.target.value));
-                  setDrillCount(Number.isFinite(n) ? Math.min(DRILL_COUNT_MAX, Math.max(DRILL_COUNT_MIN, n)) : DRILL_COUNT_DEFAULT);
-                }}
-                className={FIELD}
-              />
-            </label>
-          </>
+          <DrillFields
+            section={drillSection} domain={drillDomain} difficulty={drillDifficulty} count={drillCount}
+            onSectionChange={(v) => { markDirty(); setDrillSection(v); }}
+            onDomainChange={(v) => { markDirty(); setDrillDomain(v); }}
+            onDifficultyChange={(v) => { markDirty(); setDrillDifficulty(v); }}
+            onCountChange={(v) => { markDirty(); setDrillCount(v); }}
+            labelClassName={LABEL}
+          />
         ) : null}
 
         <label className={LABEL}>
           Due (optional · Pakistan time)
-          <input type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} className={FIELD} />
+          <input type="datetime-local" value={dueAt} onChange={(e) => { markDirty(); setDueAt(e.target.value); }} className={FIELD} />
         </label>
       </div>
 
@@ -265,7 +282,7 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
                 <button key={s.uid} type="button" onClick={() => toggle(selectedUids, setSelectedUids, s.uid)}
                   className={"flex w-full min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition " + (on ? "bg-cyan/15 text-ice" : "text-fog hover:bg-white/[0.04]")}>
                   <span className="min-w-0 truncate">{s.name}</span>
-                  <span className="shrink-0 text-xs text-dust">{s.className}</span>
+                  <span className="max-w-[45%] shrink-0 truncate text-xs text-dust">{s.className}</span>
                 </button>
               );
             })}
@@ -273,13 +290,21 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
         )
       )}
 
-      {result ? (
-        <p className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-emerald2/30 bg-emerald2/5 px-3 py-2.5 text-sm text-emerald2">
-          <span className="min-w-0">
-            Assigned to {result.added} {result.added === 1 ? "student" : "students"}{result.failed ? ` · ${result.failed} couldn't be reached, try again` : ""}.
-          </span>
-          <button type="button" onClick={() => setResult(null)} className="ml-auto shrink-0 text-xs text-emerald2 underline">Assign another</button>
-        </p>
+      {result && result.failed > 0 ? (
+        // Partial failure: KEEP the key and the exact payload (fix round 1
+        // ruling 2) -- "Assign another" is deliberately not offered here,
+        // since it only rotates the key after a FULLY successful send.
+        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-amber-300/30 bg-amber-300/5 px-3 py-2.5 text-sm text-amber-200">
+          <span className="min-w-0">Assigned to {result.added} {result.added === 1 ? "student" : "students"} · {result.failed} couldn&rsquo;t be reached.</span>
+          <button type="button" disabled={busy} onClick={retryFailed} className="ml-auto shrink-0 text-xs text-amber-200 underline disabled:opacity-40">
+            {busy ? "Retrying…" : `Retry the ${result.failed} that failed`}
+          </button>
+        </div>
+      ) : result ? (
+        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-emerald2/30 bg-emerald2/5 px-3 py-2.5 text-sm text-emerald2">
+          <span className="min-w-0">Assigned to {result.added} {result.added === 1 ? "student" : "students"}.</span>
+          <button type="button" onClick={assignAnother} className="ml-auto shrink-0 text-xs text-emerald2 underline">Assign another</button>
+        </div>
       ) : (
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <p className="min-w-0 text-sm text-fog">

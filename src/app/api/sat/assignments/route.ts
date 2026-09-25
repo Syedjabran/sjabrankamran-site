@@ -13,25 +13,11 @@ import { notify } from "@/lib/portal/notifications";
 import { pkDateTimeToIso, formatPk } from "@/lib/portal/pk-time";
 import { listAssignments, addAssignments, type SATAssignment } from "@/lib/sat/assignments";
 import { drillTitle, DRILL_MIN, DRILL_MAX } from "@/lib/sat/drills";
+import { satFilterSchema } from "@/lib/sat/filter-schema";
+import { practiceTestList } from "@/lib/sat/serve";
 import type { AssignmentView } from "@/lib/sat/client-types";
 
 export const runtime = "nodejs";
-
-// Duplicated from src/app/api/sat/sessions/route.ts rather than imported --
-// that file keeps the same local literal list for the same reason (a tiny,
-// stable set of string literals; nothing here justifies a shared constants
-// module across the two routes).
-const SAT_DOMAINS = [
-  "information-ideas", "craft-structure", "expression-ideas", "standard-english",
-  "algebra", "advanced-math", "psda", "geometry-trig",
-] as const;
-
-const filterSchema = z.object({
-  section: z.enum(["rw", "math"]).optional(),
-  domain: z.enum(SAT_DOMAINS).optional(),
-  difficulty: z.enum(["E", "M", "H"]).optional(),
-  skill: z.string().max(120).optional(),
-});
 
 // Shared by every kind branch below (spread, not a nested z.object -- zod's
 // discriminatedUnion needs "kind" as a literal directly on each object).
@@ -45,10 +31,16 @@ const recipients = {
 const bodySchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("adaptive"), ...recipients }),
   z.object({ kind: z.literal("practice"), testNo: z.number().int().min(1).max(99), ...recipients }),
-  z.object({ kind: z.literal("drill"), filter: filterSchema.optional(), count: z.number().int().min(DRILL_MIN).max(DRILL_MAX), ...recipients }),
+  z.object({ kind: z.literal("drill"), filter: satFilterSchema.optional(), count: z.number().int().min(DRILL_MIN).max(DRILL_MAX), ...recipients }),
 ]);
 
 const unavailable = () => NextResponse.json({ error: "Your assignments couldn't be loaded. Please try again." }, { status: 503 });
+// A zod failure surfaces its own issue message when one was set (every
+// custom check above -- the shared filter schema's domain/section and
+// bank-match refinements included -- sets a clear one); a plain shape
+// mismatch falls back to the generic message.
+const invalidRequest = (parsed: { success: false; error: z.ZodError }) =>
+  NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid request." }, { status: 400 });
 
 function toView(a: SATAssignment): AssignmentView {
   return { id: a.id, kind: a.kind, title: a.title, testNo: a.testNo, dueAt: a.dueAt, status: a.status, sessionId: a.sessionId, assignedByName: a.assignedByName };
@@ -77,7 +69,7 @@ export async function POST(req: Request) {
   if (!isExamLabStaff(user.roles)) return NextResponse.json({ error: "Not authorized." }, { status: 403 });
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
+  if (!parsed.success) return invalidRequest(parsed);
   const b = parsed.data;
 
   let dueAt: string | null = null;
@@ -85,6 +77,14 @@ export async function POST(req: Request) {
     dueAt = pkDateTimeToIso(b.dueAt);
     if (!dueAt) return NextResponse.json({ error: "Invalid due date." }, { status: 400 });
     if (Date.parse(dueAt) <= Date.now()) return NextResponse.json({ error: "The due date must be in the future." }, { status: 400 });
+  }
+
+  // A practice test must actually exist AND have its timings loaded --
+  // otherwise staff could assign a test nobody can start (the sessions
+  // route's own practice-start would 404/409 on it).
+  if (b.kind === "practice") {
+    const test = practiceTestList().find((t) => t.testNo === b.testNo);
+    if (!test || !test.minutes) return NextResponse.json({ error: "That practice test isn't available yet." }, { status: 400 });
   }
 
   let registry;
@@ -99,12 +99,14 @@ export async function POST(req: Request) {
   if (scoped === null) return unavailable();
 
   // Recipients = the caller's SAT class scope INTERSECTED with whichever of
-  // classIds/studentUids the request named. Neither named -> nobody (falls
-  // into the "No SAT students in scope" 400 below, same as an unrecognised
-  // class/uid would).
+  // classIds/studentUids the request named -- a student enrolled in MORE
+  // THAN ONE of the caller's SAT classes counts if ANY of their classes was
+  // named, not just their "first" one. Neither classIds nor studentUids
+  // named -> nobody (falls into the "No SAT students in scope" 400 below,
+  // same as an unrecognised class/uid would).
   const classSet = new Set(b.classIds ?? []);
   const uidSet = new Set(b.studentUids ?? []);
-  const recipientUids = [...new Set(scoped.filter((s) => classSet.has(s.classId) || uidSet.has(s.uid)).map((s) => s.uid))];
+  const recipientUids = [...new Set(scoped.filter((s) => s.classIds.some((cid) => classSet.has(cid)) || uidSet.has(s.uid)).map((s) => s.uid))];
   if (!recipientUids.length) return NextResponse.json({ error: "No SAT students in scope." }, { status: 400 });
 
   const title =
@@ -128,6 +130,10 @@ export async function POST(req: Request) {
   };
 
   const { added, failed, newUids } = await addAssignments(recipientUids, assignment);
+  // Every recipient failed -- fail closed rather than a false "assigned to
+  // 0 students" 200. A partial failure still returns 200 with the count
+  // (the panel offers "Retry the N that failed").
+  if (added === 0 && failed > 0) return unavailable();
   // Re-notifying no one who already had it (idempotencyKey ruling): only
   // the uids `addAssignments` actually saw for the first time get a bell.
   if (newUids.length) {

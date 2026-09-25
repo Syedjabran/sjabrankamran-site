@@ -12,6 +12,7 @@ import { hasConversionTables, practiceTest, practiceTestList } from "@/lib/sat/s
 import { ROUTING_DISCLOSURE } from "@/lib/sat/adaptive";
 import { listSummaries, loadDoc, saveDoc } from "@/lib/sat/store";
 import { listAssignments, markAssignment, resolveStart, type SATAssignment } from "@/lib/sat/assignments";
+import { satFilterSchema } from "@/lib/sat/filter-schema";
 import type { SATFilter } from "@/lib/sat/bank";
 
 export const runtime = "nodejs";
@@ -26,26 +27,20 @@ const rng = () => randomInt(0, 2 ** 32) / 2 ** 32;
 // old, abandoned, unfinished sitting stops narrowing the drill pool forever.
 const RECENT_MS = 4 * 60 * 60 * 1000;
 
-const SAT_DOMAINS = [
-  "information-ideas", "craft-structure", "expression-ideas", "standard-english",
-  "algebra", "advanced-math", "psda", "geometry-trig",
-] as const;
-
-// testNo/count are OPTIONAL here: starting from an assignment (Task 9), the
-// client sends only `assignmentId` (plus `kind`, used solely to pick which
-// of these three shapes to validate against) -- the server takes kind,
-// testNo, filter and count FROM THE STORED ASSIGNMENT, never from this
-// body. The superRefine below is what still requires them when there is no
-// assignmentId (the pre-Task-9 direct-start path).
+// testNo/filter/count are OPTIONAL here: starting from an assignment (Task
+// 9), the client sends only `assignmentId` (plus `kind`, used solely to
+// pick which of these three shapes to validate against) -- the server
+// takes kind, testNo, filter and count FROM THE STORED ASSIGNMENT, never
+// from this body. The superRefine below is what still requires them when
+// there is no assignmentId (the pre-Task-9 direct-start path). `filter`
+// uses the same shared schema (and its domain/section + bank-match
+// validation) as the assign route's drill filter -- fix round 1 ruling.
 const body = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("adaptive"), assignmentId: z.string().max(64).optional() }),
   z.object({ kind: z.literal("practice"), testNo: z.number().int().min(1).max(99).optional(), assignmentId: z.string().max(64).optional() }),
   z.object({
     kind: z.literal("drill"),
-    section: z.enum(["rw", "math"]).optional(),
-    domain: z.enum(SAT_DOMAINS).optional(),
-    skill: z.string().max(120).optional(),
-    difficulty: z.enum(["E", "M", "H"]).optional(),
+    filter: satFilterSchema.optional(),
     count: z.number().int().min(DRILL_MIN).max(DRILL_MAX).optional(),
     assignmentId: z.string().max(64).optional(),
   }),
@@ -56,6 +51,11 @@ const body = z.discriminatedUnion("kind", [
 });
 
 const accessUnavailable = () => NextResponse.json({ error: "Your access couldn't be checked. Please try again." }, { status: 503 });
+// Surfaces a specific zod issue message (the shared filter schema's
+// domain/section + bank-match refinements set a clear one) instead of a
+// flat "Invalid request." for every failure.
+const invalidRequest = (parsed: { success: false; error: z.ZodError }) =>
+  NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid request." }, { status: 400 });
 
 export async function GET() {
   const user = await getPortalUser();
@@ -113,7 +113,7 @@ export async function POST(req: Request) {
   }
   if (!access.ok) return NextResponse.json({ error: "The SAT Lab is not part of your courses." }, { status: 403 });
   const parsed = body.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
+  if (!parsed.success) return invalidRequest(parsed);
   const b = parsed.data;
 
   // Starting from an assignment: load the CALLER'S OWN assignment and take
@@ -146,7 +146,7 @@ export async function POST(req: Request) {
     if (!test.minutes) return NextResponse.json({ error: "That practice test's timings are not loaded." }, { status: 409 });
     doc = startPractice(test, ids);
   } else {
-    const filter: SATFilter = assignment ? (assignment.filter ?? {}) : (b.kind === "drill" ? { section: b.section, domain: b.domain, skill: b.skill, difficulty: b.difficulty } : {});
+    const filter: SATFilter = assignment ? (assignment.filter ?? {}) : (b.kind === "drill" ? (b.filter ?? {}) : {});
     const count = assignment ? assignment.count : (b.kind === "drill" ? (b.count ?? null) : null);
     if (count === null) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
     const exclude = await recentUnfinishedIds(user.id, ids.now);
