@@ -9,10 +9,13 @@ exports drop that line entirely but still state the choice in the rationale
 ("Choice B is correct."). Grid-in (SPR) items often omit it too and state the
 answer inside the rationale instead, either as "The correct answer is 2.6" or,
 when the value is a rendered fraction the text layer drops, as "Note that 3/2
-and 1.5 are examples of ways to enter a correct answer". Anything still
-unresolved is rejected, never guessed.
+and 1.5 are examples of ways to enter a correct answer". That prose path is
+shared with the practice tests' answer key and fails closed: a block with the
+entry note resolves from the note or is rejected (`_note_answer`). Anything
+still unresolved is rejected, never guessed.
 """
 import re
+from fractions import Fraction
 from itertools import combinations
 
 DOMAIN_SLUGS = {
@@ -93,24 +96,37 @@ _CHOICE_CORRECT = re.compile(r"Choice ([A-D]) is correct\b")
 # separator, so "The correct answer is 4,205." is 4205, not 4 (practice tests
 # 5-11 and bank id 9ee22c16). Several values may be stated with "or" ("15 or
 # -5", practice test 4, Math module 2 Q6); every one of them is an answer.
-_NUMBER = r"-?\d+(?:,\d{3}(?!\d))*(?:\.\d+)?(?:/\d+)?"
+# The minus may be printed as an en dash or U+2212; `_forms` normalises it.
+_NUMBER = r"[-–−]?\d+(?:,\d{3}(?!\d))*(?:\.\d+)?(?:/\d+)?"
 _IN_RATIONALE = re.compile(rf"The correct answer is\s+({_NUMBER}(?:\s+or\s+{_NUMBER})*)")
-_THOUSANDS = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
+# A number printed with thousands separators: 1-3 digits not continuing a
+# fraction or decimal, then comma-and-exactly-three-digit groups. "3,540" is
+# one value; "3/2,1.5" is two.
+_GROUPED = re.compile(r"(?<![\d./])(\d{1,3})((?:,\d{3})+)(?!\d)")
+_DASHES = str.maketrans({"–": "-", "−": "-"})
 # What separates the forms of one answer, measured on every answer line,
-# entry note and "either" list in both corpora: a comma followed by
-# whitespace (optionally then "and"/"or"), or "and"/"or" between spaces.
-# A comma with no space after it is never a separator -- it is a thousands
-# separator, stripped by `_forms`.
-_FORM_SEPARATOR = re.compile(r",\s+(?:(?:and|or)\s+)?|\s+(?:and|or)\s+")
-# The trailing "of ways to enter a correct answer" is dropped: pdftotext's
-# column layout sometimes reorders this sentence so that half lands earlier
-# in the block than "Note that ... are examples" itself (see
-# test_spr_entry_note_survives_reordered_suffix). The captured group is the
-# same either way, so relaxing the suffix costs nothing on the normal case.
-# `Note\s+that`, not `Note that`: the phrase wraps across a line break in the
-# real material (confirmed in practice test 9, Math module 2 Q14), and a
-# literal space silently fails to match there.
-_ENTRY_NOTE = re.compile(r"Note\s+that\s+(.+?)\s+are examples")
+# entry note and "either" list in both corpora: a comma (with or without
+# whitespace, optionally then "and"/"or"), or "and"/"or" between spaces.
+# Thousands separators are removed before this split, so never split on.
+_FORM_SEPARATOR = re.compile(r"\s*,\s*(?:(?:and|or)\s+)?|\s+(?:and|or)\s+")
+# One grid-in entry as a student types it: an integer, a decimal (with or
+# without a leading 0), or a fraction, optionally negative.
+_PLAIN = re.compile(r"^-?(?:\d+(?:\.\d+)?|\.\d+|\d+/[1-9]\d*)$")
+# The entry note: "Note that 3/2 and 1.5 are examples of ways to enter a
+# correct answer." pdftotext wraps it anywhere -- "Note\nthat" (test 9),
+# "are\nexamples" (tests 4, 6, 7), and it drops stacked-fraction digits and
+# equation fragments *between* the note's own lines (test 4 M2 Q13's note
+# reads "Note that\n100\n10\n3/10 and .3 are examples"). So the note runs
+# from the "Note that" nearest its end to whichever end comes first, "are
+# examples" or "examples of ways"; `_note_forms` then reads it line by line.
+_NOTE = re.compile(
+    r"Note\s+that\b((?:(?!Note\s+that\b).)*?)(?:\bare\s+examples\b|\bexamples\s+of\s+ways\b)",
+    re.S,
+)
+# A line of the note that carries the list itself: it has a list separator.
+# A line without one, between the note's first and last lines, is a fragment
+# the text layer dropped there ("100", "cos (L) =", "17n").
+_LIST_LINE = re.compile(r",|\band\b|\bor\b")
 # A grid-in whose equation has several roots is answered with all of them:
 # "The correct answer is either 8 or 9." / "... either 14, -5, or -4."
 # These are distinct correct answers, not alternative spellings of one, and
@@ -124,31 +140,134 @@ _ENTRY_NOTE = re.compile(r"Note\s+that\s+(.+?)\s+are examples")
 # The terminator is a period followed by whitespace rather than `[^.]`, so a
 # decimal answer ("either 2.5 or 3.") keeps its fractional part.
 _EITHER = re.compile(r"The correct answer is either\s+(.+?)\.\s")
+# The same statement when its values are images the text layer dropped
+# (bank id eeb4143c: "The correct answer is either\n\n,\n\n, or\n\n."). It
+# still says the note lists several distinct answers.
+_EITHER_PHRASE = re.compile(r"The correct answer is\s+either\b")
+
+
+def _ungroup(text: str) -> str:
+    """Remove thousands separators ("3,540" -> "3540"; College Board's own
+    answer lines print these values without one, e.g. 2850 and 11875)."""
+    return _GROUPED.sub(lambda m: m.group(1) + m.group(2).replace(",", ""), text)
 
 
 def _forms(listing: str) -> list[str]:
     """The separate accepted forms in a printed list of them, each as a
-    student enters it: trimmed, no trailing punctuation, no thousands
-    separator ("3,540" -> "3540"; College Board's own answer lines print
-    these values without one, e.g. 2850 and 11875).
+    student enters it -- or [] when any part of the list is not a plain
+    grid-in entry ("B Rationale" merged onto an answer line), because a list
+    that cannot be read whole must not ship in part.
 
-    Every answer path below splits through this one function, so the bank
-    and the practice tests can never disagree on how a list is read.
+    Every list-reading path below splits through this one function, so the
+    bank and the practice tests can never disagree on how a list is read.
     """
-    parts = (_THOUSANDS.sub("", p.strip().rstrip(".,;:").strip()) for p in _FORM_SEPARATOR.split(listing))
-    return [p for p in parts if p]
+    parts = [
+        p.strip().rstrip(".,;:").strip()
+        for p in _FORM_SEPARATOR.split(_ungroup(listing.translate(_DASHES)))
+    ]
+    parts = [p for p in parts if p]
+    return parts if parts and all(_PLAIN.match(p) for p in parts) else []
 
 
-def _entry_note_values(text: str) -> list[str]:
-    """Every accepted form an entry note lists, or [] when there is none.
+def _note_forms(text: str) -> list[str] | None:
+    """The plain forms an entry note lists: None when the text has no note,
+    [] when it has one that yields no plain form.
 
-    The forms are joined by commas, "and", or "or" ("Note that 11/4 or 2.75
-    are examples", practice test 7, Math module 2 Q7); leaving "or" out
-    shipped "11/4 or 2.75" as one value no student entry can ever match.
-    Shared with parse_answers so both corpora split a note identically.
+    The note's first line (from "Note that") and last line (up to "are
+    examples") are always read; a line between them is read only if it
+    carries a list separator, so the fragments pdftotext drops between the
+    note's lines are skipped. Of what is read, only plain grid-in tokens are
+    kept -- words and equation pieces are not forms. Whether the result is
+    trustworthy is `_note_answer`'s decision, not this function's.
     """
-    note = _ENTRY_NOTE.search(text)
-    return _forms(note.group(1)) if note else []
+    note = _NOTE.search(text)
+    if note is None:
+        return None
+    lines = note.group(1).split("\n")
+    kept = [ln for i, ln in enumerate(lines) if i in (0, len(lines) - 1) or _LIST_LINE.search(ln)]
+    tokens = re.split(r"[\s,]+", _ungroup(" ".join(kept).translate(_DASHES)))
+    return [t for t in (tok.rstrip(".;:") for tok in tokens) if _PLAIN.match(t)]
+
+
+def _places(form: str) -> int:
+    return len(form.split(".", 1)[1]) if "." in form else 0
+
+
+def _note_values(forms: list[str]) -> set[Fraction] | None:
+    """The distinct values a note's forms spell, or None when they do not
+    hang together.
+
+    Integers and fractions are exact, so each one is a value. A decimal is a
+    grid-in's truncation or rounding of a value, so it must lie within one
+    unit of its own last place of one of those values (".8823" and ".8824"
+    are both 15/17); a decimal that matches none is a misread or a misprint
+    (test 6 M2 Q20 prints "0.219" among the forms of 7/24 = 0.2916...). A
+    note of decimals alone is one value, each within the coarser one's last
+    place of the others.
+    """
+    exact = {Fraction(f) for f in forms if "." not in f}
+    decimals = [f for f in forms if "." in f]
+    if not exact:
+        first = decimals[0]
+        close = all(
+            abs(Fraction(d) - Fraction(first)) <= Fraction(1, 10 ** min(_places(d), _places(first)))
+            for d in decimals
+        )
+        return {Fraction(first)} if close else None
+    for d in decimals:
+        if not any(abs(Fraction(d) - v) < Fraction(1, 10 ** _places(d)) for v in exact):
+            return None
+    return exact
+
+
+def _agrees(stated: str, forms: list[str]) -> bool:
+    """Whether a stated value corroborates the note's forms.
+
+    Numerically equal to one of them, or -- the one text-layer artefact this
+    admits -- the stated sentence's rendering of the note's own stacked
+    fraction p/q: pdftotext keeps only the numerator on that line ("The
+    correct answer is 11" for 11/28, tests 4-11), only the denominator
+    (test 6 M2 Q20's "24" for 7/24, whose 7 lands on the line above), or
+    both digits run together ("12" for 1/2, test 6 M1 Q13; "14" for 1/4,
+    test 10 M2 Q21). Anything else is a conflict.
+    """
+    if any(Fraction(stated) == Fraction(f) for f in forms):
+        return True
+    if not stated.isdigit():
+        return False
+    fractions = (f.lstrip("-").split("/") for f in forms if "/" in f)
+    return any(stated in (p, q, p + q) for p, q in fractions)
+
+
+def _note_answer(text: str) -> tuple[list[str] | None, str | None]:
+    """(forms, reject_reason) for a block's entry note; (None, None) when the
+    block has no note.
+
+    Fail closed: a block that carries the note sentence resolves from the
+    note or not at all -- never from the stated fallback, which is exactly
+    what shipped "3" for 3/10 when the note wrapped. The note must yield
+    plain forms that hang together (`_note_values`); several distinct values
+    are accepted only in the multi-root shape ("The correct answer is either
+    ..." or several stated values); and every stated or "either" value must
+    agree with the note (`_agrees`), else the two official statements
+    disagree and the item is rejected rather than resolved by choosing one.
+    """
+    forms = _note_forms(text)
+    if forms is None:
+        return None, None
+    values = _note_values(forms) if forms else None
+    if not values:
+        return None, "unreadable-entry-note"
+    stated = _either_values(text) or _stated_values(text)
+    if len(values) > 1:
+        if not (_EITHER_PHRASE.search(text) or len(stated) > 1):
+            return None, "unreadable-entry-note"
+        if len(stated) > 1 and {Fraction(s) for s in stated} != values:
+            return None, f"answer-source-conflict: stated={stated} note={forms}"
+    disagree = [s for s in stated if not _agrees(s, forms)]
+    if disagree:
+        return None, f"answer-source-conflict: stated={disagree} note={forms}"
+    return forms, None
 
 
 def _either_values(text: str) -> list[str]:
@@ -166,9 +285,31 @@ def _either_values(text: str) -> list[str]:
 
 def _stated_values(text: str) -> list[str]:
     """Every value "The correct answer is ..." states, or [] when there is
-    none. Shared with parse_answers."""
+    none."""
     stated = _IN_RATIONALE.search(text)
     return _forms(stated.group(1)) if stated else []
+
+
+def _spr_from_rationale(text: str) -> tuple[dict | None, str | None]:
+    """A grid-in answer read from the rationale prose: (answer, reason).
+
+    The entry note first, and fail-closed (`_note_answer`); only a block with
+    no note at all falls back to the "either" roots, then the stated value.
+    Shared by the bank (after its answer line) and parse_answers (after its
+    MCQ phrasings), so both corpora resolve prose identically.
+    """
+    forms, reason = _note_answer(text)
+    if reason:
+        return None, reason
+    if forms:
+        return {"kind": "spr", "accepted": forms, "source": "entry-note"}, None
+    vals = _either_values(text)
+    if vals:
+        return {"kind": "spr", "accepted": vals, "source": "rationale-either"}, None
+    vals = _stated_values(text)
+    if vals:
+        return {"kind": "spr", "accepted": vals, "source": "rationale-stated"}, None
+    return None, "no-answer"
 
 
 def _lines(text: str) -> list[str]:
@@ -298,7 +439,9 @@ def _answer_from(text: str) -> tuple[dict | None, str | None]:
             return {"kind": "mcq", "correct": "ABCD".index(line_letter), "source": "answer-line"}, None
         vals = _forms(raw)
         if not vals:
-            return None, "no-answer"
+            # Not a letter and not a list of plain grid-in forms -- e.g. a
+            # letter with the next heading merged on ("B Rationale").
+            return None, "unreadable-answer-line"
         return {"kind": "spr", "accepted": vals, "source": "answer-line"}, None
 
     # No `Correct Answer:` line at all: MCQ's rationale-stated "Choice X is
@@ -311,19 +454,7 @@ def _answer_from(text: str) -> tuple[dict | None, str | None]:
     if choice:
         return {"kind": "mcq", "correct": "ABCD".index(choice.group(1)), "source": "rationale"}, None
 
-    vals = _entry_note_values(text)
-    if vals:
-        return {"kind": "spr", "accepted": vals, "source": "entry-note"}, None
-
-    vals = _either_values(text)
-    if vals:
-        return {"kind": "spr", "accepted": vals, "source": "rationale-either"}, None
-
-    vals = _stated_values(text)
-    if vals:
-        return {"kind": "spr", "accepted": vals, "source": "rationale-stated"}, None
-
-    return None, "no-answer"
+    return _spr_from_rationale(text)
 
 
 def _parse_block_detailed(block: str) -> tuple[dict | None, str | None]:

@@ -2,7 +2,12 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from parse_qbank import parse_block, parse_export, DOMAIN_SLUGS, _domain_and_skill
+from fractions import Fraction
+
+from parse_qbank import (
+    DOMAIN_SLUGS, _domain_and_skill, _forms, _note_values, _parse_block_detailed,
+    parse_block, parse_export,
+)
 
 MCQ = """ b1c2d3e4
 
@@ -501,12 +506,15 @@ def test_spr_either_phrasing_keeps_a_decimal_intact():
 def test_entry_note_matches_when_the_phrase_wraps_across_a_line_break():
     """pdftotext breaks "Note that" across lines in the real material
     (practice test 9, Math module 2 Q14). A literal space silently missed it
-    and the item fell through to no-answer despite a stated answer."""
+    and the item fell through to no-answer despite a stated answer. The
+    item's "either" sentence (as printed there) is what makes a note of two
+    distinct values a multi-root answer rather than unreadable fragments."""
     block = (
         "ef019012\nAssessment\nSAT\nTest\nMath\nDomain\nAlgebra\nSkill\n"
         "Linear equations in one variable\nDifficulty\nMedium\n"
         "Question\nSolve.\n"
-        "Rationale\nSetting each factor equal to 0 yields two equations. Note\n"
+        "Rationale\nThe correct answer is either 2 or -12. "
+        "Setting each factor equal to 0 yields two equations. Note\n"
         "that 2 and -12 are examples of ways to enter a correct answer.\n"
     )
     record = parse_block(block)
@@ -565,3 +573,68 @@ def test_stated_answer_keeps_every_digit_past_a_thousands_separator():
 def test_stated_answer_with_or_ships_both_values():
     record = parse_block(_spr_block("abcd0003", "Rationale\nThe correct answer is 15 or -5 . By the definition.\n"))
     assert record["answer"]["accepted"] == ["15", "-5"]
+
+
+def test_forms_split_a_list_with_no_space_after_its_comma():
+    assert _forms("3/2,1.5") == ["3/2", "1.5"]
+    record = parse_block(_spr_block("abcd0004", "Correct Answer: 3/2,1.5\n\nRationale\nText.\n"))
+    assert record["answer"]["accepted"] == ["3/2", "1.5"]
+
+
+def test_forms_keep_a_thousands_separator_apart_from_a_list_comma():
+    assert _forms("3,540") == ["3540"]
+    assert _forms("1,260 or 3/2,150") == ["1260", "3/2", "150"]
+
+
+def test_forms_read_an_en_dash_or_minus_sign_as_a_minus():
+    assert _forms("15 and –5") == ["15", "-5"]
+    assert _forms("−13/2, −6.5") == ["-13/2", "-6.5"]
+    record = parse_block(_spr_block("abcd0005", "Rationale\nThe correct answer is –5. Adding 5 to both sides.\n"))
+    assert record["answer"]["accepted"] == ["-5"]
+
+
+def test_forms_reject_a_list_with_any_non_plain_part():
+    assert _forms("B Rationale") == []
+    assert _forms("3/2 and x") == []
+
+
+def test_answer_line_with_text_merged_onto_it_is_rejected():
+    """A letter with the next heading run onto its line is neither an MCQ
+    letter nor a grid-in list; it is rejected, not read as either."""
+    block = _spr_block("abcd0006", "Correct Answer: B Rationale\nChoice B is correct.\n")
+    record, reason = _parse_block_detailed(block)
+    assert record is None and reason == "unreadable-answer-line"
+
+
+def test_bank_note_fails_closed_when_it_cannot_be_read():
+    """The rule is shared: a bank block with the note sentence resolves from
+    the note or is rejected -- never from its stated value."""
+    tail = ("Rationale\nThe correct answer is 3 . The probability is 30 over 100. Note that\n"
+            "100\n10\nthree tenths are examples of ways to enter a correct answer.\n")
+    record, reason = _parse_block_detailed(_spr_block("abcd0007", tail))
+    assert record is None and reason == "unreadable-entry-note"
+
+
+def test_bank_wrapped_note_is_read_and_corroborated_by_its_stated_value():
+    """Bank id fea831fc shape: the note wraps, so round 2 shipped only the
+    stated 25.4 and dropped the equivalent 127/5."""
+    tail = ("Rationale\nThe correct answer is 25.4. It follows that x = 25.4. Note that 25.4 and\n"
+            "127/5 are examples of ways to enter a correct answer.\n")
+    record = parse_block(_spr_block("fea831fc", tail))
+    assert record["answer"] == {"kind": "spr", "accepted": ["25.4", "127/5"], "source": "entry-note"}
+
+
+def test_bank_either_with_dropped_values_still_admits_a_multi_value_note():
+    """Bank id eeb4143c: "The correct answer is either , , or ." (the values
+    are images) and a note listing three answers with their decimals."""
+    tail = ("Rationale\nThe correct answer is either\n\n,\n\n, or\n\n. The area of triangle ABC.\n"
+            ". Note that 10/3, 15/4, 25/6, 3.333, 3.75, 4.166, and 4.167 are examples of ways to "
+            "enter a correct answer.\n")
+    record = parse_block(_spr_block("eeb4143c", tail))
+    assert record["answer"]["accepted"] == ["10/3", "15/4", "25/6", "3.333", "3.75", "4.166", "4.167"]
+
+
+def test_note_values_accept_truncated_and_rounded_decimals_only():
+    assert _note_values(["15/17", ".8824", ".8823", "0.882"]) == {Fraction(15, 17)}
+    assert _note_values(["7/24", ".2916", ".2917", "0.219", "0.292"]) is None
+    assert _note_values(["100", "10", "3/10", ".3"]) == {Fraction(100), Fraction(10), Fraction(3, 10)}

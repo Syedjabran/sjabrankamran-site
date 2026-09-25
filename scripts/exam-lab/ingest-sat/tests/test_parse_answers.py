@@ -3,6 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import parse_answers
+import reviewed
 
 # Shape taken verbatim from test 4's answer-explanations PDF: a running
 # header on every page, a QUESTION heading per item, and the three official
@@ -44,9 +45,13 @@ The correct answer is 10 .
 
 QUESTION 3
 
-The correct answer is 2.6. Note that 3/2 and 1.5 are examples of ways to
+The correct answer is 1.5. Note that 3/2 and 1.5 are examples of ways to
 enter a correct answer.
 """
+# QUESTION 3's stated value was 2.6 in the plan's fixture -- a value its own
+# note does not list. Under the fail-closed rule that is two official
+# statements disagreeing, so it is now its own test
+# (test_a_stated_value_the_note_does_not_list_is_a_conflict).
 
 
 def test_reads_the_rw_best_answer_phrasing():
@@ -98,7 +103,7 @@ def test_an_unresolvable_item_is_rejected_not_guessed():
 
 # Test 7, Math Module 1, Question 7, in the shape pdftotext really emits: the
 # roots are stated with "either", and the entry note that repeats them wraps
-# between "are" and "examples", so `_ENTRY_NOTE` cannot see it.
+# between "are" and "examples".
 TEST_7_MATH_M1_Q7 = """SAT ANSWER EXPLANATIONS n MATH: MODULE 1
 
 QUESTION 7
@@ -113,12 +118,13 @@ examples of ways to enter a correct answer.
 
 
 def test_an_either_answer_ships_every_root_when_its_entry_note_wraps():
-    """Rejected as no-answer before `parse_qbank`'s either handling was
-    reused here -- which dropped all of test 7 under spec rule 4."""
+    """Rejected as no-answer in round 1, which dropped all of test 7 under
+    spec rule 4. The note reader now reads the wrapped note itself, and the
+    "either" roots corroborate it."""
     answers, rejected = parse_answers.parse_answers(TEST_7_MATH_M1_Q7)
     assert rejected == []
     assert answers[("math", 1, 7)] == {
-        "kind": "spr", "accepted": ["14", "-5", "-4"], "source": "rationale-either",
+        "kind": "spr", "accepted": ["14", "-5", "-4"], "source": "entry-note",
     }
 
 
@@ -149,16 +155,152 @@ def test_a_stated_answer_with_a_thousands_separator_keeps_every_digit():
     assert answers[("math", 2, 14)] == {"kind": "spr", "accepted": ["4205"], "source": "rationale-stated"}
 
 
+def _item(body, module=1, qnum=1):
+    """(answer, rejected) for one Math grid-in block with `body` as its text."""
+    header = f"SAT ANSWER EXPLANATIONS n MATH: MODULE {module}\n\nQUESTION {qnum}\n\n"
+    answers, rejected = parse_answers.parse_answers(header + body)
+    return answers.get(("math", module, qnum)), rejected
+
+
 def test_a_stated_answer_joined_with_or_ships_both_values():
-    """Test 4, Math Module 2, Q6: its entry note wraps between "are" and
-    "examples" and prints an en dash for the minus, so the stated "15 or -5"
-    is the only readable statement -- and it names two answers, not one."""
-    text = (
-        "SAT ANSWER EXPLANATIONS n MATH: MODULE 2\n\nQUESTION 6\n\n"
-        "The correct answer is 15 or -5 . By the definition of absolute value, if x - 5 = 10 ,\n"
-        "then x - 5 = 10 or x - 5 = -10. Thus, the\n"
-        "given equation has two possible solutions, 15 and -5 . Note that 15 and –5 are\n"
-        "examples of ways to enter a correct answer.\n"
+    answer, _ = _item("The correct answer is 15 or -5 . By the definition of absolute value.\n")
+    assert answer == {"kind": "spr", "accepted": ["15", "-5"], "source": "rationale-stated"}
+
+
+# Test 4, Math Module 2, Q6 as pdftotext emits it: the note wraps between
+# "are" and "examples" and prints its minus as an en dash.
+TEST_4_MATH_M2_Q6 = (
+    "The correct answer is 15 or -5 . By the definition of absolute value, if x - 5 = 10 ,\n"
+    "then x - 5 = 10 or x - 5 = -10. Thus, the\n"
+    "given equation has two possible solutions, 15 and -5 . Note that 15 and –5 are\n"
+    "examples of ways to enter a correct answer.\n"
+)
+
+
+def test_an_en_dash_minus_in_a_wrapped_note_is_read_as_a_minus():
+    answer, _ = _item(TEST_4_MATH_M2_Q6, module=2, qnum=6)
+    assert answer == {"kind": "spr", "accepted": ["15", "-5"], "source": "entry-note"}
+
+
+# Test 6, Math Module 1, Q13 as pdftotext emits it: the answer 1/2 is a
+# stacked fraction, so the stated sentence reads "12" (numerator and
+# denominator run together), and the note wraps before "examples".
+TEST_6_MATH_M1_Q13 = (
+    "The correct answer is 12 . The value of h ^2h is the value of h ^xh when x = 2.\n\n"
+    "Substituting 2 for x in the given equation yields h ^2h= 5^28h+ 6 , which is equivalent\n"
+    "8\n"
+    "to h ^2h= 16\n"
+    ", or h ^2h= 12 . Therefore, the value of h ^2h is 12 . Note that 1/2 and .5 are\n\n"
+    "examples of ways to enter a correct answer.\n"
+)
+
+
+def test_a_stacked_fraction_is_read_from_its_note_not_its_stated_digits():
+    """Shipped ["12"] before: the note wrapped, so the stated fallback won."""
+    answer, rejected = _item(TEST_6_MATH_M1_Q13, qnum=13)
+    assert rejected == []
+    assert answer == {"kind": "spr", "accepted": ["1/2", ".5"], "source": "entry-note"}
+
+
+def test_an_unreadable_note_fails_closed_instead_of_shipping_the_stated_value():
+    """The same item with a note that yields no plain form must be rejected,
+    never resolved from "The correct answer is 12"."""
+    unreadable = TEST_6_MATH_M1_Q13.replace("1/2 and .5", "one half and a half")
+    answer, rejected = _item(unreadable, qnum=13)
+    assert answer is None
+    assert rejected == [{"section": "math", "module": 1, "qnum": 13, "reason": "unreadable-entry-note"}]
+
+
+def test_a_wrapped_note_skips_the_equation_fragments_between_its_lines():
+    """Test 4, Math Module 2, Q20: pdftotext drops "cos (L) =", "17n" and
+    "17" between the note's lines; the stated sentence keeps only 15 of
+    15/17. Shipped ["15"] before."""
+    body = (
+        "The correct answer is 15 . It's given that angle J is the right angle in triangle JKL.\n"
+        "17\n\n"
+        "of each side of this equation yields JL = 15n . Since cos (L) = , it follows that\n"
+        "KL\n15n\n15\n"
+        ", which can be rewritten as cos (L) = . Note that 15/17, .8824, .8823,\n"
+        "cos (L) =\n17n\n17\n"
+        "and 0.882 are examples of ways to enter a correct answer.\n"
     )
-    answers, _ = parse_answers.parse_answers(text)
-    assert answers[("math", 2, 6)] == {"kind": "spr", "accepted": ["15", "-5"], "source": "rationale-stated"}
+    answer, _ = _item(body, module=2, qnum=20)
+    assert answer == {"kind": "spr", "accepted": ["15/17", ".8824", ".8823", "0.882"], "source": "entry-note"}
+
+
+def test_a_note_split_by_stacked_digits_before_its_forms_is_read():
+    """Test 4, Math Module 2, Q13: "Note that" is followed by the stray
+    denominators "100" and "10" before the forms. Shipped ["3"] before."""
+    body = (
+        "The correct answer is 3 . It's given that there are a total of 100 tiles of equal\n"
+        "10\n\n"
+        "By definition, the probability of selecting a red tile is given by 30 , or 3 . Note that\n"
+        "100\n10\n"
+        "3/10 and .3 are examples of ways to enter a correct answer.\n"
+    )
+    answer, _ = _item(body, module=2, qnum=13)
+    assert answer == {"kind": "spr", "accepted": ["3/10", ".3"], "source": "entry-note"}
+
+
+def test_a_note_whose_forms_disagree_fails_closed():
+    """Test 6, Math Module 2, Q20 prints 0.219 among the forms of 7/24
+    (0.2916...). A note that does not hang together is not shipped."""
+    body = (
+        "7\nThe correct answer is 24\n. An expression of the form n a m.\n"
+        "Dividing both sides of this equation by 8 yields c = 24\n. Note\n\n"
+        "that 7/24, .2916, .2917, 0.219, and 0.292 are examples of ways to enter a correct\n"
+        "answer.\n"
+    )
+    answer, rejected = _item(body, module=2, qnum=20)
+    assert answer is None
+    assert rejected[0]["reason"] == "unreadable-entry-note"
+
+
+def test_a_stated_value_the_note_does_not_list_is_a_conflict():
+    answer, rejected = _item(
+        "The correct answer is 2.6. Note that 3/2 and 1.5 are examples of ways to\n"
+        "enter a correct answer.\n"
+    )
+    assert answer is None
+    assert rejected[0]["reason"].startswith("answer-source-conflict")
+
+
+def test_several_values_in_a_note_need_the_either_shape():
+    """A note listing distinct values is a multi-root answer only when the
+    rationale says so; otherwise it cannot be told from misread fragments."""
+    note = "Note that 2 and -12 are examples of ways to enter a correct answer.\n"
+    answer, rejected = _item("Setting each factor equal to 0 yields two equations. " + note)
+    assert answer is None and rejected[0]["reason"] == "unreadable-entry-note"
+    answer, _ = _item("The correct answer is either 2 or -12. Setting each factor to 0. " + note)
+    assert answer == {"kind": "spr", "accepted": ["2", "-12"], "source": "entry-note"}
+
+
+def test_an_override_ships_over_the_parse_and_clears_the_rejection():
+    answers, rejected = {}, [{"section": "math", "module": 2, "qnum": 20, "reason": "unreadable-entry-note"}]
+    override = {"test": 6, "section": "math", "module": 2, "qnum": 20,
+                "accepted": ["7/24", ".2916"], "verified": "fixture"}
+    answers, rejected, stale = parse_answers.apply_overrides(answers, rejected, 6, [override])
+    assert answers[("math", 2, 20)] == {"kind": "spr", "accepted": ["7/24", ".2916"], "source": "reviewed"}
+    assert rejected == [] and stale == []
+
+
+def test_an_override_the_parse_now_agrees_with_is_reported_stale():
+    answers = {("math", 2, 20): {"kind": "spr", "accepted": [".2916", "7/24"], "source": "entry-note"}}
+    override = {"test": 6, "section": "math", "module": 2, "qnum": 20,
+                "accepted": ["7/24", ".2916"], "verified": "fixture"}
+    _, _, stale = parse_answers.apply_overrides(answers, [], 6, [override])
+    assert len(stale) == 1 and "('math', 2, 20)" in stale[0]
+
+
+def test_an_override_only_applies_to_its_own_test():
+    override = {"test": 6, "section": "math", "module": 2, "qnum": 20,
+                "accepted": ["7/24"], "verified": "fixture"}
+    answers, _, _ = parse_answers.apply_overrides({}, [], 5, [override])
+    assert answers == {}
+
+
+def test_reviewed_json_overrides_test_6_m2_q20_without_the_misprint():
+    [entry] = reviewed.entries("answer_overrides", 6)
+    assert (entry["section"], entry["module"], entry["qnum"]) == ("math", 2, 20)
+    assert entry["accepted"] == ["7/24", ".2916", ".2917", "0.292"]
+    assert all(reviewed.entries("answer_overrides", n) == [] for n in (4, 5, 7, 8, 9, 10, 11))

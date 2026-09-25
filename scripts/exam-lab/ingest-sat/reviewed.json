@@ -1,5 +1,16 @@
 {
   "about": "Hand-verified entries (spec section 6), each for one practice test and each citing what was verified and how. answer_overrides ship over the parsed answer. conversion_exceptions excuse one sanity check for exactly the printed cells they name; they never change a value.",
+  "answer_overrides": [
+    {
+      "test": 6,
+      "section": "math",
+      "module": 2,
+      "qnum": 20,
+      "accepted": ["7/24", ".2916", ".2917", "0.292"],
+      "verified": "out/review/test6-math-m2-q20.png (answers PDF page 49; page header out/review/test6-answers-p49-header.png reads MATH: MODULE 2), 2026-09-25",
+      "note": "The entry note prints '7/24, .2916, .2917, 0.219, and 0.292'. 7/24 = 0.29166..., so 0.219 is a transposition of 0.291 and is dropped; 0.291 is not added because College Board did not print it. The question bank's copy of this item (c6e85cd7) prints 'Correct Answer: .2916, .2917, 7/24'."
+    }
+  ],
   "conversion_exceptions": [
     {
       "test": 6,

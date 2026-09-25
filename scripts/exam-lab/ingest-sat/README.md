@@ -78,24 +78,44 @@ no-answer -- see "Integrity rules" below for what each means.
   keys on "Poppler Developers" rather than the absence of "Xpdf", because
   poppler's own banner still contains "Glyph & Cog" (it forked from Xpdf).
 * **Answers ship only from the official `Correct Answer:` line or the
-  official rationale text.** There is no `reviewed.json` for this
-  pipeline -- unlike 5054, College Board's own export carries the answer,
-  so nothing here is hand-verified against a separate key. An item with
-  neither is rejected as `no-answer`, never guessed. When the `Correct
-  Answer:` line and the rationale's "Choice X is correct" **disagree**,
-  the item is rejected as `answer-source-conflict` rather than trusting
-  either -- College Board's own export is internally inconsistent for 2
-  items in the current corpus (`bf5f80c6`, `1e11190a`); that is a
-  recorded fact about the source data, not a parser bug to chase.
-* **Every shipped answer carries a `source` field** recording which of
-  four paths resolved it: `answer-line` (the normal case, 3,651 of 3,730
-  rows), `rationale` ("Choice X is correct" stated in the MCQ rationale
-  with no answer line, 11 rows), `entry-note` (a grid-in's accepted
-  values read off "Note that ... are examples of ways to enter a correct
-  answer", 16 rows), or `rationale-stated` (a grid-in value read off "The
-  correct answer is ...", 52 rows). The last three -- 79 rows total --
-  have no official answer line to cross-check, so this field is what
-  makes them auditable. To list them: `python -c "import json; rows =
+  official rationale text** -- plus, for the practice tests only,
+  `reviewed.json`'s hand-verified `answer_overrides`, which ship over the
+  parse and each cite the render they were checked against (its
+  `conversion_exceptions` excuse one scoring-table sanity check for the
+  exact printed cells they name and never change a value). The question
+  bank has no overrides. An item with no answer is rejected as
+  `no-answer`, never guessed. When the `Correct Answer:` line and the
+  rationale's "Choice X is correct" **disagree**, the item is rejected as
+  `answer-source-conflict` rather than trusting either -- College Board's
+  own export is internally inconsistent for 2 items in the current corpus
+  (`bf5f80c6`, `1e11190a`); that is a recorded fact about the source
+  data, not a parser bug to chase.
+* **A grid-in answer line can list several forms** (".1764, .1765, 3/17",
+  91 rows): all of them ship, split on commas (with or without a space)
+  and "and"/"or". A comma followed by exactly three digits is a thousands
+  separator ("3,540" is 3540). Every form must be a plain entry --
+  integer, decimal or fraction, optionally negative, an en dash or U+2212
+  read as the minus -- or the line is rejected as `unreadable-answer-line`.
+* **Grid-in prose fails closed.** With no answer line, a block carrying
+  the entry note ("Note that 3/2 and 1.5 are examples of ways to enter a
+  correct answer") resolves from that note or not at all: the note is read
+  across line breaks and past the stacked-fraction digits pdftotext drops
+  between its lines, its forms must agree numerically (a decimal within
+  one unit of its last place of a fraction), several distinct values are
+  accepted only when the rationale says "either" or states several, and a
+  stated value must match one of the note's forms (or be the text layer's
+  numerator/denominator rendering of its fraction). Anything else is
+  `unreadable-entry-note` or `answer-source-conflict` -- never the stated
+  fallback, which for a stacked fraction is only its numerator.
+* **Every shipped answer carries a `source` field** recording which path
+  resolved it: `answer-line` (the normal case, 3,651 of 3,731 rows),
+  `rationale` ("Choice X is correct" stated in the MCQ rationale with no
+  answer line, 11 rows), `entry-note` (the note above, 18 rows),
+  `rationale-either` ("The correct answer is either 8 or 9", 1 row) or
+  `rationale-stated` (a grid-in value read off "The correct answer is
+  ...", 50 rows). The last four -- 80 rows total -- have no official
+  answer line to cross-check, so this field is what makes them auditable.
+  To list them: `python -c "import json; rows =
   json.load(open('out/rows.json')); print([r['id'] for r in rows if
   r['answer']['source'] != 'answer-line'])"`.
 * **Domain, skill and difficulty ship only as College Board labelled

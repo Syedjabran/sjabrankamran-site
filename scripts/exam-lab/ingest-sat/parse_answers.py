@@ -12,9 +12,11 @@ Three phrasings occur, all official, all measured on test 4:
     The correct answer is 2.6. ...       Math SPR                 (14)
 
 A grid-in with several roots says "The correct answer is either 14, -5, or
--4." (tests 5, 7 and 9); that phrasing, and the entry note's list of
-equivalent forms, are split exactly as the question bank splits them, by
-reusing parse_qbank's helpers rather than re-writing them.
+-4." (tests 5, 7 and 9); that phrasing, the entry note's list of equivalent
+forms and the stated value are all read exactly as the question bank reads
+them, by reusing parse_qbank's grid-in resolution rather than re-writing it.
+What that cannot read safely is rejected; reviewed.json's hand-verified
+`answer_overrides` then ship over the parse (`apply_overrides`).
 
 The surrounding prose says "Choice X is incorrect" about every distractor,
 so the correct-answer patterns must not also match those. They do not: the
@@ -33,7 +35,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import poppler
-from parse_qbank import _CHOICE_CORRECT, _either_values, _entry_note_values, _stated_values
+import reviewed
+from parse_qbank import _CHOICE_CORRECT, _spr_from_rationale
 
 # The bullet between "EXPLANATIONS" and the section name extracts as a bare
 # letter n; accept any short run of non-alphabetic filler so a different
@@ -67,9 +70,11 @@ def text_of(pdf: Path) -> str:
 def _answer_from(block: str) -> tuple[dict | None, str | None]:
     """(answer, reject_reason) -- exactly one is None.
 
-    Order matters. The entry note ("Note that 3/2 and 1.5 are examples...")
-    is checked before the bare stated value, because an item carrying both
-    should ship every accepted form, not just the first one printed.
+    The two MCQ phrasings, then the grid-in prose exactly as the question
+    bank reads it (`parse_qbank._spr_from_rationale`): the entry note first
+    and fail-closed, so an item whose note cannot be read is rejected rather
+    than resolved from the stated value -- which, for a stacked fraction, is
+    only its numerator ("The correct answer is 3" for 3/10).
     """
     best = _BEST_ANSWER.search(block)
     if best:
@@ -79,22 +84,31 @@ def _answer_from(block: str) -> tuple[dict | None, str | None]:
     if choice:
         return {"kind": "mcq", "correct": "ABCD".index(choice.group(1)), "source": "rationale"}, None
 
-    vals = _entry_note_values(block)
-    if vals:
-        return {"kind": "spr", "accepted": vals, "source": "entry-note"}, None
+    return _spr_from_rationale(block)
 
-    # After the entry note, exactly as parse_qbank orders them: when both are
-    # present the note wins, and when the note wraps where `_ENTRY_NOTE`
-    # cannot see it (test 7, Math module 1 Q7) this still ships every root.
-    vals = _either_values(block)
-    if vals:
-        return {"kind": "spr", "accepted": vals, "source": "rationale-either"}, None
 
-    vals = _stated_values(block)
-    if vals:
-        return {"kind": "spr", "accepted": vals, "source": "rationale-stated"}, None
+def apply_overrides(
+    answers: dict, rejected: list[dict], test: int, overrides: list[dict] | None = None,
+) -> tuple[dict, list[dict], list[str]]:
+    """(answers, rejected, stale) with reviewed.json's hand-verified answers
+    shipped over the parse (spec section 6).
 
-    return None, "no-answer"
+    `overrides` defaults to reviewed.json's `answer_overrides` for `test`.
+    An override whose item the parse now reads identically is reported in
+    `stale` -- it still ships, but it no longer needs to exist.
+    """
+    if overrides is None:
+        overrides = reviewed.entries("answer_overrides", test)
+    answers = dict(answers)
+    stale: list[str] = []
+    for entry in (o for o in overrides if o["test"] == test):
+        key = (entry["section"], entry["module"], entry["qnum"])
+        parsed = answers.get(key)
+        if parsed is not None and set(parsed.get("accepted", [])) == set(entry["accepted"]):
+            stale.append(f"test {test} {key}: the parse now reads {parsed['accepted']}")
+        answers[key] = {"kind": "spr", "accepted": list(entry["accepted"]), "source": "reviewed"}
+        rejected = [r for r in rejected if (r["section"], r["module"], r["qnum"]) != key]
+    return answers, list(rejected), stale
 
 
 def parse_answers(text: str) -> tuple[dict, list[dict]]:
