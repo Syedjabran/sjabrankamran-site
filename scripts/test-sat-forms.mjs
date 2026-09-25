@@ -66,3 +66,19 @@ assert.deepEqual(
 );
 
 console.log("sat-forms tests passed");
+
+import { ROUTING, routeModule2, ROUTING_DISCLOSURE } from "../src/lib/sat/adaptive.ts";
+
+assert.equal(routeModule2("rw", 27), "upper");
+assert.equal(routeModule2("rw", 0), "lower");
+assert.equal(routeModule2("rw", ROUTING.rw.threshold), "upper");
+assert.equal(routeModule2("rw", ROUTING.rw.threshold - 1), "lower");
+assert.equal(routeModule2("math", 22), "upper");
+assert.equal(routeModule2("math", 0), "lower");
+
+// Spec 10.6: the threshold is an approximation and must say so wherever it
+// is surfaced. A blank disclosure would let the UI imply it is official.
+assert.ok(ROUTING_DISCLOSURE.length > 40);
+assert.ok(/approximation|not.*official|does not publish/i.test(ROUTING_DISCLOSURE));
+
+console.log("sat-adaptive tests passed");
