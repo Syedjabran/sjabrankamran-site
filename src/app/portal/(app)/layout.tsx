@@ -221,7 +221,7 @@ export default async function PortalLayout({ children }: { children: React.React
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <PortalProductTour />
+          <PortalProductTour autoStart={!mustOnboard} />
           {realAdmin && !previewing ? <RolePreviewSwitcher previewing={null} /> : null}
           {isStaff(user.roles) && !previewing ? (
             <span className="rounded-full border border-emerald2/30 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-emerald2">

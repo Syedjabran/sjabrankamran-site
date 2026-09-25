@@ -143,7 +143,9 @@ const orgSchema = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable} ${mono.variable}`}>
-      <body>
+      {/* Browser extensions (e.g. Grammarly) add attributes to <body> before React
+          hydrates; that is not an app mismatch, so don't report it as one. */}
+      <body suppressHydrationWarning>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: toJsonLd([websiteSchema, orgSchema, personSchema]) }}
