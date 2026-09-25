@@ -11,11 +11,13 @@ The SAT module has two parts:
 **The SAT Lab**, inside the student portal (`/portal/sat-lab`). A student who has access
 sees:
 
-- **Adaptive mock exams** — a full Reading & Writing or Math section, built to the digital
-  SAT's own timing and question counts. The second half adapts to how the student did on
-  the first half, the same way the real digital SAT does. Because College Board has never
-  published the real scoring table for this format, these mocks are always scored as an
-  **estimate**, and the app says so on the results page.
+- **Adaptive mock exams** — a whole digital SAT: both sections, Reading and Writing and then
+  Math, each in two timed modules (four modules, 98 questions), with a 10-minute break
+  between the sections, built to the digital SAT's own timing and question counts. The
+  second module of each section adapts to how the student did on its first module, the
+  same way the real digital SAT does. Because College Board has never published the real
+  scoring table for this format, these mocks are always scored as an **estimate**, and the
+  app says so on the results page.
 - **The 8 official College Board paper practice tests** (Tests 4–11). These use the
   timing printed on that paper (longer than the digital SAT's own timing) and are scored
   against College Board's own official conversion table for that specific test, so these
@@ -72,13 +74,13 @@ The student will now see **SAT Lab** in their portal menu, alongside their other
 links.
 
 Staff menu access and student-data access are two different things. Any teacher,
-coordinator, facilitator, or admin already sees **SAT Lab** and **SAT results** in their
-own menu, under Administration — that doesn't depend on being enrolled in anything.
+coordinator, facilitator, admin, or super admin already sees **SAT Lab** and **SAT results**
+in their own menu, under Administration — that doesn't depend on being enrolled in anything.
 Enrolment is what decides *whose* SAT work a teacher can actually see and assign: a
 teacher only sees the students in the SAT-track classes they're themselves enrolled in
 (so enrol a teacher in the same class as the student, the same way you enrolled the
-student above, if you want that teacher to see this student's results). An admin sees
-every SAT student regardless of their own enrolment.
+student above, if you want that teacher to see this student's results). An admin or super
+admin sees every SAT student regardless of their own enrolment.
 
 ## 4. A 10-minute test script
 
@@ -92,7 +94,10 @@ Run through these as the enrolled test student (and once as staff for the result
    actually submits ("N questions are unanswered. Submit this module anyway?"). On the
    score report afterwards, look for the routing disclosure — a note explaining that this
    site's Module 2 routing is an approximation, not College Board's real (unpublished)
-   algorithm.
+   algorithm. When you reach Math (on the break screen, and on both Math modules), check
+   the note that the real digital SAT has a built-in Desmos graphing calculator and a
+   reference sheet, which this practice module doesn't include yet — students use their
+   own approved calculator and reference sheet.
 3. **Grid-in (fill-in-the-blank) answers** — in a Math question with a typed-answer box,
    try typing `1 1/2`. The box doesn't accept spaces, so it's graded as if you'd typed
    `11/2`, and you'll see a warning:
@@ -112,13 +117,14 @@ Run through these as the enrolled test student (and once as staff for the result
 
 From the project's root folder, in order:
 
-1. `npm run test:sat` — runs 9 test suites covering the question bank, adaptive form
-   assembly, scoring, access rules, grading, sessions, serving, the runner, and
-   assignments. All passed on this checkout.
+1. `npm run test:sat` — runs 11 test suites covering the question bank, adaptive form
+   assembly, scoring, access rules (including what happens when the access check itself
+   can't be read), grading, sessions, serving, the runner, assignments, and a check that
+   no code sent to the browser can reach the answer key. All passed on this checkout.
 2. `npm run test:portal` — general portal rules. Passed.
 3. `npm run test:access` — access-control rules. Passed.
 4. `python -m pytest scripts/exam-lab/ingest-sat/tests -q` — the question-bank pipeline's
-   own tests (232 tests). Passed.
+   own tests (307 tests). Passed.
 5. `npm run build` — a full production build. **Don't run this yourself** while a dev
    server is running from this same checkout; it can break the running server. Whoever
    does the final review runs this separately.
