@@ -14,10 +14,11 @@ const DOMAIN_LABEL: Record<string, string> = {
 
 export function ScoreReport({ report }: { report: SATReport }) {
   const [open, setOpen] = useState<string | null>(null);
-  const { urls } = useSignedImages(report.review.flatMap((r) => [r.img, r.rationaleImg ?? ""]));
+  const { urls, error: imgError } = useSignedImages(report.review.flatMap((r) => [r.img, r.rationaleImg ?? ""]));
   const s = report.score;
   return (
     <div className="space-y-6">
+      {imgError ? <p className="text-sm text-signal">{imgError}</p> : null}
       <section className="rounded-2xl border border-white/10 bg-space/60 p-6">
         <p className="font-mono text-[11px] uppercase tracking-widest text-fog">{report.title}</p>
         {s ? (

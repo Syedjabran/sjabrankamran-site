@@ -1,14 +1,16 @@
 "use client";
+import { useId } from "react";
 import { validateSPR, SPR_MAX_NEGATIVE } from "@/lib/sat/grade";
 
 /** Grid-in answer box with the digital SAT's entry rules and a live preview. */
 export function SprPad({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
   const check = value ? validateSPR(value) : null;
+  const id = useId();
   return (
     <div className="max-w-xs">
-      <label className="mb-1 block font-mono text-[11px] uppercase tracking-widest text-fog" htmlFor="spr">Your answer</label>
+      <label className="mb-1 block font-mono text-[11px] uppercase tracking-widest text-fog" htmlFor={id}>Your answer</label>
       <input
-        id="spr" inputMode="decimal" autoComplete="off" spellCheck={false} disabled={disabled}
+        id={id} inputMode="decimal" autoComplete="off" spellCheck={false} disabled={disabled}
         value={value} maxLength={SPR_MAX_NEGATIVE}
         onChange={(e) => onChange(e.target.value.replace(/[^0-9./-]/g, ""))}
         className="w-full rounded-xl border border-white/15 bg-void px-4 py-3 font-mono text-lg text-ice focus:border-cyan focus:outline-none disabled:opacity-60"

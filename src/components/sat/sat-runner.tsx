@@ -1,12 +1,14 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Clock, Coffee, Flag, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, Coffee, Flag, Info, Loader2 } from "lucide-react";
 import type { SessionState } from "@/lib/sat/client-types";
 import { SprPad } from "./spr-pad";
 import { ScoreReport } from "./score-report";
 import { useSignedImages } from "./use-signed-images";
+import { mergeAnswers, mergeFlagged, pickAnswers, pickFlagged } from "./sat-runner-utils";
 
 type SaveState = "idle" | "saving" | "saved" | "failed";
+type PostResult = { kind: "ok"; state: SessionState } | { kind: "stale"; state: SessionState } | { kind: "error"; message: string };
 const fmt = (ms: number) => {
   const t = Math.max(0, Math.ceil(ms / 1000));
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
@@ -15,6 +17,7 @@ const fmt = (ms: number) => {
 export function SatRunner({ sessionId }: { sessionId: string }) {
   const [state, setState] = useState<SessionState | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [flagged, setFlagged] = useState<string[]>([]);
   const [idx, setIdx] = useState(0);
@@ -27,16 +30,80 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   const dirty = useRef(false);
   const autoSubmitted = useRef<string | null>(null);
 
+  // Refs mirroring the latest state/answers/flagged for use inside async
+  // request handlers, which must always act on "the module now on screen"
+  // rather than a value captured by a stale closure.
+  const stateRef = useRef<SessionState | null>(null);
+  const answersRef = useRef<Record<string, string>>({});
+  const flaggedRef = useRef<string[]>([]);
+
+  const setStateBoth = useCallback((s: SessionState | null) => { stateRef.current = s; setState(s); }, []);
+  const setAnswersBoth = useCallback((a: Record<string, string>) => { answersRef.current = a; setAnswers(a); }, []);
+  const setFlaggedBoth = useCallback((f: string[]) => { flaggedRef.current = f; setFlagged(f); }, []);
+
+  // A single promise chain -- at most one save/submit/begin POST is ever in
+  // flight at a time; each new one is queued after whatever is running.
+  const postQueue = useRef<Promise<void>>(Promise.resolve());
+  const enqueue = useCallback(<T,>(fn: () => Promise<T>): Promise<T> => {
+    const run = postQueue.current.then(fn, fn);
+    postQueue.current = run.then(() => undefined, () => undefined);
+    return run;
+  }, []);
+
+  // Autosave coalescing: a save requested while one is in flight sets
+  // `saveAgain` instead of queuing a second request; the in-flight save
+  // loops once more (with the latest answers) before releasing `saveBusy`.
+  const saveBusy = useRef(false);
+  const saveAgain = useRef(false);
+  // The stage key a submit has been sent for -- blocks any further save for
+  // that same stage until the submit settles (success, stale, or error).
+  const submittedStage = useRef<string | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Fires load() once per break (keyed by its end time), then backs off.
+  const breakReload = useRef<{ until: number; at: number } | null>(null);
+
   const apply = useCallback((s: SessionState) => {
     skew.current = s.serverNow - Date.now();
-    setState(s);
-    setAnswers(s.answers);
-    setFlagged(s.flagged);
+    setStateBoth(s);
+    setAnswersBoth(s.answers);
+    setFlaggedBoth(s.flagged);
     setIdx(0);
     setConfirming(false);
+    setNote(null);
     expiredOnLoad.current = !!s.stage && s.stage.deadline <= s.serverNow;
     dirty.current = false;
-  }, []);
+  }, [setStateBoth, setAnswersBoth, setFlaggedBoth]);
+
+  // A 409 (save or submit): adopt the server's stage/clock always. If the
+  // server's stage still matches the module on screen, the local
+  // answers/flagged for it are left completely untouched (and kept dirty,
+  // so the next save resends them) -- never wiped just because a stale
+  // response landed. Only when the server has moved to a DIFFERENT module
+  // do we switch the screen, seeding that module's answers from the
+  // server's copy merged with any local answers already entered for it
+  // (local wins). Never shown as "saved" -- a neutral note explains it.
+  const applyStale = useCallback((s: SessionState) => {
+    skew.current = s.serverNow - Date.now();
+    expiredOnLoad.current = !!s.stage && s.stage.deadline <= s.serverNow;
+    const onScreenKey = stateRef.current?.stage?.key ?? null;
+    const serverKey = s.stage?.key ?? null;
+    if (serverKey && serverKey === onScreenKey) {
+      setStateBoth({ ...s, answers: answersRef.current, flagged: flaggedRef.current });
+      dirty.current = true;
+    } else {
+      const ids = s.stage?.questions.map((q) => q.id) ?? [];
+      const mergedAnswers = mergeAnswers(s.answers, answersRef.current, ids);
+      const mergedFlagged = mergeFlagged(s.flagged, flaggedRef.current, ids);
+      setStateBoth({ ...s, answers: mergedAnswers, flagged: mergedFlagged });
+      setAnswersBoth(mergedAnswers);
+      setFlaggedBoth(mergedFlagged);
+      setIdx(0);
+      setConfirming(false);
+      dirty.current = true;
+    }
+    setSave("idle");
+    setNote("This module was already submitted — showing the current module.");
+  }, [setStateBoth, setAnswersBoth, setFlaggedBoth]);
 
   const load = useCallback(async () => {
     try {
@@ -53,36 +120,97 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
 
-  const post = useCallback(async (body: object) => {
-    const res = await fetch(`/api/sat/sessions/${sessionId}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-    const j = await res.json().catch(() => ({}));
-    // The module already ended (another tab, a double click): adopt the server's state.
-    if (res.status === 409 && j.state) return j.state as SessionState;
-    if (!res.ok) throw new Error(j.error || "Please try again.");
-    return j as SessionState;
+  const postRaw = useCallback(async (body: object): Promise<PostResult> => {
+    try {
+      const res = await fetch(`/api/sat/sessions/${sessionId}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const j = await res.json().catch(() => ({}));
+      // The module already ended (another tab/device, or a racing request): the server hands back its current state.
+      if (res.status === 409 && j.state) return { kind: "stale", state: j.state as SessionState };
+      if (!res.ok) return { kind: "error", message: j.error || "Please try again." };
+      return { kind: "ok", state: j as SessionState };
+    } catch (e) {
+      return { kind: "error", message: (e as Error).message || "Please try again." };
+    }
   }, [sessionId]);
 
-  const doSave = useCallback(async () => {
-    if (!state?.stage || !dirty.current) return;
+  // The actual save network round-trip, looping once more in place whenever
+  // a save was requested again while this one was in flight -- so at most
+  // one save is ever queued, and it always sends the latest local answers.
+  const runSaveCycle = useCallback(async () => {
     setSave("saving");
     try {
-      const s = await post({ action: "save", stage: state.stage.key, answers, flagged });
-      if (s.stage?.key !== state.stage.key) apply(s); // the module moved on elsewhere
-      dirty.current = false; setSave("saved");
+      for (;;) {
+        const stageKey = stateRef.current?.stage?.key ?? null;
+        if (!stageKey || submittedStage.current === stageKey) break;
+        const ids = stateRef.current?.stage?.questions.map((x) => x.id) ?? [];
+        const body = { action: "save" as const, stage: stageKey, answers: pickAnswers(answersRef.current, ids), flagged: pickFlagged(flaggedRef.current, ids) };
+        const result = await postRaw(body);
+        // A submit for this stage was sent while this save was in flight -- its response is authoritative; drop this one.
+        if (submittedStage.current === stageKey) break;
+        if (result.kind === "error") { dirty.current = true; setSave("failed"); }
+        else if (result.kind === "stale") { applyStale(result.state); }
+        else { skew.current = result.state.serverNow - Date.now(); dirty.current = false; setSave("saved"); setNote(null); }
+        if (!saveAgain.current) break;
+        saveAgain.current = false;
+      }
+    } finally {
+      saveBusy.current = false;
     }
-    catch { setSave("failed"); }
-  }, [state, answers, flagged, post]);
+  }, [postRaw, applyStale]);
+
+  const requestSave = useCallback(() => {
+    const stageKey = stateRef.current?.stage?.key ?? null;
+    if (!stageKey || !dirty.current) return;
+    if (submittedStage.current === stageKey) return;
+    if (saveBusy.current) { saveAgain.current = true; return; }
+    saveBusy.current = true;
+    void enqueue(() => runSaveCycle());
+  }, [enqueue, runSaveCycle]);
 
   // Autosave: shortly after a change, and every 30 s as a backstop.
-  useEffect(() => { if (!dirty.current) return; const t = setTimeout(() => void doSave(), 1500); return () => clearTimeout(t); }, [answers, flagged, doSave]);
-  useEffect(() => { const t = setInterval(() => void doSave(), 30_000); return () => clearInterval(t); }, [doSave]);
+  useEffect(() => {
+    if (!dirty.current) return;
+    saveTimer.current = setTimeout(() => { saveTimer.current = null; requestSave(); }, 1500);
+    return () => { if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; } };
+  }, [answers, flagged, requestSave]);
+  useEffect(() => { const t = setInterval(() => requestSave(), 30_000); return () => clearInterval(t); }, [requestSave]);
 
   const submit = useCallback(async () => {
+    const stageKey = stateRef.current?.stage?.key ?? null;
+    if (!stageKey) return;
     setBusy(true);
-    try { apply(await post({ action: "submit", stage: state?.stage?.key, answers, flagged })); }
-    catch (e) { setError((e as Error).message); }
-    finally { setBusy(false); }
-  }, [answers, flagged, post, apply, state]);
+    // Cancel any pending debounce timer -- its stale snapshot must never be sent after a submit for this stage.
+    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+    submittedStage.current = stageKey;
+    try {
+      // Wait for an in-flight save to settle (enqueue puts us right after it in the same chain), then submit with the latest local answers.
+      await enqueue(async () => {
+        const ids = stateRef.current?.stage?.key === stageKey ? (stateRef.current?.stage?.questions.map((x) => x.id) ?? []) : [];
+        const body = { action: "submit" as const, stage: stageKey, answers: pickAnswers(answersRef.current, ids), flagged: pickFlagged(flaggedRef.current, ids) };
+        const result = await postRaw(body);
+        if (result.kind === "error") { setError(result.message); return; }
+        if (result.kind === "stale") { applyStale(result.state); return; }
+        apply(result.state);
+      });
+    } finally {
+      submittedStage.current = null;
+      setBusy(false);
+    }
+  }, [enqueue, postRaw, applyStale, apply]);
+
+  const beginModule = useCallback(async () => {
+    setBusy(true);
+    try {
+      await enqueue(async () => {
+        const result = await postRaw({ action: "begin" });
+        if (result.kind === "error") { setError(result.message); return; }
+        if (result.kind === "stale") { applyStale(result.state); return; }
+        apply(result.state);
+      });
+    } finally {
+      setBusy(false);
+    }
+  }, [enqueue, postRaw, applyStale, apply]);
 
   const remaining = state?.stage ? state.stage.deadline - (now + skew.current) : 0;
   const expired = !!state?.stage && remaining <= 0;
@@ -97,9 +225,19 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
     void submit();
   }, [expired, state, busy, submit]);
 
-  // Break: reload when it ends (the server starts Math at the break's end).
+  // Break: reload once when it ends (the server starts Math at the break's
+  // end), keyed by the break's own end time so this never re-fires every
+  // tick; if the server still reports the break (a slow/failed reload), it
+  // retries only after a 5 s back-off.
   useEffect(() => {
-    if (state?.status === "break" && state.breakUntil && now + skew.current >= state.breakUntil) void load();
+    if (state?.status !== "break" || !state.breakUntil) { breakReload.current = null; return; }
+    const until = state.breakUntil;
+    if (now + skew.current < until) return;
+    const last = breakReload.current;
+    const nowMs = Date.now();
+    if (last && last.until === until && nowMs - last.at < 5000) return;
+    breakReload.current = { until, at: nowMs };
+    void load();
   }, [state, now, load]);
 
   const questions = useMemo(() => state?.stage?.questions ?? [], [state]);
@@ -116,7 +254,7 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
         <Coffee className="mx-auto text-cyan" />
         <p className="mt-3 font-display text-xl text-ice">Break · {fmt(left)}</p>
         <p className="mt-2 text-sm text-fog">Reading and Writing is done. Math begins when the break ends.</p>
-        <button disabled={busy} onClick={async () => { setBusy(true); try { apply(await post({ action: "begin" })); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }} className="btn-primary mt-5 !px-4 !py-2 text-sm">Start Math now</button>
+        <button disabled={busy} onClick={() => void beginModule()} className="btn-primary mt-5 !px-4 !py-2 text-sm">Start Math now</button>
       </div>
     );
   }
@@ -124,8 +262,15 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   const stage = state.stage!;
   const q = questions[idx];
   const unanswered = questions.filter((x) => !answers[x.id]).length;
-  const setAnswer = (v: string) => { dirty.current = true; setAnswers((a) => ({ ...a, [q.id]: v })); };
-  const toggleFlag = () => { dirty.current = true; setFlagged((f) => (f.includes(q.id) ? f.filter((x) => x !== q.id) : [...f, q.id])); };
+  const setAnswer = (v: string) => {
+    dirty.current = true;
+    setAnswersBoth({ ...answersRef.current, [q.id]: v });
+  };
+  const toggleFlag = () => {
+    dirty.current = true;
+    const next = flaggedRef.current.includes(q.id) ? flaggedRef.current.filter((x) => x !== q.id) : [...flaggedRef.current, q.id];
+    setFlaggedBoth(next);
+  };
 
   return (
     <div className="space-y-4">
@@ -136,6 +281,7 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
       </div>
 
       {expired ? <p className="rounded-xl border border-amber-300/30 bg-amber-300/[0.05] p-3 text-sm text-amber-100">Time is up for this module. Your saved answers are kept — submit the module to continue.</p> : null}
+      {note ? <p className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-sm text-dust"><Info size={14} className="shrink-0" />{note}</p> : null}
       {imgError ? <p className="text-sm text-signal">{imgError}</p> : null}
 
       <div className="grid gap-4 lg:grid-cols-[1fr_16rem]">
@@ -148,11 +294,11 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
           {q.kind === "mcq" ? (
             <div className="grid grid-cols-4 gap-2">
               {["A", "B", "C", "D"].map((l) => (
-                <button key={l} type="button" onClick={() => setAnswer(answers[q.id] === l ? "" : l)} className={"rounded-xl border py-3 font-display text-lg " + (answers[q.id] === l ? "border-cyan bg-cyan/15 text-ice" : "border-white/15 text-fog hover:border-white/30")}>{l}</button>
+                <button key={l} type="button" disabled={busy} onClick={() => setAnswer(answers[q.id] === l ? "" : l)} className={"rounded-xl border py-3 font-display text-lg disabled:opacity-40 " + (answers[q.id] === l ? "border-cyan bg-cyan/15 text-ice" : "border-white/15 text-fog hover:border-white/30")}>{l}</button>
               ))}
             </div>
           ) : (
-            <SprPad value={answers[q.id] ?? ""} onChange={setAnswer} />
+            <SprPad value={answers[q.id] ?? ""} onChange={setAnswer} disabled={busy} />
           )}
           <div className="flex justify-between">
             <button type="button" disabled={idx === 0} onClick={() => setIdx(idx - 1)} className="btn-ghost !px-3 !py-1.5 text-sm disabled:opacity-40"><ChevronLeft size={14} /> Back</button>
