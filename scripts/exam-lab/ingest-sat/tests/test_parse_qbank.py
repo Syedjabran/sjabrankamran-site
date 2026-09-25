@@ -512,3 +512,18 @@ def test_entry_note_matches_when_the_phrase_wraps_across_a_line_break():
     record = parse_block(block)
     assert record["answer"]["kind"] == "spr"
     assert set(record["answer"]["accepted"]) == {"2", "-12"}
+
+
+def test_entry_note_forms_joined_by_or_are_split():
+    """"Note that 11/4 or 2.75 are examples" is two accepted forms. The
+    split is shared with parse_answers, where practice test 7 Math module 2
+    Q7 prints exactly this; "11/4 or 2.75" as one value matches no entry."""
+    block = (
+        "ab12cd34\nAssessment\nSAT\nTest\nMath\nDomain\nAlgebra\nSkill\n"
+        "Linear functions\nDifficulty\nMedium\n"
+        "Question\nEvaluate.\n"
+        "Rationale\nThe value is 11/4. Note that 11/4 or 2.75 are examples of "
+        "ways to enter a correct answer.\n"
+    )
+    record = parse_block(block)
+    assert record["answer"] == {"kind": "spr", "accepted": ["11/4", "2.75"], "source": "entry-note"}

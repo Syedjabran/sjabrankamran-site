@@ -94,3 +94,44 @@ def test_an_unresolvable_item_is_rejected_not_guessed():
     answers, rejected = parse_answers.parse_answers(text)
     assert ("math", 1, 4) not in answers
     assert rejected[-1]["reason"] == "no-answer"
+
+
+# Test 7, Math Module 1, Question 7, in the shape pdftotext really emits: the
+# roots are stated with "either", and the entry note that repeats them wraps
+# between "are" and "examples", so `_ENTRY_NOTE` cannot see it.
+TEST_7_MATH_M1_Q7 = """SAT ANSWER EXPLANATIONS n MATH: MODULE 1
+
+QUESTION 7
+
+The correct answer is either 14, -5, or -4. The x-intercepts of a graph in the
+xy-plane are the points at which the graph intersects the x-axis, or when the
+value of y is 0. Applying the zero product property to this equation
+yields three equations: x - 14 = 0, x + 5 = 0, and x + 4 = 0. Therefore, the x-coordinates of the x-intercepts
+of the graph of the given equation are 14, -5, and -4. Note that 14, -5, and -4 are
+examples of ways to enter a correct answer.
+"""
+
+
+def test_an_either_answer_ships_every_root_when_its_entry_note_wraps():
+    """Rejected as no-answer before `parse_qbank`'s either handling was
+    reused here -- which dropped all of test 7 under spec rule 4."""
+    answers, rejected = parse_answers.parse_answers(TEST_7_MATH_M1_Q7)
+    assert rejected == []
+    assert answers[("math", 1, 7)] == {
+        "kind": "spr", "accepted": ["14", "-5", "-4"], "source": "rationale-either",
+    }
+
+
+def test_an_entry_note_joined_with_or_ships_each_form_separately():
+    """Test 7, Math Module 2, Q7 prints "Note that 11/4 or 2.75 are
+    examples". Splitting only on commas and "and" shipped the single
+    accepted value "11/4 or 2.75", which no student entry can ever match."""
+    text = (
+        "SAT ANSWER EXPLANATIONS n MATH: MODULE 2\n\nQUESTION 7\n\n"
+        "the value of f b 14 l is 11\n. Note that 11/4 or 2.75 are examples of "
+        "ways to enter a\n4\ncorrect answer.\n"
+    )
+    answers, _ = parse_answers.parse_answers(text)
+    assert answers[("math", 2, 7)] == {
+        "kind": "spr", "accepted": ["11/4", "2.75"], "source": "entry-note",
+    }

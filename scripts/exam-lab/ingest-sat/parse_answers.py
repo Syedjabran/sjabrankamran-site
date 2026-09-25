@@ -11,6 +11,11 @@ Three phrasings occur, all official, all measured on test 4:
     Choice D is correct. ...             Math MCQ                 (40)
     The correct answer is 2.6. ...       Math SPR                 (14)
 
+A grid-in with several roots says "The correct answer is either 14, -5, or
+-4." (tests 5, 7 and 9); that phrasing, and the entry note's list of
+equivalent forms, are split exactly as the question bank splits them, by
+reusing parse_qbank's helpers rather than re-writing them.
+
 The surrounding prose says "Choice X is incorrect" about every distractor,
 so the correct-answer patterns must not also match those. They do not: the
 literal "is correct" is not a substring of "is incorrect" at the anchor
@@ -28,7 +33,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import poppler
-from parse_qbank import _CHOICE_CORRECT, _ENTRY_NOTE, _IN_RATIONALE
+from parse_qbank import _CHOICE_CORRECT, _IN_RATIONALE, _either_values, _entry_note_values
 
 # The bullet between "EXPLANATIONS" and the section name extracts as a bare
 # letter n; accept any short run of non-alphabetic filler so a different
@@ -74,11 +79,16 @@ def _answer_from(block: str) -> tuple[dict | None, str | None]:
     if choice:
         return {"kind": "mcq", "correct": "ABCD".index(choice.group(1)), "source": "rationale"}, None
 
-    note = _ENTRY_NOTE.search(block)
-    if note:
-        vals = [p.strip() for p in re.split(r"\s*(?:,|and)\s*", note.group(1)) if p.strip()]
-        if vals:
-            return {"kind": "spr", "accepted": vals, "source": "entry-note"}, None
+    vals = _entry_note_values(block)
+    if vals:
+        return {"kind": "spr", "accepted": vals, "source": "entry-note"}, None
+
+    # After the entry note, exactly as parse_qbank orders them: when both are
+    # present the note wins, and when the note wraps where `_ENTRY_NOTE`
+    # cannot see it (test 7, Math module 1 Q7) this still ships every root.
+    vals = _either_values(block)
+    if vals:
+        return {"kind": "spr", "accepted": vals, "source": "rationale-either"}, None
 
     stated = _IN_RATIONALE.search(block)
     if stated:

@@ -112,6 +112,37 @@ _ENTRY_NOTE = re.compile(r"Note\s+that\s+(.+?)\s+are examples")
 _EITHER = re.compile(r"The correct answer is either\s+(.+?)\.\s")
 
 
+def _entry_note_values(text: str) -> list[str]:
+    """Every accepted form an entry note lists, or [] when there is none.
+
+    The forms are joined by commas, "and", or "or" ("Note that 11/4 or 2.75
+    are examples", practice test 7, Math module 2 Q7); leaving "or" out
+    shipped "11/4 or 2.75" as one value no student entry can ever match.
+    Shared with parse_answers so both corpora split a note identically.
+    """
+    note = _ENTRY_NOTE.search(text)
+    if not note:
+        return []
+    parts = re.split(r"\s*(?:,|and|or)\s*", note.group(1))
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _either_values(text: str) -> list[str]:
+    """Every root an "either" answer states, or [] when there is none.
+
+    "14, -5, or -4" -> three values. The comma and the "or" may appear
+    together ("a, b, or c") or alone ("a or b"), so both separators are
+    consumed in one split rather than leaving a stray "or 9" behind.
+    Shared with parse_answers, which meets the same phrasing in practice
+    tests 5, 7 and 9.
+    """
+    either = _EITHER.search(text)
+    if not either:
+        return []
+    parts = re.split(r"\s*,\s*(?:or\s+)?|\s+or\s+", either.group(1))
+    return [p.strip() for p in parts if p.strip()]
+
+
 def _lines(text: str) -> list[str]:
     return [ln.strip() for ln in text.splitlines() if ln.strip()]
 
@@ -249,22 +280,13 @@ def _answer_from(text: str) -> tuple[dict | None, str | None]:
     if choice:
         return {"kind": "mcq", "correct": "ABCD".index(choice.group(1)), "source": "rationale"}, None
 
-    note = _ENTRY_NOTE.search(text)
-    if note:
-        parts = re.split(r"\s*(?:,|and)\s*", note.group(1))
-        vals = [p.strip() for p in parts if p.strip()]
-        if vals:
-            return {"kind": "spr", "accepted": vals, "source": "entry-note"}, None
+    vals = _entry_note_values(text)
+    if vals:
+        return {"kind": "spr", "accepted": vals, "source": "entry-note"}, None
 
-    either = _EITHER.search(text)
-    if either:
-        # "14, -5, or -4" -> three values. The comma and the "or" may appear
-        # together ("a, b, or c") or alone ("a or b"), so both separators are
-        # consumed in one split rather than leaving a stray "or 9" behind.
-        parts = re.split(r"\s*,\s*(?:or\s+)?|\s+or\s+", either.group(1))
-        vals = [p.strip() for p in parts if p.strip()]
-        if vals:
-            return {"kind": "spr", "accepted": vals, "source": "rationale-either"}, None
+    vals = _either_values(text)
+    if vals:
+        return {"kind": "spr", "accepted": vals, "source": "rationale-either"}, None
 
     stated = _IN_RATIONALE.search(text)
     if stated:
