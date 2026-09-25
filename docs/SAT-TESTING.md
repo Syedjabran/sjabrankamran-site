@@ -37,7 +37,7 @@ Board itself would score that exact paper.
 
 ## 2. Run it locally
 
-1. Make sure `.env.local` has these four variables set, pointing at the site's production
+1. Make sure `.env.local` has these three variables set, pointing at the site's production
    Supabase project (not a test project): `NEXT_PUBLIC_SUPABASE_URL`,
    `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
 2. `npm install`
@@ -69,8 +69,16 @@ portal — there's no separate SAT toggle.
    the **"Add to class…"** dropdown and click **Enrol**.
 
 The student will now see **SAT Lab** in their portal menu, alongside their other learning
-links. A teacher or admin given the same kind of enrolment (or who is already an admin)
-sees **SAT Lab** and **SAT results** in their own menu, under Administration.
+links.
+
+Staff menu access and student-data access are two different things. Any teacher,
+coordinator, facilitator, or admin already sees **SAT Lab** and **SAT results** in their
+own menu, under Administration — that doesn't depend on being enrolled in anything.
+Enrolment is what decides *whose* SAT work a teacher can actually see and assign: a
+teacher only sees the students in the SAT-track classes they're themselves enrolled in
+(so enrol a teacher in the same class as the student, the same way you enrolled the
+student above, if you want that teacher to see this student's results). An admin sees
+every SAT student regardless of their own enrolment.
 
 ## 4. A 10-minute test script
 

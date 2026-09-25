@@ -36,7 +36,8 @@ crops and the live upload ran: the question-bank crops (3,731) and the 8 officia
 tests (Tests 4–11, 960 crops) are uploaded to the production Supabase bucket
 `exam-assets`, under the `sat/` prefix. `src/lib/sat/question-bank.json` and
 `src/lib/sat/practice-tests.json` are built from that live data, not a dry run. The
-worked-answer (rationale) images are being prepared and uploaded now as compressed PNGs.
+worked-answer (rationale) images are uploaded as compressed PNGs, under unguessable
+content-hash keys (`sat/<section>/r/...`).
 Production storage under `sat/` is roughly 1.55 GB — over the Supabase Free plan's 1 GB
 limit, so the owner needs to check their plan (see `docs/SAT-TESTING.md` §6).
 
@@ -110,7 +111,8 @@ mathematical expression the text layer drops.
 2. **Supabase credentials.** The live upload has run, with the owner's authorisation, against
    the production `exam-assets` bucket: the question-bank crops (3,731) and the 8 official
    practice tests (960 crops) are uploaded under the `sat/` prefix. The worked-answer
-   (rationale) images are being uploaded now.
+   (rationale) images are uploaded too, as compressed PNGs under unguessable content-hash
+   keys (`sat/<section>/r/...`).
 
 What's left is no longer a pipeline question — see `docs/SAT-TESTING.md` §6 for the
 remaining pre-launch checklist (storage plan, the unapplied `sat-001` migration, QA test
