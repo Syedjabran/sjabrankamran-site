@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import type { SessionSummary } from "@/lib/sat/client-types";
 import { formatPk } from "@/lib/portal/pk-time";
+import { ScoreBadge } from "./score-badge";
 
 // The shape GET /api/sat/results returns. Composed locally from
 // client-types.ts's SessionSummary (never imported from store.ts/access.ts,
@@ -11,15 +12,6 @@ import { formatPk } from "@/lib/portal/pk-time";
 // SessionsPayload in sat-hub.tsx.
 type ResultsStudent = { uid: string; name: string; className: string; sessions: SessionSummary[] | null };
 type ResultsPayload = { students: ResultsStudent[] };
-
-function ScoreBadge({ score }: { score: NonNullable<SessionSummary["score"]> }) {
-  const official = score.authority === "official";
-  return (
-    <span className={"shrink-0 rounded-full border px-2 py-0.5 text-[11px] " + (official ? "border-emerald2/30 text-emerald2" : "border-amber-300/30 text-amber-200")}>
-      {score.lower}–{score.upper} · {official ? "Official score range" : "Estimated score"}
-    </span>
-  );
-}
 
 /** Most recently finished sitting that carries a score (drills never do). */
 function latestScored(sessions: SessionSummary[]): SessionSummary | null {
@@ -42,16 +34,27 @@ function lastActivity(sessions: SessionSummary[]): number | null {
 
 function SittingRow({ uid, s }: { uid: string; s: SessionSummary }) {
   const finished = s.finishedAt !== null;
+  const isDrill = s.kind === "drill";
+  // Drills have no score report (score is always null for them -- see
+  // summaryOf in serve.ts) -- the per-sitting report route has nothing to
+  // render for one, so a finished drill shows its result inline here
+  // instead of linking there. Only a finished adaptive/practice sitting
+  // links to the report.
+  const status = !finished
+    ? <span className="text-dust">In progress</span>
+    : isDrill
+      ? <span className="text-dust">{s.correct}/{s.total} correct</span>
+      : s.score
+        ? <ScoreBadge score={s.score} />
+        : <span className="text-dust">Finished</span>;
   const inner = (
     <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
       <span className="min-w-0 truncate text-fog">{s.title}</span>
       <span className="shrink-0 text-dust">{formatPk(s.createdAt)}</span>
-      <span className="ml-auto shrink-0">
-        {finished ? (s.score ? <ScoreBadge score={s.score} /> : <span className="text-dust">Finished</span>) : <span className="text-dust">In progress</span>}
-      </span>
+      <span className="ml-auto shrink-0">{status}</span>
     </div>
   );
-  if (!finished) return <div className="min-w-0 rounded-lg px-2 py-1.5">{inner}</div>;
+  if (!finished || isDrill) return <div className="min-w-0 rounded-lg px-2 py-1.5">{inner}</div>;
   return (
     <Link href={`/portal/sat-lab/results/${uid}/${s.id}`} className="block min-w-0 rounded-lg px-2 py-1.5 hover:bg-white/[0.03]">
       {inner}

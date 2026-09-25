@@ -1,16 +1,10 @@
 "use client";
 import { useState } from "react";
 import { CheckCircle2, XCircle, Info } from "lucide-react";
-import type { SATReport } from "@/lib/sat/client-types";
+import { DOMAIN_LABEL, type SATReport } from "@/lib/sat/client-types";
 import { useSignedImages } from "./use-signed-images";
 
 const SECTION = { rw: "Reading and Writing", math: "Math" } as const;
-const DOMAIN_LABEL: Record<string, string> = {
-  "information-ideas": "Information and Ideas", "craft-structure": "Craft and Structure",
-  "expression-ideas": "Expression of Ideas", "standard-english": "Standard English Conventions",
-  algebra: "Algebra", "advanced-math": "Advanced Math", psda: "Problem-Solving and Data Analysis",
-  "geometry-trig": "Geometry and Trigonometry",
-};
 
 export function ScoreReport({ report }: { report: SATReport }) {
   const [open, setOpen] = useState<string | null>(null);

@@ -30,7 +30,7 @@ type EnrolRow = {
   edu_students?: { profile_id: string; edu_profiles?: { full_name?: string } } | null;
 };
 
-const unavailable = () => NextResponse.json({ error: "Results couldn't be loaded. Please try again." }, { status: 503 });
+const unavailable = () => NextResponse.json({ error: "SAT results couldn't be loaded just now." }, { status: 503 });
 
 export async function GET() {
   const user = await getPortalUser();
@@ -38,10 +38,19 @@ export async function GET() {
   if (!isExamLabStaff(user.roles)) return NextResponse.json({ error: "Not authorized." }, { status: 403 });
 
   try {
-    const classIds = await satClassScope(user);
+    // Read the registry ONCE -- reused for satClassScope's SAT-track filter
+    // AND the class names below, so there's no second storage read.
+    // getRegistry() swallows a storage failure into an empty registry, so a
+    // genuine read failure and "no classes exist" are indistinguishable from
+    // its return value alone. A live registry always has classes, so an
+    // empty one fails closed here rather than silently rendering as an
+    // empty (but seemingly real) roster for every staff member.
+    const registry = await getRegistry();
+    if (!registry.classes.length) return unavailable();
+
+    const classIds = await satClassScope(user, registry);
     if (!classIds.length) return NextResponse.json({ students: [] });
 
-    const registry = await getRegistry();
     const classNameById = new Map(registry.classes.map((c) => [c.id, c.name] as const));
 
     const db = createAdminClient();

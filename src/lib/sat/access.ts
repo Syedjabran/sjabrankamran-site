@@ -6,7 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin, isExamLabStaff, type PortalUser } from "@/lib/edu/auth";
 import { resolveCourseAccess, courseFromYear } from "@/lib/portal/course-access";
 import { visibleClassIdsForUid } from "@/lib/portal/timetable";
-import { getRegistry } from "@/lib/portal/institutions";
+import { getRegistry, type Registry } from "@/lib/portal/institutions";
 
 export async function satAccess(user: PortalUser): Promise<{ ok: boolean; isStaff: boolean }> {
   const access = await resolveCourseAccess(user);
@@ -38,11 +38,17 @@ export async function satAccess(user: PortalUser): Promise<{ ok: boolean; isStaf
  * (src/app/api/sat/results/route.ts) so the two can never disagree about
  * which students are in scope -- the results list must never show a student
  * whose sitting `canViewStudent` would then refuse.
+ *
+ * `registry` is optional: pass an already-fetched one (the results route
+ * reads it once, for the class names too, and treats a registry with zero
+ * classes as a failed read -- see that route) to avoid a second
+ * `getRegistry()` storage round-trip. Every other caller (namely
+ * `canViewStudent`) omits it and this fetches its own, unchanged.
  */
-export async function satClassScope(user: PortalUser): Promise<string[]> {
+export async function satClassScope(user: PortalUser, registry?: Registry): Promise<string[]> {
   if (!isExamLabStaff(user.roles)) return [];
-  const registry = await getRegistry();
-  const satClassIds = registry.classes.filter((c) => courseFromYear(c.year) === "SAT").map((c) => c.id);
+  const reg = registry ?? (await getRegistry());
+  const satClassIds = reg.classes.filter((c) => courseFromYear(c.year) === "SAT").map((c) => c.id);
   if (isAdmin(user.roles)) return satClassIds;
   const satSet = new Set(satClassIds);
   const visible = await visibleClassIdsForUid(user.id, user.roles.filter((r) => r !== "parent"));

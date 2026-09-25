@@ -2,8 +2,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Info, Loader2 } from "lucide-react";
-import type { AssignmentView, PracticeTestInfo, SessionSummary } from "@/lib/sat/client-types";
+import { DOMAIN_LABEL, type AssignmentView, type PracticeTestInfo, type SessionSummary } from "@/lib/sat/client-types";
 import { formatPk } from "@/lib/portal/pk-time";
+import { ScoreBadge } from "./score-badge";
 
 type SessionsPayload = {
   sessions: SessionSummary[];
@@ -18,15 +19,18 @@ type SessionsPayload = {
 type SectionFilter = "" | "rw" | "math";
 type DifficultyFilter = "" | "E" | "M" | "H";
 
-const DOMAINS: { value: string; label: string; section: "rw" | "math" }[] = [
-  { value: "information-ideas", label: "Information and Ideas", section: "rw" },
-  { value: "craft-structure", label: "Craft and Structure", section: "rw" },
-  { value: "expression-ideas", label: "Expression of Ideas", section: "rw" },
-  { value: "standard-english", label: "Standard English Conventions", section: "rw" },
-  { value: "algebra", label: "Algebra", section: "math" },
-  { value: "advanced-math", label: "Advanced Math", section: "math" },
-  { value: "psda", label: "Problem-Solving and Data Analysis", section: "math" },
-  { value: "geometry-trig", label: "Geometry and Trigonometry", section: "math" },
+// Labels come from the shared DOMAIN_LABEL (client-types.ts) so this filter
+// and the score report's "By domain" breakdown never drift apart; only the
+// section grouping needed for this dropdown lives here.
+const DOMAINS: { value: string; section: "rw" | "math" }[] = [
+  { value: "information-ideas", section: "rw" },
+  { value: "craft-structure", section: "rw" },
+  { value: "expression-ideas", section: "rw" },
+  { value: "standard-english", section: "rw" },
+  { value: "algebra", section: "math" },
+  { value: "advanced-math", section: "math" },
+  { value: "psda", section: "math" },
+  { value: "geometry-trig", section: "math" },
 ];
 
 // Server enforces the same 5–30 bound (drills.ts DRILL_MIN/DRILL_MAX); kept
@@ -168,7 +172,7 @@ export function SatHub({ isStaff }: { isStaff: boolean }) {
               return (
                 <li key={t.testNo} className="flex min-w-0 flex-wrap items-center gap-3 rounded-xl border border-white/10 px-3 py-2.5 text-sm">
                   <span className="min-w-0 truncate text-fog">
-                    Practice Test {t.testNo} · 120 questions · {t.minutes ? `R&W ${t.minutes.rw[0]}+${t.minutes.rw[1]} min, Math ${t.minutes.math[0]}+${t.minutes.math[1]} min` : "Timings not loaded yet"}
+                    Practice Test {t.testNo} · {t.questions} questions · {t.minutes ? `R&W ${t.minutes.rw[0]}+${t.minutes.rw[1]} min, Math ${t.minutes.math[0]}+${t.minutes.math[1]} min` : "Timings not loaded yet"}
                   </span>
                   <button disabled={!t.minutes || busyKey === key} onClick={() => void start(key, { kind: "practice", testNo: t.testNo })} className="btn-primary ml-auto shrink-0 !px-3 !py-1.5 text-xs disabled:opacity-40">
                     {busyKey === key ? <Loader2 size={14} className="animate-spin" /> : "Start"}
@@ -195,7 +199,7 @@ export function SatHub({ isStaff }: { isStaff: boolean }) {
             Domain
             <select value={drillDomain} onChange={(e) => setDrillDomain(e.target.value)} className="mt-1 w-full rounded-xl border border-white/15 bg-void px-3 py-2 text-sm text-ice focus:border-cyan focus:outline-none">
               <option value="">Any domain</option>
-              {domainOptions.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+              {domainOptions.map((d) => <option key={d.value} value={d.value}>{DOMAIN_LABEL[d.value] ?? d.value}</option>)}
             </select>
           </label>
           <label className="block min-w-0 text-xs text-fog">
@@ -241,11 +245,7 @@ export function SatHub({ isStaff }: { isStaff: boolean }) {
                     <p className="text-xs text-dust">{formatPk(s.createdAt)}</p>
                   </div>
                   <span className="ml-auto shrink-0 font-mono text-xs text-dust">{statusLabel(s)}</span>
-                  {finished && s.score ? (
-                    <span className={"shrink-0 rounded-full border px-2 py-0.5 text-[11px] " + (s.score.authority === "official" ? "border-emerald2/30 text-emerald2" : "border-amber-300/30 text-amber-200")}>
-                      {s.score.lower}–{s.score.upper} · {s.score.authority === "official" ? "Official score range" : "Estimated score"}
-                    </span>
-                  ) : null}
+                  {finished && s.score ? <ScoreBadge score={s.score} /> : null}
                   <button onClick={() => router.push(`/portal/sat-lab/${s.id}`)} className="btn-ghost shrink-0 !px-3 !py-1.5 text-xs">{finished ? "Report" : "Resume"}</button>
                 </li>
               );

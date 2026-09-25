@@ -96,3 +96,18 @@ export type PracticeTestInfo = {
   timed: boolean;
   minutes: { rw: [number, number]; math: [number, number] } | null;
 };
+
+// Domain ids are plain labels, not answer data, so a runtime const is safe
+// in this types-only module. Shared by the drill filter (sat-hub.tsx) and
+// the score report's "By domain" breakdown (score-report.tsx) so the copy
+// can never drift between the two.
+export const DOMAIN_LABEL: Record<string, string> = {
+  "information-ideas": "Information and Ideas",
+  "craft-structure": "Craft and Structure",
+  "expression-ideas": "Expression of Ideas",
+  "standard-english": "Standard English Conventions",
+  algebra: "Algebra",
+  "advanced-math": "Advanced Math",
+  psda: "Problem-Solving and Data Analysis",
+  "geometry-trig": "Geometry and Trigonometry",
+};

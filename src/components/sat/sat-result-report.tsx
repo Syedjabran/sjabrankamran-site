@@ -39,5 +39,12 @@ export function SatResultReport({ uid, id }: { uid: string; id: string }) {
   if ("status" in state && state.status === "finished" && state.report) {
     return <ScoreReport report={state.report} />;
   }
+  // Drills carry no SATReport/status shape at all (only adaptive/practice
+  // sittings do) -- a finished one must never fall into the "still in
+  // progress" branch below, so it's handled on its own, regardless of
+  // whether it's finished or not.
+  if (state.kind === "drill") {
+    return <p className="rounded-2xl border border-white/10 bg-space/60 p-5 text-sm text-fog">Drill results are shown in the list — drills have no score report.</p>;
+  }
   return <p className="rounded-2xl border border-white/10 bg-space/60 p-5 text-sm text-fog">This sitting is still in progress.</p>;
 }
