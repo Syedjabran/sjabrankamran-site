@@ -18,6 +18,9 @@ PREFIX = "sat/"
 # Hex digits of sha256 in a rationale key: 80 bits, far beyond guessing, and
 # collision-free in practice for a few thousand crops.
 RATIONALE_KEY_HEX = 20
+# The type each object is stored (and later served) with, by key extension:
+# question and practice-test crops are JPEG, rationale crops PNG.
+CONTENT_TYPES = {".jpg": "image/jpeg", ".png": "image/png"}
 CREDENTIAL_VARS = ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY")
 # Half-open connections happen on a run this long; with no explicit
 # timeout, urlopen inherits socket.getdefaulttimeout() (None on this
@@ -36,9 +39,10 @@ def bucket_path(qid: str, section: str) -> str:
     return f"{PREFIX}{section}/{qid}.jpg"
 
 
-def rationale_bucket_path(section: str, jpeg: bytes) -> str:
+def rationale_bucket_path(section: str, png: bytes) -> str:
     """Object key for one official-rationale crop: `sat/<section>/r/<the
-    first RATIONALE_KEY_HEX hex digits of sha256(jpeg)>.jpg`.
+    first RATIONALE_KEY_HEX hex digits of sha256(png)>.png` (rationale crops
+    are palette PNGs -- see crop_rationale.PALETTE_COLOURS).
 
     Deliberately NOT derived from the question id. The rationale gives the
     answer away, the browser holds the question's own key
@@ -55,8 +59,8 @@ def rationale_bucket_path(section: str, jpeg: bytes) -> str:
     `bucket_path`: its output must go through `upload_file`, which calls
     `guard_prefix`.
     """
-    digest = hashlib.sha256(jpeg).hexdigest()[:RATIONALE_KEY_HEX]
-    return f"{PREFIX}{section}/r/{digest}.jpg"
+    digest = hashlib.sha256(png).hexdigest()[:RATIONALE_KEY_HEX]
+    return f"{PREFIX}{section}/r/{digest}.png"
 
 
 def test_bucket_path(test_no: int, section: str, module: int, qnum: int) -> str:
@@ -130,8 +134,15 @@ def upload_file(path: Path, dest: str, *, url: str | None = None, key: str | Non
     key -- not the raw `dest` argument -- so the string that was validated
     and the string that gets transmitted are the same by construction. See
     `guard_prefix` for why that distinction matters.
+
+    The object's Content-Type comes from the key's extension
+    (`CONTENT_TYPES`); the bucket serves it with that type, so a key with no
+    known type is refused before any request.
     """
     canonical_dest = guard_prefix(dest)
+    content_type = CONTENT_TYPES.get(posixpath.splitext(canonical_dest)[1])
+    if content_type is None:
+        raise ValueError(f"no content type for {canonical_dest}; known: {sorted(CONTENT_TYPES)}")
     url = url or os.environ["SUPABASE_URL"]
     key = key or os.environ["SUPABASE_SERVICE_ROLE_KEY"]
     endpoint = f"{url.rstrip('/')}/storage/v1/object/{BUCKET}/{canonical_dest}"
@@ -141,7 +152,7 @@ def upload_file(path: Path, dest: str, *, url: str | None = None, key: str | Non
         method="POST",
         headers={
             "Authorization": f"Bearer {key}",
-            "Content-Type": "image/jpeg",
+            "Content-Type": content_type,
             "x-upsert": "true",
         },
     )

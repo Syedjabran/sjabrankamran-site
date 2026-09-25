@@ -34,7 +34,7 @@ export type SATQuestion = {
   answer: SATAnswer;
   rationale: string;
   /** The official rationale as an image, keyed by a hash of its bytes
-   *  (sat/<section>/r/<hash>.jpg) so it can't be derived from the question
+   *  (sat/<section>/r/<hash>.png) so it can't be derived from the question
    *  id: the asset route signs any sat/ path for an enrolled student, who
    *  holds `img` while still answering. The text layer drops every math
    *  symbol, so this is what the student should see; absent when it

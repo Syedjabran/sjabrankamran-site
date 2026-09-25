@@ -80,6 +80,14 @@ WHITE_MIN = 250
 # about one line break -- so no extra gap is added between slices.
 PAD_PT = 6.0
 GAP_PT = 0.0
+# Rationale crops ship as adaptive-palette PNGs with this many colours. A
+# rationale is text and line math on white, which a small palette keeps
+# exactly: over 250 random crops, 16 colours came to 21.6% of the JPEG
+# (quality 85) bytes and 32 colours to 24.9%. By eye, 16 was as legible as
+# the JPEG on dense math (stacked fractions, exponents, radicals), on the
+# embedded raster math with its coloured anti-aliasing, and on the one
+# table rationale. See task-11-report.md.
+PALETTE_COLOURS = 16
 
 # Word pairs that only ever begin another record's header or answer. Seeing
 # one inside a region means it would show part of a different question.
@@ -278,11 +286,14 @@ def _render_pages(pdf: Path, first: int, last: int, dpi: int) -> dict[int, Image
 
 def render_rationale(pdf: Path, regions: list[dict], page_size: dict, dpi: int = 150) -> bytes:
     """Render `regions` (from `rationale_span`) into one image and return
-    its final JPEG bytes. Nothing is written: the rationale's bucket key is
-    a hash of these bytes (`upload.rationale_bucket_path`), so the caller
-    needs them before it knows where the file goes, and writes them itself,
-    atomically. Deterministic -- pdftoppm and PIL's JPEG encoder both are --
-    so a re-render of an unchanged rationale reproduces its key.
+    its final PNG bytes (a `PALETTE_COLOURS`-colour adaptive palette,
+    quantised from the lossless raster). Nothing is written: the
+    rationale's bucket key is a hash of these bytes
+    (`upload.rationale_bucket_path`), so the caller needs them before it
+    knows where the file goes, and writes them itself, atomically.
+    Deterministic -- pdftoppm, Pillow's median-cut quantiser and its PNG
+    encoder all are -- so a re-render of an unchanged rationale reproduces
+    its key.
 
     Raises `RationaleCropError` for a rationale that can't be cropped
     cleanly, `RuntimeError` for a raster whose size contradicts the page's
@@ -326,5 +337,5 @@ def render_rationale(pdf: Path, regions: list[dict], page_size: dict, dpi: int =
         raise RationaleCropError("empty-rationale-region")
 
     out = io.BytesIO()
-    image.save(out, "JPEG", quality=85, optimize=True)
+    image.quantize(colors=PALETTE_COLOURS).save(out, "PNG", optimize=True)
     return out.getvalue()

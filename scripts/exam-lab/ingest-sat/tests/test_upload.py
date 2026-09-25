@@ -17,10 +17,10 @@ def test_bucket_path_is_under_sat_prefix():
 
 
 def test_rationale_key_is_a_content_hash_under_the_sat_prefix():
-    jpeg = b"\xff\xd8 rationale crop bytes"
-    p = rationale_bucket_path("math", jpeg)
-    assert p == f"sat/math/r/{hashlib.sha256(jpeg).hexdigest()[:20]}.jpg"
-    assert re.fullmatch(r"sat/math/r/[0-9a-f]{20}\.jpg", p)
+    png = b"\x89PNG rationale crop bytes"
+    p = rationale_bucket_path("math", png)
+    assert p == f"sat/math/r/{hashlib.sha256(png).hexdigest()[:20]}.png"
+    assert re.fullmatch(r"sat/math/r/[0-9a-f]{20}\.png", p)
     assert guard_prefix(p) == p
 
 
@@ -164,6 +164,29 @@ def test_upload_file_passes_a_socket_timeout_to_urlopen(tmp_path):
         upload_file(src, "sat/math/x.jpg", url="https://example.supabase.co", key="fake-key")
 
     assert mock_urlopen.call_args.kwargs["timeout"] == 60
+
+
+@pytest.mark.parametrize("dest, content_type", [
+    ("sat/math/x.jpg", "image/jpeg"),                          # question and practice-test crops
+    ("sat/math/r/0123456789abcdef0123.png", "image/png"),      # rationale crops
+])
+def test_upload_file_sends_the_content_type_of_the_keys_extension(tmp_path, dest, content_type):
+    """The bucket serves each object with the type it was uploaded with, so
+    a PNG labelled image/jpeg would reach the browser mislabelled."""
+    src = tmp_path / "crop"
+    src.write_bytes(b"bytes")
+    with patch("upload.urllib.request.urlopen", return_value=_fake_response(200)) as mock_urlopen:
+        upload_file(src, dest, url="https://example.supabase.co", key="fake-key")
+    assert mock_urlopen.call_args[0][0].get_header("Content-type") == content_type
+
+
+def test_upload_file_refuses_an_extension_it_has_no_content_type_for(tmp_path):
+    src = tmp_path / "crop"
+    src.write_bytes(b"bytes")
+    with patch("upload.urllib.request.urlopen") as mock_urlopen:
+        with pytest.raises(ValueError, match="content type"):
+            upload_file(src, "sat/math/x.webp", url="https://example.supabase.co", key="fake-key")
+    mock_urlopen.assert_not_called()
 
 
 # --- preflight_credentials -------------------------------------------------

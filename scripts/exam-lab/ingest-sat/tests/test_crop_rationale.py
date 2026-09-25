@@ -396,16 +396,20 @@ def test_render_pages_survives_a_temp_file_another_process_holds_open(monkeypatc
             shutil.rmtree(Path(handle.name).parent, ignore_errors=True)
 
 
-def test_render_returns_the_final_jpeg_bytes_and_writes_nothing(tmp_path, monkeypatch):
+def test_render_returns_the_final_png_bytes_and_writes_nothing(tmp_path, monkeypatch):
     """The bytes ARE the rationale's identity: its bucket key is their hash
     (upload.rationale_bucket_path), so the caller needs them before it knows
     where the file goes. Writing them is the caller's job (atomically)."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(crop_rationale, "_render_pages", lambda pdf, first, last, dpi: {1: _with_bar(1650, 400, 500, w=1275)})
     data = render_rationale(Path("x.pdf"), [{"page": 1, "top": 100.0, "bottom": 792.0}], {1: (612.0, 792.0)})
-    assert data[:2] == bytes([0xFF, 0xD8])  # a JPEG's SOI marker
     with Image.open(io.BytesIO(data)) as img:
-        assert img.format == "JPEG" and img.height == 100 + 2 * 12
+        assert img.format == "PNG" and img.height == 100 + 2 * 12
+        # An adaptive palette of at most PALETTE_COLOURS entries: text
+        # rasters compress far better this way than as JPEG, with no
+        # visible loss (checked by eye; see task-11-report.md).
+        assert img.mode == "P"
+        assert len(img.getcolors()) <= crop_rationale.PALETTE_COLOURS == 16
     assert list(tmp_path.iterdir()) == []
 
 
@@ -431,7 +435,8 @@ def test_render_stitches_a_real_two_page_rationale(tmp_path):
     data = render_rationale(sliced, regions, a["page_size"])
     # Deterministic: a re-render of the same rationale has the same bytes,
     # hence the same content-hash key, so it is neither re-uploaded nor
-    # orphaned. (PIL's JPEG encoder and pdftoppm are both deterministic.)
+    # orphaned. (pdftoppm, Pillow's quantiser and its PNG encoder are all
+    # deterministic.)
     assert render_rationale(sliced, regions, a["page_size"]) == data
     with Image.open(io.BytesIO(data)) as img:
         assert img.width == 1275

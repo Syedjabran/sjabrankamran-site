@@ -638,7 +638,7 @@ QID = "ac472881"  # a realistic College Board id, so "not in the key" means some
 
 
 def _rationale_bytes(qid: str, version: int = 1) -> bytes:
-    return f"jpeg-of-the-rationale-of-{qid}-v{version}".encode()
+    return f"png-of-the-rationale-of-{qid}-v{version}".encode()
 
 
 def _key(qid: str, version: int = 1) -> str:
@@ -708,7 +708,7 @@ def test_main_dry_run_crops_the_rationale_under_its_content_hash_without_uploadi
     (row,) = _read(out_path)
     key = row["rationale_img"]
     assert key == _key(QID)
-    assert re.fullmatch(r"sat/math/r/[0-9a-f]{20}\.jpg", key)
+    assert re.fullmatch(r"sat/math/r/[0-9a-f]{20}\.png", key)
     assert QID not in key                       # not derivable from the question id
     assert row["img"] == f"sat/math/{QID}.jpg"
     # The local mirror is exactly where the dev local-image route resolves

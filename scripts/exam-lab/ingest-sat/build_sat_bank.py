@@ -42,7 +42,7 @@ SECTIONS = {"rw", "math"}
 DIFFICULTIES = {"E", "M", "H"}
 # upload.rationale_bucket_path's shape, restated here (not imported) for the
 # same reason as the vocabularies below: an independent check.
-RATIONALE_KEY = re.compile(r"sat/(?P<section>rw|math)/r/[0-9a-f]{20}\.jpg")
+RATIONALE_KEY = re.compile(r"sat/(?P<section>rw|math)/r/[0-9a-f]{20}\.png")
 # Hard-coded here on purpose, NOT imported from parse_qbank.DOMAIN_SLUGS --
 # this is meant to be an independent cross-check of what extract_sat.py
 # already produced, not an extension of the same code path. Importing the

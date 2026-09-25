@@ -157,7 +157,7 @@ also carries a rationale crop (`skipped-rationales.json` is empty).
   key (`sat/<section>/<id>.jpg`) while the student is still answering; and
   `/api/exam-lab/asset` signs any `sat/` path for an enrolled student. So a
   rationale is stored under a hash of its own bytes,
-  `sat/<section>/r/<first 20 hex digits of sha256>.jpg`, mirrored locally at
+  `sat/<section>/r/<first 20 hex digits of sha256>.png`, mirrored locally at
   `out/crops/<section>/r/...` (where the dev-only local-image route looks),
   and the only way to learn it is the server-only bank, which hands it out
   after the student has answered. No secret is involved. `build_sat_bank.py`
@@ -165,6 +165,13 @@ also carries a rationale crop (`skipped-rationales.json` is empty).
   recorded per id *with their key* in `uploaded-rationales.json`, apart
   from `uploaded.json`, so a question uploaded before rationales existed
   still gets its rationale.
+* **Rationale crops are 16-colour palette PNGs; question and practice-test
+  crops stay JPEG.** A rationale is text and line math on white, which an
+  adaptive palette quantised from the lossless raster keeps exactly: the
+  3,731 crops come to about a fifth of their JPEG (quality 85) size, and by
+  eye they are as legible, including dense math, the embedded raster math
+  with its coloured anti-aliasing, and the one table rationale.
+  `upload.py` sets each object's Content-Type from its key's extension.
 * **All bucket writes are confined to the `sat/` prefix**, checked by
   `upload.py`'s `guard_prefix` before any network call. The existing 9702
   and `o-level/` assets cannot be reached by this pipeline, by
@@ -192,8 +199,8 @@ also carries a rationale crop (`skipped-rationales.json` is empty).
   the bucket, orphaned -- nothing points at it, but it still uses storage.
   To clean up, delete the `sat/*/r/` objects whose keys no longer appear in
   `uploaded-rationales.json`. An unchanged re-render is byte-identical
-  (pdftoppm and Pillow's encoder are deterministic), so it keeps its key
-  and is not re-uploaded. To force a re-render, delete
+  (pdftoppm and Pillow's quantiser and encoder are deterministic), so it
+  keeps its key and is not re-uploaded. To force a re-render, delete
   `out/crops/rationale-crops.json`.
 * **Cross-page questions are not yet stitched.** 36 questions have their
   answer/rationale anchor on the following PDF page and are skipped with a

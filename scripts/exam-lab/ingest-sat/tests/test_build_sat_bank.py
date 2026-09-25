@@ -196,8 +196,8 @@ def test_check_provenance_refuses_a_live_run_with_no_uploaded_json(tmp_path):
 # uploaded. A row ships `rationaleImg` only when that record holds exactly
 # the row's key.
 
-KEY_A = "sat/math/r/0123456789abcdef0123.jpg"
-KEY_B = "sat/math/r/fedcba9876543210fedc.jpg"
+KEY_A = "sat/math/r/0123456789abcdef0123.png"
+KEY_B = "sat/math/r/fedcba9876543210fedc.png"
 WITH_R = [
     {**GOOD[0], "rationale_img": KEY_A},
     {**GOOD[0], "id": "bbbbbbbb", "rationale_img": KEY_B},
@@ -274,13 +274,14 @@ def test_validate_accepts_a_content_hash_rationale_key():
 
 
 @pytest.mark.parametrize("key", [
-    "o-level/r/0123456789abcdef0123.jpg",       # outside the sat/ prefix
+    "o-level/r/0123456789abcdef0123.png",       # outside the sat/ prefix
     "sat/math/ac472881-r.jpg",                  # the old, id-derived key
-    "sat/math/r/ac472881.jpg",                  # id-derived under the new directory
-    "sat/math/r/ac4728810123456789ab.jpg",      # hash-shaped but carries the id
-    "sat/rw/r/0123456789abcdef0123.jpg",        # another section's directory
-    "sat/math/r/0123456789ABCDEF0123.jpg",      # not a lowercase hex digest
-    "sat/math/r/0123456789abcdef012.jpg",       # wrong length
+    "sat/math/r/ac472881.png",                  # id-derived under the new directory
+    "sat/math/r/ac4728810123456789ab.png",      # hash-shaped but carries the id
+    "sat/rw/r/0123456789abcdef0123.png",        # another section's directory
+    "sat/math/r/0123456789ABCDEF0123.png",      # not a lowercase hex digest
+    "sat/math/r/0123456789abcdef012.png",       # wrong length
+    "sat/math/r/0123456789abcdef0123.jpg",      # the superseded JPEG encoding
 ])
 def test_validate_rejects_a_rationale_key_that_is_not_an_opaque_content_hash(key):
     with pytest.raises(ValueError, match="rationale"):

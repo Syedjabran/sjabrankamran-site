@@ -9,9 +9,10 @@ import { getPortalUser } from "@/lib/edu/auth";
 export const runtime = "nodejs";
 
 const ROOT = path.join(process.cwd(), "scripts", "exam-lab", "ingest-sat", "out", "crops");
-// Question and practice-test crops, plus official-rationale crops, which are
-// keyed by a content hash under <section>/r/ (see the ingest's upload.py).
-const SAFE = /^sat\/(?:(?:rw|math|tests\/\d{1,2})\/[A-Za-z0-9_-]{1,64}|(?:rw|math)\/r\/[0-9a-f]{20})\.jpg$/;
+// Question and practice-test crops (JPEG), plus official-rationale crops
+// (PNG), which are keyed by a content hash under <section>/r/ (see the
+// ingest's upload.py).
+const SAFE = /^sat\/(?:(?:rw|math|tests\/\d{1,2})\/[A-Za-z0-9_-]{1,64}\.jpg|(?:rw|math)\/r\/[0-9a-f]{20}\.png)$/;
 
 export async function GET(req: Request) {
   if (process.env.NODE_ENV !== "development" || process.env.SAT_LOCAL_CROPS !== "1") {
@@ -24,7 +25,8 @@ export async function GET(req: Request) {
   if (!file.startsWith(ROOT + path.sep)) return new NextResponse("Not found", { status: 404 });
   try {
     const bytes = await readFile(file);
-    return new NextResponse(new Uint8Array(bytes), { headers: { "content-type": "image/jpeg", "cache-control": "private, max-age=3600" } });
+    const type = p.endsWith(".png") ? "image/png" : "image/jpeg";
+    return new NextResponse(new Uint8Array(bytes), { headers: { "content-type": type, "cache-control": "private, max-age=3600" } });
   } catch {
     return new NextResponse("Not found", { status: 404 });
   }
