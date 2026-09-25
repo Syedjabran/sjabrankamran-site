@@ -121,6 +121,7 @@ interface PlanItem {
 
 Let *d* = days from today to the exam.
 - *d* > 56: one every 14 days. 21 < *d* ≤ 56: one every 7 days. 7 ≤ *d* ≤ 21: one every 7 days, the last about 5 days before the exam. 3 ≤ *d* < 7: exactly one, at least 2 days before the exam. *d* < 3: none — `review` items instead (a short mixed review of the weakest skills, size = the challenge size) and test-day tips.
+- The last full exam aims for about 5 days before the exam in every band of 7 days or more; earlier ones are spaced backwards from it. **Light schedules:** when the student practises on fewer than 3 days a week, full exams are never closer than 14 days apart (otherwise every session in the final weeks would be a full exam).
 - Day choice: prefer the student's practice days, weekend first; never the exam day or the day before.
 - Alternation: official practice tests in order (untaken first, 4 → 11), alternating with the adaptive mock; once all 8 are taken, adaptive mocks.
 - Started from the plan → a sitting with `planItemId`; `done`/`late` by the date it finished; a `missed` full exam is rescheduled automatically by the planner to the next suitable day (the planner may do what the student may not).
