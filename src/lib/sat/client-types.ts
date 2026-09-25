@@ -6,6 +6,10 @@
 // (scripts/check-sat-client-imports.mjs enforces that). Nothing here may
 // import a runtime value from another src/lib/sat module.
 import type { SATDifficulty, SATScore, SATSection } from "./types.ts";
+// Type-only: analytics.ts imports SATAnalytics/MasteryRow from here in turn.
+// Both sides are `import type`, so this is erased at compile time and forms
+// no runtime cycle (verified by tsc and by the two modules loading in Node).
+import type { SittingScore } from "./analytics.ts";
 
 export type PublicQuestion = {
   id: string;
@@ -180,3 +184,45 @@ export function drillTitle(f: { section?: SATSection | ""; domain?: string; skil
   ].filter(Boolean);
   return `${parts.join(" · ")} drill`;
 }
+
+// --- Analytics (src/lib/sat/analytics.ts) -----------------------------------
+//
+// Client-safe shapes only: recency-weighted mastery numbers and counts, never
+// answer data. A mastery percentage, never a scaled score (spec 10.5 / the
+// "no invented scores" rule) -- score ranges live only in `scores` below,
+// sourced from real SATScore values.
+
+/** One mastery row, for either a domain or a skill. `domain` is the owning
+ *  domain id, set on skill rows and omitted on domain rows (whose own `key`
+ *  already is the domain id). */
+export type MasteryRow = {
+  key: string;
+  label: string;
+  section: SATSection;
+  domain?: string;
+  attempts: number;
+  correct: number;
+  mastery: number;       // 0..1, Beta(2,2)-prior recency-weighted accuracy
+  confidence: number;    // effective sample size (sum of recency weights)
+  trend: number;         // mastery delta: last 14 days vs the 14 before
+  lastAt: number | null;
+};
+
+export type SATAnalytics = {
+  generatedAt: number;
+  totals: {
+    answered: number;
+    correct: number;
+    last7: { answered: number; correct: number };
+    last30: { answered: number; correct: number };
+  };
+  sections: Record<SATSection, { answered: number; correct: number; accuracy: number | null }>;
+  domains: MasteryRow[];
+  skills: MasteryRow[];
+  difficulty: Record<SATSection, Record<SATDifficulty, { answered: number; correct: number }>>;
+  pacing: Record<SATSection, { medianSec: number | null; targetSec: number; samples: number }>;
+  pacingFlags: { skill: string; label: string; medianSec: number; accuracy: number }[];
+  weakSkills: { key: string; label: string; domain: string; section: SATSection; mastery: number; priority: number }[];
+  notEnoughData: { key: string; label: string; attempts: number }[];
+  scores: { latestOfficial: SittingScore | null; latestEstimate: SittingScore | null; history: SittingScore[] };
+};
