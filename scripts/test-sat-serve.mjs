@@ -45,6 +45,20 @@ for (const q of state.stage.questions) {
 // --- reach the break: submit rw.m1 then rw.m2, stage-guarded submitStage --
 s = submitStage(s, "rw.m1", allA(s.plan["rw.m1"]), [], T0 + 30 * 60_000, answerOf);
 assert.equal(s.results["rw.m1"].total, 27);
+
+// Module 1 -> Module 2 is immediate (no break between them), so the session
+// is "running" again straight away, now on a Module 2 stage. This is the
+// stage where hiding difficulty actually matters: Module 2's difficulty mix
+// (lower vs. upper) is exactly what would reveal the adaptive route.
+state = sessionState(s, T0 + 31 * 60_000);
+assert.equal(state.status, "running");
+assert.equal(state.stage.key, "rw.m2", "must have routed into a Module 2 stage");
+assertNoLeak(state, "sessionState on the rw.m2 (Module 2) stage");
+assert.ok(state.stage.questions.length > 0);
+for (const q of state.stage.questions) {
+  assert.equal(q.difficulty, null, "difficulty must be hidden on a Module 2 stage too -- this is where it would reveal the route");
+}
+
 s = submitStage(s, "rw.m2", allA(s.plan["rw.m2"]), [], T0 + 62 * 60_000, answerOf);
 
 state = sessionState(s, T0 + 63 * 60_000);
