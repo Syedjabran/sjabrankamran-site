@@ -14,7 +14,8 @@
     "test:access": "node --no-warnings --experimental-strip-types scripts/test-access-control.mjs",
     "test:portal": "node --no-warnings --experimental-strip-types scripts/test-portal-rules.mjs",
     "test:sat-bank": "node --no-warnings --experimental-strip-types scripts/test-sat-bank.mjs",
-    "test:sat": "npm run test:sat-bank"
+    "test:sat-forms": "node --no-warnings --experimental-strip-types scripts/test-sat-forms.mjs",
+    "test:sat": "npm run test:sat-bank && npm run test:sat-forms"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",
