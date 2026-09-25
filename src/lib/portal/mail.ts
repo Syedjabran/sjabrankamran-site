@@ -44,6 +44,8 @@ export type Template = { id: string; name: string; subject: string; body: string
 const LOG = "log.json";
 const FLUSH_LOCK = "flush.lock";
 const FLUSH_LOCK_TTL_MS = 5 * 60_000;
+/** How long a lock takeover waits before reading back who won. */
+const FLUSH_LOCK_SETTLE_MS = 1500;
 /** Stop starting new relays before the flush route's 300 s limit. */
 const FLUSH_BUDGET_MS = 4 * 60_000;
 
@@ -168,8 +170,8 @@ export type SendMailInput = {
 };
 export type SendMailResult = { id: string; status: MailStatus; error?: string };
 
-/** Send (or queue) a message and log it. */
-export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
+/** Relay (or queue) one message and persist its full record; logging is the caller's. */
+async function deliver(input: SendMailInput): Promise<MailRecord> {
   const to = Array.from(new Set((input.to || []).map((e) => e.trim()).filter(Boolean)));
   const rec: MailRecord = {
     id: newId(), ts: Date.now(), to, cc: input.cc, subject: input.subject.slice(0, 300),
@@ -186,31 +188,52 @@ export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
     rec.status = "queued"; rec.error = "mail_transport_not_configured";
   }
   await writeJson(`msg/${rec.id}.json`, rec);
-  const { html: _h, text: _t, ...idx } = rec;
-  void _h; void _t;
-  // The message already went out (or is persisted as queued), so a log
+  return rec;
+}
+
+/** Add messages to the log in ONE read-modify-write of log.json. */
+async function logDelivered(recs: MailRecord[]): Promise<void> {
+  const entries: MailIndexEntry[] = recs.map((rec) => {
+    const { html: _h, text: _t, ...idx } = rec;
+    void _h; void _t;
+    return idx;
+  });
+  // The messages already went out (or are persisted as queued), so a log
   // failure must not surface as a send failure that invites a re-send.
-  const append = () => updateIndex((log) => { log.push(idx); });
+  const append = () => updateIndex((log) => { log.push(...entries); });
   try {
     await append().catch(append); // one retry for a transient storage error
   } catch (e) {
-    console.error("[mail] could not log", rec.id, (e as Error).message);
+    console.error("[mail] could not log", recs.map((r) => r.id).join(","), (e as Error).message);
   }
-  // In-portal "You've got mail" for recipients who are portal users (best-effort;
-  // dynamic import keeps this module free of a static notifications dependency).
-  if (rec.status !== "failed") {
-    try {
-      const { notifyMailReceived } = await import("@/lib/portal/notifications");
-      await notifyMailReceived(to, rec.subject);
-    } catch { /* best effort */ }
-  }
-  return { id: rec.id, status: rec.status, error: rec.error };
+}
+
+/** In-portal "You've got mail" for recipients who are portal users (best-effort;
+ * dynamic import keeps this module free of a static notifications dependency). */
+async function notifyRecipients(rec: MailRecord): Promise<void> {
+  if (rec.status === "failed") return;
+  try {
+    const { notifyMailReceived } = await import("@/lib/portal/notifications");
+    await notifyMailReceived(rec.to, rec.subject);
+  } catch { /* best effort */ }
+}
+
+const resultOf = (rec: MailRecord): SendMailResult => ({ id: rec.id, status: rec.status, error: rec.error });
+
+/** Send (or queue) a message and log it. */
+export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
+  const rec = await deliver(input);
+  await logDelivered([rec]);
+  await notifyRecipients(rec);
+  return resultOf(rec);
 }
 
 /**
  * Send several messages, at most `concurrency` in flight at once (results
- * keep input order). `afterBatch` runs after each batch — e.g. to checkpoint
- * progress so a retried request can skip what already went out.
+ * keep input order). Each batch is logged in a single log.json write rather
+ * than one serialized write per message. `afterBatch` runs after each batch
+ * — e.g. to checkpoint progress so a retried request can skip what already
+ * went out.
  */
 export async function sendMailBatched(
   inputs: SendMailInput[],
@@ -219,7 +242,10 @@ export async function sendMailBatched(
 ): Promise<SendMailResult[]> {
   const out: SendMailResult[] = [];
   for (let i = 0; i < inputs.length; i += concurrency) {
-    const results = await Promise.all(inputs.slice(i, i + concurrency).map((m) => sendMail(m)));
+    const recs = await Promise.all(inputs.slice(i, i + concurrency).map((m) => deliver(m)));
+    await logDelivered(recs);
+    await Promise.all(recs.map((rec) => notifyRecipients(rec)));
+    const results = recs.map(resultOf);
     out.push(...results);
     if (afterBatch) await afterBatch(results, i);
   }
@@ -237,23 +263,29 @@ type FlushLock = { token: string; expiresAt: number };
  * Take the flush lock, or null when another flush holds it. Creation uses
  * upsert:false, so it is an atomic create-if-absent; a lock is only taken
  * over once it has expired (its run crashed or timed out).
+ *
+ * A takeover OVERWRITES the expired lock with this run's token instead of
+ * deleting it: a delete could remove the fresh lock another flush had just
+ * taken over. When two flushes race for the same expired lock the last write
+ * wins, so each waits for the other's write to land, reads the lock back and
+ * proceeds only if its own token is the one stored.
  */
 async function acquireFlushLock(): Promise<string | null> {
   const token = newId();
-  const create = async () => {
-    const lock: FlushLock = { token, expiresAt: Date.now() + FLUSH_LOCK_TTL_MS };
-    const body = new Blob([JSON.stringify(lock)], { type: "application/json" });
-    const { error } = await admin().storage.from(MAIL_BUCKET).upload(FLUSH_LOCK, body, { upsert: false, contentType: "application/json", cacheControl: "0" });
-    return !error;
-  };
-  if (await create()) return token;
+  const lock = (): FlushLock => ({ token, expiresAt: Date.now() + FLUSH_LOCK_TTL_MS });
+  const body = new Blob([JSON.stringify(lock())], { type: "application/json" });
+  const { error } = await admin().storage.from(MAIL_BUCKET).upload(FLUSH_LOCK, body, { upsert: false, contentType: "application/json", cacheControl: "0" });
+  if (!error) return token;
   let held: FlushLock | null;
   try { held = await readJson<FlushLock | null>(FLUSH_LOCK, null); } catch { return null; }
   if (held && held.expiresAt > Date.now()) return null;
-  await admin().storage.from(MAIL_BUCKET).remove([FLUSH_LOCK]);
-  return (await create()) ? token : null;
+  if (!(await writeJson(FLUSH_LOCK, lock()))) return null;
+  await new Promise((resolve) => setTimeout(resolve, FLUSH_LOCK_SETTLE_MS));
+  try { held = await readJson<FlushLock | null>(FLUSH_LOCK, null); } catch { return null; }
+  return held?.token === token ? token : null;
 }
 
+/** Releases only a lock this run still owns (a takeover may have replaced it). */
 async function releaseFlushLock(token: string) {
   try {
     const held = await readJson<FlushLock | null>(FLUSH_LOCK, null);

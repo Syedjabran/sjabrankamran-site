@@ -65,9 +65,11 @@ async function saveAttendance(formData: FormData) {
   const rows: { lesson_id: string; student_id: string; status: string; note: string | null }[] = [];
   const noReason: string[] = [];
   for (const s of roster) {
-    const picked = String(formData.get(`status:${s.id}`) ?? "");
-    // Every row is pre-set on the form, so a missing value is a malformed post; don't count it as present.
-    const status = isAttendanceStatus(picked) ? picked : "absent";
+    const status = String(formData.get(`status:${s.id}`) ?? "");
+    // Every row on the form is pre-set, so no valid value means this student
+    // was not on it — typically enrolled after the page was rendered. Leave
+    // them unmarked rather than record an absence nobody chose.
+    if (!isAttendanceStatus(status)) continue;
     // A reason is only kept for the statuses that carry one, so switching a
     // student back to Present cannot leave a stale exemption reason behind.
     const note = allowsReason(status) ? normaliseReason(formData.get(`note:${s.id}`)) : "";

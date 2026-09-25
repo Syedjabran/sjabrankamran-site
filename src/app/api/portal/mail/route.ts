@@ -3,10 +3,35 @@ import { getPortalUser, canAccessGlobalStaffData } from "@/lib/edu/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendMail, sendMailBatched, listMail, type MailStatus } from "@/lib/portal/mail";
 import { guardianEmails, EMAIL_RE } from "@/lib/portal/onboarding";
+import { readStorageJson, writeStorageJson } from "@/lib/portal/resources";
 
 export const runtime = "nodejs";
 // A class broadcast is one message per family, so allow for a few dozen sends.
 export const maxDuration = 60;
+
+const DATA = "portal-data";
+const MAIL_CONCURRENCY = 5;
+
+type Counts = Record<MailStatus, number>;
+/**
+ * Idempotency record for one client `requestId` of a class broadcast
+ * (portal-data/mail-requests/<uid>/<requestId>.json), as the coordinator
+ * route keeps. It records the addresses whose family message already went
+ * out, so a retry after a timeout mails only the families still waiting.
+ */
+type RequestMarker = Counts & {
+  status: "processing" | "done";
+  startedAt: number;
+  emailed: string[]; // lower-cased addresses whose family message was sent or queued
+  recipients: number;
+};
+
+/** Atomic create-if-absent (upsert:false), so two identical submits can't both proceed. */
+async function createMarker(path: string, marker: RequestMarker): Promise<boolean> {
+  const body = new Blob([JSON.stringify(marker)], { type: "application/json" });
+  const { error } = await createAdminClient().storage.from(DATA).upload(path, body, { upsert: false, contentType: "application/json", cacheControl: "0" });
+  return !error;
+}
 
 function textToHtml(text: string) {
   const esc = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -46,10 +71,11 @@ async function classFamilies(classId: string, audience: "students" | "parents" |
 }
 
 /** One status for a batch: "sent" only when every message went out. */
-function overallStatus(statuses: MailStatus[]): MailStatus {
-  if (statuses.every((s) => s === "sent")) return "sent";
-  return statuses.some((s) => s === "queued") ? "queued" : "failed";
+function overallStatus(c: Counts): MailStatus {
+  if (!c.queued && !c.failed) return "sent";
+  return c.queued ? "queued" : "failed";
 }
+const summary = (c: Counts) => ({ status: overallStatus(c), messages: c.sent + c.queued + c.failed, sent: c.sent, queued: c.queued, failed: c.failed });
 
 export async function GET() {
   const user = await getPortalUser();
@@ -64,7 +90,7 @@ export async function POST(req: Request) {
   const b = (await req.json().catch(() => null)) as {
     mode?: "emails" | "class";
     to?: string[]; classId?: string; audience?: "students" | "parents" | "both";
-    subject?: string; body?: string;
+    subject?: string; body?: string; requestId?: string;
   } | null;
   if (!b) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
 
@@ -77,16 +103,45 @@ export async function POST(req: Request) {
   if (b.mode === "class" && b.classId) {
     const families = await classFamilies(b.classId, b.audience || "both");
     if (families.length === 0) return NextResponse.json({ error: "No valid recipients." }, { status: 400 });
-    const results = await sendMailBatched(
-      families.map((to) => ({ ...base, to, meta: { classId: b.classId, audience: b.audience } })),
+    const recipients = families.reduce((n, f) => n + f.length, 0);
+
+    // Optional client idempotency key: a broadcast that timed out part-way is
+    // retried with the same key and resumes, so no family is mailed twice.
+    const requestId = typeof b.requestId === "string" && /^[A-Za-z0-9_-]{8,100}$/.test(b.requestId) ? b.requestId : null;
+    const markerPath = requestId ? `mail-requests/${user.id}/${requestId}.json` : null;
+    let marker: RequestMarker | null = null;
+    if (markerPath) {
+      let prev: RequestMarker | null;
+      try { prev = await readStorageJson<RequestMarker | null>(DATA, markerPath, null); }
+      catch { return NextResponse.json({ error: "Could not check whether this message was already sent — try again." }, { status: 503 }); }
+      if (prev?.status === "done") return NextResponse.json({ ok: true, duplicate: true, recipients: prev.recipients, ...summary(prev) }, { status: 200 });
+      // Still inside the first attempt's lifetime → it may be running right now.
+      if (prev && Date.now() - prev.startedAt < maxDuration * 1000) return NextResponse.json({ error: "This message is still being sent." }, { status: 409 });
+      marker = { status: "processing", startedAt: Date.now(), emailed: prev?.emailed ?? [], sent: prev?.sent ?? 0, queued: prev?.queued ?? 0, failed: prev?.failed ?? 0, recipients };
+      if (prev) await writeStorageJson(DATA, markerPath, marker);
+      else if (!(await createMarker(markerPath, marker))) return NextResponse.json({ error: "This message is already being sent." }, { status: 409 });
+    }
+    const saveMarker = async () => { if (marker && markerPath) await writeStorageJson(DATA, markerPath, marker); };
+
+    // Addresses, not families, are what a retry skips: sibling de-duplication
+    // may group them differently on the second run.
+    const done = new Set(marker?.emailed ?? []);
+    const pending = families.map((f) => f.filter((e) => !done.has(e.toLowerCase()))).filter((f) => f.length);
+    const counts: Counts = { sent: marker?.sent ?? 0, queued: marker?.queued ?? 0, failed: marker?.failed ?? 0 };
+    await sendMailBatched(
+      pending.map((to) => ({ ...base, to, meta: { classId: b.classId, audience: b.audience } })),
+      MAIL_CONCURRENCY,
+      async (results, start) => {
+        results.forEach((r, k) => {
+          counts[r.status] += 1;
+          // Sent or queued, the message now exists — a retry must not repeat it.
+          if (r.status !== "failed" && marker) marker.emailed.push(...pending[start + k].map((e) => e.toLowerCase()));
+        });
+        if (marker) { Object.assign(marker, counts); await saveMarker(); }
+      },
     );
-    const count = (s: MailStatus) => results.filter((r) => r.status === s).length;
-    return NextResponse.json({
-      ok: true,
-      status: overallStatus(results.map((r) => r.status)),
-      recipients: families.reduce((n, f) => n + f.length, 0),
-      messages: results.length, sent: count("sent"), queued: count("queued"), failed: count("failed"),
-    }, { status: 200 });
+    if (marker) { marker.status = "done"; await saveMarker(); }
+    return NextResponse.json({ ok: true, recipients, ...summary(counts) }, { status: 200 });
   }
 
   const to = (b.to || []).map((e) => e.trim()).filter((e) => EMAIL_RE.test(e));
