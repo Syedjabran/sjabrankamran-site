@@ -36,12 +36,16 @@ spans its centre; the section label printed above each LOWER/UPPER pair
 decides whether that pair is Reading and Writing or Math -- not its
 position, and not how far its raw scores run.
 """
+import json
 import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bbox
+
+# Hand-verified exceptions to the sanity checks below (spec section 6).
+REVIEWED = Path(__file__).resolve().parent / "reviewed.json"
 
 # Raw scores top out at 66 and scaled scores at 800, so no cell is wider
 # than three digits; the footer's copyright year, which sits in the raw
@@ -212,13 +216,39 @@ def parse_tables(pages: dict[int, list[dict]]) -> dict[str, dict[int, tuple[int,
     return {section: dict(sorted(table.items())) for section, table in merged.items()}
 
 
-def check_tables(tables: dict[str, dict[int, tuple[int, int]]]) -> list[str]:
+def conversion_exceptions(test: int) -> list[dict]:
+    """reviewed.json's hand-verified conversion-table exceptions for `test`."""
+    if not REVIEWED.exists():
+        return []
+    entries = json.loads(REVIEWED.read_text(encoding="utf-8")).get("conversion_exceptions", [])
+    return [e for e in entries if e["test"] == test]
+
+
+def check_tables(
+    tables: dict[str, dict[int, tuple[int, int]]],
+    test: int | None = None,
+    exceptions: list[dict] | None = None,
+) -> list[str]:
     """Every way a mis-parsed table can be caught without a second source.
 
     A table that passes all of these is not *proven* right, but every
     failure mode seen while developing this -- a shifted row, a column read
     as its neighbour, a band or page half-read -- breaks at least one of them.
+
+    Monotonicity is a parse-sanity rule, not a promise College Board makes:
+    test 6 really prints R&W raw 40 -> 41 as (540, 580) -> (530, 590). Such a
+    break is tolerated only when `exceptions` (by default reviewed.json's, for
+    `test`) lists exactly that test, section, raw score and rule, and only
+    while the parsed cell still equals the verified `printed` values -- a
+    different reading is reported, never excused. Without `test`, nothing is
+    excused.
     """
+    if exceptions is None:
+        exceptions = conversion_exceptions(test) if test is not None else []
+    listed = {
+        (e["section"], e["raw"], e["rule"]): tuple(e["printed"])
+        for e in exceptions if e["test"] == test
+    }
     problems: list[str] = []
     for section, raw_max in RAW_MAX.items():
         table = tables.get(section) or {}
@@ -243,11 +273,20 @@ def check_tables(tables: dict[str, dict[int, tuple[int, int]]]) -> list[str]:
         ordered = sorted(table.items())
         for (raw, (lo, hi)), (nraw, (nlo, nhi)) in zip(ordered, ordered[1:]):
             if nlo < lo or nhi < hi:
+                if listed.get((section, nraw, "non-monotonic")) == (nlo, nhi):
+                    continue
                 problems.append(
                     f"{section}: curve is not monotonic from raw {raw} ({lo}, {hi}) "
                     f"to raw {nraw} ({nlo}, {nhi})"
                 )
                 break
+    for (section, raw, rule), printed in sorted(listed.items()):
+        parsed = (tables.get(section) or {}).get(raw)
+        if parsed != printed:
+            problems.append(
+                f"{section} raw {raw}: reviewed.json verified test {test} as printing "
+                f"{printed} ({rule}), parsed {parsed}"
+            )
     return problems
 
 

@@ -1,0 +1,13 @@
+{
+  "about": "Hand-verified corrections and exceptions (spec section 6); they ship over any parsed value. Every entry says what was verified and how.",
+  "conversion_exceptions": [
+    {
+      "test": 6,
+      "section": "rw",
+      "raw": 41,
+      "printed": [530, 590],
+      "rule": "non-monotonic",
+      "verified": "rendered page 5 of scoring-sat-practice-test-6-digital.pdf, 2026-09-25"
+    }
+  ]
+}

@@ -199,3 +199,55 @@ def test_check_rejects_raw_scores_beyond_the_section_maximum():
 def test_check_rejects_a_section_that_is_absent():
     tables = parse_scoring.parse_tables({5: GRID})
     assert parse_scoring.check_tables({"rw": tables["rw"]}) == ["math: no conversion table found"]
+
+
+def _with_drop_at(raw):
+    """GRID's tables with R&W's lower bound falling by 10 into `raw` -- the
+    shape test 6 really prints at raw 40 -> 41 (540, 580) -> (530, 590)."""
+    tables = parse_scoring.parse_tables({5: GRID})
+    lower, upper = tables["rw"][raw]
+    tables["rw"][raw] = (tables["rw"][raw - 1][0] - 10, upper)
+    return tables
+
+
+def _exception(raw, printed, test=6):
+    return {"test": test, "section": "rw", "raw": raw, "printed": list(printed),
+            "rule": "non-monotonic", "verified": "fixture"}
+
+
+def test_a_listed_verified_break_is_tolerated():
+    tables = _with_drop_at(41)
+    assert parse_scoring.check_tables(tables) != []  # strict without the list
+    listed = [_exception(41, tables["rw"][41])]
+    assert parse_scoring.check_tables(tables, test=6, exceptions=listed) == []
+
+
+def test_the_same_break_at_an_unlisted_raw_score_fails():
+    tables = _with_drop_at(30)
+    listed = [_exception(41, tables["rw"][41])]
+    assert any("monotonic" in p for p in parse_scoring.check_tables(tables, test=6, exceptions=listed))
+
+
+def test_a_listed_break_only_covers_its_own_test():
+    tables = _with_drop_at(41)
+    listed = [_exception(41, tables["rw"][41], test=6)]
+    assert any("monotonic" in p for p in parse_scoring.check_tables(tables, test=5, exceptions=listed))
+
+
+def test_a_listed_entry_whose_printed_values_differ_from_the_parse_fails():
+    """If a future parse reads other numbers at the listed cell, the
+    verification no longer describes what was parsed and must not excuse it."""
+    tables = _with_drop_at(41)
+    lower, upper = tables["rw"][41]
+    listed = [_exception(41, (lower - 10, upper))]
+    problems = parse_scoring.check_tables(tables, test=6, exceptions=listed)
+    assert any("reviewed.json" in p for p in problems)
+    assert any("monotonic" in p for p in problems)
+
+
+def test_reviewed_json_lists_test_6s_printed_break_and_nothing_else():
+    assert parse_scoring.conversion_exceptions(6) == [{
+        "test": 6, "section": "rw", "raw": 41, "printed": [530, 590], "rule": "non-monotonic",
+        "verified": "rendered page 5 of scoring-sat-practice-test-6-digital.pdf, 2026-09-25",
+    }]
+    assert all(parse_scoring.conversion_exceptions(n) == [] for n in (4, 5, 7, 8, 9, 10, 11))
