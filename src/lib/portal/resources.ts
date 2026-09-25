@@ -41,19 +41,46 @@ export type ResourceView = ResourceItem & { href: string | null; embedUrl: strin
 
 function newId() { return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }
 
-async function readIndex(): Promise<ResourceItem[]> {
-  try {
-    const { data } = await createAdminClient().storage.from(DATA).download(INDEX);
-    if (data) { const j = JSON.parse(await data.text()); return Array.isArray(j) ? j : (j.items || []); }
-  } catch { /* none */ }
-  return [];
+/**
+ * Storage-as-DB JSON read, shared by the other portal-data / portal-mail
+ * modules (attachments, mail, the Drive folder cache, …).
+ *
+ * Cache-busted, because plain storage reads can be served STALE by the CDN
+ * indefinitely (see forum.ts readJson). Only a MISSING object yields
+ * `fallback`; any other failure throws, so a transient error is never taken
+ * for an empty index that the caller's next write would then overwrite.
+ */
+export async function readStorageJson<T>(bucket: string, path: string, fallback: T): Promise<T> {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const enc = path.split("/").map(encodeURIComponent).join("/");
+  const cb = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/${bucket}/${enc}?cb=${cb}`, {
+    cache: "no-store",
+    headers: { apikey: key, authorization: `Bearer ${key}` },
+  });
+  if (res.ok) return (await res.json()) as T;
+  const detail = await res.text().catch(() => "");
+  // Storage reports a missing object as 404, or as 400 with a not_found body.
+  if (res.status === 404 || (res.status === 400 && /not.?found/i.test(detail))) return fallback;
+  throw new Error(`Storage read ${bucket}/${path} failed: HTTP ${res.status} ${detail.slice(0, 120)}`);
 }
-async function writeIndex(items: ResourceItem[]): Promise<boolean> {
+
+/** Upsert a JSON object with cacheControl "0" (the write half of readStorageJson). */
+export async function writeStorageJson(bucket: string, path: string, obj: unknown): Promise<boolean> {
   try {
-    const body = new Blob([JSON.stringify({ items })], { type: "application/json" });
-    const { error } = await createAdminClient().storage.from(DATA).upload(INDEX, body, { upsert: true, contentType: "application/json", cacheControl: "0" });
+    const body = new Blob([JSON.stringify(obj)], { type: "application/json" });
+    const { error } = await createAdminClient().storage.from(bucket).upload(path, body, { upsert: true, contentType: "application/json", cacheControl: "0" });
     return !error;
   } catch { return false; }
+}
+
+async function readIndex(): Promise<ResourceItem[]> {
+  const j = await readStorageJson<ResourceItem[] | { items?: ResourceItem[] } | null>(DATA, INDEX, null);
+  if (!j) return [];
+  return Array.isArray(j) ? j : (j.items || []);
+}
+async function writeIndex(items: ResourceItem[]): Promise<void> {
+  if (!(await writeStorageJson(DATA, INDEX, { items }))) throw new Error("Could not save the resources index.");
 }
 
 const EXT_KIND: Record<string, ResourceKind> = {
@@ -135,13 +162,39 @@ export async function listResources(): Promise<ResourceView[]> {
   });
 }
 
-/** Add an external-link resource. */
-export async function addLinkResource(input: {
+type LinkInput = {
   title: string; description?: string; category?: string; url: string;
   kind?: ResourceKind; createdBy: string; createdByName: string;
-}): Promise<ResourceItem> {
+};
+
+/** Add an external-link resource. */
+export async function addLinkResource(input: LinkInput): Promise<ResourceItem> {
+  const item = linkItem(input);
+  const items = await readIndex();
+  items.unshift(item);
+  await writeIndex(items);
+  return item;
+}
+
+/**
+ * Add a link resource unless one with the same URL is already published
+ * (re-importing from Google must not duplicate it). The check and the add
+ * share one index read, so there is no gap between them.
+ */
+export async function addLinkResourceOnce(input: LinkInput): Promise<{ item: ResourceItem; created: boolean }> {
+  const url = input.url.trim();
+  const items = await readIndex();
+  const existing = items.find((i) => (i.url || "").trim() === url);
+  if (existing) return { item: existing, created: false };
+  const item = linkItem(input);
+  items.unshift(item);
+  await writeIndex(items);
+  return { item, created: true };
+}
+
+function linkItem(input: LinkInput): ResourceItem {
   const c = classifyUrl(input.url);
-  const item: ResourceItem = {
+  return {
     id: newId(),
     title: input.title.slice(0, 200),
     description: (input.description || "").slice(0, 2000),
@@ -156,10 +209,6 @@ export async function addLinkResource(input: {
     createdByName: input.createdByName,
     createdAt: Date.now(),
   };
-  const items = await readIndex();
-  items.unshift(item);
-  await writeIndex(items);
-  return item;
 }
 
 /** Register a file that the browser already uploaded straight to storage. */
@@ -203,9 +252,10 @@ export async function removeResource(id: string): Promise<boolean> {
   const items = await readIndex();
   const item = items.find((i) => i.id === id);
   if (!item) return false;
+  // Index first: if that write fails, the entry still points at a live file.
+  await writeIndex(items.filter((i) => i.id !== id));
   if (item.source === "upload" && item.path) {
     try { await createAdminClient().storage.from(RES_BUCKET).remove([item.path]); } catch { /* best-effort */ }
   }
-  await writeIndex(items.filter((i) => i.id !== id));
   return true;
 }

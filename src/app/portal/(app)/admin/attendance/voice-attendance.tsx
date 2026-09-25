@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Mic, MicOff, Check, Save, CalendarDays, Users, CircleCheck, CircleX, Clock3, RotateCcw, Wifi, Plane, ShieldCheck, Pencil, Ban } from "lucide-react";
 import { ATTENDANCE_NOTE_MAX, allowsReason, requiresReason } from "@/lib/edu/attendance";
+import { formatPk, parsePkDateTime, pkToday } from "@/lib/portal/pk-time";
 
 type ClassItem = { id: string; name: string; school: string; section: string | null; students: number };
 type RosterRow = { studentId: string; name: string; firstName: string };
@@ -29,6 +30,14 @@ async function api(url: string, opts?: RequestInit) {
   return j;
 }
 
+/** "AS Physics (A) on Thu, 25 Sep 2026" — names the register a save went to. */
+function registerLabel(classes: ClassItem[], classId: string, date: string) {
+  const c = classes.find((x) => x.id === classId);
+  const day = parsePkDateTime(date);
+  const cls = c ? `${c.name}${c.section ? ` (${c.section})` : ""}` : "this class";
+  return `${cls} on ${day ? formatPk(day, { weekday: "short", day: "numeric", month: "short", year: "numeric" }) : date}`;
+}
+
 function norm(s: string) { return s.toLowerCase().normalize("NFKD").replace(/[^a-z]/g, ""); }
 function statusFromWords(text: string): Status | null {
   const t = " " + text.toLowerCase() + " ";
@@ -49,7 +58,10 @@ function statusFromWords(text: string): Status | null {
 export function VoiceAttendance() {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [classId, setClassId] = useState("");
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => pkToday());
+  // The class + date the roster on screen belongs to. Saves always target
+  // this (never the pickers), and changing either picker clears it.
+  const [loaded, setLoaded] = useState<{ classId: string; date: string } | null>(null);
   const [lessonId, setLessonId] = useState<string | null>(null);
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [marks, setMarks] = useState<Record<string, Status>>({});
@@ -73,6 +85,9 @@ export function VoiceAttendance() {
   const listeningRef = useRef(false);
   const restartTimerRef = useRef<number | null>(null);
   const voiceAttemptRef = useRef(0);
+  // Bumped whenever the register is cleared, so a load that resolves after
+  // the class/date changed is ignored instead of repopulating the old day.
+  const registerSeqRef = useRef(0);
 
   useEffect(() => { api("/api/portal/admin/classes").then((j) => setClasses(j.classes ?? [])).catch(() => {}); }, []);
   useEffect(() => {
@@ -82,10 +97,12 @@ export function VoiceAttendance() {
 
   const load = useCallback(async () => {
     if (!classId) return;
+    const seq = ++registerSeqRef.current;
     setLoading(true); setMsg("");
     try {
-      const j = await api(`/api/portal/admin/attendance?classId=${classId}&date=${date}`);
-      setLessonId(j.lessonId); setRoster(j.roster);
+      const j = await api(`/api/portal/admin/attendance?classId=${encodeURIComponent(classId)}&date=${encodeURIComponent(date)}`);
+      if (seq !== registerSeqRef.current) return;
+      setLessonId(j.lessonId ?? null); setRoster(j.roster); setLoaded({ classId, date });
       const m: Record<string, Status> = {};
       const n: Record<string, string> = {};
       for (const r of j.roster as RosterRow[]) {
@@ -94,7 +111,7 @@ export function VoiceAttendance() {
         if (note) n[r.studentId] = note;
       }
       setMarks(m); setNotes(n); setOpenReason(null); setDraft(""); setReasonError("");
-    } catch (e) { setMsg((e as Error).message); } finally { setLoading(false); }
+    } catch (e) { if (seq === registerSeqRef.current) setMsg((e as Error).message); } finally { if (seq === registerSeqRef.current) setLoading(false); }
   }, [classId, date]);
 
   /** Drop a recorded reason as soon as the status can no longer carry one. */
@@ -185,6 +202,25 @@ export function VoiceAttendance() {
     setListening(false);
     setHeard("");
   }, [clearRestartTimer]);
+
+  /** Drop the loaded register: marks must never be saved to a class/date other than the one they were taken for. */
+  const resetRegister = useCallback(() => {
+    registerSeqRef.current += 1;
+    stopVoice();
+    setLoaded(null); setLessonId(null); setRoster([]); setMarks({}); setNotes({});
+    setOpenReason(null); setDraft(""); setReasonError(""); setMsg(""); setLoading(false);
+  }, [stopVoice]);
+
+  function changeClass(next: string) {
+    if (next === classId) return;
+    setClassId(next);
+    resetRegister();
+  }
+  function changeDate(next: string) {
+    if (next === date) return;
+    setDate(next);
+    resetRegister();
+  }
 
   function voiceErrorMessage(code: string) {
     switch (code) {
@@ -344,23 +380,30 @@ export function VoiceAttendance() {
   );
 
   async function save() {
-    if (!lessonId) return;
+    if (!loaded) return;
     if (missingReasons.length) {
       setMsg(`${missingReasons.length} exempted student${missingReasons.length === 1 ? "" : "s"} still need${missingReasons.length === 1 ? "s" : ""} an official reason — starting with ${missingReasons[0].name}.`);
       openReasonFor(missingReasons[0].studentId);
       return;
     }
+    const seq = registerSeqRef.current;
     setSaving(true); setMsg("");
     try {
+      // The loaded register's class + date, never the pickers. With no lesson
+      // yet, the server creates it on this first save (browsing never does).
       const payload = {
-        lessonId,
+        lessonId: lessonId ?? undefined,
+        classId: loaded.classId,
+        date: loaded.date,
         marks: roster.map((r) => {
           const status = marks[r.studentId] || "absent";
           return { studentId: r.studentId, status, note: allowsReason(status) ? notes[r.studentId] || "" : "" };
         }),
       };
       const j = await api("/api/portal/admin/attendance", { method: "POST", body: JSON.stringify(payload) });
-      setMsg(j.warning ? `Saved ${j.saved} students — ${j.warning}` : `Saved attendance for ${j.saved} students.`);
+      const where = registerLabel(classes, j.lesson?.classId ?? loaded.classId, j.lesson?.date ?? loaded.date);
+      if (seq === registerSeqRef.current && j.lesson?.id) setLessonId(j.lesson.id);
+      setMsg(j.warning ? `Saved ${j.saved} students for ${where} — ${j.warning}` : `Saved attendance for ${j.saved} students — ${where}.`);
     } catch (e) { setMsg((e as Error).message); } finally { setSaving(false); }
   }
 
@@ -389,14 +432,14 @@ export function VoiceAttendance() {
       <div className="flex flex-wrap items-end gap-2 rounded-2xl border border-white/10 bg-space/60 p-4">
         <div className="min-w-[14rem] flex-1">
           <label className="mb-1 block text-[11px] uppercase tracking-widest text-dust">Class</label>
-          <select value={classId} onChange={(e) => setClassId(e.target.value)} className="w-full rounded-lg border border-white/10 bg-abyss/60 px-3 py-2 text-sm text-ice focus:border-cyan focus:outline-none">
+          <select value={classId} onChange={(e) => changeClass(e.target.value)} className="w-full rounded-lg border border-white/10 bg-abyss/60 px-3 py-2 text-sm text-ice focus:border-cyan focus:outline-none">
             <option value="">Choose a class…</option>
             {classes.map((c) => <option key={c.id} value={c.id}>{c.school} — {c.name}{c.section ? ` (${c.section})` : ""} · {c.students}</option>)}
           </select>
         </div>
         <div>
           <label className="mb-1 block text-[11px] uppercase tracking-widest text-dust"><CalendarDays size={11} className="inline" /> Date</label>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="rounded-lg border border-white/10 bg-abyss/60 px-3 py-2 text-sm text-ice focus:border-cyan focus:outline-none" />
+          <input type="date" value={date} max={pkToday()} onChange={(e) => changeDate(e.target.value)} className="rounded-lg border border-white/10 bg-abyss/60 px-3 py-2 text-sm text-ice focus:border-cyan focus:outline-none" />
         </div>
         <button onClick={load} disabled={!classId || loading} className="btn-ghost !px-4 !py-2 text-sm">{loading ? "Loading…" : "Load register"}</button>
       </div>
@@ -428,6 +471,12 @@ export function VoiceAttendance() {
             </p>
           ) : null}
 
+          {loaded ? (
+            <p className="text-xs text-fog">
+              Register: <span className="text-ice">{registerLabel(classes, loaded.classId, loaded.date)}</span>
+              {!lessonId ? <span className="text-dust"> · not saved yet — saving creates this day&apos;s lesson</span> : null}
+            </p>
+          ) : null}
           <div className="flex flex-wrap gap-2 text-xs text-dust">
             <span className="text-emerald2">{counts.present} present</span> ·
             <span className="text-signal">{counts.late} late</span> ·

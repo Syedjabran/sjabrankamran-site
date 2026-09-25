@@ -15,7 +15,7 @@
  * re-search on every upload. All mirroring is BEST-EFFORT — a Drive failure
  * must never block the primary Supabase upload.
  */
-import { createAdminClient } from "@/lib/supabase/admin";
+import { readStorageJson, writeStorageJson } from "@/lib/portal/resources";
 import { getAccessToken, googleReady } from "./auth";
 
 const ROOT_NAME = "sjabrankamran";
@@ -37,19 +37,15 @@ let mem: FolderCache | null = null;
 
 async function readCache(): Promise<FolderCache> {
   if (mem) return mem;
-  try {
-    const { data } = await createAdminClient().storage.from("portal-data").download(CACHE_PATH);
-    if (data) { mem = JSON.parse(await data.text()); return mem!; }
-  } catch { /* none */ }
-  mem = {};
+  // Cache-busted; only a missing cache starts empty. Any other read failure
+  // throws (the mirror callers catch it) instead of rebuilding from {} and
+  // overwriting the stored folder ids.
+  mem = await readStorageJson<FolderCache>("portal-data", CACHE_PATH, {});
   return mem;
 }
 async function writeCache(c: FolderCache) {
   mem = c;
-  try {
-    const body = new Blob([JSON.stringify(c)], { type: "application/json" });
-    await createAdminClient().storage.from("portal-data").upload(CACHE_PATH, body, { upsert: true, contentType: "application/json" });
-  } catch { /* best-effort */ }
+  await writeStorageJson("portal-data", CACHE_PATH, c); // best-effort
 }
 
 async function driveFetch(url: string, init: RequestInit) {
@@ -57,20 +53,33 @@ async function driveFetch(url: string, init: RequestInit) {
   return fetch(url, { ...init, headers: { authorization: `Bearer ${token}`, ...(init.headers || {}) } });
 }
 
-/** Find or create a folder by name under a parent; returns its id. */
-async function ensureFolder(name: string, parentId: string): Promise<string> {
+/** Folders with this name under the parent, OLDEST first. */
+async function findFolders(name: string, parentId: string): Promise<string[]> {
   const safe = name.replace(/'/g, "\\'");
   const q = encodeURIComponent(`name = '${safe}' and mimeType = 'application/vnd.google-apps.folder' and '${parentId}' in parents and trashed = false`);
-  const r = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&supportsAllDrives=true&includeItemsFromAllDrives=true`, { method: "GET" });
+  const r = await driveFetch(`https://www.googleapis.com/drive/v3/files?q=${q}&orderBy=createdTime&fields=files(id,name,createdTime)&supportsAllDrives=true&includeItemsFromAllDrives=true`, { method: "GET" });
   const j = (await r.json().catch(() => ({}))) as { files?: { id: string }[]; error?: { message?: string } };
   if (!r.ok) throw new Error(`Drive folder search failed: ${j.error?.message || r.status}`);
-  if (j.files && j.files.length) return j.files[0].id;
+  return (j.files || []).map((f) => f.id);
+}
+
+/** Find or create a folder by name under a parent; returns its id. */
+async function ensureFolder(name: string, parentId: string): Promise<string> {
+  const found = await findFolders(name, parentId);
+  if (found.length) return found[0];
   const cr = await driveFetch("https://www.googleapis.com/drive/v3/files?fields=id&supportsAllDrives=true", {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ name, mimeType: "application/vnd.google-apps.folder", parents: [parentId] }),
   });
   const cj = (await cr.json().catch(() => ({}))) as { id?: string; error?: { message?: string } };
   if (!cr.ok || !cj.id) throw new Error(`Drive folder create failed: ${cj.error?.message || cr.status}`);
+  // Search-then-create can race with a concurrent upload into a duplicate
+  // folder. Re-list and settle on the oldest so every racer converges on the
+  // same id (nothing is deleted; a spare empty folder is harmless).
+  try {
+    const after = await findFolders(name, parentId);
+    if (after.length) return after[0];
+  } catch { /* keep the folder we just created */ }
   return cj.id;
 }
 

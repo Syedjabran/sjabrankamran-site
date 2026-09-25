@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { BellRing, Mail, Send, ShieldAlert, Users } from "lucide-react";
 import type { SchoolReport } from "@/lib/portal/institutions";
 
@@ -7,7 +7,9 @@ export function CoordinatorClient({ school, reports }: { school: string | null; 
   const classes = reports.flatMap((r) => r.classes);
   const [classId, setClassId] = useState(classes.length === 1 ? classes[0].id : ""); const [title, setTitle] = useState(""); const [message, setMessage] = useState("");
   const [email, setEmail] = useState(true); const [notice, setNotice] = useState(false); const [busy, setBusy] = useState(false); const [result, setResult] = useState("");
-  async function send() { setBusy(true); setResult(""); try { const r = await fetch("/api/portal/coordinator/communicate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ classId: classId || undefined, title, message, sendEmail: email, notice }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || "Could not send."); setResult(`Sent to ${j.recipients} student${j.recipients === 1 ? "" : "s"}${email ? `; ${j.emails} email recipient(s).` : "."}`); setTitle(""); setMessage(""); } catch (e) { setResult((e as Error).message); } finally { setBusy(false); } }
+  // Reused on a retry after a timeout so the server resumes instead of re-sending.
+  const requestId = useRef(crypto.randomUUID());
+  async function send() { setBusy(true); setResult(""); try { const r = await fetch("/api/portal/coordinator/communicate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ classId: classId || undefined, title, message, sendEmail: email, notice, requestId: requestId.current }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error || "Could not send."); setResult(j.duplicate ? "Already sent — nothing was sent twice." : `Sent to ${j.recipients} student${j.recipients === 1 ? "" : "s"}${email ? `; ${j.emails} email recipient(s)${j.queued ? `, ${j.queued} queued` : ""}.` : "."}`); setTitle(""); setMessage(""); requestId.current = crypto.randomUUID(); } catch (e) { setResult((e as Error).message); } finally { setBusy(false); } }
   return <div className="space-y-6">
     <div><h1 className="font-display text-2xl text-ice">Class staff desk</h1><p className="text-sm text-dust">{school ? `${school} · restricted to your assigned class${classes.length === 1 ? "" : "es"}.` : "Administrator view across all schools."}</p></div>
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{[["Students", reports.reduce((n, s) => n + s.students, 0)], ["Active", reports.reduce((n,s)=>n+s.activeStudents,0)], ["Attempts", reports.reduce((n,s)=>n+s.totalAttempts,0)], ["Classes", classes.length]].map(([l,v]) => <div key={String(l)} className="rounded-xl border border-white/10 bg-space/60 p-3"><p className="text-[10px] uppercase tracking-widest text-dust">{l}</p><p className="font-display text-xl text-cyan">{v}</p></div>)}</div>

@@ -17,6 +17,8 @@ export async function POST(req: Request) {
   if (!mailConfigured()) {
     return NextResponse.json({ ok: true, mailConfigured: false, note: "Relay not connected — nothing sent.", attempted: 0, sent: 0 }, { status: 200 });
   }
+  // flushQueued holds a storage lock, so overlapping runs cannot double-send.
   const res = await flushQueued();
+  if (res.busy) return NextResponse.json({ ok: true, mailConfigured: true, ...res, note: "Another flush is already running — nothing sent by this run." }, { status: 200 });
   return NextResponse.json({ ok: true, mailConfigured: true, ...res }, { status: 200 });
 }

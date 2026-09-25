@@ -3,23 +3,55 @@ import { revalidatePath } from "next/cache";
 import { School } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getPortalUser, isAdmin } from "@/lib/edu/auth";
+import { getRegistry, type ClassMeta, type Registry } from "@/lib/portal/institutions";
+import { PORTAL_BUCKET } from "@/lib/portal/onboarding";
+import { readStorageJson, writeStorageJson } from "@/lib/portal/resources";
 
 export const metadata = { title: "Academics" };
 
+const REGISTRY_PATH = "institutions.json";
+
+/**
+ * Add a class to the registry (portal-data/institutions.json). The registrar
+ * view, KPIs, rankings and access scopes all read the registry, so a class
+ * that exists only in edu_classes is invisible to them. Cache-busted read +
+ * merge (a failed read throws rather than overwriting), cacheControl "0" write.
+ */
+async function addClassToRegistry(meta: ClassMeta): Promise<void> {
+  const reg = await readStorageJson<Registry>(PORTAL_BUCKET, REGISTRY_PATH, { updated_at: "", schools: [], classes: [] });
+  const classes = [...(reg.classes || []).filter((c) => c.id !== meta.id), meta];
+  const schools = (reg.schools || []).includes(meta.school) ? reg.schools : [...(reg.schools || []), meta.school];
+  const ok = await writeStorageJson(PORTAL_BUCKET, REGISTRY_PATH, { ...reg, updated_at: new Date().toISOString(), schools, classes });
+  if (!ok) throw new Error(`Class ${meta.id} was created but could not be added to the institutions registry.`);
+}
+
 async function createClass(formData: FormData) {
   "use server";
-  const name = String(formData.get("name") ?? "").trim();
-  const courseId = String(formData.get("course_id") ?? "");
-  if (!name) return;
+  // The registry write below is service-role, so gate the action itself.
+  const user = await getPortalUser();
+  if (!user || !isAdmin(user.roles)) return;
+  const field = (k: string, max: number) => String(formData.get(k) ?? "").trim().slice(0, max);
+  const name = field("name", 160);
+  const courseId = field("course_id", 64);
+  const school = field("school", 160);
+  const year = field("year", 40);
+  const section = field("section", 40) || null;
+  const subject = field("subject", 80) || "Physics";
+  if (!name || !school || !year) return;
   const supabase = await createClient();
-  await supabase.from("edu_classes").insert({
-    name,
-    course_id: courseId || null,
-  });
+  const { data: created, error } = await supabase
+    .from("edu_classes")
+    .insert({ name, course_id: courseId || null })
+    .select("id")
+    .single();
+  if (error || !created?.id) return;
+  const key = [school, year, section, subject].filter(Boolean).join(" ").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  await addClassToRegistry({ id: created.id as string, key, school, year, section, subject, name });
   await supabase.from("edu_audit_logs").insert({
     action: "class.create",
     entity: "edu_classes",
-    details: { name },
+    entity_id: created.id,
+    details: { name, school, year, section, subject },
   });
   revalidatePath("/portal/admin/academics");
 }
@@ -48,14 +80,17 @@ export default async function AcademicsPage() {
   if (!isAdmin(user.roles)) redirect("/portal");
 
   const supabase = await createClient();
-  const [{ data: programmes }, { data: courses }, { data: classes, error }] = await Promise.all([
+  const [{ data: programmes }, { data: courses }, { data: classes, error }, registry] = await Promise.all([
     supabase.from("edu_programmes").select("id, code, name").order("code"),
     supabase.from("edu_courses").select("id, name, edu_programmes(code)").order("name"),
     supabase
       .from("edu_classes")
       .select("id, name, active, edu_courses(name), edu_teachers(id)")
       .order("created_at", { ascending: false }),
+    getRegistry(),
   ]);
+  const knownSchools = registry.schools || [];
+  const knownYears = [...new Set((registry.classes || []).map((c) => c.year).filter(Boolean))].sort();
 
   return (
     <div className="space-y-8">
@@ -149,6 +184,40 @@ export default async function AcademicsPage() {
             required
             placeholder="New class name (e.g. AS Evening Batch)"
             className="w-64 rounded-lg border border-white/10 bg-abyss/60 px-3 py-2 text-xs text-ice placeholder:text-dust focus:border-cyan focus:outline-none"
+          />
+          <input
+            name="school"
+            required
+            list="academics-schools"
+            placeholder="School"
+            aria-label="School"
+            className="w-44 rounded-lg border border-white/10 bg-abyss/60 px-3 py-2 text-xs text-ice placeholder:text-dust focus:border-cyan focus:outline-none"
+          />
+          <datalist id="academics-schools">
+            {knownSchools.map((s) => <option key={s} value={s} />)}
+          </datalist>
+          <input
+            name="year"
+            required
+            list="academics-years"
+            placeholder="Year (e.g. AS)"
+            aria-label="Year"
+            className="w-28 rounded-lg border border-white/10 bg-abyss/60 px-3 py-2 text-xs text-ice placeholder:text-dust focus:border-cyan focus:outline-none"
+          />
+          <datalist id="academics-years">
+            {knownYears.map((y) => <option key={y} value={y} />)}
+          </datalist>
+          <input
+            name="section"
+            placeholder="Section (optional)"
+            aria-label="Section"
+            className="w-32 rounded-lg border border-white/10 bg-abyss/60 px-3 py-2 text-xs text-ice placeholder:text-dust focus:border-cyan focus:outline-none"
+          />
+          <input
+            name="subject"
+            defaultValue="Physics"
+            aria-label="Subject"
+            className="w-28 rounded-lg border border-white/10 bg-abyss/60 px-3 py-2 text-xs text-ice placeholder:text-dust focus:border-cyan focus:outline-none"
           />
           <select
             name="course_id"
