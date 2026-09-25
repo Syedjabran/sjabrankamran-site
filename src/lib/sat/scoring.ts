@@ -125,11 +125,19 @@ export function scoreEstimated(raw: Record<SATSection, number>): SATScore {
     math: BLUEPRINT.math.perModule * 2,
   };
 
+  // Populated by `sectionRange` below with the count of COMPLETE curves it
+  // actually averaged for that section -- not `tests.length`, which counts
+  // every ingested test whether or not its table for that section is
+  // complete (a test can have a complete rw table and an incomplete math
+  // one, or vice versa, so the two counts can differ).
+  const curvesUsed: Record<SATSection, number> = { rw: 0, math: 0 };
+
   const sectionRange = (section: SATSection): [number, number] => {
     const scaled = Math.round((raw[section] / adaptiveMax[section]) * PAPER_MAX[section]);
     const curves = tests
       .map((t) => t.conversion?.[section])
       .filter((c): c is SATConversionTable => isCompleteTable(c, section));
+    curvesUsed[section] = curves.length;
     if (!curves.length) return [200, 200];
     const bounds = curves.map((c) => scoreFromTable(c, scaled));
     const mean = (i: 0 | 1) =>
@@ -143,8 +151,8 @@ export function scoreEstimated(raw: Record<SATSection, number>): SATScore {
     lower,
     upper,
     basis:
-      `Estimated from the average of ${tests.length} official conversion ` +
-      "tables. No published curve exists for an assembled adaptive form, so " +
-      "this is not an official SAT score.",
+      `Estimated from the average of ${curvesUsed.rw} R&W and ${curvesUsed.math} Math ` +
+      "official conversion tables. No published curve exists for an assembled " +
+      "adaptive form, so this is not an official SAT score.",
   };
 }

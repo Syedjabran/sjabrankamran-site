@@ -9,7 +9,7 @@ import { answerText, isCorrect } from "./grade.ts";
 import { isCompleteTable, scoreEstimated, scoreOfficial } from "./scoring.ts";
 import {
   STAGES, currentStage, domainBreakdown, isOnBreak, practiceQuestionId, rawBySection, sectionOf, stageDeadline,
-  type SATSession, type SATStageKey,
+  type SATSession, type SATStageKey, type StageResult,
 } from "./session.ts";
 import type { SATDrill } from "./drills.ts";
 import type { PublicQuestion, ReviewItem, SATReport, SessionState, DrillState, SessionSummary } from "./client-types.ts";
@@ -81,12 +81,15 @@ const STAGE_LABEL: Record<SATStageKey, string> = {
   "math.m1": "Math · Module 1", "math.m2": "Math · Module 2",
 };
 
-/** Score a finished sitting. Official only from that test's own table (spec 10.5). */
+/** Score a finished sitting. Official only from that test's own table (spec
+ *  10.5) — a "practice" sitting is ALWAYS official-or-null-with-a-note, even
+ *  in the (structurally possible but should-never-happen) case its testNo is
+ *  null: it must never fall through to an adaptive-form estimate. */
 export function finishSession(s: SATSession): SATSession {
   if (s.finishedAt === null || s.score) return s;
   const raw = rawBySection(s);
-  if (s.kind === "practice" && s.testNo !== null) {
-    const official = scoreOfficial(s.testNo, raw);
+  if (s.kind === "practice") {
+    const official = s.testNo !== null ? scoreOfficial(s.testNo, raw) : null;
     return official
       ? { ...s, score: official, scoreNote: null }
       : { ...s, score: null, scoreNote: "This test's official conversion table is not loaded, so no score can be given." };
@@ -116,7 +119,11 @@ function report(s: SATSession): SATReport {
     kind: s.kind, title: s.title, score: s.score, scoreNote: s.scoreNote, sections, routed: s.routed,
     routingDisclosure: s.kind === "adaptive" ? ROUTING_DISCLOSURE : null,
     overtime: STAGES.some((k) => s.results[k]?.overtime),
-    domains: domainBreakdown(review.filter((r) => r.domain).map((r) => ({ domain: r.domain!, correct: r.correct }))),
+    domains: domainBreakdown(
+      review
+        .filter((r): r is ReviewItem & { domain: string } => r.domain !== null)
+        .map((r) => ({ domain: r.domain, correct: r.correct })),
+    ),
     review,
   };
 }
@@ -131,7 +138,13 @@ export function sessionState(s: SATSession, now: number): SessionState {
     ...base, status: "running", breakUntil: null, report: null,
     stage: {
       key: k, label: STAGE_LABEL[k], index: s.current, minutes: s.minutes[k], deadline: stageDeadline(s)!,
-      questions: ids.map((id, i) => publicQuestion(id, i + 1)).filter((q): q is PublicQuestion => !!q),
+      // Difficulty is hidden while a module is running: the real digital SAT
+      // shows none, and on Module 2 it would reveal which route (lower/upper)
+      // the student was sent down. Drills (drillState, below) keep it — the
+      // student chose that filter themselves.
+      questions: ids.map((id, i) => publicQuestion(id, i + 1))
+        .filter((q): q is PublicQuestion => !!q)
+        .map((q) => ({ ...q, difficulty: null })),
     },
   };
 }
@@ -150,15 +163,19 @@ export function drillState(d: SATDrill, now: number): DrillState {
   };
 }
 
+/** `correct`/`total` are reported only once the doc is finished — 0/0 before.
+ *  A mid-sitting Module 1 count would reveal an adaptive session's routing
+ *  (and a mid-drill count is simply not a finished result yet either). */
 export function summaryOf(doc: SATSession | SATDrill): SessionSummary {
+  const finished = doc.finishedAt !== null;
   if (doc.kind === "drill") {
     const values = Object.values(doc.checked);
     return { id: doc.id, kind: "drill", title: doc.title, createdAt: doc.createdAt, finishedAt: doc.finishedAt, score: null,
-      correct: values.filter(Boolean).length, total: doc.questionIds.length, assignmentId: doc.assignmentId };
+      correct: finished ? values.filter(Boolean).length : 0, total: finished ? doc.questionIds.length : 0, assignmentId: doc.assignmentId };
   }
-  const results = STAGES.map((k) => doc.results[k]).filter(Boolean);
+  const results = finished ? STAGES.map((k) => doc.results[k]).filter((r): r is StageResult => !!r) : [];
   return { id: doc.id, kind: doc.kind, title: doc.title, createdAt: doc.createdAt, finishedAt: doc.finishedAt, score: doc.score,
-    correct: results.reduce((n, r) => n + r!.correct, 0), total: results.reduce((n, r) => n + r!.total, 0), assignmentId: doc.assignmentId };
+    correct: results.reduce((n, r) => n + r.correct, 0), total: results.reduce((n, r) => n + r.total, 0), assignmentId: doc.assignmentId };
 }
 
 export { practiceTest };

@@ -19,7 +19,8 @@
     "test:sat-access": "node --no-warnings --experimental-strip-types scripts/test-sat-access.mjs",
     "test:sat-grade": "node --no-warnings --experimental-strip-types scripts/test-sat-grade.mjs",
     "test:sat-session": "node --no-warnings --experimental-strip-types scripts/test-sat-session.mjs",
-    "test:sat": "npm run test:sat-bank && npm run test:sat-forms && npm run test:sat-scoring && npm run test:sat-access && npm run test:sat-grade && npm run test:sat-session"
+    "test:sat-serve": "node --no-warnings --experimental-strip-types scripts/test-sat-serve.mjs",
+    "test:sat": "npm run test:sat-bank && npm run test:sat-forms && npm run test:sat-scoring && npm run test:sat-access && npm run test:sat-grade && npm run test:sat-session && npm run test:sat-serve"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

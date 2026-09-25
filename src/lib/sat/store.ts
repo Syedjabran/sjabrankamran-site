@@ -34,8 +34,12 @@ export async function listSummaries(uid: string): Promise<SessionSummary[] | nul
 }
 
 /** Save the document, then its summary. A failed index write leaves the
- *  sitting intact (it is the source of truth) and is retried on the next save. */
+ *  sitting intact (it is the source of truth) and is retried on the next save.
+ *  A doc whose uid or id fails SAFE_ID is rejected outright -- the same guard
+ *  `loadDoc`/`listSummaries` apply on read, so a malformed id can never be
+ *  written to a path those reads would then refuse to resolve. */
 export async function saveDoc(doc: SATDoc): Promise<boolean> {
+  if (!SAFE_ID.test(doc.uid) || !SAFE_ID.test(doc.id)) return false;
   if (!(await writeFreshJson(BUCKET, docPath(doc.uid, doc.id), doc))) return false;
   const current = await readFreshJson<{ items: SessionSummary[] }>(BUCKET, indexPath(doc.uid));
   if (!current.ok) return true;
