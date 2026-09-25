@@ -15,7 +15,9 @@ export function loadQuestionBank(): SATQuestion[] {
 }
 
 export function loadPracticeTests(): SATPracticeTest[] {
-  return (practiceTests as { tests: SATPracticeTest[] }).tests;
+  // JSON widens each [lower, upper] score pair to number[]; build_sat_tests.py
+  // has already checked every pair is two ints with lower <= upper.
+  return (practiceTests as unknown as { tests: SATPracticeTest[] }).tests;
 }
 
 export function practiceTest(testNo: number): SATPracticeTest | null {
