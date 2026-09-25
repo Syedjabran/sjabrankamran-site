@@ -20,6 +20,7 @@ export function DrillFields({
   section, domain, difficulty, count,
   onSectionChange, onDomainChange, onDifficultyChange, onCountChange,
   labelClassName = "block min-w-0 text-xs text-fog",
+  disabled = false,
 }: {
   section: SectionFilter;
   domain: string;
@@ -30,6 +31,10 @@ export function DrillFields({
   onDifficultyChange: (v: DifficultyFilter) => void;
   onCountChange: (v: number) => void;
   labelClassName?: string;
+  // Fix round 2 finding 6: a send in flight (the staff Assign panel) locks
+  // every field, these four included, so nothing about the payload can
+  // change out from under a request that's already on the wire.
+  disabled?: boolean;
 }) {
   const domainOptions = DOMAIN_SECTIONS.filter((d) => !section || d.section === section);
 
@@ -43,6 +48,7 @@ export function DrillFields({
           // longer be one of the options shown (and, since fix round 1,
           // the server rejects a domain that isn't part of the section).
           onChange={(e) => { onSectionChange(e.target.value as SectionFilter); onDomainChange(""); }}
+          disabled={disabled}
           className={FIELD}
         >
           <option value="">Any</option>
@@ -52,14 +58,14 @@ export function DrillFields({
       </label>
       <label className={labelClassName}>
         Domain
-        <select value={domain} onChange={(e) => onDomainChange(e.target.value)} className={FIELD}>
+        <select value={domain} onChange={(e) => onDomainChange(e.target.value)} disabled={disabled} className={FIELD}>
           <option value="">Any domain</option>
           {domainOptions.map((d) => <option key={d.value} value={d.value}>{DOMAIN_LABEL[d.value] ?? d.value}</option>)}
         </select>
       </label>
       <label className={labelClassName}>
         Difficulty
-        <select value={difficulty} onChange={(e) => onDifficultyChange(e.target.value as DifficultyFilter)} className={FIELD}>
+        <select value={difficulty} onChange={(e) => onDifficultyChange(e.target.value as DifficultyFilter)} disabled={disabled} className={FIELD}>
           <option value="">Any</option>
           <option value="E">Easy</option>
           <option value="M">Medium</option>
@@ -74,6 +80,7 @@ export function DrillFields({
             const n = Math.round(Number(e.target.value));
             onCountChange(Number.isFinite(n) ? Math.min(DRILL_COUNT_MAX, Math.max(DRILL_COUNT_MIN, n)) : DRILL_COUNT_MIN);
           }}
+          disabled={disabled}
           className={FIELD}
         />
       </label>

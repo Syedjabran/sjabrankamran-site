@@ -8,17 +8,19 @@
 // drift between a student's own drill and a staff-assigned one.
 import { z } from "zod";
 import { loadQuestionBank, filterQuestions } from "./bank.ts";
-import type { SATSection } from "./types.ts";
+// The domain->section map used to be a local copy of this same data --
+// fix round 2 finding 5: one DOMAIN_SECTIONS (client-types.ts, already
+// shared by sat-hub.tsx's and sat-assign.tsx's drill-filter dropdowns) is
+// now the only place it's spelled out; this schema derives its lookup from
+// it instead of redeclaring it.
+import { DOMAIN_SECTIONS } from "./client-types.ts";
 
 export const SAT_DOMAINS = [
   "information-ideas", "craft-structure", "expression-ideas", "standard-english",
   "algebra", "advanced-math", "psda", "geometry-trig",
 ] as const;
 
-const DOMAIN_SECTION: Record<(typeof SAT_DOMAINS)[number], SATSection> = {
-  "information-ideas": "rw", "craft-structure": "rw", "expression-ideas": "rw", "standard-english": "rw",
-  algebra: "math", "advanced-math": "math", psda: "math", "geometry-trig": "math",
-};
+const DOMAIN_SECTION = new Map(DOMAIN_SECTIONS.map((d) => [d.value, d.section]));
 
 /**
  * `{}` (no constraint at all) always matches the whole bank, so the two
@@ -35,7 +37,7 @@ export const satFilterSchema = z.object({
   difficulty: z.enum(["E", "M", "H"]).optional(),
   skill: z.string().max(120).optional(),
 }).superRefine((f, ctx) => {
-  if (f.section && f.domain && DOMAIN_SECTION[f.domain] !== f.section) {
+  if (f.section && f.domain && DOMAIN_SECTION.get(f.domain) !== f.section) {
     ctx.addIssue({ code: "custom", message: "That domain isn't part of the selected section.", path: ["domain"] });
     return;
   }

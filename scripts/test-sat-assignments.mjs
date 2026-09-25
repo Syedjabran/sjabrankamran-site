@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
+import { z } from "zod";
 // assignment-rules.ts has no `@/` aliases (unlike assignments.ts, which pulls
 // in storage-fresh.ts's admin-client alias and so cannot be imported by
 // plain node) -- the same split as course-labels.ts/course-access.ts.
 import { mergeAssignment, resolveStart } from "../src/lib/sat/assignment-rules.ts";
+// zod-issue-message.ts has no `@/` aliases and no framework import (unlike
+// zod-messages.ts, which pulls in next/server and so cannot be imported by
+// plain node) -- the same split as assignment-rules.ts/assignments.ts.
+import { zodIssueMessage } from "../src/lib/sat/zod-issue-message.ts";
 
 const a = (id, status, sessionId = null) => ({
   id, kind: "adaptive", title: "Adaptive mock exam", testNo: null, filter: null, count: null,
@@ -46,5 +51,38 @@ assert.deepEqual(resolveStart({ status: "in_progress", sessionId: "sess-42" }), 
 assert.deepEqual(resolveStart({ status: "in_progress", sessionId: null }), { type: "start" }, "an inconsistent in_progress with no sessionId falls back to starting fresh");
 assert.deepEqual(resolveStart({ status: "done", sessionId: null }), { type: "conflict" }, "already completed -> conflict, regardless of sessionId");
 assert.deepEqual(resolveStart({ status: "done", sessionId: "sess-42" }), { type: "conflict" }, "done wins over a lingering sessionId");
+
+// --- zodIssueMessage: fix round 2 finding 3 -- only a hand-authored
+// (`code: "custom"`) issue's message ever reaches the user; every other zod
+// issue (a bad shape, an out-of-range number, a malformed uuid...) collapses
+// to one generic sentence instead of leaking zod's own internal wording. ---
+{
+  const customSchema = z.object({ domain: z.string() }).superRefine((_v, ctx) => {
+    ctx.addIssue({ code: "custom", message: "That domain isn't part of the selected section.", path: ["domain"] });
+  });
+  const result = customSchema.safeParse({ domain: "algebra" });
+  assert.equal(result.success, false);
+  assert.equal(zodIssueMessage(result.error), "That domain isn't part of the selected section.", "a custom issue's own message is surfaced verbatim");
+}
+
+{
+  // A plain shape failure (here, a malformed uuid, exactly like the
+  // assignments route's `idempotencyKey: z.string().uuid()`) carries zod's
+  // own generated wording -- never shown to the user.
+  const builtinSchema = z.object({ idempotencyKey: z.string().uuid() });
+  const result = builtinSchema.safeParse({ idempotencyKey: "not-a-uuid" });
+  assert.equal(result.success, false);
+  assert.notEqual(result.error.issues[0].message, "Invalid request.", "sanity check: zod's own message really is something else");
+  assert.equal(zodIssueMessage(result.error), "Invalid request.", "a built-in zod issue never reaches the user verbatim -- it collapses to the generic sentence");
+}
+
+{
+  // A totally malformed body (wrong type for a required field) is likewise
+  // never shown verbatim.
+  const schema = z.object({ count: z.number().int().min(5).max(30) });
+  const result = schema.safeParse({ count: "ten" });
+  assert.equal(result.success, false);
+  assert.equal(zodIssueMessage(result.error), "Invalid request.", "a wrong-type issue collapses to the generic sentence too");
+}
 
 console.log("sat-assignments tests passed");

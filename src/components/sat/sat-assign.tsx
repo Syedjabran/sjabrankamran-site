@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useRef, useState, useEffect } from "react";
 import { Loader2, Send } from "lucide-react";
-import { DIFFICULTY_LABEL, DOMAIN_LABEL, type PracticeTestInfo } from "@/lib/sat/client-types";
+import { DIFFICULTY_LABEL, DOMAIN_LABEL, DRILL_COUNT_DEFAULT, type PracticeTestInfo } from "@/lib/sat/client-types";
 import { DrillFields, type DifficultyFilter, type SectionFilter } from "./drill-fields";
 // course-labels.ts is pure and isomorphic (no server imports, no `@/lib/sat/*`
 // answer-key modules) -- safe here even though course-access.ts (which
@@ -47,7 +47,7 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
   const [drillSection, setDrillSection] = useState<SectionFilter>("");
   const [drillDomain, setDrillDomain] = useState("");
   const [drillDifficulty, setDrillDifficulty] = useState<DifficultyFilter>("");
-  const [drillCount, setDrillCount] = useState(10);
+  const [drillCount, setDrillCount] = useState(DRILL_COUNT_DEFAULT);
 
   const [mode, setMode] = useState<Mode>("class");
   const [classes, setClasses] = useState<ClassRow[] | null>(null);
@@ -74,6 +74,15 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
   // to retry) or the moment anything changes (a stale payload must never
   // be resent under a key that no longer describes it).
   const lastPayloadRef = useRef<Record<string, unknown> | null>(null);
+  // Fix round 2 finding 1: whether the CURRENT idemKey has actually been
+  // handed to the server at least once. Set the moment send() is called --
+  // not only after a partial-failure response -- because a THROWN send
+  // (503, a timeout, a dropped connection) can still have partially written
+  // the assignment server-side even though this component never received a
+  // clean added/failed count. markDirty rotates the key whenever this flag
+  // is set; a key that was never sent is simply kept (editing the form
+  // before the first Assign reuses the same still-fresh key, as before).
+  const keySent = useRef(false);
 
   useEffect(() => {
     (async () => {
@@ -100,13 +109,17 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
     })();
   }, []);
 
-  // Fix round 1 ruling 1/2: any change to what would actually be sent
-  // invalidates a pending retry -- rotate to a fresh key and drop the old
-  // result/payload so a stale "Retry" can never fire under the wrong key
-  // (or resend a payload the visible form no longer matches).
+  // Fix round 1 ruling 1/2, extended by fix round 2 finding 1: any change
+  // to what would actually be sent invalidates a key that's already been
+  // sent at least once -- rotate to a fresh, never-sent key and drop the
+  // old result/payload so a stale "Retry" can never fire under the wrong
+  // key, and an edit made right after a THROWN send (which left keySent
+  // true even though no result came back) can never go out reusing a key
+  // that may already be partly written server-side.
   function markDirty() {
-    if (lastPayloadRef.current) {
+    if (keySent.current) {
       idemKey.current = crypto.randomUUID();
+      keySent.current = false;
       lastPayloadRef.current = null;
       setResult(null);
     }
@@ -144,6 +157,16 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
     return selectedUids.length ? "for the selected students" : null;
   }, [mode, classes, selectedClassIds, selectedUids]);
 
+  // Fix round 2 finding 7: class mode sums each selected class's own
+  // `students` count, which can double-count a student enrolled in more
+  // than one selected class -- the server dedupes by uid before writing,
+  // so that total is only ever an upper bound. By-student mode picks exact
+  // uids, so its count is exact.
+  const recipientLabel = useMemo(() => {
+    const noun = recipientCount === 1 ? "student" : "students";
+    return mode === "class" ? `up to ${recipientCount} ${noun}` : `${recipientCount} ${noun}`;
+  }, [mode, recipientCount]);
+
   const hasRecipients = mode === "class" ? selectedClassIds.length > 0 : selectedUids.length > 0;
   const canAssign = !busy && title !== null && hasRecipients && (kind !== "practice" || testNo !== null);
 
@@ -165,6 +188,11 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
 
   async function send(payload: Record<string, unknown>) {
     setBusy(true); setError(null);
+    // The key is now considered sent regardless of how this call ends --
+    // including a THROWN send below -- so markDirty rotates it on the next
+    // edit rather than letting an edited payload go out under a key that
+    // may already be partly written server-side (fix round 2 finding 1).
+    keySent.current = true;
     try {
       const res = await fetch("/api/sat/assignments", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
       const j = await res.json().catch(() => ({}));
@@ -182,10 +210,15 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
         // Fully successful: nothing left to retry. Rotate the key so the
         // NEXT Assign (a genuinely different assignment) never reuses it.
         idemKey.current = crypto.randomUUID();
+        keySent.current = false;
         lastPayloadRef.current = null;
       }
     } catch (e) {
       setError((e as Error).message);
+      // Thrown (503 / timeout / network error): the key and payload are
+      // left as they are, so an unmodified retry (clicking "Assign" again
+      // with nothing changed) still reuses the same key -- but keySent
+      // stays true, so markDirty rotates it the moment anything IS edited.
     } finally {
       setBusy(false);
     }
@@ -204,6 +237,7 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
     setResult(null);
     lastPayloadRef.current = null;
     idemKey.current = crypto.randomUUID();
+    keySent.current = false;
   }
 
   return (
@@ -214,7 +248,7 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <label className={LABEL}>
           What
-          <select value={kind} onChange={(e) => { markDirty(); setKind(e.target.value as Kind); }} className={FIELD}>
+          <select value={kind} onChange={(e) => { markDirty(); setKind(e.target.value as Kind); }} disabled={busy} className={FIELD}>
             <option value="adaptive">Adaptive mock exam</option>
             <option value="practice">Official practice test</option>
             <option value="drill">Drill</option>
@@ -225,7 +259,7 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
           <label className={LABEL}>
             Test
             {timedTests.length ? (
-              <select value={testNo ?? ""} onChange={(e) => { markDirty(); setTestNo(e.target.value ? Number(e.target.value) : null); }} className={FIELD}>
+              <select value={testNo ?? ""} onChange={(e) => { markDirty(); setTestNo(e.target.value ? Number(e.target.value) : null); }} disabled={busy} className={FIELD}>
                 {timedTests.map((t) => <option key={t.testNo} value={t.testNo}>Practice Test {t.testNo}</option>)}
               </select>
             ) : <p className="mt-1 text-xs text-fog">Official practice tests are being prepared.</p>}
@@ -240,18 +274,19 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
             onDifficultyChange={(v) => { markDirty(); setDrillDifficulty(v); }}
             onCountChange={(v) => { markDirty(); setDrillCount(v); }}
             labelClassName={LABEL}
+            disabled={busy}
           />
         ) : null}
 
         <label className={LABEL}>
           Due (optional · Pakistan time)
-          <input type="datetime-local" value={dueAt} onChange={(e) => { markDirty(); setDueAt(e.target.value); }} className={FIELD} />
+          <input type="datetime-local" value={dueAt} onChange={(e) => { markDirty(); setDueAt(e.target.value); }} disabled={busy} className={FIELD} />
         </label>
       </div>
 
       <div className="mt-4 flex items-center gap-1 rounded-xl border border-white/10 bg-void p-1 text-xs">
-        <button type="button" onClick={() => switchMode("class")} className={"rounded-lg px-3 py-1.5 " + (mode === "class" ? "bg-cyan text-abyss" : "text-dust hover:text-ice")}>By class</button>
-        <button type="button" onClick={() => switchMode("students")} className={"rounded-lg px-3 py-1.5 " + (mode === "students" ? "bg-cyan text-abyss" : "text-dust hover:text-ice")}>By student</button>
+        <button type="button" disabled={busy} onClick={() => switchMode("class")} className={"rounded-lg px-3 py-1.5 disabled:opacity-40 " + (mode === "class" ? "bg-cyan text-abyss" : "text-dust hover:text-ice")}>By class</button>
+        <button type="button" disabled={busy} onClick={() => switchMode("students")} className={"rounded-lg px-3 py-1.5 disabled:opacity-40 " + (mode === "students" ? "bg-cyan text-abyss" : "text-dust hover:text-ice")}>By student</button>
       </div>
 
       {mode === "class" ? (
@@ -262,8 +297,8 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
             {classes.map((c) => {
               const on = selectedClassIds.includes(c.id);
               return (
-                <button key={c.id} type="button" onClick={() => toggle(selectedClassIds, setSelectedClassIds, c.id)}
-                  className={"min-w-0 rounded-lg px-2.5 py-2 text-left text-sm transition " + (on ? "bg-cyan/15 text-ice" : "text-fog hover:bg-white/[0.04]")}>
+                <button key={c.id} type="button" disabled={busy} onClick={() => toggle(selectedClassIds, setSelectedClassIds, c.id)}
+                  className={"min-w-0 rounded-lg px-2.5 py-2 text-left text-sm transition disabled:opacity-40 " + (on ? "bg-cyan/15 text-ice" : "text-fog hover:bg-white/[0.04]")}>
                   <span className="block truncate">{c.name}</span>
                   <span className="block truncate text-xs text-dust">{c.school} · {c.students} students</span>
                 </button>
@@ -279,8 +314,8 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
             {students.map((s) => {
               const on = selectedUids.includes(s.uid);
               return (
-                <button key={s.uid} type="button" onClick={() => toggle(selectedUids, setSelectedUids, s.uid)}
-                  className={"flex w-full min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition " + (on ? "bg-cyan/15 text-ice" : "text-fog hover:bg-white/[0.04]")}>
+                <button key={s.uid} type="button" disabled={busy} onClick={() => toggle(selectedUids, setSelectedUids, s.uid)}
+                  className={"flex w-full min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition disabled:opacity-40 " + (on ? "bg-cyan/15 text-ice" : "text-fog hover:bg-white/[0.04]")}>
                   <span className="min-w-0 truncate">{s.name}</span>
                   <span className="max-w-[45%] shrink-0 truncate text-xs text-dust">{s.className}</span>
                 </button>
@@ -308,7 +343,7 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
       ) : (
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <p className="min-w-0 text-sm text-fog">
-            {title && scopeLabel ? `Assign ${title} to ${recipientCount || 0} ${recipientCount === 1 ? "student" : "students"} ${scopeLabel}?` : "Choose what to assign and who to."}
+            {title && scopeLabel ? `Assign ${title} to ${recipientLabel} ${scopeLabel}?` : "Choose what to assign and who to."}
           </p>
           <button type="button" disabled={!canAssign} onClick={assign} className="btn-primary ml-auto inline-flex shrink-0 items-center gap-2 !px-4 !py-2 text-sm disabled:opacity-40">
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Assign

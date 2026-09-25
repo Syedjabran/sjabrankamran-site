@@ -9,11 +9,12 @@ import { isCorrect } from "./grade.ts";
 import type { Rng } from "./forms.ts";
 import { MAX_RESPONSE_CHARS } from "./session.ts";
 import type { SATAnswer, SATQuestion } from "./types.ts";
-// DOMAIN_LABEL is plain UI copy (no answer data) already shared by the drill
-// filter and score report on the client -- imported here too so a drill's
-// stored/notified title ("Algebra · Hard drill") matches the client's own
-// preview instead of showing the raw domain slug ("algebra · Hard drill").
-import { DOMAIN_LABEL } from "./client-types.ts";
+// DOMAIN_LABEL/DIFFICULTY_LABEL are plain UI copy (no answer data) already
+// shared by the drill filter and score report on the client -- imported here
+// too (fix round 2 finding 5: this file no longer keeps its own copy of
+// DIFFICULTY_LABEL) so a drill's stored/notified title ("Algebra · Hard
+// drill") matches the client's own preview exactly.
+import { DIFFICULTY_LABEL, DOMAIN_LABEL } from "./client-types.ts";
 
 export const DRILL_MIN = 5;
 export const DRILL_MAX = 30;
@@ -34,7 +35,6 @@ export type SATDrill = {
 };
 
 const SECTION_LABEL = { rw: "Reading and Writing", math: "Math" } as const;
-const DIFFICULTY_LABEL = { E: "Easy", M: "Medium", H: "Hard" } as const;
 
 export function drillTitle(f: SATFilter): string {
   const parts = [

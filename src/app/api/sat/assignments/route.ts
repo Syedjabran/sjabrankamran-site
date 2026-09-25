@@ -14,6 +14,7 @@ import { pkDateTimeToIso, formatPk } from "@/lib/portal/pk-time";
 import { listAssignments, addAssignments, type SATAssignment } from "@/lib/sat/assignments";
 import { drillTitle, DRILL_MIN, DRILL_MAX } from "@/lib/sat/drills";
 import { satFilterSchema } from "@/lib/sat/filter-schema";
+import { invalidRequest } from "@/lib/sat/zod-messages";
 import { practiceTestList } from "@/lib/sat/serve";
 import type { AssignmentView } from "@/lib/sat/client-types";
 
@@ -35,12 +36,11 @@ const bodySchema = z.discriminatedUnion("kind", [
 ]);
 
 const unavailable = () => NextResponse.json({ error: "Your assignments couldn't be loaded. Please try again." }, { status: 503 });
-// A zod failure surfaces its own issue message when one was set (every
-// custom check above -- the shared filter schema's domain/section and
-// bank-match refinements included -- sets a clear one); a plain shape
-// mismatch falls back to the generic message.
-const invalidRequest = (parsed: { success: false; error: z.ZodError }) =>
-  NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid request." }, { status: 400 });
+// Every recipient failed (fix round 2 finding 4): a distinct message from
+// `unavailable()` above, since nothing was written for anyone -- not "your
+// list couldn't be loaded", but the send itself didn't go through.
+const sendFailed = () =>
+  NextResponse.json({ error: "The assignment couldn't be sent just now — nothing was assigned. Please try again." }, { status: 503 });
 
 function toView(a: SATAssignment): AssignmentView {
   return { id: a.id, kind: a.kind, title: a.title, testNo: a.testNo, dueAt: a.dueAt, status: a.status, sessionId: a.sessionId, assignedByName: a.assignedByName };
@@ -133,7 +133,7 @@ export async function POST(req: Request) {
   // Every recipient failed -- fail closed rather than a false "assigned to
   // 0 students" 200. A partial failure still returns 200 with the count
   // (the panel offers "Retry the N that failed").
-  if (added === 0 && failed > 0) return unavailable();
+  if (added === 0 && failed > 0) return sendFailed();
   // Re-notifying no one who already had it (idempotencyKey ruling): only
   // the uids `addAssignments` actually saw for the first time get a bell.
   if (newUids.length) {

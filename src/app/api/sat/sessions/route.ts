@@ -13,6 +13,7 @@ import { ROUTING_DISCLOSURE } from "@/lib/sat/adaptive";
 import { listSummaries, loadDoc, saveDoc } from "@/lib/sat/store";
 import { listAssignments, markAssignment, resolveStart, type SATAssignment } from "@/lib/sat/assignments";
 import { satFilterSchema } from "@/lib/sat/filter-schema";
+import { invalidRequest } from "@/lib/sat/zod-messages";
 import type { SATFilter } from "@/lib/sat/bank";
 
 export const runtime = "nodejs";
@@ -51,11 +52,6 @@ const body = z.discriminatedUnion("kind", [
 });
 
 const accessUnavailable = () => NextResponse.json({ error: "Your access couldn't be checked. Please try again." }, { status: 503 });
-// Surfaces a specific zod issue message (the shared filter schema's
-// domain/section + bank-match refinements set a clear one) instead of a
-// flat "Invalid request." for every failure.
-const invalidRequest = (parsed: { success: false; error: z.ZodError }) =>
-  NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid request." }, { status: 400 });
 
 export async function GET() {
   const user = await getPortalUser();
