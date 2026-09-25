@@ -10,6 +10,7 @@ const NAV = [
   { href: "/profile", label: "Profile" },
   { href: "/education", label: "Education" },
   { href: "/physics", label: "Courses" },
+  { href: "/sat", label: "SAT" },
   { href: "/physics-studio", label: "Physics Studio" },
   { href: "/enterprise", label: "Enterprise" },
   { href: "/ai-technology", label: "AI & Technology" },
