@@ -19,6 +19,7 @@ never created.
 import argparse
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 REQUIRED = (
@@ -93,9 +94,18 @@ def _load_json_if_exists(path: Path) -> object | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def check_provenance(rows: list[dict], rows_path: Path, *, allow_dry_run: bool) -> None:
+def check_provenance(rows: list[dict], rows_path: Path, *, allow_dry_run: bool,
+                      key: Callable[[dict], str] = lambda row: row["id"]) -> None:
     """Refuse to build a bank whose rows point at bucket objects that were
     never actually uploaded (C1).
+
+    `key` is how a row's identity in `uploaded.json` is derived -- the
+    question bank's rows are confirmed by College Board id (the default),
+    but a caller whose rows carry no `id` at all (build_sat_tests.py's
+    practice-test rows, confirmed by the bucket key they were uploaded to
+    instead) passes its own, e.g. `key=lambda row: row["img"]`. Keeping the
+    default `id`-keyed means the question bank's own behaviour and tests
+    are unchanged by this parameter's existence.
 
     Reads two sidecars next to `rows_path`, both written by extract_sat.py:
 
@@ -149,7 +159,7 @@ def check_provenance(rows: list[dict], rows_path: Path, *, allow_dry_run: bool) 
             "actually uploaded. Refusing to ship unverifiable rows."
         )
     uploaded_ids = set(uploaded)
-    missing = [row["id"] for row in rows if row["id"] not in uploaded_ids]
+    missing = [key(row) for row in rows if key(row) not in uploaded_ids]
     if missing:
         preview = ", ".join(missing[:10]) + ("..." if len(missing) > 10 else "")
         raise ValueError(

@@ -18,12 +18,48 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from build_sat_bank import check_provenance  # noqa: F401  (re-exported for tests)
+from parse_scoring import RAW_MAX  # the official raw-score range, not hardcoded here
 
 REPO = Path(__file__).resolve().parents[3]
 DEST = REPO / "src" / "lib" / "sat" / "practice-tests.json"
 REQUIRED = ("test_no", "section", "module", "qnum", "answer", "img", "ref", "source")
 SECTIONS = {"rw", "math"}
 MODULES = {1, 2}
+
+
+def _check_table_complete(test_no: int, table: dict) -> None:
+    """Spec 10.5's table check is not just "does one exist" (that's the
+    per-row check above) but "is it whole": every raw score from 0 to the
+    section's max, each mapped to an [lo, hi] pair of ints with lo <= hi.
+    RAW_MAX is imported from parse_scoring rather than hardcoded 66/54 here
+    -- one place owns the official raw-score range.
+
+    Run once per test, after every row has been checked, not inline in the
+    per-row loop: an incomplete table on a test whose rows also fail an
+    earlier, unrelated check (duplicate slot, bad img prefix, ...) must
+    surface that earlier failure first, not this one.
+    """
+    for section, raw_max in RAW_MAX.items():
+        band = table.get(section) or {}
+        expected = {str(i) for i in range(raw_max + 1)}
+        if set(band) != expected:
+            missing = sorted(expected - set(band), key=int)
+            extra = sorted(set(band) - expected, key=int)
+            raise ValueError(
+                f"test {test_no} {section}: conversion table incomplete -- "
+                f"expected raw scores 0-{raw_max} (spec 10.5); "
+                f"missing {missing}, extra {extra}"
+            )
+        for raw, bounds in band.items():
+            malformed = (
+                not isinstance(bounds, (list, tuple)) or len(bounds) != 2
+                or not all(isinstance(b, int) and not isinstance(b, bool) for b in bounds)
+            )
+            if malformed:
+                raise ValueError(f"test {test_no} {section} raw {raw}: malformed bound {bounds!r}")
+            lo, hi = bounds
+            if lo > hi:
+                raise ValueError(f"test {test_no} {section} raw {raw}: lower {lo} above upper {hi}")
 
 
 def validate(rows: list[dict], scoring: dict) -> None:
@@ -45,7 +81,11 @@ def validate(rows: list[dict], scoring: dict) -> None:
         answer = row["answer"]
         if not isinstance(answer, dict) or answer.get("kind") not in ("mcq", "spr"):
             raise ValueError(f"{slot}: unknown answer kind")
-        if answer["kind"] == "mcq" and not isinstance(answer.get("correct"), int):
+        correct = answer.get("correct")
+        # bool is a subclass of int in Python (isinstance(True, int) is
+        # True), so `correct: true` must be rejected explicitly rather than
+        # slipping through as a "valid" index (mirrors build_sat_bank.py).
+        if answer["kind"] == "mcq" and (not isinstance(correct, int) or isinstance(correct, bool)):
             raise ValueError(f"{slot}: mcq answer has no index")
         if answer["kind"] == "spr" and not answer.get("accepted"):
             raise ValueError(f"{slot}: spr answer has no accepted values")
@@ -55,6 +95,9 @@ def validate(rows: list[dict], scoring: dict) -> None:
                 "practice test cannot ship without the table that makes its "
                 "score official (spec 10.5)"
             )
+
+    for test_no in sorted({r["test_no"] for r in rows}):
+        _check_table_complete(test_no, scoring[str(test_no)])
 
 
 def check_timings(rows: list[dict], timings: dict) -> None:
@@ -87,7 +130,10 @@ def main() -> int:
     rows = json.loads(rows_path.read_text(encoding="utf-8"))
     scoring = json.loads(rows_path.with_name("scoring.json").read_text(encoding="utf-8"))
     timings = json.loads(rows_path.with_name("timings.json").read_text(encoding="utf-8"))
-    check_provenance(rows, rows_path, allow_dry_run=args.allow_dry_run)
+    # Practice-test rows carry no `id` -- extract_tests.py's uploaded.json
+    # records the bucket key (the row's `img`) that was actually confirmed
+    # uploaded, so that is this row's identity for the live-branch check.
+    check_provenance(rows, rows_path, allow_dry_run=args.allow_dry_run, key=lambda row: row["img"])
     validate(rows, scoring)
     check_timings(rows, timings)
 
