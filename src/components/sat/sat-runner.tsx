@@ -9,12 +9,29 @@ import {
   answersChangedFor, flaggedChangedFor, isTimeoutError, looksLikeSessionState, mergeAnswers, mergeFlagged, pickAnswers, pickFlagged,
 } from "./sat-runner-utils";
 
-type SaveState = "idle" | "saving" | "saved" | "failed";
+type SaveState = "idle" | "saving" | "saved" | "unsaved" | "failed";
 type PostResult = { kind: "ok"; state: SessionState } | { kind: "stale"; state: SessionState } | { kind: "error"; message: string };
 const fmt = (ms: number) => {
   const t = Math.max(0, Math.ceil(ms / 1000));
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
 };
+
+/** A question's image. The drill's pulsing placeholder stays until the
+ *  signed URL exists AND the image itself has loaded (an <img> still
+ *  fetching has no height, leaving an empty area); if signing failed, the
+ *  signing error shows in its place instead of a placeholder pulsing forever. */
+function QuestionImage({ src, alt, error }: { src: string | undefined; alt: string; error: string | null }) {
+  const [status, setStatus] = useState<"loading" | "loaded" | "failed">("loading");
+  const placeholder = <div className="h-64 animate-pulse rounded-lg bg-white/[0.06]" />;
+  if (!src) return error ? <p className="text-sm text-signal">{error}</p> : placeholder;
+  return (
+    <>
+      {status === "loading" ? placeholder : null}
+      {status === "failed" ? <p className="text-sm text-signal">This question&apos;s image couldn&apos;t be loaded.</p> : null}
+      <img src={src} alt={alt} onLoad={() => setStatus("loaded")} onError={() => setStatus("failed")} className={"w-full rounded-lg bg-white" + (status === "loaded" ? "" : " hidden")} />
+    </>
+  );
+}
 
 export function SatRunner({ sessionId }: { sessionId: string }) {
   const [state, setState] = useState<SessionState | null>(null);
@@ -62,10 +79,15 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   }, []);
 
   // Marks whether a save is currently in flight -- an edit (or the 30 s
-  // backstop) that lands while one is running just keeps `dirty` true; the
-  // debounce timer that edit already armed retries on its own, so
-  // back-to-back saves during a typing burst are not sent.
+  // backstop, or a debounce timer) that lands while one is running just keeps
+  // `dirty` true. When that save's response lands still dirty, it re-arms the
+  // 1.5 s debounce once (bumping `saveRearm` below), so back-to-back saves are
+  // never sent and a slow save never leaves an edit waiting for the backstop.
   const saveBusy = useRef(false);
+  // Bumped to restart the 1.5 s debounce: the autosave effect clears any
+  // pending timer and sets a fresh one.
+  const [saveRearm, setSaveRearm] = useState(0);
+  const rearmSave = useCallback(() => setSaveRearm((n) => n + 1), []);
   // The stage key a submit has been sent for -- blocks any further save for
   // that same stage until the submit settles (success, stale, or error).
   const submittedStage = useRef<string | null>(null);
@@ -99,12 +121,12 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   // TOUCHED for it (touched wins; an id merely inherited from an earlier
   // snapshot never overrides the server's own copy) -- dirty only if that
   // merge actually changed something. Never shown as "saved" -- a neutral
-  // note explains it instead.
+  // note explains it instead. Either way, a module left dirty re-arms the
+  // 1.5 s debounce and shows "Unsaved changes" until that save goes out.
   const applyStale = useCallback((s: SessionState) => {
     skew.current = s.serverNow - Date.now();
     const onScreenKey = stateRef.current?.stage?.key ?? null;
     const serverKey = s.stage?.key ?? null;
-    setSave("idle");
     if (serverKey && serverKey === onScreenKey) {
       setStateBoth({ ...s, answers: answersRef.current, flagged: flaggedRef.current });
       dirty.current = true;
@@ -124,7 +146,9 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
       dirty.current = answersChangedFor(s.answers, mergedAnswers, ids) || flaggedChangedFor(s.flagged, mergedFlagged, ids);
       setNote("This module was already submitted — showing the current module.");
     }
-  }, [setStateBoth, setAnswersBoth, setFlaggedBoth]);
+    if (dirty.current) { setSave("unsaved"); rearmSave(); }
+    else setSave("idle");
+  }, [setStateBoth, setAnswersBoth, setFlaggedBoth, rearmSave]);
 
   const load = useCallback(async () => {
     try {
@@ -169,8 +193,10 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   // `editSeq` guards against a subtler case: an edit made after the request
   // body was already built (but before its response lands) must not be
   // wiped from `dirty` by that response's "ok" -- if the sequence moved on,
-  // this stays dirty instead, and the debounce timer that edit itself
-  // already armed will retry it (no immediate back-to-back resend).
+  // this stays dirty instead. Whatever the response (ok, stale, failure), a
+  // module still dirty re-arms the 1.5 s debounce once -- the edit's own
+  // timer may already have fired (and been skipped) while this save was in
+  // flight -- rather than resending back to back.
   const runSaveCycle = useCallback(async () => {
     try {
       const stageKey = stateRef.current?.stage?.key ?? null;
@@ -182,33 +208,33 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
       const body = { action: "save" as const, stage: stageKey, answers: pickAnswers(answersRef.current, ids), flagged: pickFlagged(flaggedRef.current, ids) };
       const result = await postRaw(body);
       if (submittedStage.current === stageKey) { setSave("idle"); return; } // ditto, while this request was in flight
-      if (result.kind === "error") { dirty.current = true; setSave("failed"); }
-      else if (result.kind === "stale") { applyStale(result.state); }
+      if (result.kind === "error") { dirty.current = true; setSave("failed"); rearmSave(); }
+      else if (result.kind === "stale") { applyStale(result.state); } // re-arms itself when it leaves the module dirty
       else {
         skew.current = result.state.serverNow - Date.now();
         if (editSeq.current === seqAtSend) { dirty.current = false; setSave("saved"); setNote(null); }
-        else { dirty.current = true; } // an edit landed after this body was built -- its own debounce timer will resend it
+        else { dirty.current = true; setSave("unsaved"); rearmSave(); } // an edit landed after this body was built
       }
     } finally {
       saveBusy.current = false;
     }
-  }, [postRaw, applyStale]);
+  }, [postRaw, applyStale, rearmSave]);
 
   const requestSave = useCallback(() => {
     const stageKey = stateRef.current?.stage?.key ?? null;
     if (!stageKey || !dirty.current) return;
     if (submittedStage.current === stageKey) return;
-    if (saveBusy.current) { dirty.current = true; return; } // stays dirty; the debounce timer this edit armed will retry
+    if (saveBusy.current) { dirty.current = true; return; } // stays dirty; the in-flight save's response re-arms the debounce
     saveBusy.current = true;
     void enqueue(() => runSaveCycle());
   }, [enqueue, runSaveCycle]);
 
-  // Autosave: shortly after a change, and every 30 s as a backstop.
+  // Autosave: shortly after a change (or a re-arm), and every 30 s as a backstop.
   useEffect(() => {
     if (!dirty.current) return;
     saveTimer.current = setTimeout(() => { saveTimer.current = null; requestSave(); }, 1500);
     return () => { if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; } };
-  }, [answers, flagged, requestSave]);
+  }, [answers, flagged, saveRearm, requestSave]);
   useEffect(() => { const t = setInterval(() => requestSave(), 30_000); return () => clearInterval(t); }, [requestSave]);
 
   const submit = useCallback(async () => {
@@ -328,12 +354,11 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
       <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/10 bg-space/60 px-4 py-3">
         <div className="min-w-0"><p className="truncate text-sm font-semibold text-ice">{stage.label}</p><p className="text-xs text-dust">{state.title}</p></div>
         <span className={"ml-auto flex items-center gap-1.5 rounded-xl border px-3 py-1.5 font-mono text-sm " + (remaining <= 5 * 60_000 ? "border-amber-300/40 text-amber-200" : "border-white/15 text-ice")}><Clock size={14} /> {fmt(remaining)}</span>
-        <span className="text-xs text-dust">{save === "saving" ? "Saving…" : save === "saved" ? "Saved" : save === "failed" ? "Not saved — retrying" : ""}</span>
+        <span className="text-xs text-dust">{save === "saving" ? "Saving…" : save === "saved" ? "Saved" : save === "unsaved" ? "Unsaved changes" : save === "failed" ? "Not saved — retrying" : ""}</span>
       </div>
 
       {expired ? <p className="rounded-xl border border-amber-300/30 bg-amber-300/[0.05] p-3 text-sm text-amber-100">Time is up for this module. Your saved answers are kept — submit the module to continue.</p> : null}
       {note ? <p className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-sm text-dust"><Info size={14} className="shrink-0" />{note}</p> : null}
-      {imgError ? <p className="text-sm text-signal">{imgError}</p> : null}
 
       <div className="grid gap-4 lg:grid-cols-[1fr_16rem]">
         <div className="min-w-0 space-y-4 rounded-2xl border border-white/10 bg-space/60 p-4">
@@ -341,7 +366,7 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
             <span className="font-display text-ice">Question {q.n} of {questions.length}</span>
             <button type="button" disabled={busy} onClick={toggleFlag} className={"ml-auto inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs disabled:opacity-40 " + (flagged.includes(q.id) ? "border-amber-300/50 text-amber-200" : "border-white/15 text-dust")}><Flag size={12} /> {flagged.includes(q.id) ? "Marked for review" : "Mark for review"}</button>
           </div>
-          {urls[q.img] ? <img src={urls[q.img]} alt={`Question ${q.n}`} className="w-full rounded-lg bg-white" /> : <div className="h-64 animate-pulse rounded-lg bg-white/[0.06]" />}
+          <QuestionImage key={q.img} src={urls[q.img]} alt={`Question ${q.n}`} error={imgError} />
           {q.kind === "mcq" ? (
             <div className="grid grid-cols-4 gap-2">
               {["A", "B", "C", "D"].map((l) => (
@@ -349,7 +374,7 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
               ))}
             </div>
           ) : (
-            <SprPad value={answers[q.id] ?? ""} onChange={setAnswer} disabled={busy} />
+            <SprPad key={q.id} value={answers[q.id] ?? ""} onChange={setAnswer} disabled={busy} />
           )}
           <div className="flex justify-between">
             <button type="button" disabled={idx === 0} onClick={() => setIdx(idx - 1)} className="btn-ghost !px-3 !py-1.5 text-sm disabled:opacity-40"><ChevronLeft size={14} /> Back</button>

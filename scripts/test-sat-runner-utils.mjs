@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
-  answersChangedFor, flaggedChangedFor, isTimeoutError, looksLikeSessionState, mergeAnswers, mergeFlagged, pickAnswers, pickFlagged,
+  answersChangedFor, flaggedChangedFor, isTimeoutError, looksLikeSessionState, mergeAnswers, mergeFlagged, mixedNumberWarning,
+  nextTypedSPR, pickAnswers, pickFlagged, sprAnswerPreview, stripSPR,
 } from "../src/components/sat/sat-runner-utils.ts";
 
 // --- pickAnswers / pickFlagged: a save/submit body carries only the module
@@ -136,5 +137,70 @@ assert.deepEqual(
     "answers must be a map, not an array",
   );
 }
+
+// --- stripSPR: the box keeps digits, ".", "/" and "-" only (Bluebook parity). ---
+assert.equal(stripSPR("1 1/2"), "11/2", "a mixed number is read as one fraction");
+assert.equal(stripSPR(" a-1.5\t"), "-1.5");
+
+// --- nextTypedSPR: what the student actually typed, whitespace included,
+// even though the box drops each space the moment it's typed. ---
+{
+  // Mimics the controlled box: each key is applied to what the box shows
+  // (the stripped text), with the caret at the end.
+  const typeKeys = (keys, from = "") => {
+    let typed = from;
+    for (const k of keys) {
+      const raw = stripSPR(typed) + k;
+      typed = nextTypedSPR(typed, raw, raw.length);
+    }
+    return typed;
+  };
+  assert.equal(typeKeys("1 1/2"), "1 1/2", "typed key by key, the space is remembered though the box never shows it");
+  assert.equal(stripSPR(typeKeys("1 1/2")), "11/2", "and the box itself still holds the stripped value");
+  assert.equal(nextTypedSPR("", "1 1/2", 5), "1 1/2", "a paste keeps its space");
+  assert.equal(nextTypedSPR("1 ", "1a", 2), "1 ", "a dropped letter changes nothing");
+  assert.equal(nextTypedSPR("11", "1 1", 2), "1 1", "a space typed between two digits");
+  assert.equal(nextTypedSPR("1 1/2", "3/2", 3), "3/2", "select-all and retype replaces everything");
+
+  // A deletion also removes the invisible whitespace around what it deleted.
+  assert.equal(nextTypedSPR("1 1", "1", 1), "1", "backspacing the second digit also drops the space before it");
+  assert.equal(nextTypedSPR("12 ", "1", 1), "1", "backspace after a trailing space drops it with the digit");
+  assert.equal(typeKeys("3", nextTypedSPR("12 ", "1", 1)), "13", "so the next digit is not joined across a stale space");
+  assert.equal(nextTypedSPR("1 1/2", "1/2", 0), "1/2", "deleting the first digit drops the space after it");
+
+  // The caret places an insertion among repeated digits.
+  assert.equal(nextTypedSPR("1 1", "111", 1), "11 1", "a digit typed at the start of 11 goes before the first 1");
+}
+
+// --- mixedNumberWarning: quotes the student's own digits and the entries
+// that mean what they meant. ---
+assert.equal(
+  mixedNumberWarning("1 1/2"),
+  "Mixed numbers aren't allowed — “1 1/2” is read as 11/2. Enter 3/2 or 1.5.",
+);
+assert.equal(mixedNumberWarning("2 3/4"), "Mixed numbers aren't allowed — “2 3/4” is read as 23/4. Enter 11/4 or 2.75.");
+assert.equal(mixedNumberWarning("-1 1/2"), "Mixed numbers aren't allowed — “-1 1/2” is read as -11/2. Enter -3/2 or -1.5.");
+assert.equal(mixedNumberWarning("1 1/3"), "Mixed numbers aren't allowed — “1 1/3” is read as 11/3. Enter 4/3 or 1.333.", "a repeating decimal fills the box");
+assert.equal(mixedNumberWarning("1 2/4"), "Mixed numbers aren't allowed — “1 2/4” is read as 12/4. Enter 3/2 or 1.5.", "the fraction is reduced");
+assert.equal(mixedNumberWarning("1 2/2"), "Mixed numbers aren't allowed — “1 2/2” is read as 12/2. Enter 2.", "a whole number is offered once");
+assert.equal(mixedNumberWarning("1 1/0"), "Mixed numbers aren't allowed — “1 1/0” is read as 11/0.", "no entry to offer for a zero denominator");
+assert.equal(mixedNumberWarning(" 1   1/2 "), "Mixed numbers aren't allowed — “1 1/2” is read as 11/2. Enter 3/2 or 1.5.", "whitespace runs are shown as one space");
+assert.equal(mixedNumberWarning("1 1"), "Spaces aren't allowed — “1 1” is read as 11.", "digits split by a space, not (yet) a mixed number");
+assert.equal(mixedNumberWarning("11/2"), null);
+assert.equal(mixedNumberWarning("1. 5"), null, "only digit-space-digit is flagged");
+assert.equal(mixedNumberWarning("1 "), null, "a trailing space alone is not flagged");
+assert.equal(mixedNumberWarning(""), null);
+
+// --- sprAnswerPreview: the entry exactly as it will be graded. ---
+assert.equal(sprAnswerPreview("11/2"), "11/2 (= 5.5)");
+assert.equal(sprAnswerPreview("-3/2"), "-3/2 (= -1.5)");
+assert.equal(sprAnswerPreview("2/3"), "2/3 (≈ 0.6667)", "a repeating decimal is marked approximate");
+assert.equal(sprAnswerPreview("1.5"), "1.5", "a decimal is shown as typed");
+assert.equal(sprAnswerPreview(".5"), ".5");
+assert.equal(sprAnswerPreview("12"), "12");
+assert.equal(sprAnswerPreview(""), null, "nothing entered, no preview");
+assert.equal(sprAnswerPreview("1/0"), null, "an invalid entry has no preview");
+assert.equal(sprAnswerPreview("123456"), null, "too long");
+assert.equal(sprAnswerPreview("1.2.3"), null);
 
 console.log("sat-runner-utils tests passed");
