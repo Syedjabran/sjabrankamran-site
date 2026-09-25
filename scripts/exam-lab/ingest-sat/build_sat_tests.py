@@ -6,10 +6,13 @@ produced it, and refuse to build from a rows.json whose images were never
 uploaded. `check_provenance` is imported from build_sat_bank rather than
 copied -- one dry-run/live gate, one behaviour, one place to fix it.
 
-The extra rule here is spec section 10.5: a practice test ships only with
-its own ingested conversion table. Without one there is no official score,
-and an official practice test that cannot be scored officially is not the
-product this module promises.
+The extra rules here: spec section 10.5 -- a practice test ships only with
+its own ingested conversion table, whole. Without one there is no official
+score, and an official practice test that cannot be scored officially is
+not the product this module promises. And spec 10.4 -- a test ships whole:
+every module holds exactly its printed questions (33/33/27/27), re-checked
+here rather than trusted from extract_tests.py, and every MCQ answer is an
+index into its four options.
 """
 import argparse
 import json
@@ -25,6 +28,16 @@ DEST = REPO / "src" / "lib" / "sat" / "practice-tests.json"
 REQUIRED = ("test_no", "section", "module", "qnum", "answer", "img", "ref", "source")
 SECTIONS = {"rw", "math"}
 MODULES = {1, 2}
+MCQ_OPTIONS = 4  # A-D
+# Questions per module on the paper tests: Reading and Writing 33 + 33,
+# Math 27 + 27. A section's raw-score ceiling IS its question count, so this
+# comes from parse_scoring's RAW_MAX (split evenly over the two modules)
+# rather than being restated, and not from extract_tests.py's own reading
+# of the printed module headers -- this gate is meant to be independent.
+MODULE_QUESTIONS = {
+    (section, module): raw_max // len(MODULES)
+    for section, raw_max in RAW_MAX.items() for module in sorted(MODULES)
+}
 
 
 def _check_table_complete(test_no: int, table: dict) -> None:
@@ -87,6 +100,8 @@ def validate(rows: list[dict], scoring: dict) -> None:
         # slipping through as a "valid" index (mirrors build_sat_bank.py).
         if answer["kind"] == "mcq" and (not isinstance(correct, int) or isinstance(correct, bool)):
             raise ValueError(f"{slot}: mcq answer has no index")
+        if answer["kind"] == "mcq" and not 0 <= correct < MCQ_OPTIONS:
+            raise ValueError(f"{slot}: mcq answer index {correct} is outside 0-{MCQ_OPTIONS - 1}")
         if answer["kind"] == "spr" and not answer.get("accepted"):
             raise ValueError(f"{slot}: spr answer has no accepted values")
         if str(row["test_no"]) not in scoring:
@@ -97,7 +112,26 @@ def validate(rows: list[dict], scoring: dict) -> None:
             )
 
     for test_no in sorted({r["test_no"] for r in rows}):
+        _check_test_whole(test_no, rows)
         _check_table_complete(test_no, scoring[str(test_no)])
+
+
+def _check_test_whole(test_no: int, rows: list[dict]) -> None:
+    """Spec 10.4: every module of the test holds exactly questions 1..N of
+    its printed size (MODULE_QUESTIONS) -- a test missing one question, or
+    carrying one past the end, is not the paper its conversion table
+    scores. Duplicates were already refused per row."""
+    for (section, module), size in MODULE_QUESTIONS.items():
+        got = {r["qnum"] for r in rows
+               if r["test_no"] == test_no and r["section"] == section and r["module"] == module}
+        want = set(range(1, size + 1))
+        if got != want:
+            missing = sorted(want - got)
+            extra = sorted(got - want)
+            raise ValueError(
+                f"test {test_no} {section} module {module}: expected questions 1-{size} "
+                f"(spec 10.4); missing {missing}, extra {extra}"
+            )
 
 
 def check_timings(rows: list[dict], timings: dict) -> None:

@@ -5,7 +5,8 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from build_sat_bank import check_provenance, ship_rationale_images, validate
+import build_sat_bank
+from build_sat_bank import check_provenance, check_row_floor, ship_rationale_images, validate
 
 GOOD = [{
     "id": "ac472881", "section": "math", "domain": "algebra",
@@ -286,3 +287,62 @@ def test_validate_accepts_a_content_hash_rationale_key():
 def test_validate_rejects_a_rationale_key_that_is_not_an_opaque_content_hash(key):
     with pytest.raises(ValueError, match="rationale"):
         validate([{**GOOD[0], "rationale_img": key}])
+
+
+# --- row-count floor --------------------------------------------------------
+# A live run that stopped early leaves a valid but partial rows.json; the
+# build must not quietly shrink the committed bank from it.
+
+def _bank(tmp_path, n: int) -> Path:
+    path = tmp_path / "question-bank.json"
+    path.write_text(json.dumps([{**GOOD[0], "id": f"q{i}"} for i in range(n)]), encoding="utf-8")
+    return path
+
+
+def test_row_floor_refuses_fewer_rows_than_the_committed_bank(tmp_path):
+    with pytest.raises(ValueError, match="fewer than the 3"):
+        check_row_floor(GOOD * 2, _bank(tmp_path, 3), allow_shrink=False)
+
+
+def test_row_floor_allows_the_same_or_more_rows(tmp_path):
+    committed = _bank(tmp_path, 2)
+    check_row_floor(GOOD * 2, committed, allow_shrink=False)
+    check_row_floor(GOOD * 3, committed, allow_shrink=False)
+
+
+def test_row_floor_allow_shrink_overrides(tmp_path):
+    check_row_floor(GOOD, _bank(tmp_path, 3), allow_shrink=True)
+
+
+def test_row_floor_sets_no_floor_without_a_committed_bank(tmp_path):
+    check_row_floor(GOOD, tmp_path / "missing.json", allow_shrink=False)
+
+
+def test_row_floor_refuses_an_unreadable_committed_bank(tmp_path):
+    bad = tmp_path / "question-bank.json"
+    bad.write_text('[{"id": ', encoding="utf-8")
+    with pytest.raises(ValueError, match="allow-shrink"):
+        check_row_floor(GOOD, bad, allow_shrink=False)
+
+
+def test_build_refuses_to_shrink_the_committed_bank_unless_allowed(tmp_path, monkeypatch):
+    """main() checks the floor against the committed bank (DEST) whatever
+    --out says, and writes nothing when it refuses."""
+    committed = _bank(tmp_path, 3)
+    monkeypatch.setattr(build_sat_bank, "DEST", committed)
+    rows = tmp_path / "live" / "rows.json"
+    rows.parent.mkdir()
+    rows.write_text(json.dumps(GOOD), encoding="utf-8")
+    (rows.parent / "mode.json").write_text(json.dumps({"dry_run": False}), encoding="utf-8")
+    (rows.parent / "uploaded.json").write_text(json.dumps([GOOD[0]["id"]]), encoding="utf-8")
+    out = tmp_path / "built.json"
+
+    monkeypatch.setattr(sys, "argv", ["build_sat_bank.py", str(rows), "--out", str(out)])
+    with pytest.raises(ValueError, match="fewer than the 3"):
+        build_sat_bank.main()
+    assert not out.exists()
+
+    monkeypatch.setattr(sys, "argv", ["build_sat_bank.py", str(rows), "--out", str(out), "--allow-shrink"])
+    assert build_sat_bank.main() == 0
+    assert len(json.loads(out.read_text(encoding="utf-8"))) == 1
+    assert len(json.loads(committed.read_text(encoding="utf-8"))) == 3, "the committed bank is never touched by an --out build"

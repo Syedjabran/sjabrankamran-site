@@ -23,6 +23,11 @@ not the one `uploaded-rationales.json` records for its id ships WITHOUT
 failing the build or shipping a dead link. rows.json carries it as
 `rationale_img`; the bank emits it as `rationaleImg`, the field name
 `SATQuestion` declares.
+
+`check_row_floor()` guards the other way a real rows.json can be wrong: a
+live run that died partway leaves a valid but partial rows.json, and
+building from it would silently shrink the shipped bank. A build with fewer
+rows than the committed bank is refused unless `--allow-shrink` is passed.
 """
 import argparse
 import json
@@ -241,6 +246,29 @@ def ship_rationale_images(rows: list[dict], rows_path: Path, *, allow_dry_run: b
     return out, lacking
 
 
+def check_row_floor(rows: list[dict], committed: Path, *, allow_shrink: bool) -> None:
+    """Refuse a bank with fewer rows than `committed` (the bank in the repo)
+    unless `allow_shrink`. A missing committed bank sets no floor (a first
+    build); one that can't be read or isn't a list of rows is refused -- the
+    floor can't be checked, so it isn't assumed away."""
+    if allow_shrink or not committed.exists():
+        return
+    try:
+        existing = json.loads(committed.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise ValueError(
+            f"{committed} can't be read to compare row counts ({e}); pass --allow-shrink to build anyway"
+        ) from e
+    if not isinstance(existing, list):
+        raise ValueError(f"{committed} is not a list of rows; pass --allow-shrink to build anyway")
+    if len(rows) < len(existing):
+        raise ValueError(
+            f"{len(rows)} rows is fewer than the {len(existing)} in {committed} -- a partial "
+            "rows.json (a live run that stopped early)? Refusing to shrink the bank; pass "
+            "--allow-shrink if the smaller bank is intended."
+        )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("rows", help="JSON produced by extract_sat.py")
@@ -255,11 +283,18 @@ def main() -> int:
              "were never uploaded and the bank would point at bucket objects "
              "that do not exist yet",
     )
+    ap.add_argument(
+        "--allow-shrink", action="store_true",
+        help="build even though rows.json has fewer rows than the committed "
+             "src/lib/sat/question-bank.json (refused by default: a partial "
+             "rows.json after a failed live run)",
+    )
     args = ap.parse_args()
     rows_path = Path(args.rows)
     rows = json.loads(rows_path.read_text(encoding="utf-8"))
     check_provenance(rows, rows_path, allow_dry_run=args.allow_dry_run)
     validate(rows)
+    check_row_floor(rows, DEST, allow_shrink=args.allow_shrink)
     rows, lacking = ship_rationale_images(rows, rows_path, allow_dry_run=args.allow_dry_run)
     dest = Path(args.out)
     dest.parent.mkdir(parents=True, exist_ok=True)

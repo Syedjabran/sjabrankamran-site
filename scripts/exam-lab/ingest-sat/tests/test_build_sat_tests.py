@@ -15,6 +15,18 @@ ROW = {
 }
 
 
+def _whole_test(test_no: int = 4) -> list[dict]:
+    """Every question of one paper test -- 33/33/27/27 -- shaped like ROW,
+    so tests that aren't themselves about the module counts pass that gate."""
+    return [
+        {**ROW, "test_no": test_no, "section": section, "module": module, "qnum": qnum,
+         "img": f"sat/tests/{test_no}/{section}-m{module}-q{qnum}.jpg",
+         "ref": f"SAT Practice Test {test_no} {section.upper()} Module {module} Q{qnum}"}
+        for (section, module), size in build_sat_tests.MODULE_QUESTIONS.items()
+        for qnum in range(1, size + 1)
+    ]
+
+
 def _complete_table() -> dict:
     """A conversion table shaped exactly like a loaded scoring.json entry --
     string raw-score keys 0..RAW_MAX per section, JSON-array [lo, hi]
@@ -26,8 +38,41 @@ def _complete_table() -> dict:
     }
 
 
-def test_validate_accepts_a_good_row():
-    build_sat_tests.validate([ROW], {"4": _complete_table()})
+def test_validate_accepts_a_whole_test():
+    build_sat_tests.validate(_whole_test(), {"4": _complete_table()})
+
+
+def test_module_sizes_are_the_printed_33_33_27_27():
+    assert build_sat_tests.MODULE_QUESTIONS == {
+        ("rw", 1): 33, ("rw", 2): 33, ("math", 1): 27, ("math", 2): 27,
+    }
+
+
+def test_validate_rejects_a_test_missing_a_question():
+    """Spec 10.4: a test ships whole or not at all -- the final gate re-checks
+    it rather than trusting extract_tests.py."""
+    rows = [r for r in _whole_test() if not (r["section"] == "math" and r["module"] == 2 and r["qnum"] == 27)]
+    with pytest.raises(ValueError, match=r"math module 2: expected questions 1-27.*missing \[27\]"):
+        build_sat_tests.validate(rows, {"4": _complete_table()})
+
+
+def test_validate_rejects_a_question_past_the_end_of_its_module():
+    extra = {**ROW, "qnum": 34, "img": "sat/tests/4/rw-m1-q34.jpg"}
+    with pytest.raises(ValueError, match=r"rw module 1: expected questions 1-33.*extra \[34\]"):
+        build_sat_tests.validate(_whole_test() + [extra], {"4": _complete_table()})
+
+
+def test_validate_rejects_a_module_missing_entirely():
+    rows = [r for r in _whole_test() if r["section"] != "rw" or r["module"] != 2]
+    with pytest.raises(ValueError, match="rw module 2"):
+        build_sat_tests.validate(rows, {"4": _complete_table()})
+
+
+@pytest.mark.parametrize("correct", [4, -1, 7])
+def test_validate_rejects_an_mcq_index_outside_the_four_options(correct):
+    bad = {**ROW, "answer": {"kind": "mcq", "correct": correct, "source": "best-answer"}}
+    with pytest.raises(ValueError, match="outside 0-3"):
+        build_sat_tests.validate([bad], {"4": _complete_table()})
 
 
 def test_validate_rejects_an_image_outside_the_sat_prefix():
@@ -77,7 +122,7 @@ def test_validate_rejects_a_test_with_an_incomplete_conversion_table():
     table = _complete_table()
     del table["rw"]["7"]
     with pytest.raises(ValueError, match="incomplete"):
-        build_sat_tests.validate([ROW], {"4": table})
+        build_sat_tests.validate(_whole_test(), {"4": table})
 
 
 def test_build_refuses_a_dry_run_rows_file(tmp_path):
