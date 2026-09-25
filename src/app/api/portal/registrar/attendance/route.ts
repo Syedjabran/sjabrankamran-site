@@ -4,6 +4,7 @@ import { getPortalUser, isStaff, isAdmin, isAttendanceRegistrar, isSchoolScopedS
 import { getStaffScope } from "@/lib/portal/staff-school";
 import { getRegistry, staffRoleMap, isDemoStudentName } from "@/lib/portal/institutions";
 import { allowsReason, normaliseReason } from "@/lib/edu/attendance";
+import { pkToday } from "@/lib/portal/pk-time";
 
 export const runtime = "nodejs";
 
@@ -35,7 +36,7 @@ export async function GET(req: Request) {
   }
 
   const url = new URL(req.url);
-  const date = (url.searchParams.get("date") || new Date().toISOString().slice(0, 10)).slice(0, 10);
+  const date = (url.searchParams.get("date") || pkToday()).slice(0, 10);
 
   const reg = await getRegistry();
 
@@ -61,16 +62,31 @@ export async function GET(req: Request) {
   const sb = createAdminClient();
   const STATUS_KEYS = ["present", "late", "online", "absent", "bunk", "excused", "leave", "exempt"] as const;
 
+  // The lesson for each (class, date) — do NOT create one (read-only). When a
+  // class has several that day, pick deterministically, exactly as the
+  // marking API does: the earliest-created lesson with marks, else the
+  // earliest-created lesson.
+  const lessonByClass = new Map<string, string>();
+  if (targetClasses.length) {
+    const { data: lessonRows, error: lessonError } = await sb
+      .from("edu_lessons")
+      .select("id, class_id, created_at, edu_attendance(count)")
+      .in("class_id", targetClasses.map((c) => c.id))
+      .eq("lesson_date", date)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true });
+    if (lessonError) return NextResponse.json({ error: `Could not load lessons: ${lessonError.message}` }, { status: 500 });
+    const withMarks = new Set<string>();
+    for (const l of (lessonRows || []) as unknown as { id: string; class_id: string; edu_attendance?: { count: number }[] }[]) {
+      const marked = (l.edu_attendance?.[0]?.count ?? 0) > 0;
+      if (!lessonByClass.has(l.class_id) || (marked && !withMarks.has(l.class_id))) lessonByClass.set(l.class_id, l.id);
+      if (marked) withMarks.add(l.class_id);
+    }
+  }
+
   const register = await Promise.all(
     targetClasses.map(async (cl) => {
-      // Find the lesson for (class, date) — do NOT create one (read-only).
-      const { data: lesson } = await sb
-        .from("edu_lessons")
-        .select("id")
-        .eq("class_id", cl.id)
-        .eq("lesson_date", date)
-        .limit(1)
-        .maybeSingle();
+      const lessonId = lessonByClass.get(cl.id) ?? null;
 
       // Roster (active enrolments) with names.
       const { data: enr } = await sb
@@ -88,8 +104,8 @@ export async function GET(req: Request) {
 
       const marks: Record<string, string> = {};
       const reasons: Record<string, string> = {};
-      if (lesson?.id) {
-        const { data: att } = await sb.from("edu_attendance").select("student_id, status, note").eq("lesson_id", lesson.id);
+      if (lessonId) {
+        const { data: att } = await sb.from("edu_attendance").select("student_id, status, note").eq("lesson_id", lessonId);
         for (const a of att || []) {
           const sid = a.student_id as string;
           const status = a.status as string;

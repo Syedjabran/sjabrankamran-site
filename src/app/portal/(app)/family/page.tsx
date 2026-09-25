@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { Users, CalendarDays, Trophy, Receipt } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getPortalUser } from "@/lib/edu/auth";
+import { attendancePercent } from "@/lib/edu/attendance";
 
 export const metadata = { title: "My Children" };
 
@@ -68,10 +69,8 @@ export default async function FamilyPage() {
             .eq("status", "active"),
         ]);
 
-      const att = attendance ?? [];
-      const attPct = att.length
-        ? Math.round((att.filter((a) => ["present", "late"].includes(a.status)).length / att.length) * 100)
-        : null;
+      // Same rule as the Saturday email: online counts, excused/leave/exempt are excluded.
+      const attPct = attendancePercent((attendance ?? []).map((a) => a.status as string));
 
       return { s, relationship: link.relationship, attPct, results: results ?? [], invoices: invoices ?? [], enrolments: enrolments ?? [] };
     })

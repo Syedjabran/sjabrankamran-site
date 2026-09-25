@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getPortalUser } from "@/lib/edu/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveCourseAccess } from "@/lib/portal/course-access";
+import { isSafeStorageKey } from "@/lib/request-guards";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,8 @@ export async function POST(request: Request) {
 
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
+  // Reject traversal ("o-level/../…") before the course-prefix check below.
+  if (!parsed.data.paths.every(isSafeStorageKey)) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
 
   // Course guardrail (defence-in-depth): a student may only ever fetch images
   // for the course they are enrolled into. O Level assets live under o-level/*;

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { HERO_POSTER_DATA_URI, PORTRAIT_DATA_URI } from "@/lib/inline-media";
 import { ArrowRight, GraduationCap, Building2, Cpu } from "lucide-react";
@@ -20,6 +21,12 @@ import {
   timeline,
   philosophy,
 } from "@/content/site-data";
+
+// The root layout sets no canonical (children would inherit it), so the
+// home page declares its own.
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
 
 const ECO_ICON = { education: GraduationCap, enterprise: Building2, technology: Cpu };
 const ECO_ACCENT = {

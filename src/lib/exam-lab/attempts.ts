@@ -3,7 +3,7 @@
  * Stored as one JSON doc per user in the private 'exam-data' bucket
  * (service-role access) — no schema migration required.
  */
-import { createAdminClient } from "@/lib/supabase/admin";
+import { readFreshJson, writeFreshJson } from "./storage-fresh";
 
 export type AttemptQuestion = {
   id: string;
@@ -12,7 +12,7 @@ export type AttemptQuestion = {
   paperType: "P1" | "P2" | "P4";
   marks: number;
   earned: number | null; // null = attempted, not auto/AI-scored
-  correct: boolean | null; // MCQ only
+  correct: boolean | null; // MCQ only; null = left blank (or not an MCQ)
   spentSec?: number | null; // actual time on this question (viewport-timed)
   expectedSec?: number; // recommended time (paper + difficulty)
   /** The submitted response, retained so the learner can review this script. */
@@ -49,6 +49,8 @@ export type AttemptContext = {
   lateKind?: string;
   /** SERVER-SET scoring-integrity flag: "unattempted" | "late attempt" | "late submission". */
   status?: string;
+  /** Client nonce for one submission; a retried POST with the same value is stored once. */
+  submissionId?: string;
 };
 
 export type Attempt = {
@@ -72,8 +74,10 @@ export type Attempt = {
   context?: AttemptContext; // integrity / mode metadata (optional)
 };
 
-/** True when an attempt contains at least one genuinely attempted question. */
+/** True when an attempt contains at least one genuinely attempted question.
+ *  A cancelled / locked sitting stays on record but never counts. */
 export function isGenuineAttempt(at: Attempt): boolean {
+  if (at.context?.cancelled) return false;
   if (typeof at.attemptedCount === "number") return at.attemptedCount > 0;
   // Legacy rows: derive from what was recorded.
   return at.questions.some((q) => (q.response && q.response.trim()) || q.correct !== null || q.earned !== null);
@@ -81,32 +85,37 @@ export function isGenuineAttempt(at: Attempt): boolean {
 
 const BUCKET = "exam-data";
 
+const docPath = (userId: string) => `${userId}.json`;
+
+/** The user's attempts, read fresh. THROWS when the doc exists but could not be
+ *  read, so callers that act on the result never mistake "unreadable" for "none". */
+export async function getAttemptsStrict(userId: string): Promise<Attempt[]> {
+  const r = await readFreshJson<{ attempts?: unknown }>(BUCKET, docPath(userId));
+  if (!r.ok) throw new Error("Could not read attempts.");
+  return Array.isArray(r.data?.attempts) ? (r.data.attempts as Attempt[]) : [];
+}
+
+/** Display-only read: an unreadable doc shows as no attempts. */
 export async function getAttempts(userId: string): Promise<Attempt[]> {
   try {
-    const supabase = createAdminClient();
-    const { data, error } = await supabase.storage.from(BUCKET).download(`${userId}.json`);
-    if (error || !data) return [];
-    const txt = await data.text();
-    const parsed = JSON.parse(txt);
-    return Array.isArray(parsed?.attempts) ? parsed.attempts : [];
+    return await getAttemptsStrict(userId);
   } catch {
     return [];
   }
 }
 
 export async function appendAttempt(userId: string, attempt: Attempt): Promise<boolean> {
+  let existing: Attempt[];
   try {
-    const supabase = createAdminClient();
-    const existing = await getAttempts(userId);
-    existing.push(attempt);
-    // keep the most recent 800 attempts
-    const trimmed = existing.slice(-800);
-    const body = new Blob([JSON.stringify({ attempts: trimmed })], { type: "application/json" });
-    const { error } = await supabase.storage
-      .from(BUCKET)
-      .upload(`${userId}.json`, body, { upsert: true, contentType: "application/json" });
-    return !error;
+    existing = await getAttemptsStrict(userId);
   } catch {
+    // Never write after a failed read — that would replace the student's whole
+    // history with this one attempt. The runner keeps it and offers a retry.
     return false;
   }
+  const nonce = attempt.context?.submissionId;
+  if (nonce && existing.some((a) => a.context?.submissionId === nonce)) return true; // retried POST
+  existing.push(attempt);
+  // keep the most recent 800 attempts
+  return writeFreshJson(BUCKET, docPath(userId), { attempts: existing.slice(-800) });
 }

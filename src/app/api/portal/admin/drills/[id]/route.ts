@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getPortalUser, isAdmin, canViewDrillRecords } from "@/lib/edu/auth";
-import { getDrillRecord, getDrillRecordByRef, canSeeDrill, DRILL_REF_RE } from "@/lib/exam-lab/drill-records";
+import { getDrillRecord, getDrillRecordByRef, canSeeDrill, DRILL_REF_RE, DRILL_ID_RE } from "@/lib/exam-lab/drill-records";
 import { visibleClassIdsForUid } from "@/lib/portal/timetable";
 
 export const runtime = "nodejs";
@@ -19,9 +19,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const { id } = await params;
   const key = decodeURIComponent(id || "").trim();
-  const record = DRILL_REF_RE.test(key.toUpperCase())
-    ? await getDrillRecordByRef(key)
-    : await getDrillRecord(key);
+  const isRef = DRILL_REF_RE.test(key.toUpperCase());
+  // The id becomes part of a storage path (exam-drills/<id>.json): only a
+  // reference number or a plain drill id is ever looked up.
+  if (!isRef && !DRILL_ID_RE.test(key)) return NextResponse.json({ error: "Drill record not found." }, { status: 404 });
+  const record = isRef ? await getDrillRecordByRef(key) : await getDrillRecord(key);
   if (!record) return NextResponse.json({ error: "Drill record not found." }, { status: 404 });
 
   if (!isAdmin(user.roles)) {

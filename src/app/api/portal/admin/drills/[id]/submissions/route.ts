@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPortalUser, isAdmin, canViewDrillRecords } from "@/lib/edu/auth";
-import { getDrillRecord, getDrillRecordByRef, canSeeDrill, DRILL_REF_RE } from "@/lib/exam-lab/drill-records";
-import { listAllocations } from "@/lib/exam-lab/allocations";
+import { getDrillRecord, getDrillRecordByRef, canSeeDrill, DRILL_REF_RE, DRILL_ID_RE } from "@/lib/exam-lab/drill-records";
+import { listAllocations, withProctorStatus, type ExamAllocation } from "@/lib/exam-lab/allocations";
 import { visibleClassIdsForUid } from "@/lib/portal/timetable";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -14,6 +14,11 @@ export const maxDuration = 60;
  * allocation record at submission time. This is the staff-facing surface for
  * those flags; the student-facing review page only shows the student's own.
  *
+ * Status is the same EFFECTIVE status the student sees (a locked proctored
+ * test reads "locked", a begun drill "in_progress"), via the shared helper.
+ * Class drills list the live class roster; drills assigned to specific
+ * students list the recipients frozen on the record at allocation time.
+ *
  * Same auth + scope rules as the record route: drill-records viewers only,
  * and non-admin staff must be able to see the record's classes.
  */
@@ -24,9 +29,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const { id } = await params;
   const key = decodeURIComponent(id || "").trim();
-  const record = DRILL_REF_RE.test(key.toUpperCase())
-    ? await getDrillRecordByRef(key)
-    : await getDrillRecord(key);
+  const isRef = DRILL_REF_RE.test(key.toUpperCase());
+  if (!isRef && !DRILL_ID_RE.test(key)) return NextResponse.json({ error: "Drill record not found." }, { status: 404 });
+  const record = isRef ? await getDrillRecordByRef(key) : await getDrillRecord(key);
   if (!record) return NextResponse.json({ error: "Drill record not found." }, { status: 404 });
 
   if (!isAdmin(user.roles)) {
@@ -36,36 +41,40 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     }
   }
 
+  const sb = createAdminClient();
   const classIds = (record.classIds?.length ? record.classIds : record.classId ? [record.classId] : []).filter(Boolean);
-  if (!classIds.length) {
-    // Individual-target drills have no class roster to enumerate.
+  let profileIds: string[];
+  if (classIds.length) {
+    const { data: enr } = await sb
+      .from("edu_enrolments")
+      .select("edu_students(profile_id)")
+      .in("class_id", classIds)
+      .eq("status", "active");
+    profileIds = [...new Set(
+      ((enr || []) as unknown as { edu_students?: { profile_id?: string } }[])
+        .map((r) => r.edu_students?.profile_id)
+        .filter((x): x is string => !!x),
+    )];
+  } else if (record.recipientIds?.length) {
+    profileIds = [...new Set(record.recipientIds)];
+  } else {
+    // Individual drills recorded before recipients were stored: no roster.
     return NextResponse.json({ items: [], roster: false }, { status: 200 });
   }
-
-  const sb = createAdminClient();
-  const { data: enr } = await sb
-    .from("edu_enrolments")
-    .select("edu_students(profile_id)")
-    .in("class_id", classIds)
-    .eq("status", "active");
-  const profileIds = [...new Set(
-    ((enr || []) as unknown as { edu_students?: { profile_id?: string } }[])
-      .map((r) => r.edu_students?.profile_id)
-      .filter((x): x is string => !!x),
-  )];
   if (!profileIds.length) return NextResponse.json({ items: [], roster: true }, { status: 200 });
 
   const { data: profs } = await sb.from("edu_profiles").select("id, full_name").in("id", profileIds);
   const nameOf = new Map((profs || []).map((p) => [p.id as string, (p.full_name as string) || ""]));
 
   const items = await Promise.all(profileIds.map(async (uid) => {
-    let alloc: Awaited<ReturnType<typeof listAllocations>>[number] | null = null;
+    let alloc: ExamAllocation | null = null;
     try {
       const allocs = await listAllocations(uid);
-      alloc = allocs.find((a) =>
+      const found = allocs.find((a) =>
         a.id === record.allocationId ||
         (a.content.type === "drillref" && a.content.drillId === record.id),
-      ) || null;
+      );
+      alloc = found ? await withProctorStatus(uid, found) : null;
     } catch { /* unreadable doc → treat as pending */ }
     return {
       uid,
@@ -74,6 +83,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       lateSubmission: !!alloc?.lateSubmission,
       unattempted: !!alloc?.unattempted,
       daily: !!alloc?.daily,
+      startedAt: alloc?.startedAt ?? null,
       completedAt: alloc?.completedAt ?? null,
     };
   }));

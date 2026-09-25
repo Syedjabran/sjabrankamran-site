@@ -15,8 +15,33 @@ const FORMULAE = [
   { t: "λ = h / p", x: "86%", y: "48%" },
 ];
 
+// Star layout comes from a fixed-seed PRNG (mulberry32), not Math.random():
+// the server and client renders must produce identical markup to hydrate.
+function seededRandom(seed: number) {
+  let a = seed;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+const STARS = (() => {
+  const rand = seededRandom(0x5eed);
+  return Array.from({ length: 60 }, () => ({
+    size: round2(rand() * 2 + 0.5),
+    left: round2(rand() * 100),
+    top: round2(rand() * 100),
+    opacity: round2(rand() * 0.6 + 0.2),
+    delay: round2(rand() * 4),
+  }));
+})();
+
 export function PhysicsField({ dense = false }: { dense?: boolean }) {
-  const stars = Array.from({ length: dense ? 60 : 38 });
+  const stars = dense ? STARS : STARS.slice(0, 38);
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
       {/* orbital system */}
@@ -54,23 +79,20 @@ export function PhysicsField({ dense = false }: { dense?: boolean }) {
       </svg>
 
       {/* stars */}
-      {stars.map((_, i) => {
-        const size = Math.random() * 2 + 0.5;
-        return (
-          <span
-            key={i}
-            className="absolute rounded-full bg-white animate-pulse-soft"
-            style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              width: size,
-              height: size,
-              opacity: Math.random() * 0.6 + 0.2,
-              animationDelay: `${Math.random() * 4}s`,
-            }}
-          />
-        );
-      })}
+      {stars.map((s, i) => (
+        <span
+          key={i}
+          className="absolute rounded-full bg-white animate-pulse-soft"
+          style={{
+            left: `${s.left}%`,
+            top: `${s.top}%`,
+            width: s.size,
+            height: s.size,
+            opacity: s.opacity,
+            animationDelay: `${s.delay}s`,
+          }}
+        />
+      ))}
 
       {/* formulae */}
       {FORMULAE.map((f) => (

@@ -40,9 +40,10 @@ import { getAttempts, isGenuineAttempt, type Attempt } from "@/lib/exam-lab/atte
 import { getRegistry, staffRoleMap, isDemoStudentName } from "@/lib/portal/institutions";
 import { listAllocations, type ExamAllocation } from "@/lib/exam-lab/allocations";
 import { listTasks, type PersonalTask } from "@/lib/portal/tasks";
-import { getContrib } from "@/lib/portal/contribution";
+import { getContrib, thisMonth } from "@/lib/portal/contribution";
 import { notify } from "@/lib/portal/notifications";
 import { countedStatuses } from "@/lib/edu/attendance";
+import { pkToday } from "@/lib/portal/pk-time";
 
 const DATA = "portal-data";
 const LATEST_KEY = "kpi/latest.json";
@@ -146,7 +147,7 @@ function practicePillar(genuineAttempts: Attempt[]): { pillar: PillarScore; acti
   const attempts = genuineAttempts;
   const cutoff = Date.now() - 30 * 864e5;
   const recent = attempts.filter((a) => a.ts >= cutoff);
-  const days = new Set(recent.map((a) => new Date(a.ts).toISOString().slice(0, 10))).size;
+  const days = new Set(recent.map((a) => pkToday(a.ts))).size; // Pakistan calendar days
   const selfTests = recent.filter((a) => !a.context || a.context.kind === "practice").length;
   const vol = logCap(attempts.length, 150);        // 150 lifetime attempts = full volume credit
   const consistency = clamp01(days / 12);          // active 12 of the last 30 days = full credit
@@ -163,6 +164,12 @@ function practicePillar(genuineAttempts: Attempt[]): { pillar: PillarScore; acti
 }
 
 type SubRow = { status: string; marks: number | null; submitted_at: string | null; due_at: string | null; title: string };
+
+// A daily challenge is either the legacy spec, a frozen drill whose underlying
+// spec is "daily", or an automated study-plan allocation flagged `daily`.
+// These are scored ONLY in the Daily pillar.
+const isDailyAlloc = (a: ExamAllocation) =>
+  a.daily === true || a.content.type === "daily" || (a.content.type === "drillref" && a.content.spec.type === "daily");
 
 function assignmentsPillar(
   subs: SubRow[],
@@ -184,7 +191,7 @@ function assignmentsPillar(
     items.push({ done, onTime, overdue });
   }
   for (const a of allocs) {
-    if (a.status === "cancelled") continue;
+    if (a.status === "cancelled" || isDailyAlloc(a)) continue; // daily challenges: Daily pillar only
     // An Exam Lab allocation only counts as completed when the stored attempt
     // shows real work; a blank submission (status submitted, zero answers) is
     // kept on record but earns no completion/on-time credit.
@@ -195,7 +202,9 @@ function assignmentsPillar(
     items.push({ done, onTime, overdue });
   }
   for (const t of tasks) {
-    if (t.kind !== "task") continue; // challenges are scored in the Daily pillar
+    // Challenges are scored in the Daily pillar; the weekly short test (a
+    // "challenge" task) is counted here once, through its Exam Lab allocation.
+    if (t.kind !== "task") continue;
     const done = t.status === "done";
     const onTime = done && (!t.dueAt || (t.completedAt || 0) <= new Date(t.dueAt).getTime());
     const overdue = !done && !!t.dueAt && new Date(t.dueAt).getTime() < now;
@@ -224,12 +233,14 @@ function assignmentsPillar(
 
 function dailyPillar(attempts: Attempt[], allocs: ExamAllocation[], tasks: PersonalTask[]): PillarScore {
   const cutoff = Date.now() - 30 * 864e5;
-  // A daily challenge is either the legacy spec or a frozen drill whose
-  // underlying spec is "daily" — both must count towards this pillar.
-  const isDaily = (c: ExamAllocation["content"]) =>
-    c.type === "daily" || (c.type === "drillref" && c.spec.type === "daily");
-  const dailyAllocs = allocs.filter((a) => (isDaily(a.content) || a.daily === true) && a.createdAt >= cutoff && a.status !== "cancelled");
-  const challenges = tasks.filter((t) => t.kind === "challenge" && t.createdAt >= cutoff);
+  const dailyAllocs = allocs.filter((a) => isDailyAlloc(a) && a.createdAt >= cutoff && a.status !== "cancelled");
+  // Personal challenges count once each. A challenge task that merely mirrors
+  // an Exam Lab allocation (the study plan's daily challenge) is already
+  // counted through that allocation, and the weekly short test is not a daily
+  // challenge at all.
+  const allocIds = new Set(allocs.map((a) => a.id));
+  const challenges = tasks.filter((t) => t.kind === "challenge" && t.createdAt >= cutoff
+    && t.activityType !== "short_test" && !(t.sourceId && allocIds.has(t.sourceId)));
   const assigned = dailyAllocs.length + challenges.length;
   // Participation credit requires REAL WORK: a daily allocation only counts
   // when its stored attempt has ≥1 attempted answer; a challenge task only
@@ -268,14 +279,17 @@ function attendancePillar(statuses: string[]): PillarScore {
   return { score, detail: `${attended} attended + ${late} late of ${counted.length} lessons (excused, leave & exemptions excluded)` };
 }
 
-function contributionPillar(contrib: { total: number; monthPoints: number } | null): PillarScore {
+function contributionPillar(contrib: { total: number; month: string; monthPoints: number } | null): PillarScore {
   if (!contrib || contrib.total <= 0) {
     return { score: 0, detail: "No library contributions yet — share a resource or answer a question." };
   }
+  // monthPoints only resets on the member's next award, so a doc from an
+  // earlier month still carries that month's points — they are not this month's.
+  const monthPoints = contrib.month === thisMonth() ? contrib.monthPoints : 0;
   const allTime = logCap(contrib.total, 150);   // 150 lifetime points = full credit
-  const monthly = logCap(contrib.monthPoints, 50); // 50 points this month = full credit
+  const monthly = logCap(monthPoints, 50); // 50 points this month = full credit
   const score = Math.round((0.7 * allTime + 0.3 * monthly) * 100);
-  return { score, detail: `${contrib.total} contribution points all-time, ${contrib.monthPoints} this month` };
+  return { score, detail: `${contrib.total} contribution points all-time, ${monthPoints} this month` };
 }
 
 // ---------------------------------------------------------------------------
@@ -360,16 +374,18 @@ export async function buildKpiTable(prev: KpiTable | null): Promise<KpiTable> {
   const reg = await getRegistry();
 
   type Flat = Omit<KpiStudent, "rankClass" | "outOfClass" | "rankSchool" | "outOfSchool" | "rankNetwork" | "outOfNetwork">;
-  const flats: Flat[] = [];
+  // One entry per active enrolment (a student in two classes appears twice);
+  // collapsed to one entry per student before ranking, below.
+  const seats: { flat: Flat; enrolledOn: string; classIdx: number }[] = [];
   const prevByUid = new Map((prev?.students || []).map((p) => [p.uid, p]));
 
-  await Promise.all(reg.classes.map(async (cls) => {
+  await Promise.all(reg.classes.map(async (cls, classIdx) => {
     const { data: enr } = await sb
       .from("edu_enrolments")
-      .select("student_id, edu_students(id, profile_id, edu_profiles!edu_students_profile_id_fkey(full_name, email))")
+      .select("student_id, enrolled_on, edu_students(id, profile_id, edu_profiles!edu_students_profile_id_fkey(full_name, email))")
       .eq("class_id", cls.id)
       .eq("status", "active");
-    type Row = { student_id: string; edu_students?: { id: string; profile_id: string; edu_profiles?: { full_name?: string; email?: string } } };
+    type Row = { student_id: string; enrolled_on?: string | null; edu_students?: { id: string; profile_id: string; edu_profiles?: { full_name?: string; email?: string } } };
     const rows = (enr || []) as unknown as Row[];
     // Staff assigned to the class (coordinator/facilitator/etc.) are enrolled for
     // access but must never be scored or ranked as students.
@@ -426,7 +442,7 @@ export async function buildKpiTable(prev: KpiTable | null): Promise<KpiTable> {
         .sort((a, b) => a[1].e / a[1].a - b[1].e / b[1].a)[0]?.[0] || null;
 
       const p = prevByUid.get(uid);
-      flats.push({
+      seats.push({ enrolledOn: r.enrolled_on || "", classIdx, flat: {
         uid, studentId: st.id,
         name: st.edu_profiles?.full_name || st.edu_profiles?.email || "Student",
         email: st.edu_profiles?.email || "",
@@ -440,9 +456,21 @@ export async function buildKpiTable(prev: KpiTable | null): Promise<KpiTable> {
           contribTotal: contrib?.total || 0,
         }),
         prev: p ? { composite: p.composite, rankNetwork: p.rankNetwork, rankClass: p.rankClass } : null,
-      });
+      } });
     }));
   }));
+
+  // Score each student ONCE: keep the most recently enrolled active class
+  // (ties → the first class in the registry). Two copies used to leave one at
+  // rank 0 ("#0 of 0", sorted first) and double-count every "out of".
+  const bestSeat = new Map<string, (typeof seats)[number]>();
+  for (const seat of seats) {
+    const cur = bestSeat.get(seat.flat.uid);
+    if (!cur || seat.enrolledOn > cur.enrolledOn || (seat.enrolledOn === cur.enrolledOn && seat.classIdx < cur.classIdx)) {
+      bestSeat.set(seat.flat.uid, seat);
+    }
+  }
+  const flats: Flat[] = [...bestSeat.values()].map((seat) => seat.flat);
 
   // ---- Ranks: network / school / class (dense; ties share) ----
   const byScore = (a: Flat, b: Flat) => b.composite - a.composite || b.attempts - a.attempts;

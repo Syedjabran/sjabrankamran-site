@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   title: "Student Registration — LGS Paragon AS Physics",
   description: "Register for your LGS Paragon AS (Year 1) Physics portal account",
   robots: { index: false },
+  alternates: { canonical: "/register/lgs-paragon-a1" },
 };
 
 export default function LGSParagonA1RegistrationPage() {
@@ -27,7 +28,7 @@ export default function LGSParagonA1RegistrationPage() {
           {/* Form Card */}
           <div className="rounded-2xl border border-white/10 bg-space/60 p-6 backdrop-blur-sm">
             <RegistrationForm
-              enrollmentCode="PARAGON-A1-2026"
+              classId="809c56e4-7af5-4a78-88cf-8025649e9f17"
               schoolName="LGS Paragon"
               className="AS (Year 1) Physics"
             />

@@ -3,12 +3,39 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, UserRound, Users, ShieldCheck, CheckCircle2, ImagePlus, X } from "lucide-react";
+import { PHOTO_MAX_BYTES, PHOTO_TYPES } from "@/lib/portal/onboarding-shared";
 
 type Guardian = { relationship: string; name: string; email: string; phone: string; is_primary?: boolean };
 
 const inputCls =
   "w-full rounded-xl border border-white/15 bg-void px-3.5 py-2.5 text-sm text-ice placeholder:text-dust focus:border-cyan focus:outline-none";
 const labelCls = "mb-1 block font-mono text-[11px] uppercase tracking-widest text-fog";
+const PHOTO_MAX_EDGE = 1600;
+const PHOTO_SHRINK_ABOVE = 1.5 * 1024 * 1024;
+
+/**
+ * Re-encode large photos in the browser before upload. Phone photos are often
+ * 5-12 MB, and Vercel rejects request bodies over 4.5 MB before the upload
+ * route runs, which left students unable to finish the form. Also converts
+ * formats the browser can decode but the server does not accept (e.g. HEIC on
+ * Safari) to JPEG.
+ */
+async function shrinkPhoto(file: File): Promise<File> {
+  if (file.size <= PHOTO_SHRINK_ABOVE && PHOTO_TYPES[file.type]) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, PHOTO_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    return blob ? new File([blob], `${file.name.replace(/\.[^.]+$/, "")}.jpg`, { type: "image/jpeg" }) : file;
+  } catch {
+    return file;
+  }
+}
 
 export function OnboardingForm() {
   const router = useRouter();
@@ -58,24 +85,30 @@ export function OnboardingForm() {
   }, []);
 
   async function onPhoto(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+    const picked = e.target.files?.[0];
     e.target.value = ""; // allow re-selecting the same file
-    if (!file) return;
+    if (!picked) return;
     setPhotoErr(null);
-    if (!/^image\/(jpe?g|png|webp)$/.test(file.type)) {
+    if (!picked.type.startsWith("image/")) {
       setPhotoErr("Please choose a JPG, PNG or WebP image.");
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setPhotoErr("Image is too large (max 5 MB).");
       return;
     }
     setPhotoBusy(true);
     try {
+      const file = await shrinkPhoto(picked);
+      if (!PHOTO_TYPES[file.type]) {
+        setPhotoErr("Please choose a JPG, PNG or WebP image.");
+        return;
+      }
+      if (file.size > PHOTO_MAX_BYTES) {
+        setPhotoErr(`Image is too large (max ${PHOTO_MAX_BYTES / (1024 * 1024)} MB).`);
+        return;
+      }
       const fd = new FormData();
       fd.append("file", file);
       const r = await fetch("/api/portal/onboarding/photo", { method: "POST", body: fd });
-      const j = await r.json();
+      // The platform answers an oversized body with a non-JSON 413.
+      const j = await r.json().catch(() => ({ error: r.status === 413 ? "Image is too large. Please choose a smaller photo." : undefined }));
       if (r.ok && j.ok) {
         setForm((f) => ({ ...f, photo_path: j.path }));
         setPhotoUrl(j.url || null);
@@ -197,7 +230,7 @@ export function OnboardingForm() {
                   </button>
                 ) : null}
               </div>
-              <p className="mt-1.5 text-[11px] leading-relaxed text-dust">Required before portal access · JPG, PNG or WebP · up to 5 MB.</p>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-dust">Required before portal access · JPG, PNG or WebP · large photos are resized automatically.</p>
               {photoErr ? <p className="mt-1 text-[11px] text-signal">{photoErr}</p> : null}
             </div>
           </div>

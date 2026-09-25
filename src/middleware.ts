@@ -10,6 +10,9 @@ import {
   type AccessControlDocument,
   type AccessRestriction,
 } from "@/lib/portal/access-shared";
+import {
+  PORTAL_BUCKET, cacheBuster, isOnboardingDocComplete, onboardingPath, type Onboarding,
+} from "@/lib/portal/onboarding-shared";
 
 /**
  * Protects /portal routes: refreshes the Supabase session cookie and
@@ -77,22 +80,19 @@ async function onboardingGate(uid: string): Promise<"allow" | "block" | "unknown
     const roles = (await rr.json().catch(() => null)) as Array<{ role?: string }> | null;
     const isStudent = Array.isArray(roles) && roles.some((r) => r.role === "student");
     if (!isStudent) return "allow";
-    // 2) onboarding record (Storage-as-DB). No file / no completed_at → block.
-    const orr = await fetch(`${url}/storage/v1/object/portal-data/onboarding/${uid}.json`, {
+    // 2) onboarding record (Storage-as-DB). No file / incomplete → block.
+    // Cache-busted: a plain read can return a stale pre-submission copy for a
+    // long time after the student saves, re-gating them on every login.
+    const orr = await fetch(`${url}/storage/v1/object/${PORTAL_BUCKET}/${onboardingPath(uid)}?cb=${cacheBuster()}`, {
       headers: h, signal: ctrl.signal, cache: "no-store",
     });
     if (orr.status === 200) {
-      const doc = (await orr.json().catch(() => null)) as {
-        completed_at?: string; photo_path?: string; whatsapp?: string;
-        guardians?: { name?: string; email?: string; phone?: string }[];
-      } | null;
-      const guardian = doc?.guardians?.find((g) =>
-        (g.name || "").trim().length >= 2 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((g.email || "").trim()) && (g.phone || "").replace(/\D/g, "").length >= 7
-      );
-      const complete = !!(doc?.completed_at && doc.photo_path?.startsWith("photos/") && (doc.whatsapp || "").replace(/\D/g, "").length >= 7 && guardian);
-      return complete ? "allow" : "block";
+      const doc = (await orr.json().catch(() => null)) as Partial<Onboarding> | null;
+      // Same rule as the portal layout, or one gate clears a student the other bounces.
+      return isOnboardingDocComplete(doc) ? "allow" : "block";
     }
-    if (orr.status === 400 || orr.status === 404) return "block"; // object not found
+    if (orr.status === 404) return "block"; // object not found
+    if (orr.status === 400) return /not.?found/i.test(await orr.text().catch(() => "")) ? "block" : "unknown";
     return "unknown";
   } catch {
     return "unknown";

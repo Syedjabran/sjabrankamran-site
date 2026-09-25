@@ -58,6 +58,26 @@ export function totalSeconds(
   return items.reduce((s, q) => s + questionSeconds(q), 0);
 }
 
+/**
+ * Split a fixed duration (whole seconds) across items in proportion to their
+ * weights (e.g. each question's `questionSeconds`). The parts always sum to
+ * exactly `totalSec` — rounding drift goes to the last item — so per-question
+ * budgets can never disagree with the paper's own countdown; a single item
+ * receives the whole duration. Each part is at least 1 s.
+ */
+export function splitSeconds(weights: number[], totalSec: number): number[] {
+  const sum = weights.reduce((s, w) => s + Math.max(0, w), 0);
+  if (!weights.length || sum <= 0 || totalSec <= 0) return weights.map((w) => Math.max(0, Math.round(w)));
+  let given = 0;
+  return weights.map((w, i) => {
+    const part = i === weights.length - 1
+      ? Math.max(1, Math.round(totalSec) - given)
+      : Math.max(1, Math.round((Math.max(0, w) * totalSec) / sum));
+    given += part;
+    return part;
+  });
+}
+
 /** "1m 30s" / "45s" / "2m" */
 export function formatDuration(secs: number): string {
   const s = Math.max(0, Math.round(secs));

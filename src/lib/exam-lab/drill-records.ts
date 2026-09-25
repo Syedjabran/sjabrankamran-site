@@ -17,12 +17,15 @@
  * The index keeps lightweight rows for fast listing; the per-drill file holds
  * the resolved question snapshot so a heavy paper never bloats the index.
  */
-import { createAdminClient } from "@/lib/supabase/admin";
 import { FULL_BANK, type ImgQuestion } from "@/lib/exam-lab/image-bank";
+import { ALL_QUESTIONS, questionById } from "@/lib/exam-lab/bank-all";
 import type { AllocContent, AllocMode } from "@/lib/exam-lab/allocations";
+import { readFreshJson, writeFreshJson } from "@/lib/exam-lab/storage-fresh";
 
 const DATA = "portal-data";
 const INDEX = "exam-drills/index.json";
+/** Drill ids are generated here (`drill-…`); anything else never names a storage path. */
+export const DRILL_ID_RE = /^[A-Za-z0-9_-]{1,120}$/;
 const recPath = (id: string) => `exam-drills/${id}.json`;
 export function newDrillId() { return `drill-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }
 
@@ -92,12 +95,19 @@ export type DrillRecord = {
   className: string | null;
   classIds: string[];         // all classes the drill reached (group/school)
   studentCount: number;
+  /**
+   * The student uids the drill was fanned to, frozen at allocation time. The
+   * only roster an individually-assigned drill has (it carries no class ids).
+   * Absent on records written before this field existed. Full record only —
+   * never copied into the index rows.
+   */
+  recipientIds?: string[];
   createdBy: string;
   createdByName: string;
   createdAt: number;
 };
 
-export type DrillRecordSummaryRow = Omit<DrillRecord, "snapshot" | "content"> & { questionCount: number };
+export type DrillRecordSummaryRow = Omit<DrillRecord, "snapshot" | "content" | "recipientIds"> & { questionCount: number };
 
 /**
  * Resolve an allocation content spec to the exact list of questions — the
@@ -110,14 +120,18 @@ export type DrillRecordSummaryRow = Omit<DrillRecord, "snapshot" | "content"> & 
  * already-staff-chosen paper).
  */
 export function resolveSnapshot(content: AllocContent, allowedTopics?: Set<string>): ImgQuestion[] {
+  // Explicit papers and id lists resolve against EVERY course (9702, the
+  // secure bank and O Level 5054); resolving against FULL_BANK alone silently
+  // rejected every O Level paper and question.
   if (content.type === "paper") {
-    return FULL_BANK.filter((q) => q.code === content.code).sort((a, b) => a.qnum - b.qnum);
+    return ALL_QUESTIONS.filter((q) => q.code === content.code).sort((a, b) => a.qnum - b.qnum);
   }
   if (content.type === "custom" || content.type === "drillref") {
     // Both carry an explicit, already-frozen id list in its exact order.
-    const byId = new Map(FULL_BANK.map((q) => [q.id, q] as const));
-    return content.ids.map((id) => byId.get(id)).filter((q): q is ImgQuestion => !!q);
+    return content.ids.map((id) => questionById(id)).filter((q): q is ImgQuestion => !!q);
   }
+  // Randomised draws stay on the 9702 bank: their topic gate is 9702 syllabus
+  // coverage, and several topic names exist in both courses.
   const topicAllowed = (q: ImgQuestion) => !allowedTopics || (!!q.topic && allowedTopics.has(q.topic));
   if (content.type === "drill") {
     const pool = FULL_BANK.filter(
@@ -142,19 +156,18 @@ function toSnapshot(qs: ImgQuestion[]): SnapshotQuestion[] {
   return qs.map((q) => ({ id: q.id, ref: q.ref, paperType: q.paperType, code: q.code, qnum: q.qnum, topic: q.topic, level: q.level, marks: q.marks, img: q.img, ms_img: q.ms_img, answer: q.answer }));
 }
 
-function sb() { return createAdminClient(); }
-
+/** Fresh index read. THROWS when the index exists but could not be read. */
+async function readIndexStrict(): Promise<DrillRecordSummaryRow[]> {
+  const r = await readFreshJson<{ items?: DrillRecordSummaryRow[] }>(DATA, INDEX);
+  if (!r.ok) throw new Error("Could not read drill index.");
+  return Array.isArray(r.data?.items) ? r.data.items : [];
+}
+/** Display-only read: an unreadable index lists nothing. */
 async function readIndex(): Promise<DrillRecordSummaryRow[]> {
-  try {
-    const { data } = await sb().storage.from(DATA).download(INDEX);
-    if (data) return (JSON.parse(await data.text())?.items || []) as DrillRecordSummaryRow[];
-  } catch { /* none */ }
-  return [];
+  try { return await readIndexStrict(); } catch { return []; }
 }
 async function writeIndex(items: DrillRecordSummaryRow[]): Promise<void> {
-  const body = new Blob([JSON.stringify({ items: items.slice(0, 2000) })], { type: "application/json" });
-  const { error } = await sb().storage.from(DATA).upload(INDEX, body, { upsert: true, contentType: "application/json", cacheControl: "0" });
-  if (error) throw new Error("Could not save drill index.");
+  if (!await writeFreshJson(DATA, INDEX, { items: items.slice(0, 2000) })) throw new Error("Could not save drill index.");
 }
 
 /** Persist a drill record (index row + full snapshot file). Best-effort. */
@@ -168,16 +181,17 @@ export async function saveDrillRecord(
       id: base.id, ref: base.ref || newDrillRef(), allocationId: base.allocationId, name: base.name, mode: base.mode,
       content: base.content, snapshot, totalMarks, targetType: base.targetType,
       scopeLabel: base.scopeLabel, classId: base.classId, className: base.className,
-      classIds: base.classIds, studentCount: base.studentCount, createdBy: base.createdBy,
-      createdByName: base.createdByName, createdAt: Date.now(),
+      classIds: base.classIds, studentCount: base.studentCount,
+      ...(base.recipientIds ? { recipientIds: base.recipientIds } : {}),
+      createdBy: base.createdBy, createdByName: base.createdByName, createdAt: Date.now(),
     };
-    const body = new Blob([JSON.stringify({ record })], { type: "application/json" });
-    const { error } = await sb().storage.from(DATA).upload(recPath(record.id), body, { upsert: true, contentType: "application/json", cacheControl: "0" });
-    if (error) return false;
-    const { snapshot: _s, content: _c, ...rest } = record;
-    void _s; void _c;
+    if (!DRILL_ID_RE.test(record.id)) return false;
+    if (!await writeFreshJson(DATA, recPath(record.id), { record })) return false;
+    const { snapshot: _s, content: _c, recipientIds: _r, ...rest } = record;
+    void _s; void _c; void _r;
     const row: DrillRecordSummaryRow = { ...rest, questionCount: snapshot.length };
-    const idx = await readIndex();
+    // Fail closed: an unreadable index is never overwritten with one row.
+    const idx = await readIndexStrict();
     await writeIndex([row, ...idx.filter((r) => r.id !== record.id)]);
     return true;
   } catch { return false; }
@@ -187,13 +201,17 @@ export async function listDrillRecords(): Promise<DrillRecordSummaryRow[]> {
   return (await readIndex()).map(withRef).sort((a, b) => b.createdAt - a.createdAt);
 }
 
+/** A stored record, or null if there is none. THROWS when it could not be read. */
+export async function getDrillRecordStrict(id: string): Promise<DrillRecord | null> {
+  if (!DRILL_ID_RE.test(id)) return null; // never build a storage path from arbitrary input
+  const r = await readFreshJson<{ record?: DrillRecord }>(DATA, recPath(id));
+  if (!r.ok) throw new Error("Could not read drill record.");
+  const rec = r.data?.record || null;
+  return rec ? withRef(rec) : null;
+}
+
 export async function getDrillRecord(id: string): Promise<DrillRecord | null> {
-  try {
-    const { data } = await sb().storage.from(DATA).download(recPath(id));
-    const rec = data ? ((JSON.parse(await data.text())?.record || null) as DrillRecord | null) : null;
-    return rec ? withRef(rec) : null;
-  } catch { /* none */ }
-  return null;
+  try { return await getDrillRecordStrict(id); } catch { return null; }
 }
 
 /** Look a drill up by its human reference number (DR-YYMM-XXXX). */

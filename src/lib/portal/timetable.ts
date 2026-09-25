@@ -9,8 +9,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin, isSchoolScopedStaff, type EduRole } from "@/lib/edu/auth";
 import { getRegistry, type ClassMeta } from "@/lib/portal/institutions";
 import { getStaffScope } from "@/lib/portal/staff-school";
+import { PK_TZ } from "@/lib/portal/pk-time";
 
-export const PK_TZ = "Asia/Karachi";
+export { PK_TZ };
 export const WEEKDAY = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export type TimetableSlot = {

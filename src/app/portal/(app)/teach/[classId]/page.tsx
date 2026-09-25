@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { CalendarDays, ClipboardList, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getPortalUser, isAdmin } from "@/lib/edu/auth";
+import { formatPk, pkDateTimeToIso, pkToday } from "@/lib/portal/pk-time";
 
 export const metadata = { title: "Class" };
 
@@ -40,7 +41,8 @@ async function createAssignment(formData: FormData) {
     class_id: classId,
     title,
     instructions: instructions || null,
-    due_at: dueAt ? new Date(dueAt).toISOString() : null,
+    // datetime-local has no zone: read it as Pakistan time, not server UTC.
+    due_at: pkDateTimeToIso(dueAt),
     max_marks: maxMarks ? Number(maxMarks) : null,
   });
   await supabase.from("edu_audit_logs").insert({
@@ -86,7 +88,7 @@ export default async function ClassPage({ params }: { params: Promise<{ classId:
       .limit(20),
   ]);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = pkToday();
 
   return (
     <div className="space-y-10">
@@ -215,7 +217,7 @@ export default async function ClassPage({ params }: { params: Promise<{ classId:
                 <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-space/60 px-4 py-2.5 text-sm">
                   <span className="text-fog">{a.title}</span>
                   <span className="flex items-center gap-3 text-xs text-dust">
-                    {a.due_at ? <span>due {new Date(a.due_at).toLocaleDateString()}</span> : null}
+                    {a.due_at ? <span>due {formatPk(a.due_at, { day: "numeric", month: "short", year: "numeric" })}</span> : null}
                     {a.max_marks ? <span>/{Number(a.max_marks)}</span> : null}
                     <span className="text-cyan">{submitted} submitted</span>
                   </span>

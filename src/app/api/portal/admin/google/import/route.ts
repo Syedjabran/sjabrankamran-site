@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, audit, isSuperAdmin } from "@/lib/portal/admin";
 import { googleReady } from "@/lib/google/auth";
-import { addLinkResource, type ResourceKind } from "@/lib/portal/resources";
+import { addLinkResourceOnce, type ResourceKind } from "@/lib/portal/resources";
 
 export const runtime = "nodejs";
 
@@ -16,7 +16,8 @@ export async function POST(req: Request) {
   if (!(await googleReady())) return NextResponse.json({ error: "Google is not connected yet." }, { status: 400 });
   const b = (await req.json().catch(() => null)) as { title?: string; url?: string; category?: string; description?: string; kind?: ResourceKind } | null;
   if (!b?.title?.trim() || !b?.url?.trim()) return NextResponse.json({ error: "title and url are required." }, { status: 400 });
-  const item = await addLinkResource({
+  // Re-importing the same Drive/Classroom item must not publish a duplicate.
+  const { item, created } = await addLinkResourceOnce({
     title: b.title.trim(),
     description: b.description,
     category: b.category || "From Google",
@@ -25,6 +26,7 @@ export async function POST(req: Request) {
     createdBy: admin.id,
     createdByName: admin.fullName || admin.email || "Super Admin",
   });
+  if (!created) return NextResponse.json({ ok: true, resource: item, duplicate: true }, { status: 200 });
   await audit(admin.id, "resource.import_google", "physics-resources", item.id, { title: item.title, source: item.source });
   return NextResponse.json({ ok: true, resource: item }, { status: 200 });
 }

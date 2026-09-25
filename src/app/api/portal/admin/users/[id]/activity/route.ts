@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/portal/admin";
 import { getAttempts } from "@/lib/exam-lab/attempts";
+import { formatPk, pkToday } from "@/lib/portal/pk-time";
 
 export const runtime = "nodejs";
 
@@ -15,7 +16,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { id: uid } = await params;
   const sb = createAdminClient();
   const now = Date.now();
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = pkToday(); // lesson dates are Pakistan calendar dates
 
   const { data: student } = await sb.from("edu_students").select("id").eq("profile_id", uid).maybeSingle();
   const past: Item[] = [];
@@ -72,7 +73,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   if (classIds.length) {
     const [{ data: lessons }, { data: assigns }, { data: assessments }, { data: schedules }] = await Promise.all([
-      sb.from("edu_lessons").select("lesson_date, title, class_id, status").in("class_id", classIds).order("lesson_date", { ascending: true }).limit(120),
+      // Only today's and upcoming lessons are shown (past ones come from
+      // attendance), so fetch those — nearest first — rather than the OLDEST
+      // 120, which hid every recent/future lesson once a class had 120 past.
+      sb.from("edu_lessons").select("lesson_date, title, class_id, status").in("class_id", classIds).gte("lesson_date", todayStr).order("lesson_date", { ascending: true }).limit(120),
       sb.from("edu_assignments").select("id, title, due_at, class_id").in("class_id", classIds).order("due_at", { ascending: true, nullsFirst: false }).limit(60),
       sb.from("edu_assessments").select("id, title, starts_at, duration_minutes, status, class_id").in("class_id", classIds).order("starts_at", { ascending: true, nullsFirst: false }).limit(60),
       sb.from("edu_schedules").select("weekday, starts_at, ends_at, class_id").in("class_id", classIds),
@@ -96,13 +100,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     for (const a of assigns || []) {
       if (subIds.has(a.id as string)) continue;
       const due = a.due_at ? new Date(a.due_at as string).getTime() : null;
-      if (due && due > now) future.push({ when: a.due_at as string, ts: due, kind: "assignment", title: `Assignment · ${a.title}`, detail: `Due ${new Date(due).toLocaleString()}` });
+      if (due && due > now) future.push({ when: a.due_at as string, ts: due, kind: "assignment", title: `Assignment · ${a.title}`, detail: `Due ${formatPk(due)}` });
     }
     // Weekly recurring classes → next occurrence
-    const today = new Date();
+    // Weekdays are Pakistan calendar days; the server's own day is UTC.
+    const today = new Date(`${pkToday()}T12:00:00+05:00`);
     for (const s of schedules || []) {
       const wd = Number(s.weekday);
-      let delta = (wd - today.getDay() + 7) % 7;
+      let delta = (wd - today.getUTCDay() + 7) % 7;
       if (delta === 0) delta = 7; // next week's occurrence (today handled by lessons)
       const next = new Date(today.getTime() + delta * 864e5);
       future.push({ when: next.toISOString().slice(0, 10), ts: next.getTime(), kind: "schedule", title: `${className.get(s.class_id as string)} (weekly)`, detail: `${WEEKDAY[wd]} ${String(s.starts_at).slice(0, 5)}–${String(s.ends_at).slice(0, 5)}` });

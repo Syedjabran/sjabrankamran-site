@@ -1,18 +1,24 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { generateQuestions, portalBankPool } from "@/lib/exam-lab/generate";
-import type { ELQuestion, ELLevel } from "@/lib/exam-lab/bank";
+import { ALL_TOPICS_WITH_OL, type ELQuestion, type ELLevel } from "@/lib/exam-lab/bank";
 import { getPortalUser } from "@/lib/edu/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
+// Topics go straight into the Gemini prompt (and web search when grounding is
+// on), so accept only the fixed syllabus list the Exam Lab UI offers.
+const KNOWN_TOPICS = new Set(ALL_TOPICS_WITH_OL);
+
 const schema = z.object({
   mode: z.enum(["public", "portal"]).default("public"),
-  topics: z.array(z.string().max(60)).max(30).default([]),
+  topics: z.array(z.string().refine((t) => KNOWN_TOPICS.has(t))).max(30).default([]),
   levels: z.array(z.enum(["LOT", "HOT"])).min(1).default(["LOT", "HOT"]),
   style: z.enum(["mixed", "mcq", "structured"]).default("mixed"),
   count: z.number().int().min(1).max(40).default(6),
+  // Forwarded so a topic both courses share (e.g. Kinematics) draws from the right bank.
+  course: z.enum(["9702", "5054"]).optional(),
 });
 
 // naive per-warm-instance rate limit
@@ -91,7 +97,7 @@ export async function POST(request: Request) {
     if (!user) return NextResponse.json({ error: "Please sign in to the portal." }, { status: 401 });
     if (limited("portal:" + ip, 30)) return NextResponse.json({ error: "Slow down a moment." }, { status: 429 });
 
-    const seed = portalBankPool({ topics: d.topics, levels: d.levels, style: d.style, count: 500 });
+    const seed = portalBankPool({ topics: d.topics, levels: d.levels, style: d.style, count: 500, course: d.course });
     const db = await dbPortalPool(d.topics, d.levels, d.style);
     const merged = shuffle([...db, ...seed]); // prefer real past papers first, then shuffle whole pool
     const available = merged.length;
@@ -104,10 +110,11 @@ export async function POST(request: Request) {
   const count = Math.min(d.count, 5); // public tests are short
   const ground = process.env.EXAM_LAB_WEB_GROUNDING === "1";
   const res = await generateQuestions(
-    { topics: d.topics, levels: d.levels, style: d.style, count },
+    { topics: d.topics, levels: d.levels, style: d.style, count, course: d.course },
     { ground }
   );
-  const diag = request.headers.get("x-el-diag") === "1";
+  // Raw provider errors are for local debugging only, never for public callers.
+  const diag = process.env.NODE_ENV === "development" && request.headers.get("x-el-diag") === "1";
   return NextResponse.json(
     {
       ok: true,

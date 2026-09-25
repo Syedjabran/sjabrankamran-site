@@ -10,6 +10,7 @@ export const metadata: Metadata = {
   title: "AI & Technology — Intelligent Systems & Automation",
   description:
     "Practical AI and technology work by Syed Jabran Ali Kamran — AI-agent operations, multi-model orchestration, Supabase-backed enterprise systems, and approval-controlled automation.",
+  alternates: { canonical: "/ai-technology" },
 };
 
 const FLOW = [

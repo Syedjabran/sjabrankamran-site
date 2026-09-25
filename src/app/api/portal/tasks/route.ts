@@ -9,8 +9,12 @@ export const runtime = "nodejs";
 export async function GET() {
   const user = await getPortalUser();
   if (!user) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
-  if (user.roles.includes("student")) await ensureStudyPlan(user.id);
-  return NextResponse.json({ tasks: await listTasks(user.id) }, { status: 200 });
+  if (user.roles.includes("student")) await ensureStudyPlan(user.id).catch(() => null);
+  try {
+    return NextResponse.json({ tasks: await listTasks(user.id) }, { status: 200 });
+  } catch {
+    return NextResponse.json({ error: "Your tasks couldn't be loaded. Please try again." }, { status: 503 });
+  }
 }
 
 /** POST { task_id, status, note? } — update the status of one of my own tasks. */

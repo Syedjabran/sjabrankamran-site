@@ -79,7 +79,9 @@ declare global {
   }
 }
 
-export function PwaPortal() {
+// The install card waits while the mandatory onboarding form is on screen: it
+// covers the form's lower fields on phones. Service worker and alerts still run.
+export function PwaPortal({ showInstallCard = true }: { showInstallCard?: boolean }) {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
   const [showCard, setShowCard] = useState(false);
   const [iosHelp, setIosHelp] = useState(false);
@@ -234,7 +236,7 @@ export function PwaPortal() {
     return () => { stopped = true; clearInterval(id); document.removeEventListener("visibilitychange", onVis); };
   }, []);
 
-  if (!showCard) return null;
+  if (!showCard || !showInstallCard) return null;
 
   return (
     <div className="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-md rounded-2xl border border-cyan/30 bg-abyss/95 p-4 shadow-2xl backdrop-blur sm:inset-x-auto sm:right-4">

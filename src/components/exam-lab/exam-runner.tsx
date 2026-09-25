@@ -128,10 +128,13 @@ export function ExamRunner({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           mode,
-          topics: [...selTopics],
+          // "None = all" means all topics of THIS course: an empty list is
+          // read as 9702, so the O Level presets used to serve A Level items.
+          topics: selTopics.size ? [...selTopics] : isOLevel ? [...TOPICS.OL] : [],
           levels: [...levels],
           style,
           count,
+          course,
         }),
       });
       const j = await res.json();
@@ -328,7 +331,7 @@ export function ExamRunner({
                 {questions.length} questions · {totalMarks} marks · LOT {lotN} / HOT {questions.length - lotN} · rec. {recMin} min
               </p>
             </div>
-            {timerOn && <Countdown seconds={recMin * 60} running={!submitted} />}
+            {timerOn && <Countdown key={questions.map((q) => q.id).join()} seconds={recMin * 60} running={!submitted} />}
           </div>
 
           {submitted && score && (
@@ -441,14 +444,25 @@ function ScoreDial({ pct, hasMcq }: { pct: number; hasMcq: boolean }) {
 
 function Countdown({ seconds, running }: { seconds: number; running: boolean }) {
   const [left, setLeft] = useState(seconds);
+  const leftRef = useRef(seconds);
 
   useEffect(() => {
+    leftRef.current = seconds;
     setLeft(seconds);
   }, [seconds]);
 
+  // Wall-clock, not tick-counting: background tabs throttle intervals, so
+  // counting ticks ran the clock slow. Each run derives a deadline from the
+  // time left and re-reads the clock on every refresh.
   useEffect(() => {
     if (!running) return;
-    const iv = setInterval(() => setLeft((s) => (s <= 1 ? 0 : s - 1)), 1000);
+    const deadline = Date.now() + leftRef.current * 1000;
+    const tick = () => {
+      const n = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      leftRef.current = n;
+      setLeft(n);
+    };
+    const iv = setInterval(tick, 1000);
     return () => clearInterval(iv);
   }, [running, seconds]);
 

@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { Eye, GraduationCap, LockKeyhole, LogOut, Settings } from "lucide-react";
 import { getPortalUser, ROLE_LABELS, canConductDrills, isAdmin, isStaff, isRegistrarOnly, isCoordinatorOnly, isExamLabStaff, type EduRole } from "@/lib/edu/auth";
 import { getPortalRestriction } from "@/lib/portal/access-control";
-import { isOnboardingComplete } from "@/lib/portal/onboarding";
+import { onboardingStatus } from "@/lib/portal/onboarding";
 import { effectiveRoles } from "@/lib/portal/view-as";
 import { AccessLockMonitor } from "./access-lock-monitor";
 import { PresenceBeacon } from "./presence-beacon";
@@ -132,9 +132,9 @@ export default async function PortalLayout({ children }: { children: React.React
   // — this layout re-executes on every portal tab navigation.
   const pathname = (await headers()).get("x-pathname") || "";
   const isStudentUser = user.roles.includes("student");
-  const [restriction, onboardingComplete] = await Promise.all([
+  const [restriction, onboarding] = await Promise.all([
     getPortalRestriction(user),
-    isStudentUser ? isOnboardingComplete(user.id) : Promise.resolve(true),
+    isStudentUser ? onboardingStatus(user.id) : Promise.resolve("complete" as const),
   ]);
   if (restriction) return <PortalAccessBlocked restriction={restriction} />;
 
@@ -155,8 +155,9 @@ export default async function PortalLayout({ children }: { children: React.React
   }
 
   // Mandatory onboarding gate: a student cannot use ANY activity until their
-  // required profile (incl. a valid parent email) is complete.
-  const mustOnboard = isStudentUser && !onboardingComplete;
+  // required profile (incl. a valid parent email) is complete. An unreadable
+  // record fails open (as the middleware does) rather than re-showing the form.
+  const mustOnboard = isStudentUser && onboarding === "incomplete";
   if (mustOnboard && !pathname.startsWith("/portal/onboarding")) {
     redirect("/portal/onboarding");
   }
@@ -198,7 +199,7 @@ export default async function PortalLayout({ children }: { children: React.React
     <div className="container-x py-8">
       <AccessLockMonitor />
       <PresenceBeacon />
-      <PwaPortal />
+      <PwaPortal showInstallCard={!mustOnboard} />
       {previewing ? (
         <div className="el-noprint mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/30 bg-amber-300/[0.06] px-4 py-2.5">
           <p className="flex items-center gap-2 text-xs text-amber-300">
@@ -220,7 +221,7 @@ export default async function PortalLayout({ children }: { children: React.React
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <PortalProductTour />
+          <PortalProductTour autoStart={!mustOnboard} />
           {realAdmin && !previewing ? <RolePreviewSwitcher previewing={null} /> : null}
           {isStaff(user.roles) && !previewing ? (
             <span className="rounded-full border border-emerald2/30 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-emerald2">

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { safeNextPath } from "@/lib/request-guards";
 
 /**
  * OAuth / magic-link / password-recovery callback (PKCE).
@@ -19,9 +20,8 @@ export async function GET(request: Request) {
   const type = url.searchParams.get("type");
   const errorDescription = url.searchParams.get("error_description");
 
-  // Only allow same-site relative redirects.
-  const rawNext = url.searchParams.get("next") || "/portal/reset";
-  const next = rawNext.startsWith("/") ? rawNext : "/portal/reset";
+  // Only allow same-site relative redirects ("//host" and "/\host" are rejected).
+  const next = safeNextPath(url.searchParams.get("next") || "/portal/reset");
 
   if (errorDescription) {
     const login = new URL("/portal/login", url.origin);

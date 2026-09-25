@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Loader2, Send, Users, Mail, FileText, CheckCircle2, Clock, AlertTriangle, Sparkles, GraduationCap } from "lucide-react";
 
 type ClassOpt = { id: string; label: string };
@@ -24,6 +24,10 @@ export function MailComposer({ classes, templates, initialLog }: { classes: Clas
   const [sending, setSending] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [log, setLog] = useState<LogEntry[]>(initialLog);
+  // One idempotency key per class broadcast: retrying the same message reuses
+  // it so the server resumes instead of re-mailing families; an edit, or a
+  // success, starts a new one.
+  const broadcast = useRef<{ key: string; id: string } | null>(null);
 
   function applyTemplate(id: string) {
     const t = templates.find((x) => x.id === id);
@@ -62,23 +66,33 @@ export function MailComposer({ classes, templates, initialLog }: { classes: Clas
     } catch { /* ignore */ }
   }
 
+  function broadcastId(key: string) {
+    if (broadcast.current?.key !== key) broadcast.current = { key, id: crypto.randomUUID() };
+    return broadcast.current.id;
+  }
+
   async function send() {
     setSending(true); setMsg(null);
     try {
       const payload = mode === "class"
-        ? { mode, classId, audience, subject, body }
+        ? { mode, classId, audience, subject, body, requestId: broadcastId(JSON.stringify([classId, audience, subject, body])) }
         : { mode, to: emails.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean), subject, body };
       const r = await fetch("/api/portal/mail", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
       const j = await r.json();
       if (r.ok && j.ok) {
-        setMsg({ ok: true, text: j.status === "sent" ? `Sent to ${j.recipients} recipient(s).` : `Queued for ${j.recipients} recipient(s) — will send once the Gmail relay is connected.` });
+        const text = j.duplicate ? "Already sent — nothing was sent twice."
+          : j.status === "sent" ? `Sent to ${j.recipients} recipient(s).`
+          : `Queued for ${j.recipients} recipient(s) — will send once the Gmail relay is connected.`;
+        setMsg({ ok: true, text });
+        broadcast.current = null;
         setSubject(""); setBody("");
         refreshLog();
       } else {
         setMsg({ ok: false, text: j.error || "Could not send." });
       }
     } catch {
-      setMsg({ ok: false, text: "Network error." });
+      // A broadcast cut off part-way (e.g. a timeout) resumes on the same key.
+      setMsg({ ok: false, text: mode === "class" ? "Network error or timeout — press Send again to finish; families already mailed are skipped." : "Network error." });
     } finally {
       setSending(false);
     }

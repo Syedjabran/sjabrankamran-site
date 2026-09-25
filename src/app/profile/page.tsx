@@ -11,6 +11,7 @@ export const metadata: Metadata = {
   title: "Profile — Syed Jabran Ali Kamran",
   description:
     "Executive and academic profile of Syed Jabran Ali Kamran — Cambridge Physics educator with 16+ years' experience, entrepreneur, and AI & technology consultant.",
+  alternates: { canonical: "/profile" },
 };
 
 export default function ProfilePage() {

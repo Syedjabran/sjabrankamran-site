@@ -36,7 +36,7 @@ const HELP: Record<string, string> = {
   "Physics Studio": "Reach the teaching and studio workspace.",
 };
 
-export function PortalProductTour() {
+export function PortalProductTour({ autoStart = true }: { autoStart?: boolean }) {
   const tourRef = useRef<Driver | null>(null);
 
   function startTour() {
@@ -110,13 +110,17 @@ export function PortalProductTour() {
     tour.drive();
   }
 
+  // Not over the mandatory onboarding form: the tour points at portal features
+  // the student cannot open yet, and dismissing it there would mark it seen, so
+  // they would never get it once onboarding is done.
   useEffect(() => {
+    if (!autoStart) return;
     let seen = false;
     try { seen = localStorage.getItem(SEEN_KEY) === "1"; } catch { /* ignore */ }
     if (seen) return;
     const timer = window.setTimeout(startTour, 700);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [autoStart]);
 
   return (
     <button type="button" onClick={startTour} className="inline-flex items-center gap-1.5 rounded-full border border-cyan/30 px-3 py-1.5 text-xs text-cyan transition hover:bg-cyan/10" title="Explain portal features">

@@ -45,7 +45,8 @@ export default async function TimetablePage() {
         </div>
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
-          {[1, 2, 3, 4, 5, 6].map((day) => {
+          {/* weekday is 0=Sunday..6=Saturday — show Monday first, Sunday last. */}
+          {[1, 2, 3, 4, 5, 6, 0].map((day) => {
             const slots = grouped.get(day) || [];
             if (!slots.length) return null;
             return (

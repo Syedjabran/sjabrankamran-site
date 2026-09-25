@@ -51,10 +51,12 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: SITE.name }],
   creator: SITE.name,
+  // No url/canonical here: child pages inherit these fields, so a site-wide
+  // value would make every page declare the homepage as its canonical. Each
+  // page sets its own alternates.canonical.
   openGraph: {
     type: "website",
     locale: "en_GB",
-    url: SITE.url,
     siteName: SITE.name,
     title: "Syed Jabran Ali Kamran — Physics Educator, Entrepreneur & AI Consultant",
     description:
@@ -70,13 +72,18 @@ export const metadata: Metadata = {
     images: ["/jb-portrait.jpg"],
   },
   robots: { index: true, follow: true },
-  alternates: { canonical: SITE.url },
 };
 
 export const viewport: Viewport = {
   themeColor: "#0B0F14",
   colorScheme: "dark",
 };
+
+// JSON.stringify leaves "<" unescaped, so a "</script>" inside any value would
+// close the tag. Escape the HTML-significant characters for inline JSON-LD.
+function toJsonLd(value: unknown) {
+  return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
+}
 
 const personSchema = {
   "@context": "https://schema.org",
@@ -135,11 +142,13 @@ const orgSchema = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable} ${mono.variable}`}>
-      <body>
+    <html lang="en" className={`${spaceGrotesk.variable} ${inter.variable} ${mono.variable}`} suppressHydrationWarning>
+      {/* Browser extensions (e.g. Grammarly on <body>, QuillBot on <html>) add attributes before React
+          hydrates; that is not an app mismatch, so don't report it as one. */}
+      <body suppressHydrationWarning>
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify([websiteSchema, orgSchema, personSchema]) }}
+          dangerouslySetInnerHTML={{ __html: toJsonLd([websiteSchema, orgSchema, personSchema]) }}
         />
         <HydrationMarker />
         <SiteHeader />

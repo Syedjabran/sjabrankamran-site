@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getPortalUser } from "@/lib/edu/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { transcribeScript } from "@/lib/ai/handwriting";
+import { isSafeStorageKey } from "@/lib/request-guards";
 
 export const runtime = "nodejs";
 
@@ -32,10 +33,13 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   const { path } = parsed.data;
 
+  // storage-js does not encode keys, so reject traversal before the prefix check.
+  if (!isSafeStorageKey(path)) return NextResponse.json({ error: "Invalid script path." }, { status: 400 });
   // Ownership: `<uid>/...` or `_late/<uid>/...`
   const owns = path.startsWith(`${user.id}/`) || path.startsWith(`_late/${user.id}/`);
   if (!owns) return NextResponse.json({ error: "Not your script." }, { status: 403 });
-  if (!path.toLowerCase().endsWith(".pdf")) return NextResponse.json({ error: "PDF only." }, { status: 400 });
+  const scriptKey = new RegExp(`^(?:_late/)?${user.id}/[A-Za-z0-9._/-]+\\.[pP][dD][fF]$`);
+  if (!scriptKey.test(path)) return NextResponse.json({ error: "PDF only." }, { status: 400 });
 
   const supabase = createAdminClient();
   const { data, error } = await supabase.storage.from(BUCKET).download(path);

@@ -121,7 +121,11 @@ export function EinsteinCompanion() {
     const onChange = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
     mq.addEventListener("change", onChange);
 
-    if (sessionStorage.getItem("einstein-dismissed") === "1") {
+    // Storage can throw when blocked (privacy settings, sandboxed frames); this
+    // runs in the root layout, so an uncaught throw would take down every page.
+    let wasDismissed = false;
+    try { wasDismissed = sessionStorage.getItem("einstein-dismissed") === "1"; } catch { /* treat as not dismissed */ }
+    if (wasDismissed) {
       setDismissed(true);
     } else {
       let start = parkPosition(false);
@@ -219,7 +223,7 @@ export function EinsteinCompanion() {
 
   function dismiss() {
     setDismissed(true);
-    sessionStorage.setItem("einstein-dismissed", "1");
+    try { sessionStorage.setItem("einstein-dismissed", "1"); } catch { /* dismissal lasts for this page view only */ }
   }
 
   if (dismissed || !visible) return null;

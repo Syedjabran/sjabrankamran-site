@@ -10,6 +10,15 @@ import { getRegistry } from "@/lib/portal/institutions";
 
 export const runtime = "nodejs";
 
+/** Roles only a super-admin may grant/revoke, and whose holders only a super-admin may re-credential. */
+const PRIVILEGED_ROLES: EduRole[] = ["super_admin", "admin"];
+
+async function holdsPrivilegedRole(sb: ReturnType<typeof createAdminClient>, uid: string): Promise<boolean> {
+  const { data, error } = await sb.from("edu_user_roles").select("role").eq("user_id", uid);
+  if (error) return true; // fail closed
+  return (data || []).some((r) => PRIVILEGED_ROLES.includes(r.role as EduRole));
+}
+
 async function ensureStudentId(sb: ReturnType<typeof createAdminClient>, uid: string, actorId: string): Promise<string | null> {
   const { data: st } = await sb.from("edu_students").select("id").eq("profile_id", uid).maybeSingle();
   if (st?.id) return st.id as string;
@@ -26,6 +35,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   } | null;
   if (!b?.op) return NextResponse.json({ error: "Missing op." }, { status: 400 });
   const sb = createAdminClient();
+
+  if ((b.op === "password" || b.op === "email_credentials") && !isSuperAdmin(admin) && (await holdsPrivilegedRole(sb, uid))) {
+    return NextResponse.json({ error: "Only a super-admin can reset an admin's credentials." }, { status: 403 });
+  }
+  if (b.op === "grant_role" || b.op === "revoke_role") {
+    const privileged = PRIVILEGED_ROLES.includes(b.role as EduRole);
+    // Nobody changes their own admin tier (no self-promotion, no owner lock-out);
+    // a super-admin may still add ordinary roles such as teacher to themselves.
+    if (uid === admin.id && (privileged || !isSuperAdmin(admin))) {
+      return NextResponse.json({ error: "You cannot change your own admin roles." }, { status: 403 });
+    }
+    if (privileged && !isSuperAdmin(admin)) {
+      return NextResponse.json({ error: "Only a super-admin can grant or revoke admin roles." }, { status: 403 });
+    }
+  }
 
   switch (b.op) {
     case "password": {
@@ -96,7 +120,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const ok = await setStaffSchool(uid, b.school || "", admin.id);
       if (!ok) return NextResponse.json({ error: "Could not save the school." }, { status: 400 });
       await audit(admin.id, "user.set_school", "edu_profiles", uid, { school: b.school || "" });
-      break;
+      return NextResponse.json({ ok: true }, { status: 200 });
     }
     case "grant_role": {
       const role = b.role as EduRole;

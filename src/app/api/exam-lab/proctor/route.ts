@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPortalUser } from "@/lib/edu/auth";
 import {
-  startSession, appendEvents, saveSnapshot, endSession, requestUnlock, getSession,
+  startSession, appendEvents, saveSnapshot, endSession, requestUnlock, getSession, ATTEMPT_ID_RE,
   type ProctorEvent, type ProctorSession,
 } from "@/lib/exam-lab/proctor";
 
@@ -33,23 +33,30 @@ export async function POST(req: Request) {
   } | null;
   if (!b?.action || !b.attemptId) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   const uid = user.id;
-  const attemptId = String(b.attemptId).slice(0, 80);
+  const attemptId = String(b.attemptId);
+  // The id is part of a storage key: reject anything but a plain id.
+  if (!ATTEMPT_ID_RE.test(attemptId)) return NextResponse.json({ error: "Invalid attempt." }, { status: 400 });
 
   switch (b.action) {
     case "start": {
-      const s = await startSession(uid, attemptId, {
-        studentName: user.fullName || user.email, studentEmail: user.email,
-        kind: b.kind === "assignment" || b.kind === "test" ? b.kind : "practice",
-        integrity: b.integrity === "strict" || b.integrity === "standard" ? b.integrity : "off",
-        meta: {
-          title: String(b.meta?.title || "Exam Lab").slice(0, 160),
-          subtitle: b.meta?.subtitle ? String(b.meta.subtitle).slice(0, 200) : undefined,
-          code: b.meta?.code ? String(b.meta.code).slice(0, 40) : undefined,
-          ref: b.meta?.ref ? String(b.meta.ref).slice(0, 60) : undefined,
-          paperType: b.meta?.paperType ? String(b.meta.paperType).slice(0, 10) : undefined,
-        },
-        cameraConsent: !!b.cameraConsent,
-      });
+      let s: ProctorSession;
+      try {
+        s = await startSession(uid, attemptId, {
+          studentName: user.fullName || user.email, studentEmail: user.email,
+          kind: b.kind === "assignment" || b.kind === "test" ? b.kind : "practice",
+          integrity: b.integrity === "strict" || b.integrity === "standard" ? b.integrity : "off",
+          meta: {
+            title: String(b.meta?.title || "Exam Lab").slice(0, 160),
+            subtitle: b.meta?.subtitle ? String(b.meta.subtitle).slice(0, 200) : undefined,
+            code: b.meta?.code ? String(b.meta.code).slice(0, 40) : undefined,
+            ref: b.meta?.ref ? String(b.meta.ref).slice(0, 60) : undefined,
+            paperType: b.meta?.paperType ? String(b.meta.paperType).slice(0, 10) : undefined,
+          },
+          cameraConsent: !!b.cameraConsent,
+        });
+      } catch {
+        return NextResponse.json({ ok: false, error: "Could not open the proctor session. Please retry." }, { status: 503 });
+      }
       return NextResponse.json({ ok: true, status: s.status, lockedReason: s.lockedReason }, { status: 200 });
     }
     case "event": {

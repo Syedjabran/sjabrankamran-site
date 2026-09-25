@@ -6,10 +6,16 @@ import type { Attempt } from "./attempts";
 import { isGenuineAttempt } from "./attempts";
 
 /** A question counts as attempted only when a real answer was recorded
- * (response text, an MCQ choice, or a mark). Blank rows never count. */
+ * (response text, an MCQ choice, or a mark). Blank rows never count — a blank
+ * MCQ carries earned 0 (it still costs the mark) but correct null. */
 function qAttempted(q: Attempt["questions"][number]): boolean {
-  return (typeof q.response === "string" && q.response.trim().length > 0) || q.correct !== null || q.earned !== null;
+  if (typeof q.response === "string" && q.response.trim().length > 0) return true;
+  if (q.paperType === "P1") return q.correct !== null;
+  return q.correct !== null || q.earned !== null;
 }
+
+/** Topic accuracy (%) splitting strengths (at/above) from weaknesses (below). */
+const WEAK_BELOW = 70;
 
 export type TopicStat = { topic: string; attempted: number; earned: number; available: number; accuracy: number };
 export type Analytics = {
@@ -50,9 +56,11 @@ export function analyse(attempts: Attempt[]): Analytics {
 
   for (const at of genuine) {
     for (const q of at.questions) {
-      if (!qAttempted(q)) continue;
-      questionsAttempted++;
-      if (!scored(q)) continue;
+      const attempted = qAttempted(q);
+      if (attempted) questionsAttempted++;
+      // A blank MCQ still counts against accuracy (it earned 0 of its mark);
+      // any other blank row is skipped as before.
+      if (!scored(q) || (!attempted && q.paperType !== "P1")) continue;
       scoredQuestions++;
       const e = q.earned || 0, a = q.marks || 1;
       totalEarned += e; totalAvail += a;
@@ -72,8 +80,12 @@ export function analyse(attempts: Attempt[]): Analytics {
 
   const overallAccuracy = totalAvail ? Math.round((totalEarned / totalAvail) * 100) : 0;
   const enough = byTopic.filter((t) => t.attempted >= 2);
-  const strengths = enough.slice(0, 5);
-  const weaknesses = [...enough].reverse().slice(0, 5);
+  // With few topics the top-5 and bottom-5 overlapped, so a single strong
+  // topic was also advertised as the thing to "focus on" at 95%. One line now
+  // splits them: a strength is at/above it, a weakness below it — never both
+  // (and a student whose every topic is weak still gets their focus list).
+  const strengths = enough.filter((t) => t.accuracy >= WEAK_BELOW).slice(0, 5);
+  const weaknesses = [...enough].reverse().filter((t) => t.accuracy < WEAK_BELOW).slice(0, 5);
 
   const papersSat = new Set(genuine.filter((a) => a.mode === "paper" && a.code).map((a) => a.code)).size;
 

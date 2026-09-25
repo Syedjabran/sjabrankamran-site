@@ -9,6 +9,8 @@
  *   portal-data/personal-tasks/<uid>.json  → { tasks: PersonalTask[] }
  */
 import { createAdminClient } from "@/lib/supabase/admin";
+import { readStorageJson } from "@/lib/portal/forum";
+import { pkDateTimeToIso } from "@/lib/portal/pk-time";
 
 const DATA = "portal-data";
 function tpath(uid: string) { return `personal-tasks/${uid}.json`; }
@@ -42,12 +44,23 @@ export type PersonalTask = {
 
 type Store = { tasks: PersonalTask[] };
 
+/**
+ * Cache-busted read (see readStorageJson). A missing doc is an empty store; any
+ * other failure THROWS so the read-modify-write paths below never save a store
+ * they failed to read (that used to wipe a student's tasks). Read-only callers
+ * catch and degrade.
+ */
 async function readStore(uid: string): Promise<Store> {
-  try {
-    const { data } = await createAdminClient().storage.from(DATA).download(tpath(uid));
-    if (data) return JSON.parse(await data.text()) as Store;
-  } catch { /* none */ }
-  return { tasks: [] };
+  const doc = await readStorageJson<Store>(DATA, tpath(uid));
+  return { tasks: Array.isArray(doc?.tasks) ? doc.tasks : [] };
+}
+
+/** Staff forms send zone-less datetime-local values — read them as Pakistan time. */
+function dueIso(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const iso = pkDateTimeToIso(value);
+  if (!iso) throw new Error("Invalid due date.");
+  return iso;
 }
 
 async function writeStore(uid: string, store: Store): Promise<boolean> {
@@ -82,7 +95,7 @@ export async function assignTask(uid: string, input: {
     title: input.title.slice(0, 200),
     details: (input.details || "").slice(0, 4000),
     kind: input.kind === "challenge" ? "challenge" : "task",
-    dueAt: input.dueAt ? new Date(input.dueAt).toISOString() : null,
+    dueAt: dueIso(input.dueAt),
     points: input.points != null && !Number.isNaN(input.points) ? Math.max(0, Math.round(input.points)) : null,
     resourceUrl: (input.resourceUrl || "").trim() || null,
     status: "assigned",
@@ -101,7 +114,9 @@ export async function assignTask(uid: string, input: {
   };
   const store = await readStore(uid);
   store.tasks.unshift(task);
-  await writeStore(uid, store.tasks.length > 500 ? { tasks: store.tasks.slice(0, 500) } : store);
+  if (!(await writeStore(uid, store.tasks.length > 500 ? { tasks: store.tasks.slice(0, 500) } : store))) {
+    throw new Error("Could not save the task. Please retry.");
+  }
   return task;
 }
 
@@ -122,7 +137,7 @@ export async function updateTask(uid: string, taskId: string, patch: Partial<Pic
   if (patch.title != null) t.title = patch.title.slice(0, 200);
   if (patch.details != null) t.details = patch.details.slice(0, 4000);
   if (patch.kind != null) t.kind = patch.kind === "challenge" ? "challenge" : "task";
-  if (patch.dueAt !== undefined) t.dueAt = patch.dueAt ? new Date(patch.dueAt).toISOString() : null;
+  if (patch.dueAt !== undefined) t.dueAt = dueIso(patch.dueAt);
   if (patch.points !== undefined) t.points = patch.points != null ? Math.max(0, Math.round(patch.points)) : null;
   if (patch.resourceUrl !== undefined) t.resourceUrl = (patch.resourceUrl || "").trim() || null;
   t.updatedAt = Date.now();
@@ -145,7 +160,10 @@ export async function setTaskStatus(uid: string, taskId: string, status: TaskSta
 
 /** Completing an Exam Lab allocation also completes its linked personal task. */
 export async function completeTaskBySource(uid: string, sourceId: string): Promise<PersonalTask | null> {
-  const store = await readStore(uid);
+  // Runs after the allocation submit already succeeded: a failed read skips
+  // the link update (and never writes) instead of failing that submit.
+  const store = await readStore(uid).catch(() => null);
+  if (!store) return null;
   const task = store.tasks.find((t) => t.sourceId === sourceId);
   if (!task) return null;
   task.status = "done";

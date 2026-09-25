@@ -23,6 +23,8 @@ import { listTasks } from "@/lib/portal/tasks";
 import { getRegistry } from "@/lib/portal/institutions";
 import { timetableForUid } from "@/lib/portal/timetable";
 import { isStaff, type EduRole } from "@/lib/edu/auth";
+import { readStorageJson } from "@/lib/portal/forum";
+import { formatPk } from "@/lib/portal/pk-time";
 
 export type NotifKind =
   | "task" | "challenge" | "assignment" | "test" | "announcement"
@@ -48,18 +50,32 @@ const markerPath = (uid: string) => `notify-markers/${uid}.json`;
 
 function sb() { return createAdminClient(); }
 
+// PostgREST caps an un-ranged select at 1000 rows; broadcasts page through.
+const PAGE = 1000;
+async function selectAll<T>(page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await page(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    out.push(...(data || []));
+    if (!data || data.length < PAGE) return out;
+  }
+}
+
 /** Resolve a notify target to a de-duplicated list of auth uids. */
 export async function resolveAudience(target: NotifyTarget): Promise<string[]> {
   try {
     if ("uids" in target) return [...new Set(target.uids.filter(Boolean))];
     const db = sb();
     if (target.audience === "all") {
-      const { data } = await db.from("edu_profiles").select("id, status");
-      return (data || []).filter((r) => r.status !== "archived").map((r) => r.id as string);
+      const data = await selectAll<{ id: string; status: string | null }>((from, to) =>
+        db.from("edu_profiles").select("id, status").order("id").range(from, to));
+      return data.filter((r) => r.status !== "archived").map((r) => r.id);
     }
     if (target.audience === "students") {
-      const { data } = await db.from("edu_user_roles").select("user_id").eq("role", "student");
-      return [...new Set((data || []).map((r) => r.user_id as string))];
+      const data = await selectAll<{ user_id: string }>((from, to) =>
+        db.from("edu_user_roles").select("user_id").eq("role", "student").order("user_id").range(from, to));
+      return [...new Set(data.map((r) => r.user_id))];
     }
     let classIds: string[] = [];
     if (target.audience === "school") {
@@ -181,31 +197,66 @@ export async function notifyMailReceived(toEmails: string[], subject: string): P
 // Synthesized-on-read reminders (no cron)
 // ---------------------------------------------------------------------------
 
-type MarkerDoc = { keys: string[]; updated_at?: string };
+// Markers are { key: last-seen ms }. They are pruned by AGE, never by count: a
+// count cap let old "Marks recorded" keys fall off and re-fire. A key that is
+// still being synthesized is re-stamped (at most weekly, to limit writes), so
+// only keys whose source has disappeared for MARKER_TTL_MS are dropped.
+// Legacy docs stored a bare `keys: string[]`; those migrate on read as "now".
+type MarkerDoc = { seen?: Record<string, number>; keys?: string[]; updated_at?: string };
+const MARKER_TTL_MS = 120 * 24 * 3600_000;
+const MARKER_RESTAMP_MS = 7 * 24 * 3600_000;
 
-async function readMarkers(uid: string): Promise<{ seen: Set<string>; existed: boolean }> {
-  try {
-    const { data } = await sb().storage.from(DATA).download(markerPath(uid));
-    if (data) {
-      const j = JSON.parse(await data.text()) as MarkerDoc;
-      return { seen: new Set(j.keys || []), existed: true };
-    }
-  } catch { /* none */ }
-  return { seen: new Set(), existed: false };
+/** Throws on a failed read so a storage blip can't reset (and re-fire) every marker. */
+async function readMarkers(uid: string): Promise<{ seen: Map<string, number>; existed: boolean }> {
+  const doc = await readStorageJson<MarkerDoc>(DATA, markerPath(uid));
+  const seen = new Map<string, number>();
+  if (!doc) return { seen, existed: false };
+  const now = Date.now();
+  for (const k of doc.keys || []) seen.set(k, now);
+  for (const [k, ts] of Object.entries(doc.seen || {})) if (typeof ts === "number") seen.set(k, ts);
+  return { seen, existed: true };
 }
 
-async function writeMarkers(uid: string, keys: Set<string>): Promise<void> {
+async function writeMarkers(uid: string, seen: Map<string, number>): Promise<void> {
   try {
-    const doc: MarkerDoc = { keys: [...keys].slice(-400), updated_at: new Date().toISOString() };
+    const cutoff = Date.now() - MARKER_TTL_MS;
+    const doc: MarkerDoc = { seen: Object.fromEntries([...seen].filter(([, ts]) => ts >= cutoff)), updated_at: new Date().toISOString() };
     const body = new Blob([JSON.stringify(doc)], { type: "application/json" });
     await sb().storage.from(DATA).upload(markerPath(uid), body, { upsert: true, contentType: "application/json", cacheControl: "0" });
   } catch { /* best effort */ }
 }
 
+const SYNTH_DEDUPE_MS = 7 * 24 * 3600_000;
+/**
+ * Insert a synthesized reminder unless an identical row (same user, kind,
+ * title and body) was created recently. The bell poll and a ?sync=1 page load
+ * can force-sync at the same moment and both read the same markers, so the
+ * table itself is checked before inserting — and, if a concurrent sync still
+ * won the race, every copy but the earliest is removed afterwards.
+ */
+async function notifyOnce(uid: string, input: NotifyInput): Promise<void> {
+  const db = sb();
+  const title = input.title.slice(0, 200);
+  const body = (input.body || "").slice(0, 1000) || null;
+  const since = new Date(Date.now() - SYNTH_DEDUPE_MS).toISOString();
+  const same = () => {
+    const q = db.from("edu_notifications").select("id").eq("user_id", uid).eq("kind", input.type).eq("title", title).gte("created_at", since);
+    return (body === null ? q.is("body", null) : q.eq("body", body))
+      .order("created_at", { ascending: true }).order("id", { ascending: true });
+  };
+  const { data: before } = await same().limit(1);
+  if (before?.length) return;
+  await notify({ uids: [uid] }, input);
+  const { data: after } = await same();
+  const extra = (after || []).slice(1).map((r) => r.id as string);
+  if (extra.length) await db.from("edu_notifications").delete().in("id", extra);
+}
+
+/** "Thu 25 Sep 16:00" in Pakistan time (time omitted at midnight). */
 function fmtDue(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) +
-    (d.getHours() || d.getMinutes() ? ` ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}` : "");
+  const day = formatPk(iso, { weekday: "short", day: "numeric", month: "short" });
+  const time = formatPk(iso, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  return time === "00:00" ? day : `${day} ${time}`;
 }
 
 // Class schedules/lessons store wall-clock time for the school's timezone
@@ -253,7 +304,7 @@ export async function synthesizeForUser(uid: string, opts?: { force?: boolean })
     const allocs = await listAllocations(uid).catch(() => []);
     const testHorizon = now + 7 * 24 * 3600_000; // surface upcoming tests a week out
     for (const a of allocs) {
-      if (a.status !== "assigned" || !a.dueAt) continue;
+      if ((a.status !== "assigned" && a.status !== "in_progress") || !a.dueAt) continue;
       const due = new Date(a.dueAt).getTime();
       if (due <= now) continue;
       const isTest = a.mode === "test";
@@ -355,12 +406,18 @@ export async function synthesizeForUser(uid: string, opts?: { force?: boolean })
     // First-ever synthesis: baseline historical "marks recorded" silently so a
     // user with months of already-marked work isn't flooded. Due-soon reminders
     // still fire (they are genuinely current).
-    if (!existed) for (const p of pending) if (p.input.type === "marks") seen.add(p.key);
+    if (!existed) for (const p of pending) if (p.input.type === "marks") seen.set(p.key, now);
+    // Re-stamp keys that are still live so age-pruning never drops them.
+    let restamped = false;
+    for (const p of pending) {
+      const ts = seen.get(p.key);
+      if (ts !== undefined && now - ts > MARKER_RESTAMP_MS) { seen.set(p.key, now); restamped = true; }
+    }
     const fresh = pending.filter((p) => !seen.has(p.key));
     for (const p of fresh) {
-      await notify({ uids: [uid] }, p.input);
-      seen.add(p.key);
+      await notifyOnce(uid, p.input);
+      seen.set(p.key, now);
     }
-    if (fresh.length || !existed) await writeMarkers(uid, seen);
+    if (fresh.length || !existed || restamped) await writeMarkers(uid, seen);
   } catch { /* best effort — never break the bell */ }
 }

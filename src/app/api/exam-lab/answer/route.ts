@@ -18,7 +18,7 @@ const schema = z.object({
   code: z.string().max(40).optional(),
   ref: z.string().max(80).optional(),
   startedAt: z.number().int().positive(),
-  durationSec: z.number().int().min(30).max(20000),
+  durationSec: z.number().int().min(30).max(43200), // 12 h, the attempt route's cap
   ext: z.enum(["pdf", "png", "jpg", "jpeg", "webp", "heic", "heif", "doc", "docx"]).optional(),
 });
 

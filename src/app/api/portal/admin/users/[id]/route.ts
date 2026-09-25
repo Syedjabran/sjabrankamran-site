@@ -9,6 +9,8 @@ import { getAttempts } from "@/lib/exam-lab/attempts";
 import { analyse } from "@/lib/exam-lab/analytics";
 import { getRankingsCached } from "@/lib/portal/rankings";
 import { getPortalRestriction } from "@/lib/portal/access-control";
+import { attendancePercent, countedStatuses, isAttended } from "@/lib/edu/attendance";
+import { pkToday } from "@/lib/portal/pk-time";
 
 export const runtime = "nodejs";
 
@@ -83,11 +85,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       sb.from("edu_results").select("score, grade, created_at, edu_assessments(title, kind, total_marks, starts_at)").eq("student_id", student.id).order("created_at", { ascending: false }).limit(20),
       sb.from("edu_submissions").select("status, marks, submitted_at, edu_assignments(title)").eq("student_id", student.id).order("submitted_at", { ascending: false }).limit(20),
     ]);
-    if (att && att.length) {
-      const present = att.filter((r) => r.status === "present").length;
-      const late = att.filter((r) => r.status === "late").length;
-      const absent = att.filter((r) => r.status === "absent" || r.status === "excused").length;
-      attendance = { total: att.length, present, late, absent, pct: Math.round(((present + late) / att.length) * 100) };
+    // Canonical % (excused/leave/exempt leave the denominator; online counts as
+    // attended). Null when there are no countable marks → "No attendance recorded".
+    // `total` is the countable marks so the report's donut segments sum to it.
+    const counted = countedStatuses((att || []).map((r) => r.status as string));
+    const pct = attendancePercent(counted);
+    if (pct != null) {
+      const late = counted.filter((s) => s === "late").length;
+      const present = counted.filter(isAttended).length - late;
+      const absent = counted.length - present - late;
+      attendance = { total: counted.length, present, late, absent, pct };
     }
     results = (res || []).map((r) => {
       const a = (r as { edu_assessments?: { title?: string; kind?: string; total_marks?: number; starts_at?: string } }).edu_assessments || {};
@@ -204,6 +211,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (typeof b.email === "string" && b.email.trim()) {
     const email = b.email.trim().toLowerCase();
     if (!isEmail(email)) return NextResponse.json({ error: "Invalid email." }, { status: 400 });
+    // Re-pointing an admin's sign-in email is an account takeover vector.
+    if (!isSuperAdmin(admin)) {
+      const { data: targetRoles, error: rolesErr } = await sb.from("edu_user_roles").select("role").eq("user_id", uid);
+      if (rolesErr || (targetRoles || []).some((r) => r.role === "super_admin" || r.role === "admin")) {
+        return NextResponse.json({ error: "Only a super-admin can change an admin's email." }, { status: 403 });
+      }
+    }
     const { error } = await sb.auth.admin.updateUserById(uid, { email, email_confirm: true });
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
     patch.email = email;
@@ -224,6 +238,18 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const { id: uid } = await params;
   if (uid === admin.id) return NextResponse.json({ error: "You cannot delete your own account." }, { status: 400 });
   const sb = createAdminClient();
+  // edu_students.profile_id is ON DELETE SET NULL, so the student row (and its
+  // enrolments) outlive the account; withdraw them first so class rosters,
+  // which list only active enrolments, don't show an "(unnamed)" student.
+  const { data: student } = await sb.from("edu_students").select("id").eq("profile_id", uid).maybeSingle();
+  if (student?.id) {
+    const { error: enrErr } = await sb
+      .from("edu_enrolments")
+      .update({ status: "withdrawn", left_on: pkToday() })
+      .eq("student_id", student.id)
+      .eq("status", "active");
+    if (enrErr) return NextResponse.json({ error: enrErr.message }, { status: 400 });
+  }
   const { error } = await sb.auth.admin.deleteUser(uid);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   await audit(admin.id, "user.delete", "edu_profiles", uid, {});

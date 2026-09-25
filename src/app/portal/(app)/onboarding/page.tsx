@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getPortalUser } from "@/lib/edu/auth";
-import { isOnboardingComplete } from "@/lib/portal/onboarding";
+import { onboardingStatus } from "@/lib/portal/onboarding";
 import { OnboardingForm } from "./onboarding-form";
 
 export const metadata = { title: "Complete your profile", robots: { index: false } };
@@ -11,7 +11,7 @@ export default async function OnboardingPage() {
   // Staff/non-students don't onboard.
   if (!user.roles.includes("student")) redirect("/portal");
 
-  if (await isOnboardingComplete(user.id)) redirect("/portal");
+  if ((await onboardingStatus(user.id)) === "complete") redirect("/portal");
 
   return (
     <div className="mx-auto max-w-2xl">

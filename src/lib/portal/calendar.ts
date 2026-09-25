@@ -9,6 +9,7 @@
  * A stable per-user token (Storage-as-DB) authorises the unauthenticated feed
  * that Google/Apple Calendar fetch on a schedule. No DDL.
  */
+import { randomBytes } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { listAllocations } from "@/lib/exam-lab/allocations";
 import { listTasks } from "@/lib/portal/tasks";
@@ -21,7 +22,8 @@ const SCHOOL_TZ_OFFSET_MS = 5 * 3600_000; // Asia/Karachi (UTC+5, no DST)
 const BYDAY = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
 
 function sb() { return createAdminClient(); }
-function rndToken() { return `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`.slice(0, 32); }
+// 128-bit CSPRNG token as 32 hex chars (matches resolveCalendarToken's format).
+function rndToken() { return randomBytes(16).toString("hex"); }
 
 export type CalEvent = {
   uid: string; title: string; start: number; end: number | null;

@@ -11,7 +11,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test:access": "node --no-warnings --experimental-strip-types scripts/test-access-control.mjs"
+    "test:access": "node --no-warnings --experimental-strip-types scripts/test-access-control.mjs",
+    "test:portal": "node --no-warnings --experimental-strip-types scripts/test-portal-rules.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

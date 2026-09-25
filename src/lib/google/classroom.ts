@@ -8,9 +8,25 @@ export type CourseWork = { id: string; title: string; description: string | null
 
 type RawCourse = { id: string; name: string; section?: string; description?: string; room?: string; enrollmentCode?: string; alternateLink?: string; courseState?: string };
 
+/** Safety cap on pages followed (100 items each). */
+const MAX_PAGES = 20;
+
+/** GET every page of a Classroom list endpoint (follows nextPageToken). */
+async function listAll<T>(url: string, key: string): Promise<T[]> {
+  const out: T[] = [];
+  let pageToken = "";
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const data = await googleGet<Record<string, unknown> & { nextPageToken?: string }>(pageToken ? `${url}&pageToken=${encodeURIComponent(pageToken)}` : url);
+    out.push(...((data[key] as T[] | undefined) || []));
+    pageToken = data.nextPageToken || "";
+    if (!pageToken) break;
+  }
+  return out;
+}
+
 export async function listCourses(): Promise<Course[]> {
-  const data = await googleGet<{ courses?: RawCourse[] }>("https://classroom.googleapis.com/v1/courses?pageSize=100&courseStates=ACTIVE&courseStates=PROVISIONED");
-  return (data.courses || []).map((c) => ({
+  const courses = await listAll<RawCourse>("https://classroom.googleapis.com/v1/courses?pageSize=100&courseStates=ACTIVE&courseStates=PROVISIONED", "courses");
+  return courses.map((c) => ({
     id: c.id, name: c.name, section: c.section || null, description: c.description || null,
     room: c.room || null, enrolmentCode: c.enrollmentCode || null, alternateLink: c.alternateLink || null, courseState: c.courseState || null,
   }));
@@ -36,8 +52,8 @@ function mapMaterials(raw: RawMaterial[] = []): Material[] {
 }
 
 export async function listCourseWork(courseId: string): Promise<CourseWork[]> {
-  const data = await googleGet<{ courseWork?: RawWork[] }>(`https://classroom.googleapis.com/v1/courses/${encodeURIComponent(courseId)}/courseWork?pageSize=100&orderBy=updateTime%20desc`);
-  return (data.courseWork || []).map((w) => ({
+  const work = await listAll<RawWork>(`https://classroom.googleapis.com/v1/courses/${encodeURIComponent(courseId)}/courseWork?pageSize=100&orderBy=updateTime%20desc`, "courseWork");
+  return work.map((w) => ({
     id: w.id, title: w.title, description: w.description || null, workType: w.workType || null,
     alternateLink: w.alternateLink || null,
     dueDate: w.dueDate ? `${w.dueDate.year}-${String(w.dueDate.month).padStart(2, "0")}-${String(w.dueDate.day).padStart(2, "0")}` : null,
@@ -47,8 +63,8 @@ export async function listCourseWork(courseId: string): Promise<CourseWork[]> {
 
 /** Course "materials" posts (announcements-with-materials, not graded work). */
 export async function listCourseWorkMaterials(courseId: string): Promise<CourseWork[]> {
-  const data = await googleGet<{ courseWorkMaterial?: RawWork[] }>(`https://classroom.googleapis.com/v1/courses/${encodeURIComponent(courseId)}/courseWorkMaterials?pageSize=100&orderBy=updateTime%20desc`);
-  return (data.courseWorkMaterial || []).map((w) => ({
+  const materials = await listAll<RawWork>(`https://classroom.googleapis.com/v1/courses/${encodeURIComponent(courseId)}/courseWorkMaterials?pageSize=100&orderBy=updateTime%20desc`, "courseWorkMaterial");
+  return materials.map((w) => ({
     id: w.id, title: w.title, description: w.description || null, workType: "MATERIAL",
     alternateLink: w.alternateLink || null, dueDate: null, materials: mapMaterials(w.materials),
   }));

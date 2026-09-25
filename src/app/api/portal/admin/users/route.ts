@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireAdmin, audit, genPassword, isEmail, ALL_ROLES, emailCredentials } from "@/lib/portal/admin";
+import { requireAdmin, audit, genPassword, isEmail, ALL_ROLES, emailCredentials, isSuperAdmin } from "@/lib/portal/admin";
 import { getAccessControlDocument } from "@/lib/portal/access-control";
 import { isRestrictionActive } from "@/lib/portal/access-shared";
 import type { EduRole } from "@/lib/edu/auth";
@@ -13,7 +13,8 @@ export async function GET(req: Request) {
   if (!admin) return NextResponse.json({ error: "Admins only." }, { status: 403 });
 
   const url = new URL(req.url);
-  const q = (url.searchParams.get("q") || "").trim();
+  // `,` `(` `)` are PostgREST .or() syntax — strip them so a search can't break the filter.
+  const q = (url.searchParams.get("q") || "").replace(/[,()]/g, "").trim();
   const roleFilter = (url.searchParams.get("role") || "").trim();
   const limit = Math.min(Number(url.searchParams.get("limit") || 500), 1000);
 
@@ -70,6 +71,9 @@ export async function POST(req: Request) {
   if (!isEmail(email)) return NextResponse.json({ error: "A valid email is required." }, { status: 400 });
   if (fullName.length < 2) return NextResponse.json({ error: "Full name is required." }, { status: 400 });
   if (roles.length === 0) return NextResponse.json({ error: "Assign at least one role." }, { status: 400 });
+  if (roles.some((r) => r === "admin" || r === "super_admin") && !isSuperAdmin(admin)) {
+    return NextResponse.json({ error: "Only a super-admin can create admin accounts." }, { status: 403 });
+  }
 
   const password = (b.password || "").trim() || genPassword();
   const sb = createAdminClient();
@@ -85,28 +89,39 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: cErr?.message || "Could not create the auth user." }, { status: 400 });
   }
   const uid = created.user.id;
+  // A half-created account (auth user with no role / student row) is worse than
+  // none: roll the auth user back (profile + roles cascade) and report why.
+  const rollback = async (message: string) => {
+    await sb.auth.admin.deleteUser(uid);
+    return NextResponse.json({ error: message }, { status: 400 });
+  };
+  const warnings: string[] = [];
 
   // 2) Ensure profile fields (trigger creates the row; set name/email/status).
-  await sb.from("edu_profiles").update({ full_name: fullName, email, status: "active" }).eq("id", uid);
+  const { error: pErr } = await sb.from("edu_profiles").update({ full_name: fullName, email, status: "active" }).eq("id", uid);
+  if (pErr) warnings.push(`Profile details not saved: ${pErr.message}`);
 
   // 3) Roles.
-  await sb.from("edu_user_roles").insert(roles.map((role) => ({ user_id: uid, role, granted_by: admin.id })));
+  const { error: rErr } = await sb.from("edu_user_roles").insert(roles.map((role) => ({ user_id: uid, role, granted_by: admin.id })));
+  if (rErr) return rollback(`Could not assign roles: ${rErr.message}`);
 
   // 4) Student record + optional class enrolment.
   let studentId: string | null = null;
   if (roles.includes("student")) {
-    const { data: st } = await sb
+    const { data: st, error: sErr } = await sb
       .from("edu_students")
       .insert({ profile_id: uid, student_no: (b.student_no || "").trim() || null, school: (b.school || "").trim() || null, created_by: admin.id })
       .select("id")
       .maybeSingle();
-    studentId = st?.id ?? null;
-    if (studentId && b.class_id) {
-      await sb.from("edu_enrolments").insert({ class_id: b.class_id, student_id: studentId, status: "active" });
+    if (sErr || !st?.id) return rollback(`Could not create the student record: ${sErr?.message || "no row returned"}`);
+    studentId = st.id as string;
+    if (b.class_id) {
+      const { error: eErr } = await sb.from("edu_enrolments").insert({ class_id: b.class_id, student_id: studentId, status: "active" });
+      if (eErr) warnings.push(`Account created, but the class enrolment failed: ${eErr.message}`);
     }
   }
 
-  await audit(admin.id, "user.create", "edu_profiles", uid, { email, roles, class_id: b.class_id || null });
+  await audit(admin.id, "user.create", "edu_profiles", uid, { email, roles, class_id: b.class_id || null, warnings });
 
   let emailStatus: string | undefined;
   if (b.send_email) {
@@ -114,5 +129,5 @@ export async function POST(req: Request) {
     emailStatus = r.status;
   }
 
-  return NextResponse.json({ ok: true, id: uid, email, password, studentId, emailStatus }, { status: 200 });
+  return NextResponse.json({ ok: true, id: uid, email, password, studentId, emailStatus, warnings }, { status: 200 });
 }
