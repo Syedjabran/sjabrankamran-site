@@ -86,10 +86,33 @@ def _atomic_write_text(path: Path, text: str) -> None:
     tmp = path.with_name(f"{path.name}.tmp-{os.getpid()}")
     try:
         tmp.write_text(text, encoding="utf-8")
-        os.replace(tmp, path)
+        _replace_with_retry(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+
+
+REPLACE_ATTEMPTS = 8
+
+
+def _replace_with_retry(tmp: Path, path: Path) -> None:
+    """`os.replace`, retried briefly on Windows' transient "Access is denied".
+
+    On Windows the replace fails while any other process holds the
+    destination open without delete-sharing -- typically an antivirus or
+    indexer scanning the file just written. A live upload rewrites
+    uploaded.json after every object, so a scan landing at the wrong moment
+    used to abort a 3,700-file run. The lock clears in milliseconds; a real
+    permission problem still raises after the last attempt.
+    """
+    for attempt in range(REPLACE_ATTEMPTS):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == REPLACE_ATTEMPTS - 1:
+                raise
+            time.sleep(0.1 * (attempt + 1))
 
 
 def _load_uploaded(path: Path) -> set[str]:

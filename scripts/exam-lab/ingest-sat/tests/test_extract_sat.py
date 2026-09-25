@@ -220,6 +220,39 @@ def test_atomic_write_text_leaves_the_original_untouched_on_failure(tmp_path, mo
     assert list(tmp_path.glob("*.tmp-*")) == []
 
 
+def test_atomic_write_text_retries_a_transient_windows_lock(tmp_path, monkeypatch):
+    """A scanner holding uploaded.json for a moment makes os.replace raise
+    PermissionError on Windows; the write must wait it out, not abort the run."""
+    path = tmp_path / "uploaded.json"
+    real_replace = extract_sat.os.replace
+    calls = {"n": 0}
+
+    def flaky_replace(src, dst):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise PermissionError("[WinError 5] Access is denied (simulated)")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(extract_sat.os, "replace", flaky_replace)
+    monkeypatch.setattr(extract_sat.time, "sleep", lambda s: None)
+    extract_sat._atomic_write_text(path, "[]")
+    assert path.read_text(encoding="utf-8") == "[]" and calls["n"] == 3
+    assert list(tmp_path.glob("*.tmp-*")) == []
+
+
+def test_atomic_write_text_still_raises_a_lasting_permission_error(tmp_path, monkeypatch):
+    path = tmp_path / "uploaded.json"
+
+    def always_denied(src, dst):
+        raise PermissionError("[WinError 5] Access is denied (simulated)")
+
+    monkeypatch.setattr(extract_sat.os, "replace", always_denied)
+    monkeypatch.setattr(extract_sat.time, "sleep", lambda s: None)
+    with pytest.raises(PermissionError):
+        extract_sat._atomic_write_text(path, "[]")
+    assert not path.exists() and list(tmp_path.glob("*.tmp-*")) == []
+
+
 def test_load_uploaded_treats_a_corrupt_file_as_empty_and_warns_instead_of_crashing(tmp_path, capsys):
     """A truncated/corrupt uploaded.json must not hard-block every future
     resume: re-uploading ids that turn out to already be uploaded is
