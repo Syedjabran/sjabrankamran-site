@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getPortalUser } from "@/lib/edu/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { resolveCourseAccess } from "@/lib/portal/course-access";
+import { resolveCourseAccess, type Course } from "@/lib/portal/course-access";
 import { isSafeStorageKey } from "@/lib/request-guards";
 
 export const runtime = "nodejs";
@@ -21,10 +21,15 @@ export async function POST(request: Request) {
   if (!parsed.data.paths.every(isSafeStorageKey)) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
 
   // Course guardrail (defence-in-depth): a student may only ever fetch images
-  // for the course they are enrolled into. O Level assets live under o-level/*;
-  // everything else is 9702. Staff (both courses) pass unrestricted.
+  // for a course they are enrolled into. O Level assets live under o-level/*,
+  // SAT assets under sat/*; everything else is 9702. Staff (all courses) pass
+  // unrestricted.
   const access = await resolveCourseAccess(user);
-  const courseOf = (p: string): "9702" | "5054" => (p.startsWith("o-level/") ? "5054" : "9702");
+  const courseOf = (p: string): Course => {
+    if (p.startsWith("o-level/")) return "5054";
+    if (p.startsWith("sat/")) return "SAT";
+    return "9702";
+  };
   if (parsed.data.paths.some((p) => !access.allowed.includes(courseOf(p)))) {
     return NextResponse.json({ error: "You do not have access to this course's papers." }, { status: 403 });
   }
