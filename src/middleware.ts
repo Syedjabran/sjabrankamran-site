@@ -244,7 +244,7 @@ async function portalAccessGate(uid: string): Promise<AccessGateResult> {
 export async function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   const { pathname } = request.nextUrl;
-  const isPortalApi = pathname.startsWith("/api/portal") || pathname.startsWith("/api/exam-lab");
+  const isPortalApi = pathname.startsWith("/api/portal") || pathname.startsWith("/api/exam-lab") || pathname.startsWith("/api/sat");
   // Expose the current path to server components (used by the portal layout to
   // gate students onto the onboarding form without an infinite redirect loop).
   requestHeaders.set("x-pathname", pathname);
@@ -387,5 +387,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/portal/:path*", "/api/portal/:path*", "/api/exam-lab/:path*"],
+  matcher: ["/portal/:path*", "/api/portal/:path*", "/api/exam-lab/:path*", "/api/sat/:path*"],
 };

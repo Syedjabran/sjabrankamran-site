@@ -1,0 +1,308 @@
+"""Emit src/lib/sat/question-bank.json, refusing to ship an unverifiable row.
+
+This is the last gate before shipping: every row extract_sat.py produced is
+re-checked here against the `SATQuestion` contract
+(docs/superpowers/specs/2026-09-22-sat-module-design.md section 5.2) before
+it is allowed to reach the site's bank file, independent of whether
+extract_sat.py's own logic happened to get it right.
+
+`validate()` checks the *shape* of each row. `check_provenance()` checks
+something `validate()` cannot: whether the row's `img` actually exists in
+the bucket. extract_sat.py writes a `mode.json` sidecar next to `rows.json`
+recording whether that run was `--dry-run` (crop only, nothing ever
+uploaded) or live, and `uploaded.json` recording which ids a live run
+actually confirmed. Running this against a `--dry-run` rows.json -- e.g. by
+mistakenly skipping the live-upload step -- would otherwise accept all of
+it and write a bank of image links pointing at bucket objects that were
+never created.
+
+The official-rationale image is optional per row, so its provenance works
+differently (`ship_rationale_images`): a live row whose rationale key is
+not the one `uploaded-rationales.json` records for its id ships WITHOUT
+`rationaleImg` -- the drill falls back to the text rationale -- rather than
+failing the build or shipping a dead link. rows.json carries it as
+`rationale_img`; the bank emits it as `rationaleImg`, the field name
+`SATQuestion` declares.
+
+`check_row_floor()` guards the other way a real rows.json can be wrong: a
+live run that died partway leaves a valid but partial rows.json, and
+building from it would silently shrink the shipped bank. A build with fewer
+rows than the committed bank is refused unless `--allow-shrink` is passed.
+"""
+import argparse
+import json
+import re
+import sys
+from collections.abc import Callable
+from pathlib import Path
+
+REQUIRED = (
+    "id", "section", "domain", "skill", "difficulty", "answer", "rationale",
+    "img", "ref", "source",
+)
+REPO = Path(__file__).resolve().parents[3]
+DEST = REPO / "src" / "lib" / "sat" / "question-bank.json"
+
+SECTIONS = {"rw", "math"}
+DIFFICULTIES = {"E", "M", "H"}
+# upload.rationale_bucket_path's shape, restated here (not imported) for the
+# same reason as the vocabularies below: an independent check.
+RATIONALE_KEY = re.compile(r"sat/(?P<section>rw|math)/r/[0-9a-f]{20}\.png")
+# Hard-coded here on purpose, NOT imported from parse_qbank.DOMAIN_SLUGS --
+# this is meant to be an independent cross-check of what extract_sat.py
+# already produced, not an extension of the same code path. Importing the
+# same constants would mean a typo in parse_qbank's own vocabulary passes
+# both sides of the gate silently; duplicating the 8 values here is what
+# makes this a real, independent verification instead of trusting upstream
+# by construction (see docs/superpowers/specs/2026-09-22-sat-module-design.md
+# section 5.2 for the canonical SATDomain list this mirrors).
+DOMAINS = {
+    "information-ideas", "craft-structure", "expression-ideas", "standard-english",
+    "algebra", "advanced-math", "psda", "geometry-trig",
+}
+
+
+def validate(rows: list[dict]) -> None:
+    seen: set[str] = set()
+    for row in rows:
+        for field in REQUIRED:
+            if field not in row:
+                raise ValueError(f"{row.get('id', '?')}: missing field {field}")
+        if row["id"] in seen:
+            raise ValueError(f"duplicate id {row['id']}")
+        seen.add(row["id"])
+        if row["section"] not in SECTIONS:
+            raise ValueError(f"{row['id']}: unknown section {row['section']!r}")
+        if row["difficulty"] not in DIFFICULTIES:
+            raise ValueError(f"{row['id']}: unknown difficulty {row['difficulty']!r}")
+        if row["domain"] not in DOMAINS:
+            raise ValueError(f"{row['id']}: unknown domain {row['domain']!r}")
+        if not row["rationale"]:
+            raise ValueError(f"{row['id']}: no rationale")
+        if not row["img"]:
+            raise ValueError(f"{row['id']}: no image")
+        if not row["img"].startswith("sat/"):
+            raise ValueError(f"{row['id']}: image outside the sat/ prefix")
+        if "rationale_img" in row:
+            # Must be an opaque content-hash key in this row's own section
+            # (see upload.rationale_bucket_path): anything derivable from the
+            # question id would let a student fetch the rationale -- the
+            # answer -- mid-sitting through the asset route.
+            rimg = row["rationale_img"]
+            match = RATIONALE_KEY.fullmatch(rimg) if isinstance(rimg, str) else None
+            if not match or match["section"] != row["section"] or row["id"] in rimg:
+                raise ValueError(
+                    f"{row['id']}: rationale image {rimg!r} is not an opaque "
+                    f"sat/{row['section']}/r/<hash> key"
+                )
+        ans = row["answer"]
+        # Checked before any .get() call below: a malformed (non-dict)
+        # answer must fail with this gate's own ValueError, not a confusing
+        # AttributeError from calling .get() on something that isn't a dict.
+        if not isinstance(ans, dict):
+            raise ValueError(f"{row['id']}: answer must be an object, got {type(ans).__name__}")
+        # `ans` may carry a `source` key (answer-line/rationale/entry-note/
+        # rationale-stated) alongside `kind` -- that's parse_qbank's audit
+        # trail for how the answer was established, not part of this
+        # contract, so it is neither required nor stripped here.
+        correct = ans.get("correct")
+        # bool is a subclass of int in Python (isinstance(True, int) is
+        # True), so `correct: true` must be rejected explicitly rather than
+        # slipping through as a "valid" index.
+        if ans.get("kind") == "mcq" and (not isinstance(correct, int) or isinstance(correct, bool)):
+            raise ValueError(f"{row['id']}: mcq answer has no index")
+        if ans.get("kind") == "spr" and not ans.get("accepted"):
+            raise ValueError(f"{row['id']}: spr answer has no accepted values")
+        if ans.get("kind") not in ("mcq", "spr"):
+            raise ValueError(f"{row['id']}: unknown answer kind")
+
+
+def _load_json_if_exists(path: Path) -> object | None:
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _is_dry_run(rows_path: Path) -> bool:
+    """A missing mode.json is unverifiable, so it counts as a dry run."""
+    mode = _load_json_if_exists(rows_path.with_name("mode.json"))
+    return mode is None or mode.get("dry_run", True)
+
+
+def check_provenance(rows: list[dict], rows_path: Path, *, allow_dry_run: bool,
+                      key: Callable[[dict], str] = lambda row: row["id"]) -> None:
+    """Refuse to build a bank whose rows point at bucket objects that were
+    never actually uploaded (C1).
+
+    `key` is how a row's identity in `uploaded.json` is derived -- the
+    question bank's rows are confirmed by College Board id (the default),
+    but a caller whose rows carry no `id` at all (build_sat_tests.py's
+    practice-test rows, confirmed by the bucket key they were uploaded to
+    instead) passes its own, e.g. `key=lambda row: row["img"]`. Keeping the
+    default `id`-keyed means the question bank's own behaviour and tests
+    are unchanged by this parameter's existence.
+
+    Reads two sidecars next to `rows_path`, both written by extract_sat.py:
+
+    - `mode.json`: `{"dry_run": bool}`, recording whether the run that
+      produced `rows_path` was `--dry-run` or live. A dry run's rows carry
+      `img` paths for objects that don't exist in the bucket -- shipping
+      them as-is would put a page of broken image links on the live site.
+      Refused unless `allow_dry_run` is explicitly passed (e.g. to
+      sanity-check the bank's shape before running the live upload). A
+      missing `mode.json` -- a rows.json this gate cannot vouch for at all
+      -- is treated the same as a dry run rather than trusted by default.
+    - `uploaded.json`: the set of ids a live run actually confirmed
+      uploaded. extract_sat.py's resumability invariant is that a row is
+      appended to `rows.json` only *after* its upload succeeds, so a live
+      run that dies partway through (the likelier real shape, e.g. 2,000 of
+      3,730) should already have a rows.json containing exactly the
+      confirmed ids. This cross-checks that invariant rather than trusting
+      it blindly: any row id absent from `uploaded.json` is refused: a
+      smaller-than-the-full-corpus rows.json is fine and builds a valid,
+      smaller bank; a row with no confirmation at all is not.
+    """
+    mode_path = rows_path.with_name("mode.json")
+    mode = _load_json_if_exists(mode_path)
+    if _is_dry_run(rows_path):
+        if allow_dry_run:
+            print(
+                f"WARNING: building from a --dry-run rows.json ({rows_path}) with "
+                "--allow-dry-run -- the images these rows point at were never "
+                "uploaded and do not exist in the bucket.",
+                file=sys.stderr,
+            )
+            return
+        reason = (
+            "a --dry-run" if mode is not None
+            else f"a run with no {mode_path.name} sidecar (unverifiable)"
+        )
+        raise ValueError(
+            f"{rows_path} was produced by {reason} -- its rows point at bucket "
+            "objects that were never uploaded. Refusing to ship broken image "
+            "links. Run the live upload (extract_sat.py without --dry-run) "
+            "first, or pass --allow-dry-run if you understand the images do "
+            "not exist yet."
+        )
+
+    uploaded_path = rows_path.with_name("uploaded.json")
+    uploaded = _load_json_if_exists(uploaded_path)
+    if uploaded is None:
+        raise ValueError(
+            f"{uploaded_path} not found -- cannot confirm any row's image was "
+            "actually uploaded. Refusing to ship unverifiable rows."
+        )
+    uploaded_ids = set(uploaded)
+    missing = [key(row) for row in rows if key(row) not in uploaded_ids]
+    if missing:
+        preview = ", ".join(missing[:10]) + ("..." if len(missing) > 10 else "")
+        raise ValueError(
+            f"{len(missing)} row(s) in {rows_path} have no upload confirmation "
+            f"in {uploaded_path}: {preview}. Refusing to ship rows whose images "
+            "may not exist in the bucket."
+        )
+
+
+def ship_rationale_images(rows: list[dict], rows_path: Path, *, allow_dry_run: bool) -> tuple[list[dict], int]:
+    """The bank's rows, with each row's `rationale_img` either emitted as
+    `rationaleImg` or dropped, plus how many rows ship without one.
+
+    Live: kept only when `uploaded-rationales.json` (written by
+    extract_sat.py, one id at a time, after each rationale upload) records
+    exactly this row's key as uploaded for its id. The key is a content
+    hash, so a different recorded key means a different object -- an
+    earlier render -- and this row's own key was never uploaded. A missing
+    file confirms nothing -- e.g. a bank built from a live run that predates
+    rationale crops -- so every row ships with the text fallback; that is a
+    smaller feature, not a broken one, so it is not an error. A file that
+    isn't a `{question id: key}` map is: it can't say what was uploaded.
+
+    Dry run: kept as-is under `allow_dry_run`, exactly like `img` -- the
+    caller asked to see the bank's shape before anything is uploaded (and
+    `check_provenance` has already printed the warning). Refused otherwise.
+    """
+    if _is_dry_run(rows_path):
+        if not allow_dry_run:
+            raise ValueError(f"{rows_path} is a --dry-run (or unverifiable) rows.json; pass --allow-dry-run")
+        confirmed = {row["id"]: row.get("rationale_img") for row in rows}
+    else:
+        record_path = rows_path.with_name("uploaded-rationales.json")
+        uploaded = _load_json_if_exists(record_path)
+        if uploaded is not None and not isinstance(uploaded, dict):
+            raise ValueError(
+                f"{record_path} is not a {{question id: uploaded key}} map -- it cannot "
+                "confirm which rationale object was uploaded. Rerun extract_sat.py to rewrite it."
+            )
+        confirmed = uploaded or {}
+    out, lacking = [], 0
+    for row in rows:
+        row = dict(row)
+        rimg = row.pop("rationale_img", None)
+        if rimg and confirmed.get(row["id"]) == rimg:
+            row["rationaleImg"] = rimg
+        else:
+            lacking += 1
+        out.append(row)
+    return out, lacking
+
+
+def check_row_floor(rows: list[dict], committed: Path, *, allow_shrink: bool) -> None:
+    """Refuse a bank with fewer rows than `committed` (the bank in the repo)
+    unless `allow_shrink`. A missing committed bank sets no floor (a first
+    build); one that can't be read or isn't a list of rows is refused -- the
+    floor can't be checked, so it isn't assumed away."""
+    if allow_shrink or not committed.exists():
+        return
+    try:
+        existing = json.loads(committed.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise ValueError(
+            f"{committed} can't be read to compare row counts ({e}); pass --allow-shrink to build anyway"
+        ) from e
+    if not isinstance(existing, list):
+        raise ValueError(f"{committed} is not a list of rows; pass --allow-shrink to build anyway")
+    if len(rows) < len(existing):
+        raise ValueError(
+            f"{len(rows)} rows is fewer than the {len(existing)} in {committed} -- a partial "
+            "rows.json (a live run that stopped early)? Refusing to shrink the bank; pass "
+            "--allow-shrink if the smaller bank is intended."
+        )
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("rows", help="JSON produced by extract_sat.py")
+    ap.add_argument(
+        "--out", default=str(DEST),
+        help="output path (default: src/lib/sat/question-bank.json); "
+             "pass an out/ path to verify a build without touching the real bank",
+    )
+    ap.add_argument(
+        "--allow-dry-run", action="store_true",
+        help="build from a --dry-run rows.json anyway, even though its images "
+             "were never uploaded and the bank would point at bucket objects "
+             "that do not exist yet",
+    )
+    ap.add_argument(
+        "--allow-shrink", action="store_true",
+        help="build even though rows.json has fewer rows than the committed "
+             "src/lib/sat/question-bank.json (refused by default: a partial "
+             "rows.json after a failed live run)",
+    )
+    args = ap.parse_args()
+    rows_path = Path(args.rows)
+    rows = json.loads(rows_path.read_text(encoding="utf-8"))
+    check_provenance(rows, rows_path, allow_dry_run=args.allow_dry_run)
+    validate(rows)
+    check_row_floor(rows, DEST, allow_shrink=args.allow_shrink)
+    rows, lacking = ship_rationale_images(rows, rows_path, allow_dry_run=args.allow_dry_run)
+    dest = Path(args.out)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(json.dumps(rows, indent=1), encoding="utf-8")
+    print(f"wrote {dest} ({len(rows)} questions)")
+    print(f"  {len(rows) - lacking} with a rationale image, {lacking} without one (text rationale fallback)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

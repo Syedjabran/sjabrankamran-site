@@ -10,6 +10,7 @@ const NAV = [
   { href: "/profile", label: "Profile" },
   { href: "/education", label: "Education" },
   { href: "/physics", label: "Courses" },
+  { href: "/sat", label: "SAT" },
   { href: "/physics-studio", label: "Physics Studio" },
   { href: "/enterprise", label: "Enterprise" },
   { href: "/ai-technology", label: "AI & Technology" },
@@ -32,11 +33,11 @@ export function SiteHeader() {
             alt="SJAK monogram"
             className="h-10 w-auto"
           />
-          <span className="font-display text-[15px] font-semibold tracking-tightest text-ice">
+          <span className="whitespace-nowrap font-display text-[15px] font-semibold tracking-tightest text-ice">
             Syed Jabran Ali Kamran
           </span>
         </Link>
-        <nav className="hidden items-center gap-6 lg:flex">
+        <nav className="hidden items-center gap-6 xl:flex">
           {NAV.map((item) => {
             // /portal always redirects (auth-gated) via middleware. Prefetching
             // it poisons the App Router cache with a redirect entry, which then
@@ -48,7 +49,7 @@ export function SiteHeader() {
                 key={item.href}
                 href={item.href}
                 prefetch={isPortal ? false : undefined}
-                className="link-underline text-sm text-fog transition-colors hover:text-ice"
+                className="link-underline whitespace-nowrap text-sm text-fog transition-colors hover:text-ice"
               >
                 {item.label}
               </Link>
@@ -62,7 +63,7 @@ export function SiteHeader() {
           </Link>
         </nav>
         <button
-          className="text-ice lg:hidden"
+          className="text-ice xl:hidden"
           onClick={() => setOpen((v) => !v)}
           aria-label="Toggle menu"
           aria-expanded={open}
@@ -72,7 +73,7 @@ export function SiteHeader() {
       </div>
       <div
         className={cn(
-          "border-t border-white/[0.06] transition-all duration-300 lg:hidden",
+          "border-t border-white/[0.06] transition-all duration-300 xl:hidden",
           // Viewport-relative cap + scroll: a fixed px cap clipped the last links.
           open ? "max-h-[80vh] overflow-y-auto" : "max-h-0 overflow-hidden"
         )}

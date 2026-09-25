@@ -12,7 +12,19 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test:access": "node --no-warnings --experimental-strip-types scripts/test-access-control.mjs",
-    "test:portal": "node --no-warnings --experimental-strip-types scripts/test-portal-rules.mjs"
+    "test:portal": "node --no-warnings --experimental-strip-types scripts/test-portal-rules.mjs",
+    "test:sat-bank": "node --no-warnings --experimental-strip-types scripts/test-sat-bank.mjs",
+    "test:sat-forms": "node --no-warnings --experimental-strip-types scripts/test-sat-forms.mjs",
+    "test:sat-scoring": "node --no-warnings --experimental-strip-types scripts/test-sat-scoring.mjs",
+    "test:sat-access": "node --no-warnings --experimental-strip-types scripts/test-sat-access.mjs",
+    "test:sat-course-access": "node --no-warnings --experimental-strip-types scripts/test-sat-course-access.mjs",
+    "test:sat-grade": "node --no-warnings --experimental-strip-types scripts/test-sat-grade.mjs",
+    "test:sat-session": "node --no-warnings --experimental-strip-types scripts/test-sat-session.mjs",
+    "test:sat-serve": "node --no-warnings --experimental-strip-types scripts/test-sat-serve.mjs",
+    "test:sat-runner-utils": "node --no-warnings --experimental-strip-types scripts/test-sat-runner-utils.mjs",
+    "test:sat-assignments": "node --no-warnings --experimental-strip-types scripts/test-sat-assignments.mjs",
+    "test:sat-client-imports": "node scripts/check-sat-client-imports.mjs",
+    "test:sat": "npm run test:sat-bank && npm run test:sat-forms && npm run test:sat-scoring && npm run test:sat-access && npm run test:sat-course-access && npm run test:sat-grade && npm run test:sat-session && npm run test:sat-serve && npm run test:sat-runner-utils && npm run test:sat-assignments && npm run test:sat-client-imports"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { formatPk, parsePkDateTime, pkDateTimeToIso, pkToday } from "../src/lib/portal/pk-time.ts";
 import { isOnboardingDocComplete, validateOnboarding } from "../src/lib/portal/onboarding-shared.ts";
 import { expiredOnResume, finishedLate, secondsLeft } from "../src/lib/exam-lab/sitting-clock.ts";
+import { courseFromYear, coursesForEnrolment, primaryCourse, studentCourseAccess } from "../src/lib/portal/course-labels.ts";
 
 // --- Pakistan time -----------------------------------------------------------
 // A datetime-local value is Pakistan wall-clock time, not UTC: 09:00 PKT = 04:00Z.
@@ -66,5 +67,58 @@ assert.equal(finishedLate({ relaxed: true, dueAt: null, now: nine20, secondsLeft
 assert.equal(finishedLate({ relaxed: true, dueAt: null, now: nine20, secondsLeft: 60 }), false);
 // A non-relaxed run is judged by its countdown even when it has a due time.
 assert.equal(finishedLate({ relaxed: false, dueAt: due, now: nine20, secondsLeft: -1 }), true);
+
+// --- Course access from enrolments (course-access.ts) ------------------------
+// resolveCourseAccess now makes ONE enrolment lookup and derives allowed,
+// primary and locked from it. `legacyAccess` is the previous derivation
+// (enrolledCourses read twice, identically, by studentCourses and
+// studentCourse), kept here as the reference: the new one must agree with it
+// on every input except the one it deliberately changes (an SAT class next
+// to an unrecognised physics class keeps the 9702 default).
+const REGISTRY = [
+  { id: "a", year: "A Level" }, { id: "o", year: "O Level" },
+  { id: "s", year: "SAT 2026" }, { id: "u", year: "Nursery" },
+];
+function legacyAccess(ids) {
+  let courses = null;
+  if (ids.size) {
+    courses = new Set();
+    for (const c of REGISTRY) {
+      if (!ids.has(c.id)) continue;
+      const co = courseFromYear(c.year);
+      if (co) courses.add(co);
+    }
+    if (courses.size === 0) courses.add("9702");
+  }
+  const allowed = courses ? [...courses] : [];
+  const primary = !courses ? null : courses.has("5054") ? "5054" : courses.has("9702") ? "9702" : "SAT";
+  return { allowed, primary, locked: allowed.length <= 1 };
+}
+const newAccess = (ids) => studentCourseAccess(ids.size ? coursesForEnrolment(ids, REGISTRY) : null);
+// Every subset of the four registry classes plus "g", an enrolment whose
+// class is missing from the registry.
+const IDS = ["a", "o", "s", "u", "g"];
+for (let mask = 0; mask < 2 ** IDS.length; mask++) {
+  const ids = new Set(IDS.filter((_, i) => mask & (1 << i)));
+  const label = [...ids].join(",") || "(none)";
+  const physics = ids.has("a") || ids.has("o");
+  const unrecognised = ids.has("u") || ids.has("g");
+  if (ids.has("s") && !physics && unrecognised) {
+    assert.deepEqual(newAccess(ids), { allowed: ["SAT", "9702"], primary: "9702", locked: false }, `SAT + unrecognised keeps 9702: ${label}`);
+  } else {
+    assert.deepEqual(newAccess(ids), legacyAccess(ids), `unchanged for ${label}`);
+  }
+}
+// The cases in words.
+assert.deepEqual([...coursesForEnrolment(new Set(["s", "u"]), REGISTRY)], ["SAT", "9702"], "an SAT enrolment no longer switches off the 9702 default");
+assert.deepEqual([...coursesForEnrolment(new Set(["s", "g"]), REGISTRY)], ["SAT", "9702"], "nor does it for a class missing from the registry");
+assert.deepEqual([...coursesForEnrolment(new Set(["s"]), REGISTRY)], ["SAT"], "SAT-only students stay SAT-only");
+assert.deepEqual([...coursesForEnrolment(new Set(["o", "u"]), REGISTRY)], ["5054"], "an O Level student is never widened to 9702");
+assert.deepEqual([...coursesForEnrolment(new Set(["u"]), [])], ["9702"], "an enrolment the registry can't place still defaults to 9702");
+assert.equal(primaryCourse(null), null);
+assert.equal(primaryCourse(new Set(["SAT", "9702"])), "9702", "physics opens first for a student in both");
+assert.equal(primaryCourse(new Set(["SAT"])), "SAT");
+assert.equal(primaryCourse(new Set(["9702", "5054"])), "5054");
+assert.deepEqual(studentCourseAccess(null), { allowed: [], primary: null, locked: true });
 
 console.log("portal rules tests passed");
