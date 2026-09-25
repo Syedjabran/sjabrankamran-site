@@ -33,7 +33,7 @@ export async function POST(req: Request) {
   const ext = PHOTO_TYPES[file.type];
   if (!ext) return NextResponse.json({ error: "Please upload a JPG, PNG or WebP image." }, { status: 415 });
   if (file.size > PHOTO_MAX_BYTES) {
-    return NextResponse.json({ error: "Image is too large (max 5 MB)." }, { status: 413 });
+    return NextResponse.json({ error: `Image is too large (max ${PHOTO_MAX_BYTES / (1024 * 1024)} MB).` }, { status: 413 });
   }
 
   const supabase = createAdminClient();

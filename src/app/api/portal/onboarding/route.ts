@@ -2,10 +2,15 @@ import { NextResponse } from "next/server";
 import { getPortalUser } from "@/lib/edu/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
-  getOnboarding, saveOnboarding, validateOnboarding, type Onboarding, type Guardian,
+  getOnboarding, saveOnboarding, validateOnboarding, PHOTO_PREFIX, PHOTO_TYPES, type Onboarding, type Guardian,
 } from "@/lib/portal/onboarding";
 
 export const runtime = "nodejs";
+
+function ownPhotoPath(uid: string, path: string | undefined): string | undefined {
+  const exts = Object.values(PHOTO_TYPES).join("|");
+  return new RegExp(`^${PHOTO_PREFIX}/${uid}\\.(${exts})$`).test(path || "") ? path : undefined;
+}
 
 // GET: current onboarding + read-only school/class (from enrolment).
 export async function GET() {
@@ -72,7 +77,9 @@ export async function POST(req: Request) {
     whatsapp: (body.whatsapp || "").slice(0, 40),
     city: (body.city || "").slice(0, 80),
     address: (body.address || "").slice(0, 300),
-    photo_path: (body.photo_path || "").slice(0, 200) || undefined,
+    // Only the student's own uploaded photo counts (the photo route writes
+    // photos/<uid>.<ext>); any other path is dropped and fails validation.
+    photo_path: ownPhotoPath(user.id, body.photo_path),
     school: (body.school || "").slice(0, 120),
     class_label: (body.class_label || "").slice(0, 120),
     guardians,
