@@ -5,13 +5,8 @@ import { ArrowRight, BookOpen, CheckCircle2, FlaskConical } from "lucide-react";
 import { PageHero } from "@/components/page-hero";
 import { Section, SectionHeading } from "@/components/ui/section";
 import { SITE } from "@/lib/utils";
+import { toJsonLd } from "@/lib/json-ld";
 import { QUALIFICATIONS, getQualification } from "../qualifications";
-
-// JSON.stringify leaves "<" unescaped, so a "</script>" inside any value would
-// close the tag. Escape the HTML-significant characters for inline JSON-LD.
-function toJsonLd(value: unknown) {
-  return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
-}
 
 export function generateStaticParams() {
   return QUALIFICATIONS.map((q) => ({ slug: q.slug }));

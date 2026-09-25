@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, BookOpen, Calculator, GraduationCap } from "lucide-react";
+import { ArrowRight, BookOpen, Calculator, GraduationCap, Info } from "lucide-react";
 import { PageHero } from "@/components/page-hero";
 import { Section } from "@/components/ui/section";
 import { SITE } from "@/lib/utils";
+import { toJsonLd } from "@/lib/json-ld";
+import { ROUTING_DISCLOSURE } from "@/lib/sat/client-types";
 import { SAT_PROGRAMMES } from "./programs";
 
 export const metadata: Metadata = {
@@ -12,12 +14,6 @@ export const metadata: Metadata = {
     "The SAT Lab in the student portal: adaptive mock exams, the 8 official College Board paper practice tests, and topic drills from the official question bank, covering the digital SAT's Reading and Writing and Math sections.",
   alternates: { canonical: `${SITE.url}/sat` },
 };
-
-// JSON.stringify leaves "<" unescaped, so a "</script>" inside any value would
-// close the tag. Escape the HTML-significant characters for inline JSON-LD.
-function toJsonLd(value: unknown) {
-  return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
-}
 
 const PROGRAMME_ICON: Record<string, typeof GraduationCap> = {
   "digital-sat": GraduationCap,
@@ -82,7 +78,13 @@ export default function SatHubPage() {
           </Link>
         </div>
 
-        <p className="mt-10 max-w-3xl text-xs leading-relaxed text-dust">
+        {/* Spec 10.6: the adaptive mock's Module 2 routing is an approximation, said verbatim wherever it is described. */}
+        <p className="mt-10 flex max-w-3xl gap-2 text-xs leading-relaxed text-dust">
+          <Info size={14} className="mt-0.5 shrink-0" />
+          <span><span className="text-fog">About the adaptive mock&rsquo;s routing:</span> {ROUTING_DISCLOSURE}</span>
+        </p>
+
+        <p className="mt-4 max-w-3xl text-xs leading-relaxed text-dust">
           SAT® is a trademark registered by the College Board, which is not affiliated with, and does not endorse, this website.
         </p>
       </Section>

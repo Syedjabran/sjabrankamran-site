@@ -1,17 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowRight, CheckCircle2, Clock, ListChecks } from "lucide-react";
+import { ArrowRight, CheckCircle2, Clock, Info, ListChecks } from "lucide-react";
 import { PageHero } from "@/components/page-hero";
 import { Section, SectionHeading } from "@/components/ui/section";
 import { SITE } from "@/lib/utils";
+import { toJsonLd } from "@/lib/json-ld";
+import { ROUTING_DISCLOSURE } from "@/lib/sat/client-types";
 import { SAT_PROGRAMMES, getSatProgramme } from "../programs";
-
-// JSON.stringify leaves "<" unescaped, so a "</script>" inside any value would
-// close the tag. Escape the HTML-significant characters for inline JSON-LD.
-function toJsonLd(value: unknown) {
-  return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
-}
 
 export function generateStaticParams() {
   return SAT_PROGRAMMES.map((p) => ({ slug: p.slug }));
@@ -119,6 +115,11 @@ export default async function SatProgrammePage({ params }: { params: Promise<{ s
                   <li key={item} className="flex min-w-0 items-start gap-2 text-sm text-fog"><CheckCircle2 size={14} className="mt-0.5 shrink-0 text-emerald2" /> {item}</li>
                 ))}
               </ul>
+              {/* Spec 10.6: every programme page describes Module 2 routing, so the approximation is said verbatim. */}
+              <p className="mt-4 flex gap-2 border-t border-white/10 pt-4 text-xs leading-relaxed text-dust">
+                <Info size={14} className="mt-0.5 shrink-0" />
+                <span><span className="text-fog">About the adaptive mock&rsquo;s routing:</span> {ROUTING_DISCLOSURE}</span>
+              </p>
             </div>
             <div className="card min-w-0 space-y-3 p-6">
               <p className="text-sm font-semibold text-ice">Start here</p>
