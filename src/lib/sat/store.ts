@@ -4,6 +4,7 @@
 // bucket, plus a small per-student index of summaries. Each sitting has its
 // own file, so a student's concurrent tabs never read-modify-write the same
 // document as another sitting. Reads fail closed (storage-fresh.ts).
+import "server-only";
 import { readFreshJson, writeFreshJson } from "@/lib/exam-lab/storage-fresh";
 import type { SATSession } from "./session.ts";
 import type { SATDrill } from "./drills.ts";

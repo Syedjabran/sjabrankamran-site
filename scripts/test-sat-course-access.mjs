@@ -8,6 +8,8 @@ import { register } from "node:module";
 const SRC = new URL("../src/", import.meta.url).href;
 const stub = (code) => `data:text/javascript,${encodeURIComponent(code)}`;
 const STUBS = {
+  // Next resolves "server-only" itself; under plain Node it is a no-op.
+  "server-only": stub(""),
   "@/lib/supabase/admin": stub("export const createAdminClient = () => globalThis.__sat.db();"),
   "@/lib/supabase/server": stub("export const createClient = async () => { throw new Error('not used'); };"),
   "@/lib/portal/institutions": stub("export const getRegistry = async () => globalThis.__sat.registry();"),

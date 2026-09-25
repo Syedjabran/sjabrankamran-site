@@ -2,6 +2,7 @@
 //
 // SERVER-ONLY. The SAT Lab is gated exactly like the physics tracks (spec 9):
 // enrolment in a class whose year label names SAT grants it; staff always have it.
+import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin, isExamLabStaff, isStaff, type EduRole, type PortalUser } from "@/lib/edu/auth";
 import { resolveCourseAccess, courseFromYear } from "@/lib/portal/course-access";

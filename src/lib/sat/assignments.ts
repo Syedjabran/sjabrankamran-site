@@ -10,6 +10,7 @@
 // `@/` aliases, unit-tested directly by scripts/test-sat-assignments.mjs);
 // re-exported here so every caller (the assignments route, the sessions
 // ASSIGNMENT HOOKs, the hub) still imports from this single module.
+import "server-only";
 import { readFreshJson, writeFreshJson } from "@/lib/exam-lab/storage-fresh";
 import { mergeAssignment, resolveStart, type SATAssignment, type StartOutcome } from "./assignment-rules.ts";
 

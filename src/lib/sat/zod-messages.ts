@@ -11,6 +11,7 @@
 // itself lives in zod-issue-message.ts (no `@/` alias, no framework import,
 // so it's importable by plain node); this module just wraps it in the
 // NextResponse both routes need.
+import "server-only";
 import { NextResponse } from "next/server";
 import type { ZodError } from "zod";
 import { zodIssueMessage } from "./zod-issue-message.ts";

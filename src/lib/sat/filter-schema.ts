@@ -6,6 +6,7 @@
 // drill) -- fix round 1 ruling: one filter zod schema, shared by both
 // routes, so the domain list and its validation rules can never drift
 // between a student's own drill and a staff-assigned one.
+import "server-only";
 import { z } from "zod";
 import { loadQuestionBank, filterQuestions } from "./bank.ts";
 // The domain ids and their sections are spelled once, in client-types.ts
