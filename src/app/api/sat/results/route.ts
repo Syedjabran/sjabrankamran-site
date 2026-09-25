@@ -6,9 +6,8 @@
 // student whose sitting the per-sitting report route would then refuse.
 import { NextResponse } from "next/server";
 import { getPortalUser, isExamLabStaff } from "@/lib/edu/auth";
-import { satClassScope } from "@/lib/sat/access";
-import { getRegistry, staffRoleMap } from "@/lib/portal/institutions";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { scopedSatStudents } from "@/lib/sat/access";
+import { getRegistry } from "@/lib/portal/institutions";
 import { listSummaries } from "@/lib/sat/store";
 import type { SessionSummary } from "@/lib/sat/client-types";
 
@@ -24,11 +23,6 @@ async function eachLimited<T>(items: T[], limit: number, fn: (item: T) => Promis
   };
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
-
-type EnrolRow = {
-  class_id: string;
-  edu_students?: { profile_id: string; edu_profiles?: { full_name?: string } } | null;
-};
 
 const unavailable = () => NextResponse.json({ error: "SAT results couldn't be loaded just now." }, { status: 503 });
 
@@ -48,50 +42,28 @@ export async function GET() {
     const registry = await getRegistry();
     if (!registry.classes.length) return unavailable();
 
-    const classIds = await satClassScope(user, registry);
-    if (!classIds.length) return NextResponse.json({ students: [] });
+    // `scopedSatStudents` (src/lib/sat/access.ts) is the same student
+    // resolution the assign-recipients route uses, so the two can never
+    // disagree about who counts as an SAT student in the caller's scope.
+    const scoped = await scopedSatStudents(user, registry);
+    if (scoped === null) return unavailable();
+    if (!scoped.length) return NextResponse.json({ students: [] });
 
     const classNameById = new Map(registry.classes.map((c) => [c.id, c.name] as const));
 
-    const db = createAdminClient();
-    const { data, error } = await db
-      .from("edu_enrolments")
-      .select("class_id, edu_students(profile_id, edu_profiles!edu_students_profile_id_fkey(full_name))")
-      .in("class_id", classIds)
-      .eq("status", "active");
-    if (error) throw error;
-
-    const rows = (data ?? []) as unknown as EnrolRow[];
-    const byUid = new Map<string, { uid: string; name: string; className: string }>();
-    for (const r of rows) {
-      const uid = r.edu_students?.profile_id;
-      if (!uid || byUid.has(uid)) continue;
-      byUid.set(uid, {
-        uid,
-        name: r.edu_students?.edu_profiles?.full_name || "Student",
-        className: classNameById.get(r.class_id) || "SAT class",
-      });
-    }
-
-    // Exclude staff accounts (a coordinator/facilitator enrolled for class
-    // access is never a "student" in the results roster).
-    const allUids = [...byUid.keys()];
-    const roleMap = await staffRoleMap(allUids);
-    const studentUids = allUids.filter((uid) => !roleMap.has(uid));
-
     const sessionsByUid = new Map<string, SessionSummary[] | null>();
-    await eachLimited(studentUids, 8, async (uid) => {
+    await eachLimited(scoped, 8, async (s) => {
       // `listSummaries` never throws -- an unreadable index resolves to
       // `null`, which is returned as-is so the page shows "couldn't load",
       // never a false "no sittings".
-      sessionsByUid.set(uid, await listSummaries(uid));
+      sessionsByUid.set(s.uid, await listSummaries(s.uid));
     });
 
-    const students = studentUids
-      .map((uid) => {
-        const info = byUid.get(uid)!;
-        return { uid, name: info.name, className: info.className, sessions: sessionsByUid.get(uid) ?? null };
-      })
+    const students = scoped
+      .map((s) => ({
+        uid: s.uid, name: s.name, className: classNameById.get(s.classId) || "SAT class",
+        sessions: sessionsByUid.get(s.uid) ?? null,
+      }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
     return NextResponse.json({ students });

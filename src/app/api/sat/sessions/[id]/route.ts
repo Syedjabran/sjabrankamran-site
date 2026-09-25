@@ -7,6 +7,7 @@ import { beginStage, isStaleStage, saveAnswers, settleBreak, submitStage, type S
 import { checkDrillAnswer, type SATDrill } from "@/lib/sat/drills";
 import { answerOf, drillState, finishSession, reviewItem, sessionState } from "@/lib/sat/serve";
 import { listSummaries, loadDoc, saveDoc } from "@/lib/sat/store";
+import { markAssignment } from "@/lib/sat/assignments";
 
 export const runtime = "nodejs";
 
@@ -123,7 +124,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // already checked (the first answer is the one that counts) -- nothing
     // changed, so there is nothing to write.
     if (result.drill !== doc && !(await saveDoc(result.drill))) return unavailable();
-    // ASSIGNMENT HOOK (Task 9): when result.drill.finishedAt, mark its assignment done.
+    // ASSIGNMENT HOOK (Task 9): best-effort, awaited so it's actually
+    // attempted before the response is sent. markAssignment is a no-op if
+    // there's no assignmentId or the id isn't in the caller's own list.
+    if (result.drill.finishedAt !== null && result.drill.assignmentId) {
+      await markAssignment(user.id, result.drill.assignmentId, { status: "done" });
+    }
     const n = result.drill.questionIds.indexOf(a.questionId) + 1;
     return NextResponse.json({ state: drillState(result.drill, now), item: reviewItem(a.questionId, n, result.drill.answers[a.questionId] ?? null) });
   }
@@ -156,6 +162,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   if (next !== doc && !(await saveDoc(next))) return unavailable();
-  // ASSIGNMENT HOOK (Task 9): when next.finishedAt, mark its assignment done.
+  // ASSIGNMENT HOOK (Task 9): best-effort, awaited so it's actually
+  // attempted before the response is sent. A save/begin never sets
+  // finishedAt (only a submit that ends the sitting does), so this is a
+  // no-op on every other action.
+  if (next.finishedAt !== null && next.assignmentId) {
+    await markAssignment(user.id, next.assignmentId, { status: "done" });
+  }
   return NextResponse.json(sessionState(next, now));
 }

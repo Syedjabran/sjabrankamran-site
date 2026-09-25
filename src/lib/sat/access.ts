@@ -6,7 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin, isExamLabStaff, type PortalUser } from "@/lib/edu/auth";
 import { resolveCourseAccess, courseFromYear } from "@/lib/portal/course-access";
 import { visibleClassIdsForUid } from "@/lib/portal/timetable";
-import { getRegistry, type Registry } from "@/lib/portal/institutions";
+import { getRegistry, staffRoleMap, type Registry } from "@/lib/portal/institutions";
 
 export async function satAccess(user: PortalUser): Promise<{ ok: boolean; isStaff: boolean }> {
   const access = await resolveCourseAccess(user);
@@ -73,4 +73,46 @@ export async function canViewStudent(user: PortalUser, studentUid: string): Prom
   if (!student?.id) return false;
   const { data } = await db.from("edu_enrolments").select("class_id").eq("student_id", student.id).eq("status", "active");
   return (data ?? []).some((r) => classIds.has(r.class_id as string));
+}
+
+export type ScopedSatStudent = { uid: string; name: string; classId: string };
+
+/**
+ * Every active-enrolment student in the caller's SAT class scope
+ * (`satClassScope`), staff excluded -- one row per uid, attributed to
+ * whichever of their active SAT-class enrolments is seen first (matches the
+ * long-standing dedupe in the staff results roster below). Returns null on
+ * any read failure (fail closed): a genuine Supabase error must never be
+ * read as "no SAT students in scope".
+ *
+ * Shared by the staff results list (src/app/api/sat/results/route.ts) and
+ * the assign-recipients resolver (src/app/api/sat/assignments/route.ts) so
+ * the two can never disagree about who counts as an SAT student in scope --
+ * same reasoning as `satClassScope`/`canViewStudent` above.
+ */
+export async function scopedSatStudents(user: PortalUser, registry?: Registry): Promise<ScopedSatStudent[] | null> {
+  const classIds = await satClassScope(user, registry);
+  if (!classIds.length) return [];
+  try {
+    const db = createAdminClient();
+    const { data, error } = await db
+      .from("edu_enrolments")
+      .select("class_id, edu_students(profile_id, edu_profiles!edu_students_profile_id_fkey(full_name))")
+      .in("class_id", classIds)
+      .eq("status", "active");
+    if (error) throw error;
+    type EnrolRow = { class_id: string; edu_students?: { profile_id: string; edu_profiles?: { full_name?: string } } | null };
+    const rows = (data ?? []) as unknown as EnrolRow[];
+    const byUid = new Map<string, ScopedSatStudent>();
+    for (const r of rows) {
+      const uid = r.edu_students?.profile_id;
+      if (!uid || byUid.has(uid)) continue;
+      byUid.set(uid, { uid, name: r.edu_students?.edu_profiles?.full_name || "Student", classId: r.class_id });
+    }
+    const uids = [...byUid.keys()];
+    const roleMap = await staffRoleMap(uids);
+    return uids.filter((uid) => !roleMap.has(uid)).map((uid) => byUid.get(uid)!);
+  } catch {
+    return null;
+  }
 }

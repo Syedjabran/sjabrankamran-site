@@ -2,9 +2,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Info, Loader2 } from "lucide-react";
-import { DOMAIN_LABEL, type AssignmentView, type PracticeTestInfo, type SessionSummary } from "@/lib/sat/client-types";
+import { DOMAIN_LABEL, DOMAIN_SECTIONS, type AssignmentView, type PracticeTestInfo, type SessionSummary } from "@/lib/sat/client-types";
 import { formatPk } from "@/lib/portal/pk-time";
 import { ScoreBadge } from "./score-badge";
+import { SatAssign } from "./sat-assign";
 
 type SessionsPayload = {
   sessions: SessionSummary[];
@@ -18,20 +19,6 @@ type SessionsPayload = {
 // answer-key-carrying side of src/lib/sat/.
 type SectionFilter = "" | "rw" | "math";
 type DifficultyFilter = "" | "E" | "M" | "H";
-
-// Labels come from the shared DOMAIN_LABEL (client-types.ts) so this filter
-// and the score report's "By domain" breakdown never drift apart; only the
-// section grouping needed for this dropdown lives here.
-const DOMAINS: { value: string; section: "rw" | "math" }[] = [
-  { value: "information-ideas", section: "rw" },
-  { value: "craft-structure", section: "rw" },
-  { value: "expression-ideas", section: "rw" },
-  { value: "standard-english", section: "rw" },
-  { value: "algebra", section: "math" },
-  { value: "advanced-math", section: "math" },
-  { value: "psda", section: "math" },
-  { value: "geometry-trig", section: "math" },
-];
 
 // Server enforces the same 5–30 bound (drills.ts DRILL_MIN/DRILL_MAX); kept
 // as plain numbers here rather than imported, since drills.ts pulls in
@@ -71,16 +58,13 @@ export function SatHub({ isStaff }: { isStaff: boolean }) {
   }
   useEffect(() => { void load(); }, []);
 
-  // Task 9 adds GET /api/sat/assignments?mine=1 -- until then this always
-  // 404s, which is treated as "no assignments" rather than an error. Staff
-  // are never assigned SAT work themselves, so this never runs for them.
+  // Staff are never assigned SAT work themselves, so this never runs for them.
   useEffect(() => {
     if (isStaff) return;
     let alive = true;
     (async () => {
       try {
         const res = await fetch("/api/sat/assignments?mine=1", { cache: "no-store" });
-        if (res.status === 404) { if (alive) setAssignments([]); return; }
         const j = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(j.error || "Your assignments couldn't be loaded.");
         if (alive) setAssignments((j.items ?? []) as AssignmentView[]);
@@ -120,11 +104,13 @@ export function SatHub({ isStaff }: { isStaff: boolean }) {
   }
   if (!data) return <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading the SAT Lab…</p>;
 
-  const domainOptions = DOMAINS.filter((d) => !drillSection || d.section === drillSection);
+  const domainOptions = DOMAIN_SECTIONS.filter((d) => !drillSection || d.section === drillSection);
 
   return (
     <div className="space-y-6">
       {actionError ? <p className="rounded-xl border border-signal/30 bg-signal/5 p-3 text-sm text-fog">{actionError}</p> : null}
+
+      {isStaff ? <SatAssign practiceTests={data.practiceTests} /> : null}
 
       {!isStaff && assignments.length ? (
         <section className="min-w-0 rounded-2xl border border-white/10 bg-space/60 p-5">

@@ -111,3 +111,18 @@ export const DOMAIN_LABEL: Record<string, string> = {
   psda: "Problem-Solving and Data Analysis",
   "geometry-trig": "Geometry and Trigonometry",
 };
+
+// Which section each domain belongs to -- needed to grey out the wrong half
+// of the domain dropdown once a section filter is chosen. Shared by the
+// drill filter (sat-hub.tsx) and the staff assign panel (sat-assign.tsx) so
+// the two drill-filter UIs can never drift apart.
+export const DOMAIN_SECTIONS: { value: string; section: "rw" | "math" }[] = [
+  { value: "information-ideas", section: "rw" },
+  { value: "craft-structure", section: "rw" },
+  { value: "expression-ideas", section: "rw" },
+  { value: "standard-english", section: "rw" },
+  { value: "algebra", section: "math" },
+  { value: "advanced-math", section: "math" },
+  { value: "psda", section: "math" },
+  { value: "geometry-trig", section: "math" },
+];
