@@ -2,9 +2,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Info, Loader2 } from "lucide-react";
-import { DRILL_COUNT_DEFAULT, type AssignmentView, type PracticeTestInfo, type SessionSummary } from "@/lib/sat/client-types";
+import {
+  BLUEPRINT, DRILL_COUNT_DEFAULT, SECTION_LABEL, practiceTestTitle, type AssignmentView, type PracticeTestInfo, type SessionSummary,
+} from "@/lib/sat/client-types";
 import { formatPk } from "@/lib/portal/pk-time";
-import { ScoreBadge } from "./score-badge";
+import { OvertimeTag, ScoreBadge } from "./score-badge";
 import { SatAssign } from "./sat-assign";
 import { DrillFields, type DifficultyFilter, type SectionFilter } from "./drill-fields";
 
@@ -18,6 +20,13 @@ type SessionsPayload = {
 function statusLabel(s: SessionSummary): string {
   return s.finishedAt === null ? "In progress" : `${s.correct}/${s.total}`;
 }
+
+// The adaptive mock described from the blueprint it is assembled to.
+const MOCK_QUESTIONS = 2 * (BLUEPRINT.rw.perModule + BLUEPRINT.math.perModule);
+const MOCK_DESCRIPTION =
+  `${MOCK_QUESTIONS} questions in four modules — ${SECTION_LABEL.rw}: ${BLUEPRINT.rw.perModule} questions × ${BLUEPRINT.rw.minutes} minutes per module; ` +
+  `${SECTION_LABEL.math}: ${BLUEPRINT.math.perModule} questions × ${BLUEPRINT.math.minutes} minutes per module — ` +
+  `with a ${BLUEPRINT.breakMinutes}-minute break between sections. Module 2 of each section adapts to your Module 1 performance.`;
 
 export function SatHub({ isStaff }: { isStaff: boolean }) {
   const router = useRouter();
@@ -127,9 +136,7 @@ export function SatHub({ isStaff }: { isStaff: boolean }) {
 
       <section className="min-w-0 rounded-2xl border border-white/10 bg-space/60 p-5">
         <h2 className="font-display text-lg text-ice">Adaptive mock exam</h2>
-        <p className="mt-2 text-sm text-fog">
-          98 questions in four modules — Reading and Writing: 27 questions × 32 minutes per module; Math: 22 questions × 35 minutes per module — with a 10-minute break between sections. Module 2 of each section adapts to your Module 1 performance.
-        </p>
+        <p className="mt-2 text-sm text-fog">{MOCK_DESCRIPTION}</p>
         {!data.conversionTables ? <p className="mt-2 text-xs text-amber-200">Scores for mock exams appear once the official conversion tables are loaded.</p> : null}
         <p className="mt-3 flex gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-xs text-dust"><Info size={14} className="mt-0.5 shrink-0" />{data.routingDisclosure}</p>
         <button disabled={busyKey === "adaptive"} onClick={() => void start("adaptive", { kind: "adaptive" })} className="btn-primary mt-4 !px-4 !py-2 text-sm disabled:opacity-40">
@@ -146,7 +153,7 @@ export function SatHub({ isStaff }: { isStaff: boolean }) {
               return (
                 <li key={t.testNo} className="flex min-w-0 flex-wrap items-center gap-3 rounded-xl border border-white/10 px-3 py-2.5 text-sm">
                   <span className="min-w-0 truncate text-fog">
-                    Practice Test {t.testNo} · {t.questions} questions · {t.minutes ? `R&W ${t.minutes.rw[0]}+${t.minutes.rw[1]} min, Math ${t.minutes.math[0]}+${t.minutes.math[1]} min` : "Timings not loaded yet"}
+                    {practiceTestTitle(t.testNo)} · {t.questions} questions · {t.minutes ? `R&W ${t.minutes.rw[0]}+${t.minutes.rw[1]} min, Math ${t.minutes.math[0]}+${t.minutes.math[1]} min` : "Timings not loaded yet"}
                   </span>
                   <button disabled={!t.minutes || busyKey === key} onClick={() => void start(key, { kind: "practice", testNo: t.testNo })} className="btn-primary ml-auto shrink-0 !px-3 !py-1.5 text-xs disabled:opacity-40">
                     {busyKey === key ? <Loader2 size={14} className="animate-spin" /> : "Start"}
@@ -190,6 +197,7 @@ export function SatHub({ isStaff }: { isStaff: boolean }) {
                   </div>
                   <span className="ml-auto shrink-0 font-mono text-xs text-dust">{statusLabel(s)}</span>
                   {finished && s.score ? <ScoreBadge score={s.score} /> : null}
+                  {s.overtime ? <OvertimeTag /> : null}
                   <button onClick={() => router.push(`/portal/sat-lab/${s.id}`)} className="btn-ghost shrink-0 !px-3 !py-1.5 text-xs">{finished ? "Report" : "Resume"}</button>
                 </li>
               );

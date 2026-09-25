@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import type { SessionSummary } from "@/lib/sat/client-types";
 import { formatPk } from "@/lib/portal/pk-time";
-import { ScoreBadge } from "./score-badge";
+import { OvertimeTag, ScoreBadge } from "./score-badge";
 
 // The shape GET /api/sat/results returns. Composed locally from
 // client-types.ts's SessionSummary (never imported from store.ts/access.ts,
@@ -51,7 +51,7 @@ function SittingRow({ uid, s }: { uid: string; s: SessionSummary }) {
     <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs">
       <span className="min-w-0 truncate text-fog">{s.title}</span>
       <span className="shrink-0 text-dust">{formatPk(s.createdAt)}</span>
-      <span className="ml-auto shrink-0">{status}</span>
+      <span className="ml-auto flex shrink-0 items-center gap-1.5">{status}{s.overtime ? <OvertimeTag /> : null}</span>
     </div>
   );
   if (!finished || isDrill) return <div className="min-w-0 rounded-lg px-2 py-1.5">{inner}</div>;
@@ -86,8 +86,9 @@ function StudentRow({ s }: { s: ResultsStudent }) {
             {s.className} · {finishedCount} finished · {last !== null ? formatPk(last) : "No activity yet"}
           </p>
         </div>
-        <div className="ml-auto shrink-0">
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
           {latest?.score ? <ScoreBadge score={latest.score} /> : <span className="text-xs text-dust">No scored sittings yet</span>}
+          {latest?.overtime ? <OvertimeTag /> : null}
         </div>
       </div>
       {s.sessions.length ? (

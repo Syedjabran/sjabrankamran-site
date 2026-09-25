@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useRef, useState, useEffect } from "react";
 import { Loader2, Send } from "lucide-react";
-import { DIFFICULTY_LABEL, DOMAIN_LABEL, DRILL_COUNT_DEFAULT, type PracticeTestInfo } from "@/lib/sat/client-types";
+import { DRILL_COUNT_DEFAULT, drillTitle, practiceTestTitle, type PracticeTestInfo } from "@/lib/sat/client-types";
 import { DrillFields, type DifficultyFilter, type SectionFilter } from "./drill-fields";
 // course-labels.ts is pure and isomorphic (no server imports, no `@/lib/sat/*`
 // answer-key modules) -- safe here even though course-access.ts (which
@@ -11,20 +11,13 @@ import { courseFromYear } from "@/lib/portal/course-labels";
 type Kind = "adaptive" | "practice" | "drill";
 type Mode = "class" | "students";
 
-type ClassRow = { id: string; name: string; school: string; year: string | null; students: number; active: boolean };
-type StudentRow = { uid: string; name: string; className: string };
+type ClassRow = { id: string; name: string; school: string; year: string | null; active: boolean };
+// `classIds`: every one of the caller's SAT classes the student is in, so a
+// class's count is exactly the students the By-student list shows for it.
+type StudentRow = { uid: string; name: string; className: string; classIds: string[] };
 
 const FIELD = "mt-1 w-full min-w-0 rounded-xl border border-white/15 bg-void px-3 py-2 text-sm text-ice focus:border-cyan focus:outline-none";
 const LABEL = "block min-w-0 text-xs text-fog";
-
-function drillTitle(section: SectionFilter, domain: string, difficulty: DifficultyFilter): string {
-  const parts = [
-    section ? (section === "rw" ? "Reading and Writing" : "Math") : "Mixed",
-    domain ? (DOMAIN_LABEL[domain] ?? domain) : null,
-    difficulty ? DIFFICULTY_LABEL[difficulty] : null,
-  ].filter(Boolean);
-  return `${parts.join(" · ")} drill`;
-}
 
 /**
  * Staff-only "Assign" panel in the SAT Lab hub (Task 9). Class choices come
@@ -34,7 +27,9 @@ function drillTitle(section: SectionFilter, domain: string, difficulty: Difficul
  * same scope (`satClassScope`) on POST, so this filter is a UI convenience,
  * never the actual gate. The student picker reuses GET /api/sat/results
  * (already scoped to the caller's SAT students, staff excluded) rather than
- * a new endpoint.
+ * a new endpoint, and each class's student count comes from that same list
+ * -- not the class's raw enrolment count, which includes enrolled staff --
+ * so the two modes always agree about who a class reaches.
  */
 export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[] }) {
   // Fix round 1 minor: only a practice test whose timings are actually
@@ -101,8 +96,8 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
         const res = await fetch("/api/sat/results", { cache: "no-store" });
         const j = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(j.error || "Students couldn't be loaded.");
-        type ResultsStudent = { uid: string; name: string; className: string };
-        setStudents(((j.students ?? []) as ResultsStudent[]).map((s) => ({ uid: s.uid, name: s.name, className: s.className })));
+        type ResultsStudent = { uid: string; name: string; className: string; classIds?: string[] };
+        setStudents(((j.students ?? []) as ResultsStudent[]).map((s) => ({ uid: s.uid, name: s.name, className: s.className, classIds: s.classIds ?? [] })));
       } catch (e) {
         setStudentsError((e as Error).message);
       }
@@ -139,33 +134,35 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
 
   const title = useMemo(() => {
     if (kind === "adaptive") return "Adaptive mock exam";
-    if (kind === "practice") return testNo ? `Practice Test ${testNo}` : null;
-    return drillTitle(drillSection, drillDomain, drillDifficulty);
+    if (kind === "practice") return testNo ? practiceTestTitle(testNo) : null;
+    return drillTitle({ section: drillSection, domain: drillDomain, difficulty: drillDifficulty });
   }, [kind, testNo, drillSection, drillDomain, drillDifficulty]);
 
+  // Students per class, counted from the By-student list itself (staff
+  // excluded, the same scope the server assigns to). null until it loads.
+  const studentsInClass = useMemo(() => {
+    if (!students) return null;
+    const counts = new Map<string, number>();
+    for (const s of students) for (const id of s.classIds) counts.set(id, (counts.get(id) ?? 0) + 1);
+    return counts;
+  }, [students]);
+
+  // Exact in both modes: class mode counts each student once, however many
+  // of the selected classes they are in (the server dedupes by uid too).
+  // null while the student list is unavailable.
   const recipientCount = useMemo(() => {
-    if (mode === "class") return (classes ?? []).filter((c) => selectedClassIds.includes(c.id)).reduce((n, c) => n + c.students, 0);
-    return selectedUids.length;
-  }, [mode, classes, selectedClassIds, selectedUids]);
+    if (mode === "students") return selectedUids.length;
+    if (!students) return null;
+    return students.filter((s) => s.classIds.some((id) => selectedClassIds.includes(id))).length;
+  }, [mode, students, selectedClassIds, selectedUids]);
 
-  const scopeLabel = useMemo(() => {
-    if (mode === "class") {
-      const names = (classes ?? []).filter((c) => selectedClassIds.includes(c.id)).map((c) => c.name);
-      if (!names.length) return null;
-      return names.length === 1 ? `in ${names[0]}` : `in ${names.length} classes`;
-    }
-    return selectedUids.length ? "for the selected students" : null;
-  }, [mode, classes, selectedClassIds, selectedUids]);
+  const classScope = useMemo(() => {
+    if (mode !== "class") return "";
+    const names = (classes ?? []).filter((c) => selectedClassIds.includes(c.id)).map((c) => c.name);
+    return names.length === 1 ? ` in ${names[0]}` : ` in ${names.length} classes`;
+  }, [mode, classes, selectedClassIds]);
 
-  // Fix round 2 finding 7: class mode sums each selected class's own
-  // `students` count, which can double-count a student enrolled in more
-  // than one selected class -- the server dedupes by uid before writing,
-  // so that total is only ever an upper bound. By-student mode picks exact
-  // uids, so its count is exact.
-  const recipientLabel = useMemo(() => {
-    const noun = recipientCount === 1 ? "student" : "students";
-    return mode === "class" ? `up to ${recipientCount} ${noun}` : `${recipientCount} ${noun}`;
-  }, [mode, recipientCount]);
+  const recipientLabel = recipientCount === null ? "the students" : `${recipientCount} ${recipientCount === 1 ? "student" : "students"}`;
 
   const hasRecipients = mode === "class" ? selectedClassIds.length > 0 : selectedUids.length > 0;
   const canAssign = !busy && title !== null && hasRecipients && (kind !== "practice" || testNo !== null);
@@ -260,7 +257,7 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
             Test
             {timedTests.length ? (
               <select value={testNo ?? ""} onChange={(e) => { markDirty(); setTestNo(e.target.value ? Number(e.target.value) : null); }} disabled={busy} className={FIELD}>
-                {timedTests.map((t) => <option key={t.testNo} value={t.testNo}>Practice Test {t.testNo}</option>)}
+                {timedTests.map((t) => <option key={t.testNo} value={t.testNo}>{practiceTestTitle(t.testNo)}</option>)}
               </select>
             ) : <p className="mt-1 text-xs text-fog">Official practice tests are being prepared.</p>}
           </label>
@@ -296,11 +293,12 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
           <div className="mt-2 grid max-h-48 grid-cols-1 gap-1.5 overflow-y-auto rounded-xl border border-white/10 bg-void p-2 sm:grid-cols-2">
             {classes.map((c) => {
               const on = selectedClassIds.includes(c.id);
+              const count = studentsInClass ? studentsInClass.get(c.id) ?? 0 : null;
               return (
                 <button key={c.id} type="button" disabled={busy} onClick={() => toggle(selectedClassIds, setSelectedClassIds, c.id)}
                   className={"min-w-0 rounded-lg px-2.5 py-2 text-left text-sm transition disabled:opacity-40 " + (on ? "bg-cyan/15 text-ice" : "text-fog hover:bg-white/[0.04]")}>
                   <span className="block truncate">{c.name}</span>
-                  <span className="block truncate text-xs text-dust">{c.school} · {c.students} students</span>
+                  <span className="block truncate text-xs text-dust">{c.school}{count === null ? "" : ` · ${count} ${count === 1 ? "student" : "students"}`}</span>
                 </button>
               );
             })}
@@ -343,7 +341,7 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
       ) : (
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <p className="min-w-0 text-sm text-fog">
-            {title && scopeLabel ? `Assign ${title} to ${recipientLabel} ${scopeLabel}?` : "Choose what to assign and who to."}
+            {title && hasRecipients ? `Assign ${title} to ${recipientLabel}${classScope}?` : "Choose what to assign and who to."}
           </p>
           <button type="button" disabled={!canAssign} onClick={assign} className="btn-primary ml-auto inline-flex shrink-0 items-center gap-2 !px-4 !py-2 text-sm disabled:opacity-40">
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Assign

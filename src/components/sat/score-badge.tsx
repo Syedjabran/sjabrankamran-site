@@ -17,3 +17,13 @@ export function ScoreBadge({ score }: { score: NonNullable<SessionSummary["score
     </span>
   );
 }
+
+/** Beside a sitting's score (or result) when a module was submitted after
+ *  its time limit -- the report says so in full; lists show this tag. */
+export function OvertimeTag() {
+  return (
+    <span title="At least one module was submitted after its time limit." className="shrink-0 rounded-full border border-signal/40 px-2 py-0.5 text-[11px] text-signal">
+      overtime
+    </span>
+  );
+}

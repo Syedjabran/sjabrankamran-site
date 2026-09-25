@@ -1,10 +1,8 @@
 "use client";
 import { useState } from "react";
 import { CheckCircle2, XCircle, Info } from "lucide-react";
-import { DOMAIN_LABEL, type SATReport } from "@/lib/sat/client-types";
+import { DOMAIN_LABEL, SECTION_LABEL, type SATReport } from "@/lib/sat/client-types";
 import { useSignedImages } from "./use-signed-images";
-
-const SECTION = { rw: "Reading and Writing", math: "Math" } as const;
 
 export function ScoreReport({ report }: { report: SATReport }) {
   const [open, setOpen] = useState<string | null>(null);
@@ -32,7 +30,7 @@ export function ScoreReport({ report }: { report: SATReport }) {
       <section className="grid gap-3 sm:grid-cols-2">
         {(["rw", "math"] as const).map((k) => (
           <div key={k} className="min-w-0 rounded-2xl border border-white/10 bg-space/60 p-4">
-            <p className="text-xs uppercase tracking-widest text-dust">{SECTION[k]}</p>
+            <p className="text-xs uppercase tracking-widest text-dust">{SECTION_LABEL[k]}</p>
             <p className="mt-1 font-display text-2xl text-ice">{report.sections[k].correct}/{report.sections[k].total}</p>
             {report.routed[k] ? <p className="mt-1 text-xs text-fog">Module 2: {report.routed[k] === "upper" ? "harder" : "easier"} form</p> : null}
           </div>
@@ -64,7 +62,7 @@ export function ScoreReport({ report }: { report: SATReport }) {
             <li key={r.id} className="rounded-xl border border-white/10">
               <button type="button" onClick={() => setOpen(open === r.id ? null : r.id)} className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm">
                 {r.correct ? <CheckCircle2 size={16} className="text-emerald2" /> : <XCircle size={16} className="text-signal" />}
-                <span className="text-fog">{SECTION[r.section]} · Q{r.n}</span>
+                <span className="text-fog">{SECTION_LABEL[r.section]} · Q{r.n}</span>
                 <span className="ml-auto font-mono text-xs text-dust">You: {r.response ?? "—"} · Answer: {r.answer}</span>
               </button>
               {open === r.id ? (

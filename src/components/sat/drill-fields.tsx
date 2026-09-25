@@ -1,5 +1,5 @@
 "use client";
-import { DOMAIN_LABEL, DOMAIN_SECTIONS, DRILL_COUNT_MAX, DRILL_COUNT_MIN } from "@/lib/sat/client-types";
+import { DIFFICULTY_LABEL, DOMAIN_LABEL, DOMAIN_SECTIONS, DRILL_COUNT_MAX, DRILL_COUNT_MIN, SECTION_LABEL } from "@/lib/sat/client-types";
 
 // String-literal unions kept local (not imported from lib/sat/types.ts) so
 // this client component never reaches past client-types.ts into the
@@ -52,8 +52,8 @@ export function DrillFields({
           className={FIELD}
         >
           <option value="">Any</option>
-          <option value="rw">Reading and Writing</option>
-          <option value="math">Math</option>
+          <option value="rw">{SECTION_LABEL.rw}</option>
+          <option value="math">{SECTION_LABEL.math}</option>
         </select>
       </label>
       <label className={labelClassName}>
@@ -67,9 +67,9 @@ export function DrillFields({
         Difficulty
         <select value={difficulty} onChange={(e) => onDifficultyChange(e.target.value as DifficultyFilter)} disabled={disabled} className={FIELD}>
           <option value="">Any</option>
-          <option value="E">Easy</option>
-          <option value="M">Medium</option>
-          <option value="H">Hard</option>
+          <option value="E">{DIFFICULTY_LABEL.E}</option>
+          <option value="M">{DIFFICULTY_LABEL.M}</option>
+          <option value="H">{DIFFICULTY_LABEL.H}</option>
         </select>
       </label>
       <label className={labelClassName}>
