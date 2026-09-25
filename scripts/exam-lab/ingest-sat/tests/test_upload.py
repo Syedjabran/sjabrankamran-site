@@ -1,3 +1,5 @@
+import hashlib
+import re
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -14,10 +16,28 @@ def test_bucket_path_is_under_sat_prefix():
     assert p == "sat/math/ac472881.jpg"
 
 
-def test_rationale_bucket_path_sits_beside_the_question_and_passes_the_guard():
-    p = rationale_bucket_path("ac472881", "math")
-    assert p == "sat/math/ac472881-r.jpg"
+def test_rationale_key_is_a_content_hash_under_the_sat_prefix():
+    jpeg = b"\xff\xd8 rationale crop bytes"
+    p = rationale_bucket_path("math", jpeg)
+    assert p == f"sat/math/r/{hashlib.sha256(jpeg).hexdigest()[:20]}.jpg"
+    assert re.fullmatch(r"sat/math/r/[0-9a-f]{20}\.jpg", p)
     assert guard_prefix(p) == p
+
+
+def test_rationale_key_is_not_derivable_from_the_question_id():
+    """The asset route signs any sat/ path for an enrolled student, and the
+    browser holds the question's own key (sat/math/<id>.jpg) mid-sitting.
+    So the rationale's key must carry nothing a student can derive from
+    that id -- it is a hash of bytes the student has never seen."""
+    p = rationale_bucket_path("math", b"rationale of ac472881")
+    assert "ac472881" not in p
+    assert "-r" not in p
+
+
+def test_rationale_key_is_stable_for_the_same_bytes_and_changes_with_them():
+    assert rationale_bucket_path("rw", b"one") == rationale_bucket_path("rw", b"one")
+    assert rationale_bucket_path("rw", b"one") != rationale_bucket_path("rw", b"two")
+    assert rationale_bucket_path("rw", b"one") != rationale_bucket_path("math", b"one")
 
 
 def test_guard_rejects_paths_outside_sat():

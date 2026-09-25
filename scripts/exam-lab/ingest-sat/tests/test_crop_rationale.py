@@ -8,6 +8,7 @@ records, onto one more page). The render tests use synthetic images for the pure
 trimming/stitching logic, and one real two-page rationale sliced out of the
 Math export for the end-to-end path.
 """
+import io
 import os
 import shutil
 import subprocess
@@ -283,7 +284,7 @@ def test_compose_of_nothing_but_blank_slices_is_none():
     assert compose([_white(100), _white(50)], pad_px=5, gap_px=7) is None
 
 
-def test_render_refuses_a_cut_through_ink(tmp_path, monkeypatch):
+def test_render_refuses_a_cut_through_ink(monkeypatch):
     """A region edge that is not the page's own edge must pass through blank
     paper: if it slices a glyph, part of it would be missing (or part of the
     label/next header present). Such a rationale is skipped, never
@@ -292,9 +293,8 @@ def test_render_refuses_a_cut_through_ink(tmp_path, monkeypatch):
     monkeypatch.setattr(crop_rationale, "_render_pages", lambda pdf, first, last, dpi: {1: page})
     region = {"page": 1, "top": 450 * 72 / 150, "bottom": 792.0}
     with pytest.raises(RationaleCropError) as exc:
-        render_rationale(Path("x.pdf"), [region], tmp_path / "r.jpg", {1: (612.0, 792.0)})
+        render_rationale(Path("x.pdf"), [region], {1: (612.0, 792.0)})
     assert exc.value.reason == "cut-through-ink"
-    assert not (tmp_path / "r.jpg").exists()
 
 
 # A 612x792pt page at 150 dpi, with a `Rationale` label whose box is
@@ -316,60 +316,59 @@ def _labelled_region() -> dict:
     return {"page": 1, "top": LABEL_BOX["bottom"] + crop_rationale.LABEL_CLEARANCE, "bottom": 792.0, "label": LABEL_BOX}
 
 
-def test_render_moves_the_cut_up_when_first_line_math_rises_above_it(tmp_path, monkeypatch):
-    """The real case of 37 Math rationales: a stacked fraction on the first
+def test_render_moves_the_cut_up_when_first_line_math_rises_above_it(monkeypatch):
+    """The real case of 38 Math rationales: a stacked fraction on the first
     line reaches above the text layer's planned cut (415px here). The cut
     moves up into the blank paper under the label's ink, so the fraction is
     whole and the label is still out of the picture."""
     page = _labelled_page((500, 412, 560, 460))
     monkeypatch.setattr(crop_rationale, "_render_pages", lambda pdf, first, last, dpi: {1: page})
-    dest = tmp_path / "r.jpg"
-    render_rationale(Path("x.pdf"), [_labelled_region()], dest, {1: (612.0, 792.0)})
-    with Image.open(dest) as img:
+    data = render_rationale(Path("x.pdf"), [_labelled_region()], {1: (612.0, 792.0)})
+    with Image.open(io.BytesIO(data)) as img:
         # Cut at 410 (first row under the label's ink): the math's 48 rows
         # start 2 rows in, plus the 12px pad below. Nothing of the label.
         assert img.height == (460 - 410) + 12
 
 
-def test_render_refuses_math_that_overlaps_the_label_band(tmp_path, monkeypatch):
+def test_render_refuses_math_that_overlaps_the_label_band(monkeypatch):
     """No blank row between the label's ink and the first line: any cut
     either shows the label or slices the math."""
     page = _labelled_page((500, 405, 560, 460))
     monkeypatch.setattr(crop_rationale, "_render_pages", lambda pdf, first, last, dpi: {1: page})
     with pytest.raises(RationaleCropError) as exc:
-        render_rationale(Path("x.pdf"), [_labelled_region()], tmp_path / "r.jpg", {1: (612.0, 792.0)})
+        render_rationale(Path("x.pdf"), [_labelled_region()], {1: (612.0, 792.0)})
     assert exc.value.reason == "cut-through-ink"
 
 
-def test_render_refuses_ink_between_the_bottom_cut_and_the_next_header(tmp_path, monkeypatch):
+def test_render_refuses_ink_between_the_bottom_cut_and_the_next_header(monkeypatch):
     """A header-bounded region ends PAD above the header; anything drawn in
     that strip would be silently cut away, so it must be blank."""
     region = {**_labelled_region(), "bottom": 300.0, "next_header": 306.0}
     ok = _labelled_page((40, 450, 400, 470))
     monkeypatch.setattr(crop_rationale, "_render_pages", lambda pdf, first, last, dpi: {1: ok})
-    render_rationale(Path("x.pdf"), [region], tmp_path / "ok.jpg", {1: (612.0, 792.0)})
+    render_rationale(Path("x.pdf"), [region], {1: (612.0, 792.0)})
 
     leaky = _labelled_page((40, 450, 400, 470), (40, 628, 400, 634))
     monkeypatch.setattr(crop_rationale, "_render_pages", lambda pdf, first, last, dpi: {1: leaky})
     with pytest.raises(RationaleCropError) as exc:
-        render_rationale(Path("x.pdf"), [region], tmp_path / "bad.jpg", {1: (612.0, 792.0)})
+        render_rationale(Path("x.pdf"), [region], {1: (612.0, 792.0)})
     assert exc.value.reason == "cut-through-ink"
 
 
-def test_render_refuses_an_all_blank_region(tmp_path, monkeypatch):
+def test_render_refuses_an_all_blank_region(monkeypatch):
     monkeypatch.setattr(crop_rationale, "_render_pages", lambda pdf, first, last, dpi: {1: _white(1650, 1275)})
     with pytest.raises(RationaleCropError) as exc:
-        render_rationale(Path("x.pdf"), [{"page": 1, "top": 100.0, "bottom": 792.0}], tmp_path / "r.jpg", {1: (612.0, 792.0)})
+        render_rationale(Path("x.pdf"), [{"page": 1, "top": 100.0, "bottom": 792.0}], {1: (612.0, 792.0)})
     assert exc.value.reason == "empty-rationale-region"
 
 
-def test_render_checks_the_raster_height_against_the_page_size(tmp_path, monkeypatch):
+def test_render_checks_the_raster_height_against_the_page_size(monkeypatch):
     """Same guard as crop_qbank.render_span: a raster that isn't the size
     the page's points predict means the mapping is wrong -- fail loudly
     (not a skip: it would affect every crop)."""
     monkeypatch.setattr(crop_rationale, "_render_pages", lambda pdf, first, last, dpi: {1: _white(1000, 1275)})
     with pytest.raises(RuntimeError, match="rendered page height"):
-        render_rationale(Path("x.pdf"), [{"page": 1, "top": 100.0, "bottom": 792.0}], tmp_path / "r.jpg", {1: (612.0, 792.0)})
+        render_rationale(Path("x.pdf"), [{"page": 1, "top": 100.0, "bottom": 792.0}], {1: (612.0, 792.0)})
 
 
 def test_render_pages_survives_a_temp_file_another_process_holds_open(monkeypatch):
@@ -397,19 +396,17 @@ def test_render_pages_survives_a_temp_file_another_process_holds_open(monkeypatc
             shutil.rmtree(Path(handle.name).parent, ignore_errors=True)
 
 
-def test_render_writes_atomically(tmp_path, monkeypatch):
+def test_render_returns_the_final_jpeg_bytes_and_writes_nothing(tmp_path, monkeypatch):
+    """The bytes ARE the rationale's identity: its bucket key is their hash
+    (upload.rationale_bucket_path), so the caller needs them before it knows
+    where the file goes. Writing them is the caller's job (atomically)."""
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(crop_rationale, "_render_pages", lambda pdf, first, last, dpi: {1: _with_bar(1650, 400, 500, w=1275)})
-
-    def partial_then_fail(self, fp, *args, **kwargs):
-        Path(fp).write_bytes(b"PARTIAL")
-        raise OSError("disk full (simulated)")
-
-    monkeypatch.setattr(Image.Image, "save", partial_then_fail)
-    dest = tmp_path / "out" / "r.jpg"
-    with pytest.raises(OSError, match="disk full"):
-        render_rationale(Path("x.pdf"), [{"page": 1, "top": 100.0, "bottom": 792.0}], dest, {1: (612.0, 792.0)})
-    assert not dest.exists()
-    assert list(dest.parent.glob("*.tmp-*")) == []
+    data = render_rationale(Path("x.pdf"), [{"page": 1, "top": 100.0, "bottom": 792.0}], {1: (612.0, 792.0)})
+    assert data[:2] == bytes([0xFF, 0xD8])  # a JPEG's SOI marker
+    with Image.open(io.BytesIO(data)) as img:
+        assert img.format == "JPEG" and img.height == 100 + 2 * 12
+    assert list(tmp_path.iterdir()) == []
 
 
 # --- end to end against a real cross-page rationale ------------------------
@@ -431,9 +428,12 @@ def test_render_stitches_a_real_two_page_rationale(tmp_path):
     regions = rationale_span(a, 0)
     assert [r["page"] for r in regions] == [1, 2]
 
-    dest = tmp_path / "out" / "3f5a3602-r.jpg"
-    render_rationale(sliced, regions, dest, a["page_size"])
-    with Image.open(dest) as img:
+    data = render_rationale(sliced, regions, a["page_size"])
+    # Deterministic: a re-render of the same rationale has the same bytes,
+    # hence the same content-hash key, so it is neither re-uploaded nor
+    # orphaned. (PIL's JPEG encoder and pdftoppm are both deterministic.)
+    assert render_rationale(sliced, regions, a["page_size"]) == data
+    with Image.open(io.BytesIO(data)) as img:
         assert img.width == 1275
         # The text runs 705-762pt on page 1 and 23-181pt on page 2 (~215pt
         # together): the image must hold both, with the blank remainder of

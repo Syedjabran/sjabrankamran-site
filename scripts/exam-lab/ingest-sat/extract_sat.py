@@ -35,14 +35,20 @@ generic "skipped" bucket:
   rationale anchor lands on the next PDF page) from a genuine anomaly.
 
 Each shipped row also carries its official rationale as an image
-(`rationale_img`, `sat/<section>/<id>-r.jpg`; local copy
-`out/crops/<section>/<id>-r.jpg`) -- see crop_rationale.py for why the text
-won't do. The rationale is bookkept separately from the question, so a
-question uploaded before rationales existed still gets its rationale
-uploaded, and a resume re-uploads neither:
+(`rationale_img`) -- see crop_rationale.py for why the text won't do. Its
+key is a hash of the crop's bytes, `sat/<section>/r/<hash>.<ext>`
+(`upload.rationale_bucket_path` says why it must not be derivable from the
+question id); the local copy mirrors it under `out/crops/`. The rationale
+is bookkept separately from the question, so a question uploaded before
+rationales existed still gets its rationale uploaded, and a resume
+re-renders and re-uploads neither:
 
-- `uploaded-rationales.json`: ids whose rationale crop a live run confirmed
-  uploaded (build_sat_bank.py ships `rationaleImg` only for these).
+- `out/crops/rationale-crops.json`: `{id: key}` for every rationale crop on
+  disk, kept beside the crops (like them, a fixed path), so a resume knows
+  each crop's key without re-rendering it.
+- `uploaded-rationales.json`: `{id: key}` for every rationale a live run
+  confirmed uploaded, and under which key (build_sat_bank.py ships
+  `rationaleImg` only for a row whose key is recorded here).
 - `skipped-rationales.json`: rows whose rationale could not be cropped
   cleanly, each with a reason. Such a row still ships -- with the text
   rationale as its fallback -- so these are NOT counted in skipped.json,
@@ -55,7 +61,8 @@ import os
 import sys
 import time
 import urllib.error
-from pathlib import Path
+from collections.abc import Callable
+from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import poppler
@@ -97,10 +104,20 @@ def _atomic_write_text(path: Path, text: str) -> None:
     every write in this module that needs to survive a kill goes through
     this helper rather than repeating the temp-file dance three times.
     """
+    _atomic_write(path, lambda tmp: tmp.write_text(text, encoding="utf-8"))
+
+
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    """`_atomic_write_text` for bytes -- how a rationale crop reaches its
+    content-hash path: either absent or complete, never partial."""
+    _atomic_write(path, lambda tmp: tmp.write_bytes(data))
+
+
+def _atomic_write(path: Path, write: Callable[[Path], object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.tmp-{os.getpid()}")
     try:
-        tmp.write_text(text, encoding="utf-8")
+        write(tmp)
         _replace_with_retry(tmp, path)
     except BaseException:
         tmp.unlink(missing_ok=True)
@@ -209,13 +226,68 @@ def _upload_with_retry(dest: Path, img: str) -> str:
     ) from last_exc
 
 
-def _rationale_image(pdf: Path, a: dict, rec: dict, *, dry_run: bool, uploaded: set[str],
-                     uploaded_path: Path, skipped: list[dict]) -> str | None:
+def _load_keys(path: Path) -> dict[str, str]:
+    """A `{question id: rationale key}` record (`rationale-crops.json` or
+    `uploaded-rationales.json`), or empty when there is none yet.
+
+    Same resilience as `_load_uploaded`, for the same reason: an unreadable
+    or corrupt record costs, at worst, a re-render (deterministic, so the
+    same key) or a re-upload (upsert, harmless) -- refusing to start would
+    block every resume. A record that parses but isn't a flat
+    `{str: str}` map -- e.g. the list of ids rationale uploads were recorded
+    as before keys became content hashes -- says nothing about which object
+    was written, so it is treated as empty too, loudly.
+    """
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        print(f"WARNING: could not read {path} ({exc}); treating it as empty.", file=sys.stderr)
+        return {}
+    if not isinstance(data, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in data.items()):
+        print(
+            f"WARNING: {path} is not a {{question id: key}} record; treating it as empty "
+            "(every rationale it covers is re-rendered or re-uploaded under its key).",
+            file=sys.stderr,
+        )
+        return {}
+    return data
+
+
+def _record_key(path: Path, qid: str, key: str, record: dict[str, str]) -> None:
+    """Set `record[qid] = key` and write the whole record at once,
+    atomically -- one entry at a time, like `_record_uploaded`, so a run
+    killed right after this still has it."""
+    record[qid] = key
+    _atomic_write_text(path, json.dumps(dict(sorted(record.items())), indent=1))
+
+
+def _local_crop(key: str) -> Path:
+    """Where a `sat/...` key's crop lives locally: `CROPS` mirrors the
+    bucket below the prefix -- the same mapping the dev-only
+    /api/sat/local-image route resolves a key with."""
+    return CROPS.joinpath(*PurePosixPath(key).relative_to("sat").parts)
+
+
+def _rationale_image(pdf: Path, a: dict, rec: dict, *, dry_run: bool,
+                     crops: dict[str, str], crops_path: Path,
+                     uploaded: dict[str, str], uploaded_path: Path,
+                     skipped: list[dict]) -> str | None:
     """Crop (and, live, upload) `rec`'s official rationale; return its
     bucket key, or None -- with the reason appended to `skipped` -- when it
-    can't be cropped cleanly. Same resume rules as the question crop: an
-    existing local crop is not re-rendered, a recorded upload is not
-    repeated, and the upload is recorded before this returns.
+    can't be cropped cleanly.
+
+    The key is a hash of the crop's bytes (`rationale_bucket_path`), so it
+    is known only once the crop is rendered. `crops` (rationale-crops.json,
+    beside the crops themselves) remembers the key each id's crop was
+    written under, so a resume doesn't re-render; `uploaded`
+    (uploaded-rationales.json, beside rows.json) remembers the key uploaded
+    for each id. An upload is needed exactly when the two differ -- which
+    also covers a re-render whose bytes changed: a new key, uploaded under
+    it, while the old object stays in the bucket, orphaned. Both records are
+    written before this returns, and the upload before the caller appends
+    its row.
     """
     def skip(reason: str, stage: str) -> None:
         skipped.append({"id": rec["id"], "reason": reason, "stage": stage, "section": rec["section"]})
@@ -225,29 +297,22 @@ def _rationale_image(pdf: Path, a: dict, rec: dict, *, dry_run: bool, uploaded: 
     if regions is None:
         skip(rationale_span_reason(a, i) if i is not None else "unknown-id", "rationale-span")
         return None
-    dest = CROPS / rec["section"] / f"{rec['id']}-r.jpg"
-    if not dest.exists():
+    key = crops.get(rec["id"])
+    if key is None or not _local_crop(key).exists():
         try:
-            render_rationale(pdf, regions, dest, a["page_size"])
+            data = render_rationale(pdf, regions, a["page_size"])
         except RationaleCropError as exc:
             skip(str(exc), "rationale-render")
             return None
-        if rec["id"] in uploaded:
-            # The rationale counterpart of the question-crop desync warning
-            # in main(): re-rendered locally, but the upload below will be
-            # skipped, so the bucket keeps whatever it already had.
-            print(
-                f"WARNING: {rec['id']}'s rationale crop was just re-rendered (missing from "
-                f"{CROPS}) but its id is already recorded in {uploaded_path.name} -- the bucket "
-                f"copy may now be stale. Remove its entry from {uploaded_path.name} to force a "
-                "re-upload.",
-                file=sys.stderr,
-            )
-    img = rationale_bucket_path(rec["id"], rec["section"])
-    if not dry_run and rec["id"] not in uploaded:
-        img = _upload_with_retry(dest, img)
-        _record_uploaded(uploaded_path, rec["id"], uploaded)
-    return img
+        key = rationale_bucket_path(rec["section"], data)
+        dest = _local_crop(key)
+        if not dest.exists():  # else a byte-identical crop is already there
+            _atomic_write_bytes(dest, data)
+        _record_key(crops_path, rec["id"], key, crops)
+    if not dry_run and uploaded.get(rec["id"]) != key:
+        key = _upload_with_retry(_local_crop(key), key)
+        _record_key(uploaded_path, rec["id"], key, uploaded)
+    return key
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -266,8 +331,10 @@ def main(argv: list[str] | None = None) -> int:
     mode_path = out_path.with_name("mode.json")
     uploaded_rationales_path = out_path.with_name("uploaded-rationales.json")
     skipped_rationales_path = out_path.with_name("skipped-rationales.json")
+    rationale_crops_path = CROPS / "rationale-crops.json"
     uploaded = _load_uploaded(uploaded_path)
-    uploaded_rationales = _load_uploaded(uploaded_rationales_path)
+    uploaded_rationales = _load_keys(uploaded_rationales_path)
+    rationale_crops = _load_keys(rationale_crops_path)
 
     rows: list[dict] = []
     skipped: list[dict] = []
@@ -366,8 +433,10 @@ def main(argv: list[str] | None = None) -> int:
                 # appended: a row still exists only once everything it
                 # points at is in the bucket.
                 rationale_img = _rationale_image(
-                    pdf, a, rec, dry_run=args.dry_run, uploaded=uploaded_rationales,
-                    uploaded_path=uploaded_rationales_path, skipped=skipped_rationales,
+                    pdf, a, rec, dry_run=args.dry_run,
+                    crops=rationale_crops, crops_path=rationale_crops_path,
+                    uploaded=uploaded_rationales, uploaded_path=uploaded_rationales_path,
+                    skipped=skipped_rationales,
                 )
                 if rationale_img is not None:
                     row["rationale_img"] = rationale_img

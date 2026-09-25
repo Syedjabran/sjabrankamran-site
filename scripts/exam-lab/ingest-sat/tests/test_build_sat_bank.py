@@ -190,15 +190,22 @@ def test_check_provenance_refuses_a_live_run_with_no_uploaded_json(tmp_path):
 
 
 # --- rationale images (Task 11) ---------------------------------------------
+#
+# A rationale's key is a content hash (upload.rationale_bucket_path), and
+# uploaded-rationales.json records, per question id, the key actually
+# uploaded. A row ships `rationaleImg` only when that record holds exactly
+# the row's key.
 
+KEY_A = "sat/math/r/0123456789abcdef0123.jpg"
+KEY_B = "sat/math/r/fedcba9876543210fedc.jpg"
 WITH_R = [
-    {**GOOD[0], "rationale_img": "sat/math/ac472881-r.jpg"},
-    {**GOOD[0], "id": "bbbbbbbb", "rationale_img": "sat/math/bbbbbbbb-r.jpg"},
+    {**GOOD[0], "rationale_img": KEY_A},
+    {**GOOD[0], "id": "bbbbbbbb", "rationale_img": KEY_B},
     {**GOOD[0], "id": "cccccccc"},  # its rationale couldn't be cropped
 ]
 
 
-def _live_at(tmp_path: Path, rationales: list[str] | None) -> Path:
+def _live_at(tmp_path: Path, rationales: object | None) -> Path:
     rows_path = _rows_at(tmp_path, WITH_R)
     (tmp_path / "mode.json").write_text(json.dumps({"dry_run": False}), encoding="utf-8")
     (tmp_path / "uploaded.json").write_text(json.dumps([r["id"] for r in WITH_R]), encoding="utf-8")
@@ -208,16 +215,27 @@ def _live_at(tmp_path: Path, rationales: list[str] | None) -> Path:
 
 
 def test_live_build_ships_only_confirmed_rationale_images(tmp_path):
-    """Controller ruling 2: a row whose rationale crop was not recorded as
+    """Controller ruling 2: a row whose rationale key was not recorded as
     uploaded ships without `rationaleImg` (text fallback), never with a
     dead link -- and the build still succeeds."""
-    rows_path = _live_at(tmp_path, ["ac472881"])
+    rows_path = _live_at(tmp_path, {"ac472881": KEY_A})
     check_provenance(WITH_R, rows_path, allow_dry_run=False)
     out, lacking = ship_rationale_images(WITH_R, rows_path, allow_dry_run=False)
-    assert out[0]["rationaleImg"] == "sat/math/ac472881-r.jpg"
+    assert out[0]["rationaleImg"] == KEY_A
     assert "rationaleImg" not in out[1] and "rationaleImg" not in out[2]
     assert lacking == 2
     assert all("rationale_img" not in r for r in out)  # the snake-case row field never reaches the bank
+
+
+def test_live_build_refuses_a_rationale_key_other_than_the_one_uploaded(tmp_path):
+    """The record confirms the id's upload, but of a different object (an
+    earlier render, since re-rendered to new bytes and a new key). The
+    row's key was never uploaded, so it ships without one."""
+    rows_path = _live_at(tmp_path, {"ac472881": KEY_B, "bbbbbbbb": KEY_B})
+    out, lacking = ship_rationale_images(WITH_R, rows_path, allow_dry_run=False)
+    assert "rationaleImg" not in out[0]
+    assert out[1]["rationaleImg"] == KEY_B
+    assert lacking == 2
 
 
 def test_live_build_with_no_rationale_record_ships_every_row_with_the_text_fallback(tmp_path):
@@ -227,23 +245,43 @@ def test_live_build_with_no_rationale_record_ships_every_row_with_the_text_fallb
     assert all("rationaleImg" not in r and "rationale_img" not in r for r in out)
 
 
+def test_live_build_refuses_a_rationale_record_that_is_not_a_key_per_id(tmp_path):
+    """A list of ids (the pre-content-hash format) or any other shape says
+    nothing about which key was uploaded -- fail loudly rather than guess."""
+    rows_path = _live_at(tmp_path, ["ac472881", "bbbbbbbb"])
+    with pytest.raises(ValueError, match="uploaded-rationales.json"):
+        ship_rationale_images(WITH_R, rows_path, allow_dry_run=False)
+
+
 def test_dry_run_build_keeps_rationale_images_under_allow_dry_run(tmp_path):
     rows_path = _rows_at(tmp_path, WITH_R)
     (tmp_path / "mode.json").write_text(json.dumps({"dry_run": True}), encoding="utf-8")
     out, lacking = ship_rationale_images(WITH_R, rows_path, allow_dry_run=True)
-    assert [r.get("rationaleImg") for r in out] == ["sat/math/ac472881-r.jpg", "sat/math/bbbbbbbb-r.jpg", None]
+    assert [r.get("rationaleImg") for r in out] == [KEY_A, KEY_B, None]
     assert lacking == 1
     with pytest.raises(ValueError, match="dry-run"):
         ship_rationale_images(WITH_R, rows_path, allow_dry_run=False)
 
 
 def test_ship_rationale_images_does_not_mutate_its_input(tmp_path):
-    rows_path = _live_at(tmp_path, [])
+    rows_path = _live_at(tmp_path, {})
     ship_rationale_images(WITH_R, rows_path, allow_dry_run=False)
-    assert WITH_R[0]["rationale_img"] == "sat/math/ac472881-r.jpg"
+    assert WITH_R[0]["rationale_img"] == KEY_A
 
 
-def test_validate_rejects_a_rationale_image_outside_the_sat_prefix():
-    with pytest.raises(ValueError, match="rationale image"):
-        validate([{**GOOD[0], "rationale_img": "o-level/x-r.jpg"}])
-    validate([{**GOOD[0], "rationale_img": "sat/math/ac472881-r.jpg"}])
+def test_validate_accepts_a_content_hash_rationale_key():
+    validate([{**GOOD[0], "rationale_img": KEY_A}])
+
+
+@pytest.mark.parametrize("key", [
+    "o-level/r/0123456789abcdef0123.jpg",       # outside the sat/ prefix
+    "sat/math/ac472881-r.jpg",                  # the old, id-derived key
+    "sat/math/r/ac472881.jpg",                  # id-derived under the new directory
+    "sat/math/r/ac4728810123456789ab.jpg",      # hash-shaped but carries the id
+    "sat/rw/r/0123456789abcdef0123.jpg",        # another section's directory
+    "sat/math/r/0123456789ABCDEF0123.jpg",      # not a lowercase hex digest
+    "sat/math/r/0123456789abcdef012.jpg",       # wrong length
+])
+def test_validate_rejects_a_rationale_key_that_is_not_an_opaque_content_hash(key):
+    with pytest.raises(ValueError, match="rationale"):
+        validate([{**GOOD[0], "rationale_img": key}])

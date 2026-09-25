@@ -9,7 +9,9 @@ import { getPortalUser } from "@/lib/edu/auth";
 export const runtime = "nodejs";
 
 const ROOT = path.join(process.cwd(), "scripts", "exam-lab", "ingest-sat", "out", "crops");
-const SAFE = /^sat\/(?:rw|math|tests\/\d{1,2})\/[A-Za-z0-9_-]{1,64}\.jpg$/;
+// Question and practice-test crops, plus official-rationale crops, which are
+// keyed by a content hash under <section>/r/ (see the ingest's upload.py).
+const SAFE = /^sat\/(?:(?:rw|math|tests\/\d{1,2})\/[A-Za-z0-9_-]{1,64}|(?:rw|math)\/r\/[0-9a-f]{20})\.jpg$/;
 
 export async function GET(req: Request) {
   if (process.env.NODE_ENV !== "development" || process.env.SAT_LOCAL_CROPS !== "1") {

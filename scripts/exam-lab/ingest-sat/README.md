@@ -15,9 +15,20 @@ Everything SAT lands under the **`sat/` prefix** of that bucket, structurally
 enforced by `upload.py`'s `guard_prefix`. The pipeline can never touch the
 existing 9702 or `o-level/` assets.
 
-This README covers the question-bank half of the pipeline only (`raw/question-bank/`).
-Practice-test ingestion (`raw/practice-tests/`) is a separate, not-yet-built
-plan; the directory exists but nothing here reads it.
+This README covers the question-bank half of the pipeline (`raw/question-bank/`).
+The 8 official practice tests (`raw/practice-tests/`) go through
+`extract_tests.py` / `crop_tests.py` / `build_sat_tests.py`, which reuse the
+same poppler, upload and provenance machinery; their module docstrings are
+their documentation.
+
+**Status (2026-09-25):** the question-bank upload (3,731 question crops)
+and the practice-test upload both ran **live** on 2026-09-25, into the
+production `exam-assets` bucket under the `sat/` prefix, and the committed
+`src/lib/sat/question-bank.json` is built from that live run. The
+**rationale upload is pending the owner's go-ahead**: it is step 3 below run
+again, which now skips every question already in `uploaded.json` and
+uploads only the rationale crops. Until it runs, the bank carries no
+`rationaleImg` and drills show the text rationale.
 
 ## Files
 
@@ -28,9 +39,9 @@ plan; the directory exists but nothing here reads it.
 | `report_qbank.py` | runs the parser over both raw PDFs and prints a coverage report (counts by domain/difficulty/answer kind/source, every rejected id and why). Run this first. |
 | `crop_qbank.py` | locates each question's crop region in `-bbox` coordinate space (below the full metadata header *table*, above the answer/rationale) and rasterises + crops it. The lower bound is the body's `Question` label, not the header's lowest text row: the difficulty rating is also drawn as a textless vector bar glyph, which has no word box to crop below. |
 | `crop_rationale.py` | locates each item's official rationale (below its `Rationale` label, above the next record's header, stitched across a page break) and renders it as an image. The text layer drops every math symbol, so the rationale ships as a picture, like the question. |
-| `upload.py` | uploads one crop to the `exam-assets` bucket, prefix-guarded to `sat/`. |
-| `extract_sat.py` | orchestrates parse + crop + upload for the whole corpus, resumable, and emits `rows.json` / `skipped.json` / `uploaded.json` / `mode.json`, plus `uploaded-rationales.json` / `skipped-rationales.json` for the rationale crops. |
-| `build_sat_bank.py` | the last gate: re-validates every row against a hard-coded closed vocabulary (independent of `parse_qbank`'s), refuses rows it can't confirm were actually uploaded, and writes `src/lib/sat/question-bank.json`. A row's `rationaleImg` ships only if its rationale upload is confirmed; otherwise the row ships with the text rationale. |
+| `upload.py` | names each crop's bucket key and uploads it to the `exam-assets` bucket, prefix-guarded to `sat/`. A rationale's key is a hash of its bytes, never its question id (see "Integrity rules"). |
+| `extract_sat.py` | orchestrates parse + crop + upload for the whole corpus, resumable, and emits `rows.json` / `skipped.json` / `uploaded.json` / `mode.json`, plus `uploaded-rationales.json` / `skipped-rationales.json` for the rationale crops (and `out/crops/rationale-crops.json`, the key of each rationale crop on disk). |
+| `build_sat_bank.py` | the last gate: re-validates every row against a hard-coded closed vocabulary (independent of `parse_qbank`'s), refuses rows it can't confirm were actually uploaded, and writes `src/lib/sat/question-bank.json`. A row's `rationaleImg` ships only if `uploaded-rationales.json` records that exact key as uploaded for its id; otherwise the row ships with the text rationale. |
 | `tests/` | 272 tests covering all of the above (and the practice-test pipeline), all network calls mocked. |
 
 ## Run
@@ -60,13 +71,13 @@ App Execution Alias will silently no-op instead of running anything.)
 
 Requires `poppler-utils` (`pdftotext`, `pdftoppm`) and Pillow. Steps 1 and 2
 run with no credentials and make no network request; step 3 is the only one
-that does. **The live upload (step 3) has not yet been run** and is pending
-authorisation -- everything shipped so far is from `--dry-run` passes.
+that does. See "Status" above for which live uploads have run.
 
-A full `--dry-run` cold run over the current corpus produces **3,730 rows,
-40 skipped** out of 3,770 source questions (1,925 Math, 1,845 Reading and
-Writing). Skips break down as 36 cross-page, 2 answer-source-conflict, 2
-no-answer -- see "Integrity rules" below for what each means.
+A full run over the current corpus produces **3,731 rows, 39 skipped** out
+of 3,770 source questions (1,925 Math, 1,845 Reading and Writing). Skips
+break down as 36 cross-page, 2 answer-source-conflict, 1 no-answer -- see
+"Integrity rules" below for what each means. Every one of the 3,731 rows
+also carries a rationale crop (`skipped-rationales.json` is empty).
 
 ## Integrity rules the code enforces
 
@@ -140,10 +151,20 @@ no-answer -- see "Integrity rules" below for what each means.
   blank remainder of each page is trimmed in the raster, not from the text
   layer, because the math and figures have no word boxes. A rationale that
   fails any of this ships as text only and is listed, with its reason, in
-  `skipped-rationales.json`. Images: `sat/<section>/<id>-r.jpg` in the
-  bucket, `out/crops/<section>/<id>-r.jpg` locally. Rationale uploads are
-  recorded in `uploaded-rationales.json`, apart from `uploaded.json`, so a
-  question uploaded before rationales existed still gets its rationale.
+  `skipped-rationales.json`.
+* **A rationale's key can't be derived from its question id.** The
+  rationale gives the answer away; the browser holds the question's own
+  key (`sat/<section>/<id>.jpg`) while the student is still answering; and
+  `/api/exam-lab/asset` signs any `sat/` path for an enrolled student. So a
+  rationale is stored under a hash of its own bytes,
+  `sat/<section>/r/<first 20 hex digits of sha256>.jpg`, mirrored locally at
+  `out/crops/<section>/r/...` (where the dev-only local-image route looks),
+  and the only way to learn it is the server-only bank, which hands it out
+  after the student has answered. No secret is involved. `build_sat_bank.py`
+  refuses any `rationale_img` that isn't that shape. Rationale uploads are
+  recorded per id *with their key* in `uploaded-rationales.json`, apart
+  from `uploaded.json`, so a question uploaded before rationales existed
+  still gets its rationale.
 * **All bucket writes are confined to the `sat/` prefix**, checked by
   `upload.py`'s `guard_prefix` before any network call. The existing 9702
   and `o-level/` assets cannot be reached by this pipeline, by
@@ -163,6 +184,17 @@ no-answer -- see "Integrity rules" below for what each means.
   -- leaving a stale image in the bucket. `extract_sat.py` warns loudly to
   stderr the moment this happens. If you see that warning, remove the
   affected id from `uploaded.json` to force a re-upload; don't ignore it.
+* **A re-rendered rationale whose bytes differ is a new object.** Keys are
+  content hashes, so a rationale crop never goes stale in the bucket the way
+  a question crop can (above): if a code change makes a re-render come out
+  different, it gets a new key, is uploaded under it, and replaces the old
+  key in `uploaded-rationales.json` and the bank. The old object stays in
+  the bucket, orphaned -- nothing points at it, but it still uses storage.
+  To clean up, delete the `sat/*/r/` objects whose keys no longer appear in
+  `uploaded-rationales.json`. An unchanged re-render is byte-identical
+  (pdftoppm and Pillow's encoder are deterministic), so it keeps its key
+  and is not re-uploaded. To force a re-render, delete
+  `out/crops/rationale-crops.json`.
 * **Cross-page questions are not yet stitched.** 36 questions have their
   answer/rationale anchor on the following PDF page and are skipped with a
   `cross-page` reason rather than cropped wrong. `ingest-5054/crop5054.py`

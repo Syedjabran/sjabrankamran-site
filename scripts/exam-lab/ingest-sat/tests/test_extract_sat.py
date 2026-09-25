@@ -5,6 +5,7 @@ None of these touch the network or read/set/search any Supabase credential
 -- `upload_file` and `render_span` are always monkeypatched with fakes.
 """
 import json
+import re
 import sys
 import urllib.error
 from pathlib import Path
@@ -626,18 +627,44 @@ def test_main_dedupes_an_id_ingested_from_an_earlier_export(monkeypatch, tmp_pat
 
 
 # --- official-rationale crops (Task 11) --------------------------------------
+#
+# The rationale's bucket key is a hash of its JPEG bytes (upload.
+# rationale_bucket_path), never derived from the question id: the browser
+# holds the question's key mid-sitting and the asset route signs any sat/
+# path for an enrolled student. The fakes below are keyed by question id
+# only to give each record distinct bytes.
 
-def _patch_rationales(monkeypatch, span=lambda a, i: [{"page": 1, "top": 0.0, "bottom": 10.0}],
-                      reason=lambda a, i: None, render=None) -> None:
-    """Fake the crop_rationale calls. `id_index` hands back the id itself so
-    a fake `span` can decide per record."""
+QID = "ac472881"  # a realistic College Board id, so "not in the key" means something
+
+
+def _rationale_bytes(qid: str, version: int = 1) -> bytes:
+    return f"jpeg-of-the-rationale-of-{qid}-v{version}".encode()
+
+
+def _key(qid: str, version: int = 1) -> str:
+    return extract_sat.rationale_bucket_path("math", _rationale_bytes(qid, version))
+
+
+def _local(tmp_path: Path, key: str) -> Path:
+    return tmp_path / "crops" / key.removeprefix("sat/")
+
+
+def _patch_rationales(monkeypatch, span=lambda a, i: [{"page": 1, "top": 0.0, "bottom": 10.0, "qid": i}],
+                      reason=lambda a, i: None, render=None) -> list[str]:
+    """Fake the crop_rationale calls; returns the list of ids rendered.
+    `id_index` hands back the id itself so a fake `span` can decide per
+    record, and the default span carries it through to the fake render."""
+    rendered: list[str] = []
+
+    def default_render(pdf, regions, sizes):
+        rendered.append(regions[0]["qid"])
+        return _rationale_bytes(regions[0]["qid"])
+
     monkeypatch.setattr(extract_sat, "id_index", lambda a, qid: qid)
     monkeypatch.setattr(extract_sat, "rationale_span", span)
     monkeypatch.setattr(extract_sat, "rationale_span_reason", reason)
-    monkeypatch.setattr(
-        extract_sat, "render_rationale",
-        render or (lambda pdf, regions, dest, sizes: _write_crop(pdf, None, dest)),
-    )
+    monkeypatch.setattr(extract_sat, "render_rationale", render or default_render)
+    return rendered
 
 
 def _live(monkeypatch, upload) -> None:
@@ -649,84 +676,166 @@ def _read(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _write(path: Path, obj) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(obj), encoding="utf-8")
+
+
 def _refuse_upload(dest, img):
     raise AssertionError(f"must not upload {img}")
 
 
-def test_main_dry_run_crops_the_rationale_beside_the_question_without_uploading(tmp_path, monkeypatch):
-    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record("id1")], _write_crop)
+def _question_already_uploaded(tmp_path: Path, out_path: Path, qid: str = QID) -> None:
+    _write(out_path.with_name("uploaded.json"), [qid])
+    (tmp_path / "crops" / "math").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "crops" / "math" / f"{qid}.jpg").write_bytes(b"already-cropped")
+
+
+def _rationale_already_cropped(tmp_path: Path, key: str, data: bytes, qid: str = QID) -> None:
+    _local(tmp_path, key).parent.mkdir(parents=True, exist_ok=True)
+    _local(tmp_path, key).write_bytes(data)
+    _write(tmp_path / "crops" / "rationale-crops.json", {qid: key})
+
+
+def test_main_dry_run_crops_the_rationale_under_its_content_hash_without_uploading(tmp_path, monkeypatch):
+    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record(QID)], _write_crop)
     _patch_rationales(monkeypatch)
     monkeypatch.setattr(extract_sat, "upload_file", _refuse_upload)
 
     out_path = tmp_path / "out" / "rows.json"
     extract_sat.main(["--dry-run", "--out", str(out_path)])
 
-    rows = _read(out_path)
-    assert rows[0]["rationale_img"] == "sat/math/id1-r.jpg"
-    assert rows[0]["img"] == "sat/math/id1.jpg"
-    assert (tmp_path / "crops" / "math" / "id1-r.jpg").exists()
+    (row,) = _read(out_path)
+    key = row["rationale_img"]
+    assert key == _key(QID)
+    assert re.fullmatch(r"sat/math/r/[0-9a-f]{20}\.jpg", key)
+    assert QID not in key                       # not derivable from the question id
+    assert row["img"] == f"sat/math/{QID}.jpg"
+    # The local mirror is exactly where the dev local-image route resolves
+    # the key: out/crops/<key without "sat/">.
+    assert _local(tmp_path, key).read_bytes() == _rationale_bytes(QID)
+    assert _read(tmp_path / "crops" / "rationale-crops.json") == {QID: key}
     assert not out_path.with_name("uploaded-rationales.json").exists()
 
 
 def test_main_live_run_uploads_a_rationale_even_when_its_question_was_already_uploaded(tmp_path, monkeypatch):
     """The real situation after this task lands: all 3,731 questions are
     already in the bucket and recorded in uploaded.json. The rationale is
-    bookkept separately, so it is still uploaded -- and the question is
-    not uploaded a second time."""
-    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record("id1")], _write_crop)
+    bookkept separately (by key, per id), so it is still uploaded -- and the
+    question is not uploaded a second time."""
+    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record(QID)], _write_crop)
+    _patch_rationales(monkeypatch)
+    sent = []
+    _live(monkeypatch, lambda dest, img: sent.append((dest, img)) or img)
+
+    out_path = tmp_path / "out" / "rows.json"
+    _question_already_uploaded(tmp_path, out_path)
+    extract_sat.main(["--out", str(out_path)])
+
+    assert sent == [(_local(tmp_path, _key(QID)), _key(QID))]
+    assert _read(out_path.with_name("uploaded.json")) == [QID]
+    assert _read(out_path.with_name("uploaded-rationales.json")) == {QID: _key(QID)}
+    assert _read(out_path)[0]["rationale_img"] == _key(QID)
+
+
+def test_main_resume_rerenders_and_reuploads_nothing_already_recorded(tmp_path, monkeypatch):
+    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record(QID)], _write_crop)
+    rendered = _patch_rationales(monkeypatch)
+    _live(monkeypatch, _refuse_upload)
+
+    out_path = tmp_path / "out" / "rows.json"
+    _question_already_uploaded(tmp_path, out_path)
+    _rationale_already_cropped(tmp_path, _key(QID), _rationale_bytes(QID))
+    _write(out_path.with_name("uploaded-rationales.json"), {QID: _key(QID)})
+    extract_sat.main(["--out", str(out_path)])
+
+    assert rendered == []
+    assert _read(out_path)[0]["rationale_img"] == _key(QID)
+
+
+def test_a_rerender_with_identical_bytes_keeps_its_key_and_is_not_reuploaded(tmp_path, monkeypatch):
+    """The crop record was lost but the upload record wasn't: the re-render
+    is byte-identical (the renderer is deterministic), so its key is the
+    one already uploaded."""
+    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record(QID)], _write_crop)
+    rendered = _patch_rationales(monkeypatch)
+    _live(monkeypatch, _refuse_upload)
+
+    out_path = tmp_path / "out" / "rows.json"
+    _question_already_uploaded(tmp_path, out_path)
+    _write(out_path.with_name("uploaded-rationales.json"), {QID: _key(QID)})
+    extract_sat.main(["--out", str(out_path)])
+
+    assert rendered == [QID]
+    assert _read(out_path)[0]["rationale_img"] == _key(QID)
+
+
+def test_a_rerender_whose_bytes_differ_gets_a_new_key_and_is_uploaded_under_it(tmp_path, monkeypatch):
+    """The v1 crop was uploaded, then its local file went missing and the
+    renderer now produces different bytes (v2). That is a different object:
+    new key, uploaded, recorded in place of v1 -- the v1 object is left in
+    the bucket, orphaned (the README says so)."""
+    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record(QID)], _write_crop)
+    _patch_rationales(monkeypatch, render=lambda pdf, regions, sizes: _rationale_bytes(QID, 2))
+    sent = []
+    _live(monkeypatch, lambda dest, img: sent.append(img) or img)
+
+    out_path = tmp_path / "out" / "rows.json"
+    _question_already_uploaded(tmp_path, out_path)
+    _write(tmp_path / "crops" / "rationale-crops.json", {QID: _key(QID, 1)})  # its file is gone
+    _write(out_path.with_name("uploaded-rationales.json"), {QID: _key(QID, 1)})
+    extract_sat.main(["--out", str(out_path)])
+
+    assert _key(QID, 2) != _key(QID, 1)
+    assert sent == [_key(QID, 2)]
+    assert _read(out_path.with_name("uploaded-rationales.json")) == {QID: _key(QID, 2)}
+    assert _read(tmp_path / "crops" / "rationale-crops.json") == {QID: _key(QID, 2)}
+    assert _read(out_path)[0]["rationale_img"] == _key(QID, 2)
+
+
+def test_an_upload_record_from_the_old_list_format_confirms_nothing(tmp_path, monkeypatch, capsys):
+    """A list of ids (the pre-content-hash format) says nothing about which
+    key was uploaded, so every rationale is uploaded again under its key."""
+    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record(QID)], _write_crop)
     _patch_rationales(monkeypatch)
     sent = []
     _live(monkeypatch, lambda dest, img: sent.append(img) or img)
 
     out_path = tmp_path / "out" / "rows.json"
-    out_path.parent.mkdir(parents=True)
-    out_path.with_name("uploaded.json").write_text(json.dumps(["id1"]), encoding="utf-8")
-    (tmp_path / "crops" / "math").mkdir(parents=True)
-    (tmp_path / "crops" / "math" / "id1.jpg").write_bytes(b"already-cropped")
+    _question_already_uploaded(tmp_path, out_path)
+    _write(out_path.with_name("uploaded-rationales.json"), [QID])
     extract_sat.main(["--out", str(out_path)])
 
-    assert sent == ["sat/math/id1-r.jpg"]
-    assert _read(out_path.with_name("uploaded.json")) == ["id1"]
-    assert _read(out_path.with_name("uploaded-rationales.json")) == ["id1"]
-    assert _read(out_path)[0]["rationale_img"] == "sat/math/id1-r.jpg"
-
-
-def test_main_resume_reuploads_nothing_already_recorded(tmp_path, monkeypatch):
-    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record("id1")], _write_crop)
-    _patch_rationales(monkeypatch)
-    _live(monkeypatch, _refuse_upload)
-
-    out_path = tmp_path / "out" / "rows.json"
-    out_path.parent.mkdir(parents=True)
-    out_path.with_name("uploaded.json").write_text(json.dumps(["id1"]), encoding="utf-8")
-    out_path.with_name("uploaded-rationales.json").write_text(json.dumps(["id1"]), encoding="utf-8")
-    (tmp_path / "crops" / "math").mkdir(parents=True)
-    for name in ("id1.jpg", "id1-r.jpg"):
-        (tmp_path / "crops" / "math" / name).write_bytes(b"cropped")
-    extract_sat.main(["--out", str(out_path)])
-
-    assert _read(out_path)[0]["rationale_img"] == "sat/math/id1-r.jpg"
+    assert sent == [_key(QID)]
+    assert "uploaded-rationales.json" in capsys.readouterr().err
+    assert _read(out_path.with_name("uploaded-rationales.json")) == {QID: _key(QID)}
 
 
 def test_main_live_run_uploads_question_then_rationale_before_the_row_exists(tmp_path, monkeypatch):
-    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record("id1")], _write_crop)
+    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record(QID)], _write_crop)
     _patch_rationales(monkeypatch)
     calls = []
-    real_record = extract_sat._record_uploaded
+    real_record, real_record_key = extract_sat._record_uploaded, extract_sat._record_key
 
     def spy_record(path, qid, already):
         calls.append(("record", path.name))
         return real_record(path, qid, already)
 
+    def spy_record_key(path, qid, key, record):
+        calls.append(("record", path.name))
+        return real_record_key(path, qid, key, record)
+
     _live(monkeypatch, lambda dest, img: calls.append(("upload", dest.name)) or img)
     monkeypatch.setattr(extract_sat, "_record_uploaded", spy_record)
+    monkeypatch.setattr(extract_sat, "_record_key", spy_record_key)
 
     out_path = tmp_path / "out" / "rows.json"
     extract_sat.main(["--out", str(out_path)])
 
     assert calls == [
-        ("upload", "id1.jpg"), ("record", "uploaded.json"),
-        ("upload", "id1-r.jpg"), ("record", "uploaded-rationales.json"),
+        ("upload", f"{QID}.jpg"), ("record", "uploaded.json"),
+        ("record", "rationale-crops.json"),
+        ("upload", _key(QID).rsplit("/", 1)[1]), ("record", "uploaded-rationales.json"),
     ]
 
 
@@ -734,11 +843,11 @@ def test_a_failed_rationale_upload_leaves_the_row_out_and_resumes_cleanly(tmp_pa
     """A row exists only once everything it points at is uploaded. If the
     rationale upload dies, the row is not written -- but the question's
     upload is on record, so the resumed run uploads only the rationale."""
-    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record("id1")], _write_crop)
-    _patch_rationales(monkeypatch)
+    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record(QID)], _write_crop)
+    rendered = _patch_rationales(monkeypatch)
 
     def fail_rationale(dest, img):
-        if img.endswith("-r.jpg"):
+        if "/r/" in img:
             raise RuntimeError("simulated rationale upload failure")
         return img
 
@@ -747,13 +856,15 @@ def test_a_failed_rationale_upload_leaves_the_row_out_and_resumes_cleanly(tmp_pa
     with pytest.raises(RuntimeError, match="simulated rationale upload failure"):
         extract_sat.main(["--out", str(out_path)])
     assert _read(out_path) == []
-    assert _read(out_path.with_name("uploaded.json")) == ["id1"]
+    assert _read(out_path.with_name("uploaded.json")) == [QID]
+    assert not out_path.with_name("uploaded-rationales.json").exists()
 
     sent = []
     _live(monkeypatch, lambda dest, img: sent.append(img) or img)
     extract_sat.main(["--out", str(out_path)])
-    assert sent == ["sat/math/id1-r.jpg"]
-    assert _read(out_path)[0]["rationale_img"] == "sat/math/id1-r.jpg"
+    assert sent == [_key(QID)]
+    assert rendered == [QID]  # the crop survived the failed run; not rendered twice
+    assert _read(out_path)[0]["rationale_img"] == _key(QID)
 
 
 def test_a_rationale_that_cannot_be_located_ships_the_row_without_one(tmp_path, monkeypatch):
@@ -763,7 +874,7 @@ def test_a_rationale_that_cannot_be_located_ships_the_row_without_one(tmp_path, 
     _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record("id1"), _fake_record("id2")], _write_crop)
     _patch_rationales(
         monkeypatch,
-        span=lambda a, i: None if i == "id1" else [{"page": 1, "top": 0.0, "bottom": 10.0}],
+        span=lambda a, i: None if i == "id1" else [{"page": 1, "top": 0.0, "bottom": 10.0, "qid": i}],
         reason=lambda a, i: "no-rationale-label" if i == "id1" else None,
     )
     out_path = tmp_path / "out" / "rows.json"
@@ -771,8 +882,8 @@ def test_a_rationale_that_cannot_be_located_ships_the_row_without_one(tmp_path, 
 
     rows = _read(out_path)
     assert [r["id"] for r in rows] == ["id1", "id2"]
-    assert "rationale_img" not in rows[0] and rows[1]["rationale_img"] == "sat/math/id2-r.jpg"
-    assert not (tmp_path / "crops" / "math" / "id1-r.jpg").exists()
+    assert "rationale_img" not in rows[0] and rows[1]["rationale_img"] == _key("id2")
+    assert _read(tmp_path / "crops" / "rationale-crops.json") == {"id2": _key("id2")}
     assert _read(out_path.with_name("skipped-rationales.json")) == [
         {"id": "id1", "reason": "no-rationale-label", "stage": "rationale-span", "section": "math"},
     ]
@@ -780,15 +891,61 @@ def test_a_rationale_that_cannot_be_located_ships_the_row_without_one(tmp_path, 
 
 
 def test_a_render_refusal_is_recorded_and_the_row_ships_without_a_rationale_image(tmp_path, monkeypatch):
-    def refuse(pdf, regions, dest, sizes):
+    def refuse(pdf, regions, sizes):
         raise extract_sat.RationaleCropError("cut-through-ink", "top of p1 at 510px")
 
-    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record("id1")], _write_crop)
+    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record(QID)], _write_crop)
     _patch_rationales(monkeypatch, render=refuse)
     out_path = tmp_path / "out" / "rows.json"
     extract_sat.main(["--dry-run", "--out", str(out_path)])
 
     assert "rationale_img" not in _read(out_path)[0]
+    assert not (tmp_path / "crops" / "math" / "r").exists()
     (entry,) = _read(out_path.with_name("skipped-rationales.json"))
     assert entry["stage"] == "rationale-render"
     assert entry["reason"].startswith("cut-through-ink")
+
+
+def test_two_records_with_identical_rationale_bytes_share_one_object(tmp_path, monkeypatch):
+    """Content addressing: byte-identical rationales are one object. Both
+    rows point at it; it is written once locally."""
+    _patch_fake_pipeline(monkeypatch, tmp_path, [_fake_record("id1"), _fake_record("id2")], _write_crop)
+    _patch_rationales(monkeypatch, render=lambda pdf, regions, sizes: b"same bytes")
+    out_path = tmp_path / "out" / "rows.json"
+    extract_sat.main(["--dry-run", "--out", str(out_path)])
+
+    key = extract_sat.rationale_bucket_path("math", b"same bytes")
+    assert [r["rationale_img"] for r in _read(out_path)] == [key, key]
+    assert list((tmp_path / "crops" / "math" / "r").iterdir()) == [_local(tmp_path, key)]
+
+
+# --- per-id key records ------------------------------------------------------
+
+def test_record_key_persists_and_load_keys_reads_it_back(tmp_path):
+    path = tmp_path / "uploaded-rationales.json"
+    record: dict[str, str] = {}
+    extract_sat._record_key(path, "id1", "sat/math/r/aaaa.jpg", record)
+    extract_sat._record_key(path, "id2", "sat/math/r/bbbb.jpg", record)
+    extract_sat._record_key(path, "id1", "sat/math/r/cccc.jpg", record)
+    assert extract_sat._load_keys(path) == record == {"id1": "sat/math/r/cccc.jpg", "id2": "sat/math/r/bbbb.jpg"}
+
+
+def test_load_keys_treats_a_missing_or_corrupt_record_as_empty(tmp_path, capsys):
+    assert extract_sat._load_keys(tmp_path / "missing.json") == {}
+    bad = tmp_path / "bad.json"
+    bad.write_text('{"id1": "sat/', encoding="utf-8")
+    assert extract_sat._load_keys(bad) == {}
+    assert "bad.json" in capsys.readouterr().err
+
+
+def test_atomic_write_bytes_leaves_nothing_behind_on_failure(tmp_path, monkeypatch):
+    dest = tmp_path / "math" / "r" / "k.jpg"
+
+    def fail_replace(src, dst):
+        raise OSError("disk full (simulated)")
+
+    monkeypatch.setattr(extract_sat.os, "replace", fail_replace)
+    with pytest.raises(OSError, match="disk full"):
+        extract_sat._atomic_write_bytes(dest, b"jpeg")
+    assert not dest.exists()
+    assert list(dest.parent.glob("*.tmp-*")) == []

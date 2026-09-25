@@ -17,14 +17,16 @@ it and write a bank of image links pointing at bucket objects that were
 never created.
 
 The official-rationale image is optional per row, so its provenance works
-differently (`ship_rationale_images`): a live row whose rationale crop is
-not confirmed in `uploaded-rationales.json` ships WITHOUT `rationaleImg` --
-the drill falls back to the text rationale -- rather than failing the build
-or shipping a dead link. rows.json carries it as `rationale_img`; the bank
-emits it as `rationaleImg`, the field name `SATQuestion` declares.
+differently (`ship_rationale_images`): a live row whose rationale key is
+not the one `uploaded-rationales.json` records for its id ships WITHOUT
+`rationaleImg` -- the drill falls back to the text rationale -- rather than
+failing the build or shipping a dead link. rows.json carries it as
+`rationale_img`; the bank emits it as `rationaleImg`, the field name
+`SATQuestion` declares.
 """
 import argparse
 import json
+import re
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -38,6 +40,9 @@ DEST = REPO / "src" / "lib" / "sat" / "question-bank.json"
 
 SECTIONS = {"rw", "math"}
 DIFFICULTIES = {"E", "M", "H"}
+# upload.rationale_bucket_path's shape, restated here (not imported) for the
+# same reason as the vocabularies below: an independent check.
+RATIONALE_KEY = re.compile(r"sat/(?P<section>rw|math)/r/[0-9a-f]{20}\.jpg")
 # Hard-coded here on purpose, NOT imported from parse_qbank.DOMAIN_SLUGS --
 # this is meant to be an independent cross-check of what extract_sat.py
 # already produced, not an extension of the same code path. Importing the
@@ -74,9 +79,17 @@ def validate(rows: list[dict]) -> None:
         if not row["img"].startswith("sat/"):
             raise ValueError(f"{row['id']}: image outside the sat/ prefix")
         if "rationale_img" in row:
+            # Must be an opaque content-hash key in this row's own section
+            # (see upload.rationale_bucket_path): anything derivable from the
+            # question id would let a student fetch the rationale -- the
+            # answer -- mid-sitting through the asset route.
             rimg = row["rationale_img"]
-            if not isinstance(rimg, str) or not rimg.startswith("sat/"):
-                raise ValueError(f"{row['id']}: rationale image outside the sat/ prefix")
+            match = RATIONALE_KEY.fullmatch(rimg) if isinstance(rimg, str) else None
+            if not match or match["section"] != row["section"] or row["id"] in rimg:
+                raise ValueError(
+                    f"{row['id']}: rationale image {rimg!r} is not an opaque "
+                    f"sat/{row['section']}/r/<hash> key"
+                )
         ans = row["answer"]
         # Checked before any .get() call below: a malformed (non-dict)
         # answer must fail with this gate's own ValueError, not a confusing
@@ -189,11 +202,15 @@ def ship_rationale_images(rows: list[dict], rows_path: Path, *, allow_dry_run: b
     """The bank's rows, with each row's `rationale_img` either emitted as
     `rationaleImg` or dropped, plus how many rows ship without one.
 
-    Live: kept only for ids confirmed in `uploaded-rationales.json` (written
-    by extract_sat.py, one id at a time, after each rationale upload). A
-    missing file confirms nothing -- e.g. a bank built from a live run that
-    predates rationale crops -- so every row ships with the text fallback;
-    that is a smaller feature, not a broken one, so it is not an error.
+    Live: kept only when `uploaded-rationales.json` (written by
+    extract_sat.py, one id at a time, after each rationale upload) records
+    exactly this row's key as uploaded for its id. The key is a content
+    hash, so a different recorded key means a different object -- an
+    earlier render -- and this row's own key was never uploaded. A missing
+    file confirms nothing -- e.g. a bank built from a live run that predates
+    rationale crops -- so every row ships with the text fallback; that is a
+    smaller feature, not a broken one, so it is not an error. A file that
+    isn't a `{question id: key}` map is: it can't say what was uploaded.
 
     Dry run: kept as-is under `allow_dry_run`, exactly like `img` -- the
     caller asked to see the bank's shape before anything is uploaded (and
@@ -202,15 +219,21 @@ def ship_rationale_images(rows: list[dict], rows_path: Path, *, allow_dry_run: b
     if _is_dry_run(rows_path):
         if not allow_dry_run:
             raise ValueError(f"{rows_path} is a --dry-run (or unverifiable) rows.json; pass --allow-dry-run")
-        confirmed = {row["id"] for row in rows}
+        confirmed = {row["id"]: row.get("rationale_img") for row in rows}
     else:
-        uploaded = _load_json_if_exists(rows_path.with_name("uploaded-rationales.json"))
-        confirmed = set(uploaded or [])
+        record_path = rows_path.with_name("uploaded-rationales.json")
+        uploaded = _load_json_if_exists(record_path)
+        if uploaded is not None and not isinstance(uploaded, dict):
+            raise ValueError(
+                f"{record_path} is not a {{question id: uploaded key}} map -- it cannot "
+                "confirm which rationale object was uploaded. Rerun extract_sat.py to rewrite it."
+            )
+        confirmed = uploaded or {}
     out, lacking = [], 0
     for row in rows:
         row = dict(row)
         rimg = row.pop("rationale_img", None)
-        if rimg and row["id"] in confirmed:
+        if rimg and confirmed.get(row["id"]) == rimg:
             row["rationaleImg"] = rimg
         else:
             lacking += 1

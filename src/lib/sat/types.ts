@@ -33,10 +33,13 @@ export type SATQuestion = {
   difficulty: SATDifficulty;
   answer: SATAnswer;
   rationale: string;
-  /** The official rationale as an image (sat/<section>/<id>-r.jpg). The
-   *  text layer drops every math symbol, so this is what the student should
-   *  see; absent when it couldn't be cropped cleanly or isn't uploaded yet,
-   *  in which case `rationale` is the fallback. */
+  /** The official rationale as an image, keyed by a hash of its bytes
+   *  (sat/<section>/r/<hash>.jpg) so it can't be derived from the question
+   *  id: the asset route signs any sat/ path for an enrolled student, who
+   *  holds `img` while still answering. The text layer drops every math
+   *  symbol, so this is what the student should see; absent when it
+   *  couldn't be cropped cleanly or isn't uploaded yet, in which case
+   *  `rationale` is the fallback. */
   rationaleImg?: string;
   img: string;           // bucket path, sat/ prefix
   ref: string;

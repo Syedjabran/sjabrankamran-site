@@ -6,6 +6,7 @@ write path in this module -- there is currently only `upload_file` -- must
 call `guard_prefix` before it does anything else, so a bad `dest` never
 reaches the network request.
 """
+import hashlib
 import os
 import posixpath
 from pathlib import Path
@@ -14,6 +15,9 @@ import urllib.request
 
 BUCKET = "exam-assets"
 PREFIX = "sat/"
+# Hex digits of sha256 in a rationale key: 80 bits, far beyond guessing, and
+# collision-free in practice for a few thousand crops.
+RATIONALE_KEY_HEX = 20
 CREDENTIAL_VARS = ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY")
 # Half-open connections happen on a run this long; with no explicit
 # timeout, urlopen inherits socket.getdefaulttimeout() (None on this
@@ -32,11 +36,27 @@ def bucket_path(qid: str, section: str) -> str:
     return f"{PREFIX}{section}/{qid}.jpg"
 
 
-def rationale_bucket_path(qid: str, section: str) -> str:
-    """Canonical object key for one question's official-rationale crop, next
-    to its question crop. Same prefix discipline as `bucket_path`: its
-    output must go through `upload_file`, which calls `guard_prefix`."""
-    return f"{PREFIX}{section}/{qid}-r.jpg"
+def rationale_bucket_path(section: str, jpeg: bytes) -> str:
+    """Object key for one official-rationale crop: `sat/<section>/r/<the
+    first RATIONALE_KEY_HEX hex digits of sha256(jpeg)>.jpg`.
+
+    Deliberately NOT derived from the question id. The rationale gives the
+    answer away, the browser holds the question's own key
+    (`sat/<section>/<id>.jpg`) while the student is still answering, and
+    /api/exam-lab/asset signs any `sat/` path for an enrolled student. A key
+    computed from bytes the student has never seen can't be guessed from
+    that id. No secret is involved: the key is 80 bits of a hash of the
+    crop, reachable only through the server-only question bank, which hands
+    it out after the student has answered.
+
+    Content-addressed, so identical bytes always get the same key (a
+    deterministic re-render is not a new object), and changed bytes always
+    get a new one (never a stale overwrite). Same prefix discipline as
+    `bucket_path`: its output must go through `upload_file`, which calls
+    `guard_prefix`.
+    """
+    digest = hashlib.sha256(jpeg).hexdigest()[:RATIONALE_KEY_HEX]
+    return f"{PREFIX}{section}/r/{digest}.jpg"
 
 
 def test_bucket_path(test_no: int, section: str, module: int, qnum: int) -> str:

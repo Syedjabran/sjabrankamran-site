@@ -52,7 +52,7 @@ way to the label above it or the header below it. Anything that fails is
 left out -- the drill falls back to the text rationale -- and the reason is
 recorded; nothing is approximated.
 """
-import os
+import io
 import subprocess
 import tempfile
 from pathlib import Path
@@ -276,12 +276,17 @@ def _render_pages(pdf: Path, first: int, last: int, dpi: int) -> dict[int, Image
         return out
 
 
-def render_rationale(pdf: Path, regions: list[dict], dest: Path, page_size: dict,
-                     dpi: int = 150) -> Path:
-    """Render `regions` (from `rationale_span`) into one JPEG at `dest`,
-    written atomically. Raises `RationaleCropError` for a rationale that
-    can't be cropped cleanly, `RuntimeError` for a raster whose size
-    contradicts the page's declared size (that would offset every crop).
+def render_rationale(pdf: Path, regions: list[dict], page_size: dict, dpi: int = 150) -> bytes:
+    """Render `regions` (from `rationale_span`) into one image and return
+    its final JPEG bytes. Nothing is written: the rationale's bucket key is
+    a hash of these bytes (`upload.rationale_bucket_path`), so the caller
+    needs them before it knows where the file goes, and writes them itself,
+    atomically. Deterministic -- pdftoppm and PIL's JPEG encoder both are --
+    so a re-render of an unchanged rationale reproduces its key.
+
+    Raises `RationaleCropError` for a rationale that can't be cropped
+    cleanly, `RuntimeError` for a raster whose size contradicts the page's
+    declared size (that would offset every crop).
     """
     f = dpi / 72.0
     pages = _render_pages(pdf, regions[0]["page"], regions[-1]["page"], dpi)
@@ -320,12 +325,6 @@ def render_rationale(pdf: Path, regions: list[dict], dest: Path, page_size: dict
     if image is None:
         raise RationaleCropError("empty-rationale-region")
 
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp_dest = dest.with_name(f"{dest.name}.tmp-{os.getpid()}")
-    try:
-        image.save(tmp_dest, "JPEG", quality=85, optimize=True)
-        os.replace(tmp_dest, dest)
-    except BaseException:
-        tmp_dest.unlink(missing_ok=True)
-        raise
-    return dest
+    out = io.BytesIO()
+    image.save(out, "JPEG", quality=85, optimize=True)
+    return out.getvalue()
