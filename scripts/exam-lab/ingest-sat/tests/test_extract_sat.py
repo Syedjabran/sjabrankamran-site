@@ -628,7 +628,7 @@ def test_main_dedupes_an_id_ingested_from_an_earlier_export(monkeypatch, tmp_pat
 
 # --- official-rationale crops (Task 11) --------------------------------------
 #
-# The rationale's bucket key is a hash of its JPEG bytes (upload.
+# The rationale's bucket key is a hash of its PNG bytes (upload.
 # rationale_bucket_path), never derived from the question id: the browser
 # holds the question's key mid-sitting and the asset route signs any sat/
 # path for an enrolled student. The fakes below are keyed by question id
@@ -924,10 +924,10 @@ def test_two_records_with_identical_rationale_bytes_share_one_object(tmp_path, m
 def test_record_key_persists_and_load_keys_reads_it_back(tmp_path):
     path = tmp_path / "uploaded-rationales.json"
     record: dict[str, str] = {}
-    extract_sat._record_key(path, "id1", "sat/math/r/aaaa.jpg", record)
-    extract_sat._record_key(path, "id2", "sat/math/r/bbbb.jpg", record)
-    extract_sat._record_key(path, "id1", "sat/math/r/cccc.jpg", record)
-    assert extract_sat._load_keys(path) == record == {"id1": "sat/math/r/cccc.jpg", "id2": "sat/math/r/bbbb.jpg"}
+    extract_sat._record_key(path, "id1", "sat/math/r/aaaa.png", record)
+    extract_sat._record_key(path, "id2", "sat/math/r/bbbb.png", record)
+    extract_sat._record_key(path, "id1", "sat/math/r/cccc.png", record)
+    assert extract_sat._load_keys(path) == record == {"id1": "sat/math/r/cccc.png", "id2": "sat/math/r/bbbb.png"}
 
 
 def test_load_keys_treats_a_missing_or_corrupt_record_as_empty(tmp_path, capsys):
@@ -939,13 +939,13 @@ def test_load_keys_treats_a_missing_or_corrupt_record_as_empty(tmp_path, capsys)
 
 
 def test_atomic_write_bytes_leaves_nothing_behind_on_failure(tmp_path, monkeypatch):
-    dest = tmp_path / "math" / "r" / "k.jpg"
+    dest = tmp_path / "math" / "r" / "k.png"
 
     def fail_replace(src, dst):
         raise OSError("disk full (simulated)")
 
     monkeypatch.setattr(extract_sat.os, "replace", fail_replace)
     with pytest.raises(OSError, match="disk full"):
-        extract_sat._atomic_write_bytes(dest, b"jpeg")
+        extract_sat._atomic_write_bytes(dest, b"png")
     assert not dest.exists()
     assert list(dest.parent.glob("*.tmp-*")) == []

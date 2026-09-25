@@ -116,7 +116,7 @@ def test_cross_page_rationale_is_two_regions_and_never_reaches_the_next_record()
     assert 698.5 + 5.8 < first["top"] < 712.8
     assert first["bottom"] == 792.0          # runs to the page's bottom edge
     # The exports carry no running header (measured: continuation pages
-    # open with rationale text at 14-24pt, and no header is drawn), so the
+    # open with rationale text at 14.4-33.8pt, and no header is drawn), so the
     # continuation region starts at the page's top edge -- above its first
     # line, never below it.
     assert second["top"] == 0.0
@@ -406,8 +406,9 @@ def test_render_returns_the_final_png_bytes_and_writes_nothing(tmp_path, monkeyp
     with Image.open(io.BytesIO(data)) as img:
         assert img.format == "PNG" and img.height == 100 + 2 * 12
         # An adaptive palette of at most PALETTE_COLOURS entries: text
-        # rasters compress far better this way than as JPEG, with no
-        # visible loss (checked by eye; see task-11-report.md).
+        # rasters compress far better this way than as JPEG (21.6% of the
+        # quality-85 JPEG bytes over 250 crops), with no visible loss
+        # (checked by eye on dense math, raster math and a table).
         assert img.mode == "P"
         assert len(img.getcolors()) <= crop_rationale.PALETTE_COLOURS == 16
     assert list(tmp_path.iterdir()) == []

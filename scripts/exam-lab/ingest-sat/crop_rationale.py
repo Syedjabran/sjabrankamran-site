@@ -4,7 +4,7 @@ The rationale has to ship as an image, exactly like the question: the PDF's
 text layer drops every math symbol ("in this equation yields , or to both
 sides"), so the text `parse_qbank` extracts is unusable for Math.
 
-Geometry, measured over both exports (3,770 records, see task-11-report.md):
+Geometry, measured over both exports (3,770 records):
 
 * Every record opens at the top of its own page: all 3,770 `Question ID:`
   rows sit at yMin=26.6 and no page carries two. So a rationale never shares
@@ -86,7 +86,7 @@ GAP_PT = 0.0
 # (quality 85) bytes and 32 colours to 24.9%. By eye, 16 was as legible as
 # the JPEG on dense math (stacked fractions, exponents, radicals), on the
 # embedded raster math with its coloured anti-aliasing, and on the one
-# table rationale. See task-11-report.md.
+# table rationale.
 PALETTE_COLOURS = 16
 
 # Word pairs that only ever begin another record's header or answer. Seeing

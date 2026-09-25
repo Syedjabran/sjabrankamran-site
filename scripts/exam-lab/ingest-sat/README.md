@@ -41,8 +41,8 @@ uploads only the rationale crops. Until it runs, the bank carries no
 | `crop_rationale.py` | locates each item's official rationale (below its `Rationale` label, above the next record's header, stitched across a page break) and renders it as an image. The text layer drops every math symbol, so the rationale ships as a picture, like the question. |
 | `upload.py` | names each crop's bucket key and uploads it to the `exam-assets` bucket, prefix-guarded to `sat/`. A rationale's key is a hash of its bytes, never its question id (see "Integrity rules"). |
 | `extract_sat.py` | orchestrates parse + crop + upload for the whole corpus, resumable, and emits `rows.json` / `skipped.json` / `uploaded.json` / `mode.json`, plus `uploaded-rationales.json` / `skipped-rationales.json` for the rationale crops (and `out/crops/rationale-crops.json`, the key of each rationale crop on disk). |
-| `build_sat_bank.py` | the last gate: re-validates every row against a hard-coded closed vocabulary (independent of `parse_qbank`'s), refuses rows it can't confirm were actually uploaded, and writes `src/lib/sat/question-bank.json`. A row's `rationaleImg` ships only if `uploaded-rationales.json` records that exact key as uploaded for its id; otherwise the row ships with the text rationale. |
-| `tests/` | 272 tests covering all of the above (and the practice-test pipeline), all network calls mocked. |
+| `build_sat_bank.py` | the last gate: re-validates every row against a hard-coded closed vocabulary (independent of `parse_qbank`'s), refuses rows it can't confirm were actually uploaded, refuses to write fewer rows than the committed bank (a partial `rows.json` after a live run that stopped early) unless `--allow-shrink` is passed, and writes `src/lib/sat/question-bank.json`. A row's `rationaleImg` ships only if `uploaded-rationales.json` records that exact key as uploaded for its id; otherwise the row ships with the text rationale. |
+| `tests/` | 307 tests covering all of the above (and the practice-test pipeline), all network calls mocked. |
 
 ## Run
 
