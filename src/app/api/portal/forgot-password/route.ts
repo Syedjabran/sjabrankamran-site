@@ -6,6 +6,17 @@ export const runtime = "nodejs";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Naive in-memory rate limit (per warm instance), keyed by IP and by email.
+const hits = new Map<string, number[]>();
+function limited(key: string, max: number) {
+  const now = Date.now();
+  const win = 900_000; // 15 minutes
+  const arr = (hits.get(key) || []).filter((t) => now - t < win);
+  arr.push(now);
+  hits.set(key, arr);
+  return arr.length > max;
+}
+
 /**
  * Password recovery that actually delivers — routes the reset link through the
  * portal's Apps Script mail relay (physics@sjabrankamran.com) instead of
@@ -13,12 +24,19 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * enumeration).
  */
 export async function POST(req: Request) {
-  const b = (await req.json().catch(() => ({}))) as { email?: string; origin?: string };
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0] || "unknown";
+  if (limited(`ip:${ip}`, 10)) {
+    return NextResponse.json({ error: "Too many reset requests. Please wait a few minutes and try again." }, { status: 429 });
+  }
+  const b = (await req.json().catch(() => ({}))) as { email?: string };
   const email = (b.email || "").trim().toLowerCase();
   const generic = NextResponse.json({ ok: true, message: "If an account exists for that email, a reset link is on its way. Check your inbox (and spam)." }, { status: 200 });
   if (!EMAIL_RE.test(email)) return generic;
+  // Per-email cap answers with the same generic message (nothing is sent).
+  if (limited(`email:${email}`, 3)) return generic;
 
-  const origin = (b.origin || "https://sjabrankamran.com").replace(/\/$/, "");
+  // Built on the server only — never from the request body.
+  const origin = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, "");
   const redirectTo = `${origin}/portal/auth/callback?next=/portal/reset`;
   const sb = createAdminClient();
   try {

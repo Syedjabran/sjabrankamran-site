@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, LogIn, Eye, EyeOff } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
+import { safeNextPath } from "@/lib/request-guards";
 
 /** True when the raw error string carries no real message (e.g. "{}", "[object Object]"). */
 function isEmptyError(msg?: string | null) {
@@ -67,7 +68,7 @@ export function LoginForm() {
       );
       return;
     }
-    router.replace(params.get("next") || "/portal");
+    router.replace(safeNextPath(params.get("next")));
     router.refresh();
   }
 
@@ -85,9 +86,13 @@ export function LoginForm() {
       const res = await fetch("/api/portal/forgot-password", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: target, origin: window.location.origin }),
+        body: JSON.stringify({ email: target }),
       });
       const j = await res.json().catch(() => ({}));
+      if (res.status === 429) {
+        setError(j.error || "Too many reset requests. Please wait a few minutes and try again.");
+        return;
+      }
       setNotice(j.message || "If an account exists for that email, a password-reset link is on its way. Check your inbox (and spam).");
     } catch {
       setError("Could not send the reset email. Please try again shortly.");
