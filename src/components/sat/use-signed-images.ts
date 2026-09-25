@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { isTimeoutError, splitSignedUrls } from "./sat-runner-utils";
 
 const BATCH_SIZE = 80; // the signing endpoint's per-request limit
@@ -19,6 +19,10 @@ export type SignedImages = {
   /** Requested paths the server answered for without a URL, each with the
    *  message to show where that image would be. */
   missing: Record<string, string>;
+  /** Signs one path again (a signed URL lasts an hour, so an <img> left
+   *  open longer fails to load) and swaps the new URL into `urls`. Resolves
+   *  to that URL, or null when re-signing failed. */
+  resign: (path: string) => Promise<string | null>;
 };
 
 type Settled = { key: string; error: string | null; missing: Record<string, string> };
@@ -82,8 +86,15 @@ export function useSignedImages(paths: string[]): SignedImages {
     })();
     return () => { alive = false; clearTimeout(retryTimer); };
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const resign = useCallback(async (path: string): Promise<string | null> => {
+    const attempt = await signBatch([path]);
+    const url = attempt.ok ? attempt.urls[path] : undefined;
+    if (!url) return null;
+    setUrls((prev) => ({ ...prev, [path]: url }));
+    return url;
+  }, []);
   // Only the answer for the paths asked for now counts; until it lands, every
   // path without a URL is still pending.
   const current = settled?.key === key ? settled : null;
-  return { urls, error: current?.error ?? null, missing: current?.missing ?? {} };
+  return { urls, error: current?.error ?? null, missing: current?.missing ?? {}, resign };
 }

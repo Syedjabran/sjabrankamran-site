@@ -1,18 +1,18 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Clock, Coffee, Flag, Info, Loader2 } from "lucide-react";
-import type { SessionState } from "@/lib/sat/client-types";
+import { Calculator, ChevronLeft, ChevronRight, Clock, Coffee, Flag, Info, Loader2 } from "lucide-react";
+import { MATH_TOOLS_NOTE, type SessionState } from "@/lib/sat/client-types";
 import { SprPad } from "./spr-pad";
 import { ScoreReport } from "./score-report";
 import { QuestionImage } from "./question-image";
 import { useSignedImages } from "./use-signed-images";
 import {
   SAVE_DEBOUNCE_MS, answersChangedFor, flaggedChangedFor, isTimeoutError, looksLikeSessionState, mergeAnswers, mergeFlagged,
-  pickAnswers, pickFlagged, retryDelayMs, stopMessage,
+  haltAfter, pickAnswers, pickFlagged, retryDelayMs, stopMessage, type Halt,
 } from "./sat-runner-utils";
 
 type SaveState = "idle" | "saving" | "saved" | "unsaved" | "failed" | "stopped";
-// `halted`: the failure was a 401/403/404, so nothing retries it automatically.
+// `halted`: the failure was a 401/403/404/423, so nothing retries it automatically.
 type PostResult = { kind: "ok"; state: SessionState } | { kind: "stale"; state: SessionState } | { kind: "error"; message: string; halted: boolean };
 const SAVE_LABEL: Record<SaveState, string> = {
   idle: "", saving: "Saving…", saved: "Saved", unsaved: "Unsaved changes", failed: "Not saved — retrying", stopped: "Not saved",
@@ -84,12 +84,15 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   // backstop honours too.
   const failures = useRef(0);
   const retryAt = useRef(0);
-  // A 401/403/404 won't change by asking again: `halted` stops every
+  // A 401/403/404/423 won't change by asking again: `halted` stops every
   // automatic request (re-armed save, backstop, break-end reload) until a
   // request succeeds or the student edits (typing or Submit still try once).
-  // `halt` is the message shown meanwhile; only a success clears it.
+  // `halt` is what the banner explains meanwhile (the message itself depends
+  // on the screen, see stopMessage); a success clears it, and so does a later
+  // RETRYABLE failure -- automatic retries are back on then, and a banner
+  // saying otherwise would contradict "Not saved — retrying".
   const halted = useRef(false);
-  const [halt, setHalt] = useState<string | null>(null);
+  const [halt, setHalt] = useState<Halt | null>(null);
   const noteSuccess = useCallback(() => {
     failures.current = 0;
     retryAt.current = 0;
@@ -97,12 +100,13 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
     setHalt(null);
   }, []);
   /** Counts a failed request; true when it stops automatic retries. */
-  const noteFailure = useCallback((status: number | null) => {
+  const noteFailure = useCallback((status: number | null, serverMessage?: string | null) => {
     failures.current += 1;
     retryAt.current = Date.now() + retryDelayMs(failures.current);
-    const stop = stopMessage(status);
-    if (stop) { halted.current = true; setHalt(stop); }
-    return stop !== null;
+    const next = haltAfter(status, serverMessage);
+    halted.current = next !== null;
+    setHalt(next);
+    return next !== null;
   }, []);
 
   // Bumped to restart the debounce: the autosave effect clears any pending
@@ -192,8 +196,10 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
       return;
     }
     if (!res.ok || !looksLikeSessionState(j)) {
-      noteFailure(res.ok ? null : res.status);
-      setError((!res.ok && j?.error) || fallback);
+      const stopped = noteFailure(res.ok ? null : res.status, j?.error);
+      // With a sitting on screen, a halting failure is explained by the
+      // banner alone -- not repeated ("Please sign in.") underneath it.
+      setError(stopped && stateRef.current ? null : (!res.ok && j?.error) || fallback);
       return;
     }
     noteSuccess();
@@ -215,7 +221,7 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
       const j = await res.json().catch(() => ({}));
       // The module already ended (another tab/device, or a racing request): the server hands back its current state.
       if (res.status === 409 && j.state && looksLikeSessionState(j.state)) { noteSuccess(); return { kind: "stale", state: j.state as SessionState }; }
-      if (!res.ok) return { kind: "error", message: j.error || "Please try again.", halted: noteFailure(res.status) };
+      if (!res.ok) return { kind: "error", message: j.error || "Please try again.", halted: noteFailure(res.status, j.error) };
       // A 2xx whose body doesn't actually parse into a session state (a
       // malformed/empty body) must never be applied -- treat it as a failure.
       if (!looksLikeSessionState(j)) return { kind: "error", message: "Please try again.", halted: noteFailure(null) };
@@ -366,14 +372,16 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   }, [state, now, load, enqueue]);
 
   const questions = useMemo(() => state?.stage?.questions ?? [], [state]);
-  const { urls, error: imgError, missing: imgMissing } = useSignedImages(questions.map((q) => q.img));
+  const { urls, error: imgError, missing: imgMissing, resign } = useSignedImages(questions.map((q) => q.img));
 
   if (error && !state) return <p className="rounded-2xl border border-signal/30 bg-signal/5 p-5 text-sm text-fog">{error} <button className="ml-2 text-cyan underline" onClick={() => void load()}>Retry</button></p>;
   if (!state) return <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading your sitting…</p>;
   if (state.status === "finished" && state.report) return <ScoreReport report={state.report} />;
 
-  // Why nothing is being saved or reloaded automatically (a 401/403/404).
-  const haltBanner = halt ? <p role="alert" className="rounded-xl border border-signal/30 bg-signal/5 p-3 text-sm text-fog">{halt}</p> : null;
+  // Why nothing is being saved or reloaded automatically (a 401/403/404/423).
+  const haltMessage = halt ? stopMessage(halt.status, { onBreak: state.status === "break", serverMessage: halt.serverMessage }) : null;
+  const haltBanner = haltMessage ? <p role="alert" className="rounded-xl border border-signal/30 bg-signal/5 p-3 text-sm text-fog">{haltMessage}</p> : null;
+  const mathToolsNote = <p className="flex gap-2 text-xs text-dust"><Calculator size={14} className="mt-0.5 shrink-0" />{MATH_TOOLS_NOTE}</p>;
 
   if (state.status === "break") {
     const left = (state.breakUntil ?? 0) - (now + skew.current);
@@ -384,6 +392,7 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
           <Coffee className="mx-auto text-cyan" />
           <p className="mt-3 font-display text-xl text-ice">Break · {fmt(left)}</p>
           <p className="mt-2 text-sm text-fog">Reading and Writing is done. Math begins when the break ends.</p>
+          <div className="mt-3 text-left">{mathToolsNote}</div>
           <button disabled={busy} onClick={() => void beginModule()} className="btn-primary mt-5 !px-4 !py-2 text-sm">Start Math now</button>
           {error ? <p className="mt-3 text-xs text-signal">{error}</p> : null}
         </div>
@@ -443,6 +452,7 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
       {haltBanner}
       {expired ? <p className="rounded-xl border border-amber-300/30 bg-amber-300/[0.05] p-3 text-sm text-amber-100">Time is up for this module. Your saved answers are kept — submit the module to continue.</p> : null}
       {note ? <p className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] p-3 text-sm text-dust"><Info size={14} className="shrink-0" />{note}</p> : null}
+      {stage.key.startsWith("math") ? mathToolsNote : null}
 
       <div className="grid gap-4 lg:grid-cols-[1fr_16rem]">
         <div className="min-w-0 space-y-4 rounded-2xl border border-white/10 bg-space/60 p-4">
@@ -450,7 +460,7 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
             <span className="font-display text-ice">Question {q.n} of {questions.length}</span>
             <button type="button" disabled={busy} onClick={toggleFlag} className={"ml-auto inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs disabled:opacity-40 " + (flagged.includes(q.id) ? "border-amber-300/50 text-amber-200" : "border-white/15 text-dust")}><Flag size={12} /> {flagged.includes(q.id) ? "Marked for review" : "Mark for review"}</button>
           </div>
-          <QuestionImage key={q.img} src={urls[q.img]} alt={`Question ${q.n}`} error={imgMissing[q.img] ?? imgError} />
+          <QuestionImage key={q.img} src={urls[q.img]} alt={`Question ${q.n}`} error={imgMissing[q.img] ?? imgError} resign={() => resign(q.img)} />
           {q.kind === "mcq" ? (
             <div className="grid grid-cols-4 gap-2">
               {["A", "B", "C", "D"].map((l) => (

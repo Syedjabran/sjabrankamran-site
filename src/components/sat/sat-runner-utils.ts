@@ -110,23 +110,42 @@ export function retryDelayMs(failures: number): number {
 
 /** What a failed request's HTTP status means for retrying it. `null` is a
  *  request that never got a usable answer (network down, timeout, a body
- *  that isn't a session state). "auth" (401) and "gone" (403/404) won't
+ *  that isn't a session state). "auth" (401), "gone" (403/404) and
+ *  "restricted" (423: the portal's access lock, from the middleware) won't
  *  change by asking again, so nothing retries them automatically; everything
  *  else (5xx, 429, a malformed 409, ...) is retried with back-off. */
-export type RequestFailure = "retryable" | "auth" | "gone";
+export type RequestFailure = "retryable" | "auth" | "gone" | "restricted";
 export function classifyFailure(status: number | null): RequestFailure {
   if (status === 401) return "auth";
   if (status === 403 || status === 404) return "gone";
+  if (status === 423) return "restricted";
   return "retryable";
 }
 
 /** The message shown when a failure stops automatic retries; null when the
- *  failure is retryable. */
-export function stopMessage(status: number | null): string | null {
+ *  failure is retryable. `onBreak`: the break screen, where the only way on
+ *  is "Start Math now" and the server's clock keeps running meanwhile.
+ *  `serverMessage`: the restriction's own message, which a 423 carries. */
+export function stopMessage(status: number | null, opts: { onBreak?: boolean; serverMessage?: string | null } = {}): string | null {
   const kind = classifyFailure(status);
-  if (kind === "auth") return "You've been signed out — sign in again in another tab; your answers on this screen are kept.";
+  if (kind === "auth") {
+    return opts.onBreak
+      ? "You've been signed out — sign in again in another tab, then press “Start Math now”. The clock keeps running while you're signed out."
+      : "You've been signed out — sign in again in another tab; your answers on this screen are kept.";
+  }
   if (kind === "gone") return status === 403 ? "Your access to the SAT Lab has changed." : "This sitting isn't available to you any more.";
+  if (kind === "restricted") return opts.serverMessage || "Portal access is restricted right now. Your answers on this screen are kept.";
   return null;
+}
+
+export type Halt = { status: number | null; serverMessage: string | null };
+
+/** The halt a failed request leaves behind: a stopping failure sets it (and
+ *  keeps a 423's own message); a retryable one CLEARS any earlier halt --
+ *  automatic retries resume, so a banner saying they had stopped would
+ *  contradict "Not saved — retrying". */
+export function haltAfter(status: number | null, serverMessage?: string | null): Halt | null {
+  return stopMessage(status) !== null ? { status, serverMessage: serverMessage ?? null } : null;
 }
 
 // --- Signed images (use-signed-images.ts) ---

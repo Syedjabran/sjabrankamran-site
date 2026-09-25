@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   RETRY_CAP_MS, SAVE_DEBOUNCE_MS, answersChangedFor, classifyFailure, flaggedChangedFor, isTimeoutError, looksLikeSessionState,
   mergeAnswers, mergeFlagged, mixedNumberWarning, nextTypedSPR, pickAnswers, pickFlagged, retryDelayMs, splitSignedUrls,
-  sprAnswerPreview, stopMessage, stripSPR,
+  sprAnswerPreview, stopMessage, stripSPR, haltAfter,
 } from "../src/components/sat/sat-runner-utils.ts";
 
 // --- pickAnswers / pickFlagged: a save/submit body carries only the module
@@ -175,6 +175,22 @@ for (const status of [null, 400, 408, 409, 429, 500, 502, 503, 504]) {
 assert.equal(stopMessage(401), "You've been signed out — sign in again in another tab; your answers on this screen are kept.");
 assert.equal(stopMessage(404), "This sitting isn't available to you any more.");
 assert.equal(stopMessage(403), "Your access to the SAT Lab has changed.");
+// On the break screen a 401 says what to do next: the only way on is
+// "Start Math now", and the server's clock keeps running meanwhile.
+assert.match(stopMessage(401, { onBreak: true }), /sign in again.*then press “Start Math now”/);
+assert.match(stopMessage(401, { onBreak: true }), /clock keeps running/);
+assert.equal(stopMessage(404, { onBreak: true }), stopMessage(404), "only the 401 wording depends on the screen");
+// A 423 is the portal's access lock (middleware): it stops auto-retry and
+// shows the restriction's own message, not a silent retry every 30 s.
+assert.equal(classifyFailure(423), "restricted");
+assert.equal(stopMessage(423, { serverMessage: "The portal is locked for exams until 3 pm." }), "The portal is locked for exams until 3 pm.");
+assert.match(stopMessage(423), /restricted/, "a 423 with no message still explains itself");
+// haltAfter: a stopping failure sets the halt; a later retryable one clears
+// it, so the banner never outlives a failure the label says is "retrying"
+// (and a retryable "Start Math now" failure never leaves the runner halted).
+assert.deepEqual(haltAfter(401), { status: 401, serverMessage: null });
+assert.deepEqual(haltAfter(423, "Locked for exams."), { status: 423, serverMessage: "Locked for exams." });
+for (const status of [null, 500, 503, 429]) assert.equal(haltAfter(status, "ignored"), null, `${status} clears the halt`);
 
 // --- splitSignedUrls: a requested path the signing endpoint answered
 // without a URL is reported, never silently dropped. ---
