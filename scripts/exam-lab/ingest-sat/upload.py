@@ -32,6 +32,17 @@ def bucket_path(qid: str, section: str) -> str:
     return f"{PREFIX}{section}/{qid}.jpg"
 
 
+def test_bucket_path(test_no: int, section: str, module: int, qnum: int) -> str:
+    """Canonical object key for one practice-test question's crop.
+
+    Practice-test items have no College Board Question ID, so they are keyed
+    by their position in the published form. Same prefix discipline as
+    `bucket_path`: this does no sanitisation of its own and its output must
+    go through `upload_file`, which calls `guard_prefix`.
+    """
+    return f"{PREFIX}tests/{test_no}/{section}-m{module}-q{qnum}.jpg"
+
+
 def guard_prefix(dest: str) -> str:
     """Raise unless `dest` is confined under `PREFIX`; otherwise return the
     normalised, canonical form of `dest`.
