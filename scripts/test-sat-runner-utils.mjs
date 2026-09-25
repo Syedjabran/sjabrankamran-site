@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { answersChangedFor, flaggedChangedFor, mergeAnswers, mergeFlagged, pickAnswers, pickFlagged } from "../src/components/sat/sat-runner-utils.ts";
+import {
+  answersChangedFor, flaggedChangedFor, isTimeoutError, looksLikeSessionState, mergeAnswers, mergeFlagged, pickAnswers, pickFlagged,
+} from "../src/components/sat/sat-runner-utils.ts";
 
 // --- pickAnswers / pickFlagged: a save/submit body carries only the module
 // on screen, never the whole sitting's map. ---
@@ -86,6 +88,53 @@ assert.deepEqual(
 
   const mergedTouched = mergeFlagged(srv, [], ["new-1"], ["new-1"]);
   assert.equal(flaggedChangedFor(srv, mergedTouched, ["new-1"]), true, "a touched unflag that actually wins is dirty");
+}
+
+// --- isTimeoutError: distinguishes an AbortSignal.timeout()/manual abort
+// from a genuine network failure, so callers can show a friendly message
+// instead of the raw DOMException text. ---
+{
+  const timeoutErr = new Error("The operation was aborted due to timeout");
+  timeoutErr.name = "TimeoutError";
+  assert.equal(isTimeoutError(timeoutErr), true);
+
+  const abortErr = new Error("This operation was aborted");
+  abortErr.name = "AbortError";
+  assert.equal(isTimeoutError(abortErr), true);
+
+  assert.equal(isTimeoutError(new Error("network down")), false, "an ordinary network error is not a timeout");
+  assert.equal(isTimeoutError("not an error object"), false);
+  assert.equal(isTimeoutError(null), false);
+}
+
+// --- looksLikeSessionState: a 2xx body must actually be shaped like a
+// session state before it's trusted -- an empty object (e.g. from
+// `.catch(() => ({}))` on unparseable JSON) must not be applied as one. ---
+{
+  const validRunning = { serverNow: 1000, status: "running", answers: {}, flagged: [], stage: { key: "rw.m1", deadline: 2000, questions: [] } };
+  assert.equal(looksLikeSessionState(validRunning), true);
+
+  const validBreak = { serverNow: 1000, status: "break", answers: {}, flagged: [], stage: null };
+  assert.equal(looksLikeSessionState(validBreak), true);
+
+  assert.equal(looksLikeSessionState({}), false, "an empty/malformed body is rejected");
+  assert.equal(looksLikeSessionState(null), false);
+  assert.equal(looksLikeSessionState("oops"), false);
+  assert.equal(
+    looksLikeSessionState({ serverNow: 1000, status: "running", answers: {}, flagged: [], stage: { key: "rw.m1", deadline: 2000 } }),
+    false,
+    "a stage missing `questions` is rejected",
+  );
+  assert.equal(
+    looksLikeSessionState({ serverNow: Number.NaN, status: "running", answers: {}, flagged: [], stage: null }),
+    false,
+    "a non-finite clock is rejected",
+  );
+  assert.equal(
+    looksLikeSessionState({ serverNow: 1000, status: "running", answers: [], flagged: [], stage: null }),
+    false,
+    "answers must be a map, not an array",
+  );
 }
 
 console.log("sat-runner-utils tests passed");

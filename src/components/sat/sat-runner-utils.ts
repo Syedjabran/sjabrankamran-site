@@ -76,3 +76,37 @@ export function flaggedChangedFor(serverFlagged: string[], merged: string[], ids
   for (const id of a) if (!b.has(id)) return true;
   return false;
 }
+
+/** Whether a caught fetch error is an `AbortSignal.timeout`/manual-abort --
+ *  as opposed to a genuine network failure -- so callers can show a message
+ *  the student can act on instead of the raw DOMException text. Checked
+ *  structurally on `.name` rather than via `instanceof Error`: a browser's
+ *  `DOMException` (what `AbortSignal.timeout()` actually rejects with) is
+ *  not an `Error` instance there, even though it has the same `.name`. */
+export function isTimeoutError(e: unknown): boolean {
+  const name = (e as { name?: unknown } | null)?.name;
+  return name === "TimeoutError" || name === "AbortError";
+}
+
+/** A light shape check on a parsed 2xx response body before it's trusted as
+ *  a usable session state. A body that parsed as JSON but isn't actually
+ *  shaped like one (an empty object from a `.catch(() => ({}))` fallback, a
+ *  proxy error page, ...) must be treated as a failed load/save, not
+ *  applied -- otherwise `serverNow`/`stage` end up `undefined`, producing a
+ *  NaN clock or a render crash on `q.n`. Deliberately NOT a `v is
+ *  SessionState` type predicate: this file stays free of any import from
+ *  client-types.ts so it keeps running as plain Node-stripped TypeScript. */
+export function looksLikeSessionState(v: unknown): boolean {
+  if (!v || typeof v !== "object") return false;
+  const s = v as Record<string, unknown>;
+  if (typeof s.serverNow !== "number" || !Number.isFinite(s.serverNow)) return false;
+  if (s.status !== "running" && s.status !== "break" && s.status !== "finished") return false;
+  if (typeof s.answers !== "object" || s.answers === null || Array.isArray(s.answers)) return false;
+  if (!Array.isArray(s.flagged)) return false;
+  if (s.stage !== null) {
+    if (!s.stage || typeof s.stage !== "object") return false;
+    const stage = s.stage as Record<string, unknown>;
+    if (typeof stage.key !== "string" || typeof stage.deadline !== "number" || !Array.isArray(stage.questions)) return false;
+  }
+  return true;
+}

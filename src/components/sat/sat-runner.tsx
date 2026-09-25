@@ -5,7 +5,9 @@ import type { SessionState } from "@/lib/sat/client-types";
 import { SprPad } from "./spr-pad";
 import { ScoreReport } from "./score-report";
 import { useSignedImages } from "./use-signed-images";
-import { answersChangedFor, flaggedChangedFor, mergeAnswers, mergeFlagged, pickAnswers, pickFlagged } from "./sat-runner-utils";
+import {
+  answersChangedFor, flaggedChangedFor, isTimeoutError, looksLikeSessionState, mergeAnswers, mergeFlagged, pickAnswers, pickFlagged,
+} from "./sat-runner-utils";
 
 type SaveState = "idle" | "saving" | "saved" | "failed";
 type PostResult = { kind: "ok"; state: SessionState } | { kind: "stale"; state: SessionState } | { kind: "error"; message: string };
@@ -59,11 +61,11 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
     return run;
   }, []);
 
-  // Autosave coalescing: a save requested while one is in flight sets
-  // `saveAgain` instead of queuing a second request; the in-flight save
-  // loops once more (with the latest answers) before releasing `saveBusy`.
+  // Marks whether a save is currently in flight -- an edit (or the 30 s
+  // backstop) that lands while one is running just keeps `dirty` true; the
+  // debounce timer that edit already armed retries on its own, so
+  // back-to-back saves during a typing burst are not sent.
   const saveBusy = useRef(false);
-  const saveAgain = useRef(false);
   // The stage key a submit has been sent for -- blocks any further save for
   // that same stage until the submit settles (success, stale, or error).
   const submittedStage = useRef<string | null>(null);
@@ -117,6 +119,7 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
       setFlaggedBoth(mergedFlagged);
       setIdx(0);
       setConfirming(false);
+      setError(null);
       touched.current = new Set();
       dirty.current = answersChangedFor(s.answers, mergedAnswers, ids) || flaggedChangedFor(s.flagged, mergedFlagged, ids);
       setNote("This module was already submitted — showing the current module.");
@@ -125,19 +128,24 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/sat/sessions/${sessionId}`, { cache: "no-store" });
-      const j = await res.json();
+      // A hung GET must never wedge the queue it now runs through -- a
+      // timeout is caught below and treated like any other load failure.
+      const res = await fetch(`/api/sat/sessions/${sessionId}`, { cache: "no-store", signal: AbortSignal.timeout(20_000) });
+      const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error || "This sitting couldn't be loaded.");
+      if (!looksLikeSessionState(j)) throw new Error("This sitting couldn't be loaded.");
       apply(j as SessionState); // clears `error` too
     } catch (e) {
-      setError((e as Error).message);
+      setError(isTimeoutError(e) ? "The connection timed out — please try again." : (e as Error).message || "This sitting couldn't be loaded.");
     }
   }, [sessionId, apply]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
 
-  const postRaw = useCallback(async (body: object): Promise<PostResult> => {
+  const postRaw = useCallback(async (
+    body: object, timeoutMessage = "The connection timed out — your answers are kept. Please try again.",
+  ): Promise<PostResult> => {
     try {
       // A hung request must never block the queued submit forever -- a
       // timeout is caught below and treated exactly like a network failure.
@@ -146,42 +154,40 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
       });
       const j = await res.json().catch(() => ({}));
       // The module already ended (another tab/device, or a racing request): the server hands back its current state.
-      if (res.status === 409 && j.state) return { kind: "stale", state: j.state as SessionState };
+      if (res.status === 409 && j.state && looksLikeSessionState(j.state)) return { kind: "stale", state: j.state as SessionState };
       if (!res.ok) return { kind: "error", message: j.error || "Please try again." };
+      // A 2xx whose body doesn't actually parse into a session state (a
+      // malformed/empty body) must never be applied -- treat it as a failure.
+      if (!looksLikeSessionState(j)) return { kind: "error", message: "Please try again." };
       return { kind: "ok", state: j as SessionState };
     } catch (e) {
-      return { kind: "error", message: (e as Error).message || "Please try again." };
+      return { kind: "error", message: isTimeoutError(e) ? timeoutMessage : (e as Error).message || "Please try again." };
     }
   }, [sessionId]);
 
-  // The actual save network round-trip, looping once more in place whenever
-  // a save was requested again while this one was in flight -- so at most
-  // one save is ever queued, and it always sends the latest local answers.
+  // The actual save network round-trip -- a single attempt, never looping.
   // `editSeq` guards against a subtler case: an edit made after the request
   // body was already built (but before its response lands) must not be
-  // wiped from `dirty` by that response's "ok" -- the loop treats it the
-  // same as a coalesced follow-up and sends one more save immediately.
+  // wiped from `dirty` by that response's "ok" -- if the sequence moved on,
+  // this stays dirty instead, and the debounce timer that edit itself
+  // already armed will retry it (no immediate back-to-back resend).
   const runSaveCycle = useCallback(async () => {
-    setSave("saving");
     try {
-      for (;;) {
-        const stageKey = stateRef.current?.stage?.key ?? null;
-        if (!stageKey) break;
-        if (submittedStage.current === stageKey) { setSave("idle"); saveAgain.current = false; break; } // a submit took over
-        const ids = stateRef.current?.stage?.questions.map((x) => x.id) ?? [];
-        const seqAtSend = editSeq.current;
-        const body = { action: "save" as const, stage: stageKey, answers: pickAnswers(answersRef.current, ids), flagged: pickFlagged(flaggedRef.current, ids) };
-        const result = await postRaw(body);
-        if (submittedStage.current === stageKey) { setSave("idle"); saveAgain.current = false; break; } // ditto, while this request was in flight
-        if (result.kind === "error") { dirty.current = true; setSave("failed"); }
-        else if (result.kind === "stale") { applyStale(result.state); }
-        else {
-          skew.current = result.state.serverNow - Date.now();
-          if (editSeq.current === seqAtSend) { dirty.current = false; setSave("saved"); setNote(null); }
-          else { dirty.current = true; saveAgain.current = true; } // an edit landed after this body was built -- resend, don't show "Saved"
-        }
-        if (!saveAgain.current) break;
-        saveAgain.current = false;
+      const stageKey = stateRef.current?.stage?.key ?? null;
+      if (!stageKey) return;
+      if (submittedStage.current === stageKey) { setSave("idle"); return; } // a submit took over
+      setSave("saving");
+      const ids = stateRef.current?.stage?.questions.map((x) => x.id) ?? [];
+      const seqAtSend = editSeq.current;
+      const body = { action: "save" as const, stage: stageKey, answers: pickAnswers(answersRef.current, ids), flagged: pickFlagged(flaggedRef.current, ids) };
+      const result = await postRaw(body);
+      if (submittedStage.current === stageKey) { setSave("idle"); return; } // ditto, while this request was in flight
+      if (result.kind === "error") { dirty.current = true; setSave("failed"); }
+      else if (result.kind === "stale") { applyStale(result.state); }
+      else {
+        skew.current = result.state.serverNow - Date.now();
+        if (editSeq.current === seqAtSend) { dirty.current = false; setSave("saved"); setNote(null); }
+        else { dirty.current = true; } // an edit landed after this body was built -- its own debounce timer will resend it
       }
     } finally {
       saveBusy.current = false;
@@ -192,7 +198,7 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
     const stageKey = stateRef.current?.stage?.key ?? null;
     if (!stageKey || !dirty.current) return;
     if (submittedStage.current === stageKey) return;
-    if (saveBusy.current) { saveAgain.current = true; return; }
+    if (saveBusy.current) { dirty.current = true; return; } // stays dirty; the debounce timer this edit armed will retry
     saveBusy.current = true;
     void enqueue(() => runSaveCycle());
   }, [enqueue, runSaveCycle]);
@@ -217,8 +223,15 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
       await enqueue(async () => {
         const ids = stateRef.current?.stage?.key === stageKey ? (stateRef.current?.stage?.questions.map((x) => x.id) ?? []) : [];
         const body = { action: "submit" as const, stage: stageKey, answers: pickAnswers(answersRef.current, ids), flagged: pickFlagged(flaggedRef.current, ids) };
-        const result = await postRaw(body);
-        if (result.kind === "error") { setError(result.message); return; }
+        const result = await postRaw(body, "The connection timed out — your answers are kept. Press Submit again.");
+        if (result.kind === "error") {
+          // We don't know if this submit actually reached the server -- keep
+          // the module dirty so the 30 s backstop save fires; if the submit
+          // DID land, that save gets a 409 back and re-syncs the screen.
+          dirty.current = true;
+          setError(result.message);
+          return;
+        }
         if (result.kind === "stale") { applyStale(result.state); return; }
         apply(result.state);
       });
@@ -259,7 +272,10 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   // end), keyed by the break's own end time so this never re-fires every
   // tick; if the server still reports the break (a slow/failed reload), it
   // retries only after a 5 s back-off. Routed through the same promise
-  // chain as save/submit/begin so it can never race "Start Math now".
+  // chain as save/submit/begin so it can never race "Start Math now" --
+  // and guarded so that if it was queued BEHIND a begin/submit that already
+  // ran, it becomes a no-op instead of re-fetching and stomping on
+  // whatever the student has typed into the module that's now on screen.
   useEffect(() => {
     if (state?.status !== "break" || !state.breakUntil) { breakReload.current = null; return; }
     const until = state.breakUntil;
@@ -268,7 +284,7 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
     const nowMs = Date.now();
     if (last && last.until === until && nowMs - last.at < 5000) return;
     breakReload.current = { until, at: nowMs };
-    void enqueue(() => load());
+    void enqueue(() => (stateRef.current?.status === "break" ? load() : Promise.resolve()));
   }, [state, now, load, enqueue]);
 
   const questions = useMemo(() => state?.stage?.questions ?? [], [state]);
