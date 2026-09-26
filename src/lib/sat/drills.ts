@@ -72,6 +72,36 @@ export function startDiagnostic(
   };
 }
 
+/** A study-plan drill (SAT Coach spec 6.2): a daily challenge or a review
+ *  day, tagged `purpose: "challenge"` and its plan item, whose questions
+ *  the challenge builder already chose (never a filter pull). */
+export function startChallenge(
+  questionIds: string[],
+  meta: { id: string; uid: string; now: number; planItemId: string; title: string },
+): SATDrill {
+  return {
+    version: 1, id: meta.id, uid: meta.uid, kind: "drill", purpose: "challenge", planItemId: meta.planItemId,
+    title: meta.title, createdAt: meta.now, filter: {}, questionIds: [...questionIds],
+    answers: {}, checked: {}, finishedAt: null, assignmentId: null,
+  };
+}
+
+/** The questions of an unfinished drill not checked yet: their answers are
+ *  still the student's to find, so a new adaptive mock must not hold them
+ *  (its blank-submitted report would show them). None once finished. */
+export function openDrillQuestionIds(d: SATDrill): string[] {
+  return d.finishedAt !== null ? [] : d.questionIds.filter((id) => !(id in d.checked));
+}
+
+export const RUNNING_EXAM_REFUSAL = "This question is part of your running exam — finish the exam first.";
+
+/** Why a drill check must be refused, or null: a question that is also in
+ *  one of the student's in-play sittings (`inPlay`, store.ts
+ *  inPlayQuestionIds) would hand back that exam's answer mid-exam. */
+export function drillCheckRefusal(questionId: string, inPlay: ReadonlySet<string>): string | null {
+  return inPlay.has(questionId) ? RUNNING_EXAM_REFUSAL : null;
+}
+
 /** `timeMs`, when given, is the checked question's own accumulated active
  *  time (spec 7.1) — merged in only when this call actually records an
  *  answer; a re-check of an already-checked question returns the same

@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import {
   STAGES, GRACE_MS, startAdaptive, startPractice, currentStage, stageDeadline, isOnBreak,
   settleBreak, saveAnswers, submitStage, beginStage, rawBySection, practiceQuestionId, domainBreakdown,
-  isStaleStage, mergeTime,
+  isStaleStage, mergeTime, sittingQuestionIds,
 } from "../src/lib/sat/session.ts";
-import { startDrill, checkDrillAnswer } from "../src/lib/sat/drills.ts";
+import { startDrill, checkDrillAnswer, drillCheckRefusal, RUNNING_EXAM_REFUSAL } from "../src/lib/sat/drills.ts";
 import { DRILL_COUNT_MAX, drillTitle } from "../src/lib/sat/client-types.ts";
 import { ROUTING } from "../src/lib/sat/adaptive.ts";
 
@@ -208,6 +208,22 @@ const t2 = checkDrillAnswer(t1.drill, tId, "B", answerOf, T0 + 2000, 5000);
 assert.equal(t2.drill, t1.drill, "an already-checked question ignores a later time payload too");
 const untimed = checkDrillAnswer(timedDrill, timedDrill.questionIds[1], "A", answerOf, T0 + 500);
 assert.equal(untimed.drill.timeMs, timedDrill.timeMs, "no timeMs argument leaves the map untouched");
+
+// --- SAT Coach ruling 7b: a drill check refuses a question that is also in
+// one of the student's in-play sittings -- planned, or still routable (both
+// Module 2 variants) -- so a drill can't hand back a running exam's answer.
+{
+  const sitting = startAdaptive(form, { id: "s9", uid: "u1", now: T0 });
+  const inPlay = new Set(sittingQuestionIds(sitting));
+  assert.ok(inPlay.has("r1-0") && inPlay.has("ml-3") && inPlay.has("mu-21"), "module 1, and BOTH module 2 variants");
+  assert.equal(inPlay.size, 27 * 3 + 22 * 3);
+  assert.equal(drillCheckRefusal("mu-21", inPlay), RUNNING_EXAM_REFUSAL);
+  assert.equal(RUNNING_EXAM_REFUSAL, "This question is part of your running exam — finish the exam first.");
+  assert.equal(drillCheckRefusal("a0", inPlay), null, "a question outside the running exam is checked as usual");
+  const planned = { ...sitting, plan: { ...sitting.plan, "rw.m2": ["r1-0", "extra-1"] } };
+  assert.ok(sittingQuestionIds(planned).includes("extra-1"), "a routed Module 2 counts too");
+  assert.equal(new Set(sittingQuestionIds(planned)).size, sittingQuestionIds(planned).length, "no duplicates");
+}
 
 // --- drill titles: one function for the stored title and the staff preview ---
 assert.equal(drillTitle({}), "Mixed drill");

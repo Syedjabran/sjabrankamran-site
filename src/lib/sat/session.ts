@@ -56,9 +56,25 @@ export type SATSession = {
   scoreNote: string | null;
   finishedAt: number | null;
   assignmentId: string | null;
+  /** The study-plan item it was started from (SAT Coach); absent = null. */
+  planItemId?: string | null;
 };
 
 type Ids = { id: string; uid: string; now: number; assignmentId?: string | null };
+
+/** Every question id a sitting holds or may still route to: each stage's
+ *  plan and both Module 2 variants. What a drill, diagnostic or new mock
+ *  must keep out while the sitting is in play (store.ts inPlayQuestionIds). */
+export function sittingQuestionIds(s: SATSession): string[] {
+  const ids = new Set<string>();
+  for (const list of Object.values(s.plan)) for (const id of list ?? []) ids.add(id);
+  for (const variant of Object.values(s.variants)) {
+    if (!variant) continue;
+    for (const id of variant.lower) ids.add(id);
+    for (const id of variant.upper) ids.add(id);
+  }
+  return [...ids];
+}
 
 export const sectionOf = (k: SATStageKey): SATSection => (k.startsWith("rw") ? "rw" : "math");
 

@@ -6,8 +6,8 @@
 // document as another sitting. Reads fail closed (storage-fresh.ts).
 import "server-only";
 import { readFreshJson, writeFreshJson } from "@/lib/exam-lab/storage-fresh";
-import type { SATSession } from "./session.ts";
-import type { SATDrill } from "./drills.ts";
+import { sittingQuestionIds, type SATSession } from "./session.ts";
+import { openDrillQuestionIds, type SATDrill } from "./drills.ts";
 import type { SessionSummary } from "./client-types.ts";
 import { summaryOf } from "./serve.ts";
 
@@ -25,6 +25,30 @@ export async function loadDoc(uid: string, id: string): Promise<LoadResult> {
   const r = await readFreshJson<SATDoc>(BUCKET, docPath(uid, id));
   if (!r.ok) return { ok: false };
   return { ok: true, doc: r.data && r.data.uid === uid ? r.data : null };
+}
+
+const LOAD_CONCURRENCY = 8;
+
+/** The docs for `ids`, at most LOAD_CONCURRENCY reads in flight; null as
+ *  soon as any read fails. Kept in `ids` order (a missing doc is dropped),
+ *  so what callers compute never depends on which read finished first. */
+export async function loadDocs(uid: string, ids: string[]): Promise<SATDoc[] | null> {
+  const docs: (SATDoc | null)[] = new Array(ids.length).fill(null);
+  let next = 0;
+  let failed = false;
+  async function worker(): Promise<void> {
+    while (!failed && next < ids.length) {
+      const i = next++;
+      const loaded = await loadDoc(uid, ids[i]);
+      if (!loaded.ok) {
+        failed = true;
+        return;
+      }
+      docs[i] = loaded.doc;
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(LOAD_CONCURRENCY, ids.length) }, () => worker()));
+  return failed ? null : docs.filter((d): d is SATDoc => d !== null);
 }
 
 export async function listSummaries(uid: string): Promise<SessionSummary[] | null> {
@@ -77,12 +101,24 @@ export async function inPlayQuestionIds(uid: string, now: number, summaries?: Se
     if (!loaded.ok) return null;
     const doc = loaded.doc;
     if (!doc || doc.kind === "drill") continue;
-    for (const ids of Object.values(doc.plan)) for (const id of ids ?? []) exclude.add(id);
-    for (const variant of Object.values(doc.variants)) {
-      if (!variant) continue;
-      for (const id of variant.lower) exclude.add(id);
-      for (const id of variant.upper) exclude.add(id);
-    }
+    for (const id of sittingQuestionIds(doc)) exclude.add(id);
   }
+  return exclude;
+}
+
+/** What a NEW adaptive mock must not draw (SAT Coach ruling 7a): the
+ *  in-play sittings' questions, plus every question an unfinished drill of
+ *  the student's (practice drill, diagnostic or challenge) has not checked
+ *  yet -- a blank-submitted mock's report would show their answers. No time
+ *  window for drills: an open drill can be finished any day. Fails closed:
+ *  null on any read failure. */
+export async function mockExcludeIds(uid: string, now: number, summaries?: SessionSummary[]): Promise<Set<string> | null> {
+  const list = summaries ?? (await listSummaries(uid));
+  if (list === null) return null;
+  const exclude = await inPlayQuestionIds(uid, now, list);
+  if (exclude === null) return null;
+  const drills = await loadDocs(uid, list.filter((s) => s.kind === "drill" && s.finishedAt === null).map((s) => s.id));
+  if (drills === null) return null;
+  for (const doc of drills) if (doc.kind === "drill") for (const id of openDrillQuestionIds(doc)) exclude.add(id);
   return exclude;
 }

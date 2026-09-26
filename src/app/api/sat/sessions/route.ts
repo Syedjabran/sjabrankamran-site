@@ -10,7 +10,7 @@ import { startAdaptive, startPractice, type TimedPracticeTest } from "@/lib/sat/
 import { startDrill } from "@/lib/sat/drills";
 import { hasConversionTables, practiceTest, practiceTestList } from "@/lib/sat/serve";
 import { ROUTING_DISCLOSURE } from "@/lib/sat/adaptive";
-import { inPlayQuestionIds, listSummaries, saveDoc } from "@/lib/sat/store";
+import { inPlayQuestionIds, listSummaries, mockExcludeIds, saveDoc } from "@/lib/sat/store";
 import { listAssignments, markAssignment, resolveStart, type SATAssignment } from "@/lib/sat/assignments";
 import { satFilterSchema } from "@/lib/sat/filter-schema";
 import { invalidRequest } from "@/lib/sat/zod-messages";
@@ -111,7 +111,9 @@ export async function POST(req: Request) {
 
   let doc;
   if (kind === "adaptive") {
-    const exclude = await inPlayQuestionIds(user.id, ids.now);
+    // A new mock never holds a running sitting's questions, nor any an open
+    // drill hasn't checked yet (SAT Coach ruling 7a).
+    const exclude = await mockExcludeIds(user.id, ids.now);
     if (exclude === null) return NextResponse.json({ error: "Your SAT history couldn't be checked. Please try again." }, { status: 503 });
     doc = startAdaptive(assembleForm(loadQuestionBank(), rng, exclude), ids);
   } else if (kind === "practice") {

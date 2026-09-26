@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { BLUEPRINT, allocateByDomain, assembleForm } from "../src/lib/sat/forms.ts";
 import { shuffle } from "../src/lib/sat/shuffle.ts";
 import * as clientTypes from "../src/lib/sat/client-types.ts";
+import { openDrillQuestionIds, startChallenge } from "../src/lib/sat/drills.ts";
 
 // Deterministic RNG so a form is reproducible and a failure is debuggable.
 function seeded(seed) {
@@ -121,6 +122,23 @@ assert.ok(
 );
 // No exclusion set behaves exactly as before.
 assert.deepEqual(setIds(assembleForm(bank, seeded(7), new Set())), setIds(assembleForm(bank, seeded(7))));
+
+// --- exclusion (SAT Coach ruling 7a): a new mock also skips the questions a
+// student's unfinished drill (a challenge, the diagnostic) has not checked
+// yet -- a blank-submitted mock's report would otherwise show their answers.
+{
+  const challenge = startChallenge(bank.filter((x) => x.section === "math").slice(0, 12).map((x) => x.id), {
+    id: "c1", uid: "u1", now: 0, planItemId: "item-1", title: "Daily challenge — Mon 5 Oct",
+  });
+  assert.equal(challenge.purpose, "challenge");
+  assert.equal(challenge.planItemId, "item-1");
+  const checked = { ...challenge, checked: { [challenge.questionIds[0]]: true, [challenge.questionIds[1]]: false } };
+  const open = openDrillQuestionIds(checked);
+  assert.deepEqual(open, challenge.questionIds.slice(2), "checked questions are no longer secret; the rest are");
+  assert.deepEqual(openDrillQuestionIds({ ...checked, finishedAt: 1 }), [], "a finished drill holds nothing open");
+  const mock = assembleForm(bank, seeded(31), new Set([...inPlay, ...open]));
+  assert.ok(setIds(mock).every((id) => !open.includes(id)), "no unchecked drill question in the new mock");
+}
 
 console.log("sat-forms tests passed");
 

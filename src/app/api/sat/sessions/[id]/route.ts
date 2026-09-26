@@ -4,9 +4,9 @@ import { z } from "zod";
 import { getPortalUser } from "@/lib/edu/auth";
 import { canViewStudent, satAccess } from "@/lib/sat/access";
 import { beginStage, isStaleStage, saveAnswers, settleBreak, submitStage, type SATSession } from "@/lib/sat/session";
-import { checkDrillAnswer, type SATDrill } from "@/lib/sat/drills";
+import { checkDrillAnswer, drillCheckRefusal, type SATDrill } from "@/lib/sat/drills";
 import { answerOf, drillState, finishSession, reviewItem, sessionState } from "@/lib/sat/serve";
-import { listSummaries, loadDoc, saveDoc } from "@/lib/sat/store";
+import { inPlayQuestionIds, listSummaries, loadDoc, saveDoc } from "@/lib/sat/store";
 import { markAssignment } from "@/lib/sat/assignments";
 
 export const runtime = "nodejs";
@@ -130,6 +130,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   if (doc.kind === "drill") {
     if (a.action !== "check") return NextResponse.json({ error: "Drills are answered one question at a time." }, { status: 400 });
+    // Ruling 7b: a question that is also in one of the student's running
+    // sittings is never checked here -- that would hand back the exam's
+    // answer mid-exam. A re-check of an already-checked question reveals
+    // nothing new, so it needs no lookup.
+    if (!(a.questionId in doc.checked)) {
+      const inPlay = await inPlayQuestionIds(user.id, now);
+      if (inPlay === null) return NextResponse.json({ error: "Your SAT history couldn't be checked. Please try again." }, { status: 503 });
+      const refusal = drillCheckRefusal(a.questionId, inPlay);
+      if (refusal) return NextResponse.json({ error: refusal }, { status: 409 });
+    }
     let result;
     try {
       result = checkDrillAnswer(doc, a.questionId, a.response, answerOf, now, a.timeMs?.[a.questionId]);
