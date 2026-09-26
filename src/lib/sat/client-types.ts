@@ -330,7 +330,15 @@ export type InsightsView = {
 // (POST /api/sat/tutor/action). No answer data -- an explanation's question
 // facts stay on the server.
 
-export type TutorDrillFilter = { section?: SATSection; domain?: SATDomainId; skill?: string; difficulty?: SATDifficulty };
+/** The longest message a student can send the tutor (the box, the route and
+ *  the prompt all use this one number). */
+export const TUTOR_MAX_MESSAGE_CHARS = 1000;
+/** What an "Explain" tap says on the student's behalf. */
+export const TUTOR_EXPLAIN_MESSAGE = "Explain my mistake on this question.";
+/** The tutor's answer while a timed module is running or on its break. */
+export const TUTOR_PAUSED_MESSAGE = "I'm paused while your exam is running — submit the module first, then come back.";
+
+export type TutorDrillFilter ={ section?: SATSection; domain?: SATDomainId; skill?: string; difficulty?: SATDifficulty };
 
 export type TutorAction =
   | { id: string; type: "create_drill"; label: string; filter: TutorDrillFilter; count: number }

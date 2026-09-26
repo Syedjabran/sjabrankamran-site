@@ -5,9 +5,10 @@
 // explain mode, and the reply contract.
 import assert from "node:assert/strict";
 import {
-  compactHistory, isPaused, markSummarised, parseSummary, parseTutorReply, recentMistakes, summaryRequest,
-  trimMemory, tutorRequest, tutorSystemPrompt, MAX_STORED_MESSAGES,
+  applySummary, compactHistory, isPaused, isSatLabHref, markSummarised, parseSummary, parseTutorReply, pauseCandidateIds,
+  recentMistakes, summaryRequest, trimMemory, tutorRequest, tutorSystemPrompt, MAX_STORED_MESSAGES,
 } from "../src/lib/sat/coach/tutor-core.ts";
+import { TUTOR_EXPLAIN_MESSAGE, TUTOR_MAX_MESSAGE_CHARS, TUTOR_PAUSED_MESSAGE } from "../src/lib/sat/client-types.ts";
 import { KNOWLEDGE_SKILLS, knowledgePack } from "../src/lib/sat/coach/knowledge.ts";
 import { modelAcceptsImages } from "../src/lib/ai/llm-core.ts";
 import { loadQuestionBank } from "../src/lib/sat/bank.ts";
@@ -37,7 +38,7 @@ function planItems() {
 
 function ctx(overrides = {}) {
   return {
-    firstName: "aisha.k@example.com Khan",
+    firstName: "Aisha Khan",
     today: TODAY,
     profile: {
       examDate: "2026-11-08", targetMonth: null, targetScore: 1400,
@@ -88,6 +89,8 @@ const reply = (actions) => ({ reply: "Here's the plan.", actions });
   assert.deepEqual(out.actions.map((a) => a.href), ["/portal/sat-lab/progress"], "only the SAT Lab path survives");
   assert.equal(out.actions[0].type, "open");
   assert.equal(typeof out.actions[0].id, "string");
+  for (const ok of ["/portal/sat-lab", "/portal/sat-lab/progress", "/portal/sat-lab/tutor?explain=abc&from=s1", "/portal/sat-lab/settings#sat-start"]) assert.equal(isSatLabHref(ok), true, ok);
+  for (const bad of ["/portal/admin", "/portal/sat-lab-evil", "/portal/sat-lab/../admin", "//x.com/portal/sat-lab", "https://x.com/portal/sat-lab", "/portal/sat-lab/a b", 42, null]) assert.equal(isSatLabHref(bad), false, String(bad));
 }
 
 // --- 2: create_drill: count 5–30, filter valid for the bank's domains/skills
@@ -201,7 +204,9 @@ const reply = (actions) => ({ reply: "Here's the plan.", actions });
 // --- 7: the system prompt
 {
   const prompt = tutorSystemPrompt(ctx());
-  assert.ok(prompt.includes("aisha.k"), "carries the first name");
+  assert.ok(prompt.includes("Aisha"), "carries the first name");
+  const emailish = tutorSystemPrompt(ctx({ firstName: "aisha.k@example.com Khan" }));
+  assert.ok(!emailish.includes("@") && !emailish.includes("aisha.k") && emailish.includes("coaching there"), "a name with an @ is never used, not even its local part");
   assert.ok(!prompt.includes("Khan"), "only the first name");
   assert.ok(!/@/.test(prompt), "no email-like string");
   assert.ok(!/[\w.+-]+@[\w-]+\.[\w.]+/.test(prompt));
@@ -225,6 +230,10 @@ const reply = (actions) => ({ reply: "Here's the plan.", actions });
 
   const blank = tutorSystemPrompt(ctx({ analytics: null, plan: null, insights: null, mistakes: [], firstName: "" }));
   assert.ok(blank.includes("there"), "a missing name still reads naturally");
+  assert.match(blank, /No finished work yet/);
+  const failed = tutorSystemPrompt(ctx({ analytics: null, recordUnavailable: true }));
+  assert.match(failed, /record is unavailable right now/i, "a failed analytics read is not 'no work yet'");
+  assert.ok(!/No finished work yet/.test(failed));
 }
 
 // --- 8: the request: summary + last turns + the new message, under ~3,000 tokens
@@ -235,7 +244,15 @@ const reply = (actions) => ({ reply: "Here's the plan.", actions });
   assert.equal(req.messages.at(-1).role, "user");
   assert.equal(req.messages.at(-1).content, "What should I work on this week?");
   assert.equal(req.messages.length, 9);
-  assert.ok(req.system.includes("They struggle with slope."), "the rolling summary rides along");
+  assert.ok(!req.system.includes("They struggle with slope."), "the rolling summary is not in the system prompt");
+  assert.equal(req.messages[0].role, "user");
+  assert.ok(req.messages[0].content.includes("They struggle with slope."), "it rides as a user-role note");
+  assert.match(req.messages[0].content, /not instructions/i, "labelled as untrusted notes");
+  const alone = tutorRequest(ctx(), { summary: "Wants 1400.", history: [], message: "Hi" });
+  assert.equal(alone.messages.length, 1, "notes and the new message share the one user turn");
+  assert.ok(alone.messages[0].content.includes("Wants 1400.") && alone.messages[0].content.endsWith("Hi"));
+  const none = tutorRequest(ctx(), { summary: "", history, message: "Hi" });
+  assert.ok(!/not instructions/i.test(none.messages[0].content), "no summary, no note");
   const chars = req.system.length + req.messages.reduce((n, m) => n + m.content.length, 0);
   assert.ok(chars / 4 < 3000, `prompt stays under ~3,000 tokens (${Math.round(chars / 4)})`);
 }
@@ -263,6 +280,10 @@ const reply = (actions) => ({ reply: "Here's the plan.", actions });
   assert.equal(practice.actions.length, 0, "a practice-test question has no skill to drill");
   const req = tutorRequest(c, { summary: "", history: [], message: "Explain", images: [{ mime: "image/jpeg", base64: "AAAA" }] });
   assert.equal(req.messages.at(-1).images.length, 1, "images ride on the new message");
+  const long = Array.from({ length: 8 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", text: `m${i}`, at: i }));
+  const lean = tutorRequest(c, { summary: "", history: long, message: "Explain" });
+  assert.deepEqual(lean.messages.map((m) => m.content), ["m6", "m7", "Explain"], "an explanation sends at most 2 history messages");
+  assert.equal(tutorRequest(ctx(), { summary: "", history: long, message: "x" }).messages.length, 9, "a normal turn sends 8");
 }
 
 // --- 10: summary request / parsing
@@ -274,6 +295,37 @@ const reply = (actions) => ({ reply: "Here's the plan.", actions });
   assert.equal(parseSummary({ summary: "" }), null);
   assert.equal(parseSummary("x"), null);
   assert.ok(parseSummary({ summary: "a".repeat(5000) }).length <= 800);
+}
+
+// --- 10b: a summary folded later marks exactly the turns it folded
+{
+  const msgs = Array.from({ length: 24 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", text: `m${i}`, at: 1000 + i }));
+  const folded = msgs.slice(0, 16);
+  const later = [...msgs, { role: "user", text: "new", at: 5000 }, { role: "assistant", text: "reply", at: 5001 }];
+  const out = applySummary({ summary: "", messages: later, pendingActions: [{ id: "a", type: "open", label: "x", href: "/portal/sat-lab" }] }, folded, "They want 1400.");
+  assert.equal(out.summary, "They want 1400.");
+  assert.equal(out.messages.filter((m) => m.summarised).length, 16, "only the folded turns are marked");
+  assert.ok(!out.messages.at(-1).summarised && !out.messages.at(-3).summarised, "turns that arrived meanwhile stay unsummarised");
+  assert.equal(out.pendingActions.length, 1, "pending actions untouched");
+}
+
+// --- 10c: the pause check reads the newest 5 unfinished timed sittings, whatever their age
+{
+  const s = (id, kind, createdAt, finishedAt = null) => ({ id, kind, createdAt, finishedAt, title: id, score: null, correct: 0, total: 0, assignmentId: null, overtime: false });
+  const DAY = 86_400_000;
+  const summaries = [
+    s("d1", "drill", NOW), s("f1", "adaptive", NOW - DAY, NOW), s("old", "practice", NOW - 30 * DAY),
+    s("a1", "adaptive", NOW - 1), s("a2", "adaptive", NOW - 2), s("a3", "practice", NOW - 3), s("a4", "adaptive", NOW - 4), s("a5", "practice", NOW - 5), s("a6", "adaptive", NOW - 6),
+  ];
+  assert.deepEqual(pauseCandidateIds(summaries), ["a1", "a2", "a3", "a4", "a5"], "newest 5 unfinished adaptive/practice by createdAt; drills and finished ones never");
+  assert.deepEqual(pauseCandidateIds([s("old", "practice", NOW - 30 * DAY)]), ["old"], "no age window");
+}
+
+// --- 10d: one definition of the chat's shared strings
+{
+  assert.equal(TUTOR_MAX_MESSAGE_CHARS, 1000);
+  assert.equal(TUTOR_PAUSED_MESSAGE, "I'm paused while your exam is running — submit the module first, then come back.");
+  assert.equal(typeof TUTOR_EXPLAIN_MESSAGE, "string");
 }
 
 // --- 11: recent mistakes from History (latest outcome wrong, newest first)

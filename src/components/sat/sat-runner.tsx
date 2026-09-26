@@ -420,7 +420,7 @@ export function SatRunner({ sessionId, explain = false }: { sessionId: string; e
 
   if (error && !state) return <p className="rounded-2xl border border-signal/30 bg-signal/5 p-5 text-sm text-fog">{error} <button className="ml-2 text-cyan underline" onClick={() => void load()}>Retry</button></p>;
   if (!state) return <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading your sitting…</p>;
-  if (state.status === "finished" && state.report) return <ScoreReport report={state.report} explain={explain} />;
+  if (state.status === "finished" && state.report) return <ScoreReport report={state.report} explainFrom={explain ? sessionId : undefined} />;
 
   // Why nothing is being saved or reloaded automatically (a 401/403/404/423).
   const haltMessage = halt ? stopMessage(halt.status, { onBreak: state.status === "break", serverMessage: halt.serverMessage }) : null;

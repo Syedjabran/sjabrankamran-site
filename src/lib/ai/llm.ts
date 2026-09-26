@@ -7,7 +7,7 @@
 // so it can be tested without touching real env vars — this just supplies
 // the real `process.env`.
 import "server-only";
-import { callLlm, selectProvider, type LlmRequest, type LlmResult, type ProviderConfig } from "./llm-core.ts";
+import { callLlm, selectProvider, type CallOptions, type LlmRequest, type LlmResult, type ProviderConfig } from "./llm-core.ts";
 import { takeBudget } from "./usage.ts";
 import { pkToday } from "@/lib/portal/pk-time";
 
@@ -19,11 +19,13 @@ export function providerConfig(): ProviderConfig | null {
  *  provider is configured; `reason: "budget", scope` when today's per-student
  *  or global budget is spent (every caller falls back to deterministic text
  *  either way, but the tutor can tell the two apart to show "you've used
- *  today's messages" instead of "AI unavailable"). */
+ *  today's messages" instead of "AI unavailable"). `opts.deadlineAt` bounds
+ *  the whole call, retries and fallback included (see CallOptions). */
 export async function complete(
   req: LlmRequest,
   purpose: "insights" | "tutor" | "parent",
   uid: string | null,
+  opts: Pick<CallOptions, "deadlineAt"> = {},
 ): Promise<LlmResult> {
   const cfg = providerConfig();
   if (!cfg) return { ok: false, reason: "no-provider" };
@@ -32,5 +34,5 @@ export async function complete(
   const budget = await takeBudget(uid, purpose, today);
   if (!budget.ok) return { ok: false, reason: "budget", scope: budget.reason };
 
-  return callLlm(cfg, req, fetch, (ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  return callLlm(cfg, req, fetch, (ms) => new Promise((resolve) => setTimeout(resolve, ms)), opts);
 }

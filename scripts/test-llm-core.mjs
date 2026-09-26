@@ -135,6 +135,70 @@ for (const [header, want] of [["4", 4000], ["0.5", 1500], ["120", 8000], ["soon"
   assert.deepEqual(sleeps, [want], `Retry-After "${header}" waits ${want} ms`);
 }
 
+// --- an overall deadline (fake clock): what doesn't fit is skipped --------------
+function clock(start = 0) {
+  let t = start;
+  return { now: () => t, advance: (ms) => { t += ms; }, sleep: async (ms) => { t += ms; } };
+}
+const okBody = { choices: [{ message: { content: '{"a":1}' } }], usage: { prompt_tokens: 1, completion_tokens: 2 } };
+
+// Room for the Retry-After wait and a second attempt → it retries.
+{
+  const c = clock();
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls++;
+    c.advance(1000);
+    return calls === 1 ? { ...fakeRes(429, {}), headers: new Headers({ "retry-after": "4" }) } : fakeRes(200, okBody);
+  };
+  const res = await callLlm({ provider: "groq", apiKey: "k", model: "m" }, groqReq, fetchImpl, c.sleep, { deadlineAt: 45_000, now: c.now });
+  assert.equal(res.ok, true);
+  assert.equal(calls, 2);
+}
+
+// No room for the wait plus a useful attempt → no sleep, no retry, ok:false.
+{
+  const c = clock();
+  let calls = 0;
+  const sleeps = [];
+  const fetchImpl = async () => { calls++; c.advance(1000); return { ...fakeRes(429, {}), headers: new Headers({ "retry-after": "4" }) }; };
+  const res = await callLlm({ provider: "groq", apiKey: "k", model: "m", fallbackModel: "fb" }, groqReq, fetchImpl, async (ms) => { sleeps.push(ms); await c.sleep(ms); }, { deadlineAt: 8000, now: c.now });
+  assert.deepEqual(res, { ok: false, reason: "http", status: 429 });
+  assert.equal(calls, 1, "the retry doesn't fit");
+  assert.deepEqual(sleeps, [], "and neither does its wait");
+}
+
+// The retry fits but the fallback doesn't → two calls, no fallback.
+{
+  const c = clock();
+  const models = [];
+  const fetchImpl = async (_url, opts) => { models.push(JSON.parse(opts.body).model); c.advance(10_000); return fakeRes(503, {}); };
+  const res = await callLlm({ provider: "groq", apiKey: "k", model: "m", fallbackModel: "fb" }, groqReq, fetchImpl, c.sleep, { deadlineAt: 25_000, now: c.now });
+  assert.equal(res.ok, false);
+  assert.equal(res.status, 503);
+  assert.deepEqual(models, ["m", "m"], "the fallback doesn't fit");
+}
+
+// Out of time before the first call → nothing is sent.
+{
+  const c = clock(50_000);
+  let calls = 0;
+  const res = await callLlm({ provider: "groq", apiKey: "k", model: "m" }, groqReq, async () => { calls++; return fakeRes(200, okBody); }, c.sleep, { deadlineAt: 45_000, now: c.now });
+  assert.deepEqual(res, { ok: false, reason: "timeout" });
+  assert.equal(calls, 0);
+}
+
+// An attempt's own timeout shrinks to the time left (real timers, tiny budget).
+{
+  const started = Date.now();
+  const hanging = (_url, opts) => new Promise((_resolve, reject) => {
+    opts.signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
+  });
+  const res = await callLlm({ provider: "groq", apiKey: "k", model: "m", timeoutMs: 20_000 }, groqReq, hanging, async () => {}, { deadlineAt: started + 150, minAttemptMs: 50 });
+  assert.deepEqual(res, { ok: false, reason: "timeout" });
+  assert.ok(Date.now() - started < 2000, "aborted at the deadline, not after the 20 s attempt timeout");
+}
+
 // 503, 503 → switches to fallbackModel → ok with model = fallback.
 {
   let calls = 0;

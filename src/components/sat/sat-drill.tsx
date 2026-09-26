@@ -108,7 +108,7 @@ export function SatDrill({ initial, explain = false }: { initial: DrillState; ex
                 fallback={rationaleText}
               />
             ) : rationaleText}
-            {explain && !done.correct ? <ExplainLink questionId={q.id} /> : null}
+            {explain && !done.correct ? <ExplainLink questionId={q.id} from={state.id} /> : null}
           </div>
         ) : q.kind === "mcq" ? (
           <div className="grid grid-cols-4 gap-2">{["A", "B", "C", "D"].map((l) => <button key={l} type="button" disabled={busy} onClick={() => setResponse(l)} className={"rounded-xl border py-3 font-display text-lg disabled:opacity-40 " + (response === l ? "border-cyan bg-cyan/15 text-ice" : "border-white/15 text-fog")}>{l}</button>)}</div>

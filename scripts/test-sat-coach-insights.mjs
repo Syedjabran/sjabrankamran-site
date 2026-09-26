@@ -3,7 +3,7 @@
 // parsing/validation, the deterministic rules fallback and the inputs
 // fingerprint.
 import assert from "node:assert/strict";
-import { fallbackInsights, insightsFingerprint, insightsPrompt, parseInsights } from "../src/lib/sat/coach/insights-core.ts";
+import { fallbackInsights, insightsFingerprint, insightsPrompt, parseInsights, sanitiseFirstName } from "../src/lib/sat/coach/insights-core.ts";
 
 function baseInput(overrides = {}) {
   return {
@@ -122,13 +122,18 @@ function validInsights() {
   assert.notEqual(fp1, fp2, "a different 'today' changes the fingerprint");
 }
 
-// --- 9: prompt carries the first name and strips anything from "@" on,
-// even when firstName is a whole email-like string
+// --- 9: a firstName with an "@" anywhere is never used -- not even an
+// email's local part -- so the prompt says "there" instead
 {
   const { system, user } = insightsPrompt(baseInput({ firstName: "aisha.k@example.com" }));
-  assert.ok(user.includes("aisha.k") === false || !user.includes("@"), "no '@' character reaches the prompt");
   assert.ok(!system.includes("@") && !user.includes("@"), "no '@' anywhere in the prompt");
-  assert.ok(user.includes("aisha.k"), "the sanitised first name (everything before '@') is still present");
+  assert.ok(!user.includes("aisha.k"), "an email's local part never reaches the prompt");
+  assert.ok(user.includes('"name":"there"'), "the neutral fallback name is used");
+  for (const raw of ["Aisha aisha@x.com", "a@b", "@", "Aisha Khan (aisha@example.com)"]) {
+    assert.equal(sanitiseFirstName(raw), "there", `"${raw}" contains "@", so no name is used`);
+  }
+  assert.equal(sanitiseFirstName("Aisha Khan"), "Aisha");
+  assert.equal(sanitiseFirstName("   "), "there");
 }
 
 // --- 9b: prompt sanitises "first word" too (a name with a space, no '@')

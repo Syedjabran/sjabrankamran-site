@@ -23,6 +23,16 @@ const RETRYABLE_STATUS = new Set([429, 503]);
 // RETRY_MAX_MS so a turn still fits a 60 s serverless function.
 const RETRY_MIN_MS = 1500;
 const RETRY_MAX_MS = 8000;
+// Under an overall deadline, an attempt is only started with at least this
+// much time left (a shorter one would just time out).
+const DEFAULT_MIN_ATTEMPT_MS = 5000;
+
+/** An overall deadline for one call, retries and fallback included:
+ *  `deadlineAt` (epoch ms, on the `now` clock -- Date.now by default).
+ *  An attempt's own timeout shrinks to the time left, and a retry (with its
+ *  wait) or the fallback is skipped when fewer than `minAttemptMs` would be
+ *  left for it. */
+export type CallOptions = { deadlineAt?: number; now?: () => number; minAttemptMs?: number };
 
 // Same slow-alias guard as physics-tutor.ts: these generic "*-latest" Gemini
 // aliases resolve to heavy reasoning models that blow the serverless time
@@ -209,7 +219,7 @@ function retryDelay(r: AttemptResult): number {
   return Math.min(RETRY_MAX_MS, Math.max(RETRY_MIN_MS, wanted));
 }
 
-async function attempt(cfg: ProviderConfig, req: LlmRequest, model: string, fetchImpl: typeof fetch): Promise<AttemptResult> {
+async function attempt(cfg: ProviderConfig, req: LlmRequest, model: string, fetchImpl: typeof fetch, timeoutMs: number): Promise<AttemptResult> {
   const isGroq = cfg.provider === "groq";
   const url = isGroq ? GROQ_URL : geminiUrl(model, cfg.apiKey);
   const body = isGroq ? buildGroqBody(req, model) : buildGeminiBody(req);
@@ -218,7 +228,7 @@ async function attempt(cfg: ProviderConfig, req: LlmRequest, model: string, fetc
     : { "content-type": "application/json" };
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try {
     res = await fetchImpl(url, { method: "POST", headers, body: JSON.stringify(body), signal: controller.signal });
@@ -280,28 +290,50 @@ function hasImages(req: LlmRequest): boolean {
 
 /** One retry on 429/503 (after the provider's Retry-After, 1.5-8 s), then `fallbackModel` once (if
  *  configured, and only when the request has no images or the fallback can
- *  read them), else `ok: false`. Never throws — fetch/parse failures map to
- *  an `LlmResult` reason. */
+ *  read them), else `ok: false`. With `opts.deadlineAt`, whatever doesn't
+ *  fit before the deadline is skipped (see CallOptions): no time for a
+ *  first attempt is `reason: "timeout"`; no time for the retry or the
+ *  fallback ends on the last attempt's status. Never throws — fetch/parse
+ *  failures map to an `LlmResult` reason. */
 export async function callLlm(
   cfg: ProviderConfig,
   req: LlmRequest,
   fetchImpl: typeof fetch,
   sleep: (ms: number) => Promise<void>,
+  opts: CallOptions = {},
 ): Promise<LlmResult> {
-  const first = await attempt(cfg, req, cfg.model, fetchImpl);
+  const now = opts.now ?? Date.now;
+  const minAttempt = opts.minAttemptMs ?? DEFAULT_MIN_ATTEMPT_MS;
+  const perAttempt = cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const left = () => (opts.deadlineAt === undefined ? Infinity : opts.deadlineAt - now());
+  /** This attempt's timeout, or null when there isn't time to start one
+   *  after waiting `waitMs` first. */
+  const budgetFor = (waitMs: number): number | null => {
+    const remaining = left() - waitMs;
+    return remaining < minAttempt ? null : Math.min(perAttempt, remaining);
+  };
+
+  const firstBudget = budgetFor(0);
+  if (firstBudget === null) return { ok: false, reason: "timeout" };
+  const first = await attempt(cfg, req, cfg.model, fetchImpl, firstBudget);
   if (first.kind === "ok") return finalize(first, req, cfg, cfg.model);
   const doneFirst = terminal(first);
   if (doneFirst) return doneFirst;
 
-  await sleep(retryDelay(first));
-  const second = await attempt(cfg, req, cfg.model, fetchImpl);
+  const wait = retryDelay(first);
+  if (budgetFor(wait) === null) return { ok: false, reason: "http", status: statusOf(first) };
+  await sleep(wait);
+  const secondBudget = budgetFor(0);
+  if (secondBudget === null) return { ok: false, reason: "http", status: statusOf(first) };
+  const second = await attempt(cfg, req, cfg.model, fetchImpl, secondBudget);
   if (second.kind === "ok") return finalize(second, req, cfg, cfg.model);
   const doneSecond = terminal(second);
   if (doneSecond) return doneSecond;
 
   const fallbackModel = cfg.fallbackModel;
-  if (fallbackModel && (!hasImages(req) || cfg.fallbackAcceptsImages)) {
-    const fb = await attempt(cfg, req, fallbackModel, fetchImpl);
+  const fallbackBudget = budgetFor(0);
+  if (fallbackModel && fallbackBudget !== null && (!hasImages(req) || cfg.fallbackAcceptsImages)) {
+    const fb = await attempt(cfg, req, fallbackModel, fetchImpl, fallbackBudget);
     if (fb.kind === "ok") return finalize(fb, req, cfg, fallbackModel);
     const doneFb = terminal(fb);
     if (doneFb) return doneFb;

@@ -16,12 +16,17 @@
 //  - Limit: 40 messages per student per PKT day, taken before the call
 //    (complete() -> takeBudget) and given back when the AI fails.
 //  - Storage fails closed: an unreadable memory is never overwritten.
+//  - Time: a turn answers within TURN_BUDGET_MS (the LLM call's own
+//    deadline skips a retry/fallback that can't fit), well inside the
+//    route's maxDuration; folding old turns into the rolling summary runs
+//    after the response (next/server after()), never on the student's wait.
 //
 // Memory: portal-data/sat/tutor/<uid>.json
 //   { version: 1, summary, messages: [{ role, text, at, actions?, summarised? }] (last 40),
 //     pendingActions: TutorAction[] (the last reply's, until used) }
 import "server-only";
 import { randomBytes } from "node:crypto";
+import { after } from "next/server";
 import { readFreshJson, writeFreshJson } from "@/lib/exam-lab/storage-fresh";
 import { complete, providerConfig } from "@/lib/ai/llm";
 import { modelAcceptsImages, type LlmImage, type ProviderConfig } from "@/lib/ai/llm-core";
@@ -32,21 +37,22 @@ import { studentAnalytics, type StudentAnalytics } from "../analytics-data.ts";
 import { hasFinishedWork } from "../analytics.ts";
 import { loadQuestionBank } from "../bank.ts";
 import {
-  DIFFICULTY_LABEL, SECTION_LABEL, practiceTestTitle, type SessionSummary, type TutorAction, type TutorMistake, type TutorPayload,
+  DIFFICULTY_LABEL, SECTION_LABEL, TUTOR_EXPLAIN_MESSAGE, TUTOR_MAX_MESSAGE_CHARS, TUTOR_PAUSED_MESSAGE, practiceTestTitle,
+  type SessionSummary, type TutorAction, type TutorMistake, type TutorPayload,
 } from "../client-types.ts";
 import { buildFilteredDrill } from "../drill-start.ts";
 import { RUNNING_EXAM_REFUSAL } from "../drills.ts";
 import { satFilterSchema } from "../filter-schema.ts";
 import { itemsOf, publicQuestion, reviewItem } from "../serve.ts";
 import { currentStage } from "../session.ts";
-import { inPlayQuestionIds, listSummaries, loadDocs, recentUnfinishedSittings, saveDoc } from "../store.ts";
+import { inPlayQuestionIds, listSummaries, loadDoc, loadDocs, saveDoc } from "../store.ts";
 import type { SATDifficulty, SATSection } from "../types.ts";
 import { zodIssueMessage } from "../zod-issue-message.ts";
 import { cachedInsights } from "./insights.ts";
 import { ensureSatPlan, moveMock } from "./plan-store.ts";
 import { readProfile } from "./profile-store.ts";
 import {
-  MAX_MESSAGE_CHARS, compactHistory, isPaused, markSummarised, parseSummary, parseTutorReply, recentMistakes, summaryRequest,
+  applySummary, compactHistory, isPaused, isSatLabHref, parseSummary, parseTutorReply, pauseCandidateIds, recentMistakes, summaryRequest,
   toSummarise, trimMemory, tutorRequest, type TutorContext, type TutorExplain, type TutorMemory, type TutorMessage, type TutorSkillRef,
 } from "./tutor-core.ts";
 
@@ -57,11 +63,17 @@ const memoryPath = (uid: string) => `sat/tutor/${uid}.json`;
 const MEMORY_VERSION = 1;
 const MISTAKES_IN_PROMPT = 5;
 const MAX_IMAGE_BYTES = 3_000_000;
-const EXPLAIN_MESSAGE = "Explain my mistake on this question.";
+const IMAGE_TIMEOUT_MS = 8000;
+// The route's maxDuration is 60 s. A turn answers within 45 s: the LLM call
+// gets what is left of that less a margin for storing the turn; the summary
+// fold (after the response) must finish by 55 s.
+const TURN_BUDGET_MS = 45_000;
+const STORE_MARGIN_MS = 3000;
+const FOLD_DEADLINE_MS = 55_000;
 
-export const TUTOR_PAUSED = "I'm paused while your exam is running — submit the module first, then come back.";
 const BRAIN = "I can't reach my brain right now — try again in a minute.";
 const OUT_OF_MESSAGES = `You've used today's ${LIMITS.tutor} tutor messages — they come back tomorrow (Pakistan time).`;
+const GLOBAL_LIMIT = "The tutor has reached today's limit — it'll be back tomorrow.";
 const HISTORY_UNAVAILABLE = "Your SAT history couldn't be checked. Please try again.";
 const MEMORY_UNAVAILABLE = "Your chat with the tutor couldn't be loaded. Please try again.";
 const EXPIRED = "That suggestion has expired — ask the tutor again.";
@@ -105,15 +117,17 @@ async function writeMemory(uid: string, memory: TutorMemory): Promise<boolean> {
   return writeFreshJson(BUCKET, memoryPath(uid), { version: MEMORY_VERSION, ...trimMemory(memory) });
 }
 
-/** Fresh read -> change -> write; nothing is written after a failed read. */
-async function updateMemory(uid: string, change: (prev: TutorMemory) => Promise<TutorMemory> | TutorMemory): Promise<boolean> {
+/** Fresh read -> change -> write; nothing is written after a failed read.
+ *  The memory as stored, or null when it wasn't. */
+async function updateMemory(uid: string, change: (prev: TutorMemory) => TutorMemory): Promise<TutorMemory | null> {
   let prev: TutorMemory;
   try {
     prev = await readMemory(uid);
   } catch {
-    return false;
+    return null;
   }
-  return writeMemory(uid, await change(prev));
+  const next = trimMemory(change(prev));
+  return (await writeMemory(uid, next)) ? next : null;
 }
 
 // --- the student's record --------------------------------------------------------
@@ -156,13 +170,16 @@ export function mistakeViews(history: StudentAnalytics["history"], limit: number
     .slice(0, limit);
 }
 
-/** True/false: a timed module is running or on its break; null: unknown. */
+/** True/false: a timed module is running or on its break; null: unknown.
+ *  Reads the newest 5 unfinished adaptive/practice sittings, whatever
+ *  their age (pauseCandidateIds). */
 async function pausedFor(uid: string, now: number, summaries: SessionSummary[]): Promise<boolean | null> {
-  const sittings = await recentUnfinishedSittings(uid, now, summaries);
-  if (sittings === null) return null;
-  return isPaused(sittings.map((s) => {
+  const docs = await loadDocs(uid, pauseCandidateIds(summaries));
+  if (docs === null) return null;
+  return isPaused(docs.flatMap((s) => {
+    if (s.kind === "drill") return [];
     const stage = currentStage(s);
-    return { kind: s.kind, finishedAt: s.finishedAt, stageStartedAt: s.stageStartedAt, breakUntil: s.breakUntil, minutesOfCurrent: stage ? s.minutes[stage] : null };
+    return [{ kind: s.kind, finishedAt: s.finishedAt, stageStartedAt: s.stageStartedAt, breakUntil: s.breakUntil, minutesOfCurrent: stage ? s.minutes[stage] : null }];
   }), now);
 }
 
@@ -171,7 +188,19 @@ async function pausedFor(uid: string, now: number, summaries: SessionSummary[]):
 /** The student's own recorded answer to finished question `qid`, from the
  *  newest doc holding it as finished work (the analytics rule: a checked
  *  drill question, a submitted module of a finished sitting). */
-async function finishedResponse(uid: string, qid: string, summaries: SessionSummary[]): Promise<{ ok: true; found: boolean; response: string | null } | { ok: false }> {
+async function finishedResponse(
+  uid: string, qid: string, summaries: SessionSummary[], from?: string,
+): Promise<{ ok: true; found: boolean; response: string | null } | { ok: false }> {
+  // The attempt the "Explain" link came from, when it is this student's own
+  // finished work holding the question (loadDoc checks the owner): an
+  // unfinished sitting never counts -- its modules may still be resumed.
+  if (from) {
+    const loaded = await loadDoc(uid, from);
+    const doc = loaded.ok ? loaded.doc : null;
+    if (doc && (doc.kind === "drill" || doc.finishedAt !== null) && itemsOf(doc).some((item) => item.qid === qid)) {
+      return { ok: true, found: true, response: doc.answers[qid] ?? null };
+    }
+  }
   const ids = summaries.filter(hasFinishedWork).map((s) => s.id);
   const BATCH = 8;
   for (let i = 0; i < ids.length; i += BATCH) {
@@ -186,7 +215,10 @@ async function finishedResponse(uid: string, qid: string, summaries: SessionSumm
 
 async function downloadImage(path: string): Promise<LlmImage | null> {
   try {
-    const { data, error } = await createAdminClient().storage.from(ASSET_BUCKET).download(path);
+    const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), IMAGE_TIMEOUT_MS));
+    const got = await Promise.race([createAdminClient().storage.from(ASSET_BUCKET).download(path), timeout]);
+    if (!got) return null;
+    const { data, error } = got;
     if (error || !data) return null;
     const bytes = Buffer.from(await data.arrayBuffer());
     if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) return null;
@@ -203,7 +235,7 @@ type ExplainFacts = { ok: true; explain: TutorExplain; images: LlmImage[]; label
  *  the official worked answer) only for a model that reads them; otherwise,
  *  or when the worked-answer image is missing, its text version. */
 async function explainFacts(
-  uid: string, qid: string, now: number, summaries: SessionSummary[], stats: StudentAnalytics | null, cfg: ProviderConfig,
+  uid: string, qid: string, from: string | undefined, now: number, summaries: SessionSummary[], stats: StudentAnalytics | null, cfg: ProviderConfig,
 ): Promise<ExplainFacts> {
   if (!stats) return { ok: false, ...refuse(HISTORY_UNAVAILABLE, 503) };
   const notFinished = { ok: false as const, ...refuse("I can only explain questions you've finished — check your answer first, then ask me.", 409) };
@@ -211,7 +243,7 @@ async function explainFacts(
   const inPlay = await inPlayQuestionIds(uid, now, summaries);
   if (inPlay === null) return { ok: false, ...refuse(HISTORY_UNAVAILABLE, 503) };
   if (inPlay.has(qid)) return { ok: false, ...refuse(RUNNING_EXAM_REFUSAL, 409) };
-  const answered = await finishedResponse(uid, qid, summaries);
+  const answered = await finishedResponse(uid, qid, summaries, from);
   if (!answered.ok) return { ok: false, ...refuse(HISTORY_UNAVAILABLE, 503) };
   if (!answered.found) return notFinished;
   const item = reviewItem(qid, 1, answered.response);
@@ -240,15 +272,24 @@ async function explainFacts(
 
 // --- a turn ------------------------------------------------------------------------
 
-/** Folds all but the last 8 turns into the rolling summary (a separate,
- *  small call on the global budget only). On any failure the memory is
- *  left as it was -- the next turn tries again. */
-async function withSummary(memory: TutorMemory): Promise<TutorMemory> {
+/** Folds all but the last 8 turns into the rolling summary: a separate,
+ *  small call on the global budget only, run after the response (never on
+ *  the student's wait) and bounded by `deadlineAt`. The fresh memory then
+ *  gets the summary and exactly the folded turns marked (applySummary), so
+ *  a turn stored meanwhile is kept. On any failure nothing changes -- the
+ *  next turn schedules it again. */
+async function foldSummary(uid: string, deadlineAt: number): Promise<void> {
+  let memory: TutorMemory;
+  try {
+    memory = await readMemory(uid);
+  } catch {
+    return;
+  }
   const fold = toSummarise(memory.messages, memory.summary);
-  if (!fold.length) return memory;
-  const result = await complete(summaryRequest(memory.summary, fold), "tutor", null).catch(() => null);
+  if (!fold.length || !compactHistory(memory.messages, memory.summary).needsSummary) return;
+  const result = await complete(summaryRequest(memory.summary, fold), "tutor", null, { deadlineAt }).catch(() => null);
   const summary = result?.ok ? parseSummary(result.json) : null;
-  return summary ? { ...memory, summary, messages: markSummarised(memory.messages) } : memory;
+  if (summary) await updateMemory(uid, (prev) => applySummary(prev, fold, summary)).catch(() => null);
 }
 
 /**
@@ -260,7 +301,7 @@ async function withSummary(memory: TutorMemory): Promise<TutorMemory> {
  * best-effort: a reply is still returned if the memory write fails.
  */
 export async function tutorTurn(
-  uid: string, firstName: string, message: string, explainQuestionId?: string,
+  uid: string, firstName: string, message: string, explainQuestionId?: string, explainFrom?: string,
 ): Promise<{ reply: string; actions: TutorAction[]; remaining: number } | Refusal> {
   const now = Date.now();
   const today = pkToday(now);
@@ -268,7 +309,7 @@ export async function tutorTurn(
   if (summaries === null) return refuse(HISTORY_UNAVAILABLE, 503);
   const paused = await pausedFor(uid, now, summaries);
   if (paused === null) return refuse(HISTORY_UNAVAILABLE, 503);
-  if (paused) return refuse(TUTOR_PAUSED, 423);
+  if (paused) return refuse(TUTOR_PAUSED_MESSAGE, 423);
 
   const left = await readTutorRemaining(uid, today);
   if (left === null) return refuse("Your message count couldn't be checked. Please try again.", 503);
@@ -295,7 +336,7 @@ export async function tutorTurn(
   let images: LlmImage[] = [];
   let explainLabel: string | null = null;
   if (explainQuestionId) {
-    const facts = await explainFacts(uid, explainQuestionId, now, summaries, stats, cfg);
+    const facts = await explainFacts(uid, explainQuestionId, explainFrom, now, summaries, stats, cfg);
     if (!facts.ok) return refuse(facts.error, facts.status);
     ({ explain, images } = facts);
     explainLabel = facts.label;
@@ -309,17 +350,19 @@ export async function tutorTurn(
     profile: { examDate: profile.examDate, targetMonth: profile.targetMonth, targetScore: profile.targetScore, start: profile.start, days: profile.days, minutes: profile.minutes },
     plan: plan ? { items: plan.items } : null,
     analytics: stats?.analytics ?? null,
+    recordUnavailable: !stats,
     insights: insights ? { headline: insights.headline, summary: insights.summary, tips: insights.tips } : null,
     mistakes: stats ? mistakeViews(stats.history, MISTAKES_IN_PROMPT) : [],
     bankSkills: bankSkills(),
     turnId: randomBytes(6).toString("base64url"),
     explain,
   };
-  const text = message.trim().slice(0, MAX_MESSAGE_CHARS) || EXPLAIN_MESSAGE;
+  const text = message.trim().slice(0, TUTOR_MAX_MESSAGE_CHARS) || TUTOR_EXPLAIN_MESSAGE;
   const { send } = compactHistory(memory.messages, memory.summary);
-  const result = await complete(tutorRequest(ctx, { summary: memory.summary, history: send, message: text, images }), "tutor", uid);
+  const request = tutorRequest(ctx, { summary: memory.summary, history: send, message: text, images });
+  const result = await complete(request, "tutor", uid, { deadlineAt: now + TURN_BUDGET_MS - STORE_MARGIN_MS });
   if (!result.ok) {
-    if (result.reason === "budget") return result.scope === "student" ? refuse(OUT_OF_MESSAGES, 429) : refuse(BRAIN, 503);
+    if (result.reason === "budget") return result.scope === "student" ? refuse(OUT_OF_MESSAGES, 429) : refuse(GLOBAL_LIMIT, 503);
     if (result.reason !== "no-provider") await refundBudget(uid, "tutor", today).catch(() => undefined);
     return refuse(BRAIN, 503);
   }
@@ -331,10 +374,9 @@ export async function tutorTurn(
 
   const asked: TutorMessage = { role: "user", text: explainLabel ? `${text} (${explainLabel})` : text, at: now };
   const answered: TutorMessage = { role: "assistant", text: parsed.reply, at: Date.now(), ...(parsed.actions.length ? { actions: parsed.actions } : {}) };
-  await updateMemory(uid, async (prev) => {
-    const next: TutorMemory = { summary: prev.summary, messages: [...prev.messages, asked, answered], pendingActions: parsed.actions };
-    return compactHistory(next.messages, next.summary).needsSummary ? withSummary(next) : next;
-  }).catch(() => false);
+  const stored = await updateMemory(uid, (prev) => ({ summary: prev.summary, messages: [...prev.messages, asked, answered], pendingActions: parsed.actions }))
+    .catch(() => null);
+  if (stored && compactHistory(stored.messages, stored.summary).needsSummary) after(() => foldSummary(uid, now + FOLD_DEADLINE_MS));
 
   return { reply: parsed.reply, actions: parsed.actions, remaining: Math.max(0, left - 1) };
 }
@@ -343,7 +385,7 @@ export async function tutorTurn(
 
 /** Drops a used action so a second tap can't repeat it (best effort). */
 async function consume(uid: string, actionId: string): Promise<void> {
-  await updateMemory(uid, (prev) => ({ ...prev, pendingActions: prev.pendingActions.filter((a) => a.id !== actionId) })).catch(() => false);
+  await updateMemory(uid, (prev) => ({ ...prev, pendingActions: prev.pendingActions.filter((a) => a.id !== actionId) })).catch(() => null);
 }
 
 /**
@@ -360,7 +402,7 @@ export async function runTutorAction(uid: string, actionId: string): Promise<{ o
   if (summaries === null) return { ok: false, ...refuse(HISTORY_UNAVAILABLE, 503) };
   const paused = await pausedFor(uid, now, summaries);
   if (paused === null) return { ok: false, ...refuse(HISTORY_UNAVAILABLE, 503) };
-  if (paused) return { ok: false, ...refuse(TUTOR_PAUSED, 423) };
+  if (paused) return { ok: false, ...refuse(TUTOR_PAUSED_MESSAGE, 423) };
   let memory: TutorMemory;
   try {
     memory = await readMemory(uid);
@@ -370,7 +412,8 @@ export async function runTutorAction(uid: string, actionId: string): Promise<{ o
   const action = memory.pendingActions.find((a) => a.id === actionId);
   if (!action) return { ok: false, ...refuse(EXPIRED, 410) };
 
-  if (action.type === "open") return { ok: true, href: action.href };
+  // Re-checked at the tap too: only a SAT Lab page, whatever the memory holds.
+  if (action.type === "open") return isSatLabHref(action.href) ? { ok: true, href: action.href } : { ok: false, ...refuse(EXPIRED, 410) };
 
   if (action.type === "create_drill") {
     const filter = satFilterSchema.safeParse(action.filter);

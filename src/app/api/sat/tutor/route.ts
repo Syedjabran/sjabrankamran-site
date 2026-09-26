@@ -2,25 +2,31 @@
 //
 // The Digital SAT Tutor (SAT Coach spec 8.4). GET: the student's chat,
 // messages left today, whether the tutor is paused and their newest
-// finished wrong answer. POST { message, explainQuestionId? }: one turn ->
-// { reply, actions, remaining }. Paused while a timed module runs (423,
-// not counted); 40 messages a day (429). Students only.
+// finished wrong answer. POST { message, explainQuestionId?, explainFrom? }:
+// one turn -> { reply, actions, remaining }. Paused while a timed module
+// runs (423, not counted); 40 messages a day (429). Students only.
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { invalidRequest } from "@/lib/sat/zod-messages";
+import { TUTOR_MAX_MESSAGE_CHARS } from "@/lib/sat/client-types";
 import { errorResponse, satStudent } from "@/lib/sat/coach/student-guard";
 import { tutorHistory, tutorTurn } from "@/lib/sat/coach/tutor";
-import { MAX_MESSAGE_CHARS } from "@/lib/sat/coach/tutor-core";
 
 export const runtime = "nodejs";
-// One turn can wait on the model (20 s per attempt, a retry and a fallback).
+// A turn answers within 45 s (tutor.ts TURN_BUDGET_MS bounds the model call,
+// retries and fallback included); the summary fold runs after the response
+// and must finish by 55 s.
 export const maxDuration = 60;
 
 const QUESTION_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const SITTING_ID = /^[A-Za-z0-9_-]{6,64}$/;
+const CANT_EXPLAIN = "That question can't be explained.";
 
 const body = z.object({
-  message: z.custom<string>((v) => typeof v === "string" && v.length <= MAX_MESSAGE_CHARS, { message: `Keep your message under ${MAX_MESSAGE_CHARS} characters.` }).optional(),
-  explainQuestionId: z.custom<string>((v) => typeof v === "string" && QUESTION_ID.test(v), { message: "That question can't be explained." }).optional(),
+  message: z.custom<string>((v) => typeof v === "string" && v.length <= TUTOR_MAX_MESSAGE_CHARS, { message: `Keep your message under ${TUTOR_MAX_MESSAGE_CHARS} characters.` }).optional(),
+  explainQuestionId: z.custom<string>((v) => typeof v === "string" && QUESTION_ID.test(v), { message: CANT_EXPLAIN }).optional(),
+  // The drill or sitting the Explain link came from (whose answer to use).
+  explainFrom: z.custom<string>((v) => typeof v === "string" && SITTING_ID.test(v), { message: CANT_EXPLAIN }).optional(),
 }).superRefine((b, ctx) => {
   if (!b.explainQuestionId && !b.message?.trim()) ctx.addIssue({ code: "custom", message: "Type a message first." });
 });
@@ -38,7 +44,8 @@ export async function POST(req: Request) {
   if ("refused" in caller) return caller.refused;
   const parsed = body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return invalidRequest(parsed);
-  const turn = await tutorTurn(caller.user.id, caller.user.fullName, parsed.data.message ?? "", parsed.data.explainQuestionId);
+  const { message, explainQuestionId, explainFrom } = parsed.data;
+  const turn = await tutorTurn(caller.user.id, caller.user.fullName, message ?? "", explainQuestionId, explainQuestionId ? explainFrom : undefined);
   if ("error" in turn) return errorResponse(turn.error, turn.status);
   return NextResponse.json(turn);
 }

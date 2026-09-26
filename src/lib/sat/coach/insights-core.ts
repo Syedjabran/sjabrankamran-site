@@ -40,15 +40,12 @@ const MAX_STRONG_SKILLS = 3;
 const TEST_DAY_THRESHOLD = 2;
 const NAME_FALLBACK = "there";
 
-/** First word of `raw`, with anything from "@" onward stripped -- in that
- *  order, so an email typed as a single "token" (no space) is still cut at
- *  its "@" rather than kept whole. Never lets an email or its domain reach
- *  an AI prompt. */
+/** The first word of `raw`, or "there" when `raw` has an "@" anywhere --
+ *  an email (or a name field holding one) is never used, not even its
+ *  local part, so no email or domain can reach an AI prompt. */
 export function sanitiseFirstName(raw: string): string {
-  const firstWord = raw.trim().split(/\s+/)[0] ?? "";
-  const at = firstWord.indexOf("@");
-  const name = at === -1 ? firstWord : firstWord.slice(0, at);
-  return name || NAME_FALLBACK;
+  if (raw.includes("@")) return NAME_FALLBACK;
+  return raw.trim().split(/\s+/)[0] || NAME_FALLBACK;
 }
 
 function pct(fraction: number): number {
