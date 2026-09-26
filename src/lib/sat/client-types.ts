@@ -242,6 +242,7 @@ export type PlanItem = {
   sessionId?: string;          // the drill/sitting that fulfils it
   moves?: { from: string; to: string; at: string }[];   // mocks only, at most MAX_MOCK_MOVES
   completedAt?: string;
+  replacementFor?: string;     // mocks only: the id of the missed full exam this one re-places
 };
 
 /** The plan part of GET /api/sat/coach: today's items, the next 14 days,
