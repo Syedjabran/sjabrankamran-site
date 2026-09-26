@@ -50,3 +50,39 @@ export async function saveDoc(doc: SATDoc): Promise<boolean> {
   await writeFreshJson(BUCKET, indexPath(doc.uid), { items: items.slice(0, 300) });
   return true;
 }
+
+// A student's own sittings started within this window are treated as
+// currently "in play" for exclusion purposes (a new drill, diagnostic or
+// adaptive mock never draws their questions) -- long enough to cover any
+// adaptive/practice sitting actually in progress, short enough that an old,
+// abandoned, unfinished sitting stops narrowing the drill pool forever.
+const RECENT_MS = 4 * 60 * 60 * 1000;
+
+/** Question ids a new drill, diagnostic or adaptive mock must not draw right
+ *  now: everything planned, or possibly still to be routed to, in the
+ *  student's own unfinished adaptive/practice sittings started in the last
+ *  four hours -- otherwise a drill opened in another tab, filtered to match,
+ *  or a second mock blank-submitted for its review, becomes a way to look up
+ *  a mid-exam answer. Pass `summaries` when the caller already holds a fresh
+ *  list. Reads fail closed: any failure returns `null` and the caller must
+ *  refuse to build an unfiltered drill or form rather than silently start
+ *  one. */
+export async function inPlayQuestionIds(uid: string, now: number, summaries?: SessionSummary[]): Promise<Set<string> | null> {
+  const list = summaries ?? (await listSummaries(uid));
+  if (list === null) return null;
+  const recent = list.filter((s) => s.kind !== "drill" && s.finishedAt === null && now - s.createdAt <= RECENT_MS);
+  const exclude = new Set<string>();
+  for (const summary of recent) {
+    const loaded = await loadDoc(uid, summary.id);
+    if (!loaded.ok) return null;
+    const doc = loaded.doc;
+    if (!doc || doc.kind === "drill") continue;
+    for (const ids of Object.values(doc.plan)) for (const id of ids ?? []) exclude.add(id);
+    for (const variant of Object.values(doc.variants)) {
+      if (!variant) continue;
+      for (const id of variant.lower) exclude.add(id);
+      for (const id of variant.upper) exclude.add(id);
+    }
+  }
+  return exclude;
+}

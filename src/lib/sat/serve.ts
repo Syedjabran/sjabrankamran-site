@@ -171,7 +171,7 @@ export function summaryOf(doc: SATSession | SATDrill): SessionSummary {
   const finished = doc.finishedAt !== null;
   if (doc.kind === "drill") {
     const values = Object.values(doc.checked);
-    return { id: doc.id, kind: "drill", title: doc.title, createdAt: doc.createdAt, finishedAt: doc.finishedAt, score: null,
+    return { id: doc.id, kind: "drill", ...(doc.purpose ? { purpose: doc.purpose } : {}), title: doc.title, createdAt: doc.createdAt, finishedAt: doc.finishedAt, score: null,
       correct: finished ? values.filter(Boolean).length : 0, total: finished ? doc.questionIds.length : 0, assignmentId: doc.assignmentId,
       overtime: false };
   }

@@ -69,9 +69,15 @@ export type DrillState = {
   finished: boolean;
 };
 
+/** What a drill is for: a practice drill, the starting-point diagnostic, or
+ *  a scheduled daily challenge (SAT Coach). */
+export type DrillPurpose = "drill" | "diagnostic" | "challenge";
+
 export type SessionSummary = {
   id: string;
   kind: "adaptive" | "practice" | "drill";
+  /** Drills only, and only when the drill carries one (absent = "drill"). */
+  purpose?: DrillPurpose;
   title: string;
   createdAt: number;
   finishedAt: number | null;

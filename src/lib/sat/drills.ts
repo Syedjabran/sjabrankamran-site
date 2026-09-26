@@ -11,13 +11,18 @@ import { MAX_RESPONSE_CHARS } from "./session.ts";
 import type { SATAnswer, SATQuestion } from "./types.ts";
 // drillTitle is the same pure function the staff assign panel previews
 // with, so a drill's stored/notified title matches that preview exactly.
-import { DRILL_COUNT_MAX, DRILL_COUNT_MIN, drillTitle } from "./client-types.ts";
+import { DRILL_COUNT_MAX, DRILL_COUNT_MIN, drillTitle, type DrillPurpose } from "./client-types.ts";
+import { DIAGNOSTIC_TITLE, pickDiagnostic } from "./coach/diagnostic.ts";
 
 export type SATDrill = {
   version: 1;
   id: string;
   uid: string;
   kind: "drill";
+  /** What the drill is for; absent = "drill" (every drill before SAT Coach). */
+  purpose?: DrillPurpose;
+  /** The plan item it was started from; absent = null. */
+  planItemId?: string | null;
   title: string;
   createdAt: number;
   filter: SATFilter;
@@ -45,6 +50,22 @@ export function startDrill(
     version: 1, id: ids.id, uid: ids.uid, kind: "drill", title: drillTitle(filter), createdAt: ids.now,
     filter, questionIds: order.slice(0, n).map((q) => q.id), answers: {}, checked: {}, finishedAt: null,
     assignmentId: ids.assignmentId ?? null,
+  };
+}
+
+/** The starting-point diagnostic (SAT Coach spec 5): a drill tagged
+ *  `purpose: "diagnostic"` whose questions come from pickDiagnostic -- 3 per
+ *  domain, one Easy/Medium/Hard each -- never from a filter pull. `exclude`
+ *  keeps the student's running-sitting questions out, as for startDrill. */
+export function startDiagnostic(
+  bank: SATQuestion[], rng: Rng,
+  ids: { id: string; uid: string; now: number; planItemId?: string | null },
+  exclude?: Set<string>,
+): SATDrill {
+  return {
+    version: 1, id: ids.id, uid: ids.uid, kind: "drill", purpose: "diagnostic", planItemId: ids.planItemId ?? null,
+    title: DIAGNOSTIC_TITLE, createdAt: ids.now, filter: {}, questionIds: pickDiagnostic(bank, rng, exclude),
+    answers: {}, checked: {}, finishedAt: null, assignmentId: null,
   };
 }
 

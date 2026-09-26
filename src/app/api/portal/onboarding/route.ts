@@ -1,15 +1,27 @@
 import { NextResponse } from "next/server";
-import { getPortalUser } from "@/lib/edu/auth";
+import { getPortalUser, type PortalUser } from "@/lib/edu/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   getOnboarding, saveOnboarding, validateOnboarding, PHOTO_PREFIX, PHOTO_TYPES, type Onboarding, type Guardian,
 } from "@/lib/portal/onboarding";
+import { subjectOf } from "@/lib/portal/subjects";
+import { ownSatProfile } from "@/lib/sat/coach/profile-store";
 
 export const runtime = "nodejs";
 
 function ownPhotoPath(uid: string, path: string | undefined): string | undefined {
   const exts = Object.values(PHOTO_TYPES).join("|");
   return new RegExp(`^${PHOTO_PREFIX}/${uid}\\.(${exts})$`).test(path || "") ? path : undefined;
+}
+
+// Where the student goes once onboarding is done: SAT setup when SAT is
+// enabled and not set up yet (so it reads as the last onboarding step),
+// otherwise the portal. A failed check falls back to the portal -- the SAT
+// Lab itself still sends them to setup on their first visit.
+async function nextAfterOnboarding(user: PortalUser): Promise<string> {
+  const setupPath = subjectOf("sat")?.setupPath;
+  const own = await ownSatProfile(user);
+  return setupPath && own.status === "student" && own.profile === null ? setupPath : "/portal";
 }
 
 // GET: current onboarding + read-only school/class (from enrolment).
@@ -113,7 +125,7 @@ export async function POST(req: Request) {
   // cookie value is the student's own id (middleware only trusts a match), so a
   // different account on a shared device is still re-checked. This also avoids a
   // brief re-gate if storage read-after-write lags right after completion.
-  const res = NextResponse.json({ ok: true }, { status: 200 });
+  const res = NextResponse.json({ ok: true, next: await nextAfterOnboarding(user) }, { status: 200 });
   res.cookies.set("pb_onb", `v2:${user.id}`, {
     path: "/portal", httpOnly: true, sameSite: "lax", maxAge: 60 * 60 * 12,
   });

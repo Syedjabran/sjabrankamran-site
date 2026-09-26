@@ -3,8 +3,9 @@
 // Walks the import graph from every file under src/ that starts with a
 // "use client" directive and fails if it reaches bank.ts, serve.ts,
 // session.ts, forms.ts, adaptive.ts, scoring.ts, drills.ts or store.ts in
-// src/lib/sat/, or any src/lib/sat/*.json (the question bank and practice
-// tests). Anything a client module imports is bundled for the browser, so
+// src/lib/sat/, a server-only SAT Coach module in src/lib/sat/coach/
+// (profile-store.ts, diagnostic-drill.ts), or any src/lib/sat/*.json (the
+// question bank and practice tests). Anything a client module imports is bundled for the browser, so
 // this is what keeps the answer key out of it mechanically rather than by
 // convention.
 //
@@ -22,7 +23,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
-const FORBIDDEN = new Set(["bank.ts", "serve.ts", "session.ts", "forms.ts", "adaptive.ts", "scoring.ts", "drills.ts", "store.ts"]);
+// Paths relative to src/lib/sat/.
+const FORBIDDEN = new Set([
+  "bank.ts", "serve.ts", "session.ts", "forms.ts", "adaptive.ts", "scoring.ts", "drills.ts", "store.ts",
+  "coach/profile-store.ts", "coach/diagnostic-drill.ts",
+]);
 const CODE = /\.(ts|tsx|js|jsx|mjs)$/;
 const EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".json"];
 
@@ -37,9 +42,10 @@ function listFiles(dir) {
 }
 
 function isForbidden(file, srcDir) {
-  if (path.dirname(file) !== path.join(srcDir, "lib", "sat")) return false;
-  const base = path.basename(file);
-  return FORBIDDEN.has(base) || base.endsWith(".json");
+  const satDir = path.join(srcDir, "lib", "sat");
+  const rel = path.relative(satDir, file).split(path.sep).join("/");
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return false;
+  return FORBIDDEN.has(rel) || (path.dirname(file) === satDir && rel.endsWith(".json"));
 }
 
 /** `@/x` and relative specifiers to a file on disk; null for a package. */
@@ -133,21 +139,26 @@ function selfTest() {
     put("lib/sat/question-bank.json", "[]\n");
     put("lib/sat/drills.ts", "export const d = 1;\n");
     put("lib/sat/store.ts", "export const s = 1;\n");
+    put("lib/sat/coach/profile.ts", "export const p = 1;\n");
+    put("lib/sat/coach/profile-store.ts", 'import { s } from "../store.ts";\nexport const ps = s;\n');
     put("lib/util.ts", 'export { bank } from "./sat/bank";\n');
     put("lib/actions.ts", '"use server";\nimport { s } from "./sat/store";\nexport async function act() { return s; }\n');
     put("components/ok.tsx", '"use client";\nimport { A } from "@/lib/sat/client-types";\nimport type { bank } from "@/lib/sat/bank";\nimport { act } from "../lib/actions";\nexport const ok = [A, act];\n');
     put("components/reexport.tsx", '"use client";\nimport { bank } from "../lib/util";\nexport const r = bank;\n');
     put("components/json.tsx", "'use client';\nimport data from \"@/lib/sat/question-bank.json\";\nexport const j = data;\n");
     put("components/dynamic.tsx", '"use client";\nexport const load = () => import("@/lib/sat/drills");\n');
+    put("components/coach-ok.tsx", '"use client";\nimport { p } from "@/lib/sat/coach/profile";\nexport const c = p;\n');
+    put("components/coach-store.tsx", '"use client";\nimport { ps } from "../lib/sat/coach/profile-store";\nexport const c = ps;\n');
     put("components/server-only-page.tsx", 'import { bank } from "@/lib/sat/bank";\nexport const p = bank;\n');
     const { clients, violations } = findViolations(src);
     const got = violations.map((v) => v.join(" -> ")).sort();
     const want = [
+      "components/coach-store.tsx -> lib/sat/coach/profile-store.ts",
       "components/dynamic.tsx -> lib/sat/drills.ts",
       "components/json.tsx -> lib/sat/question-bank.json",
       "components/reexport.tsx -> lib/util.ts -> lib/sat/bank.ts",
     ];
-    if (clients !== 4 || JSON.stringify(got) !== JSON.stringify(want)) {
+    if (clients !== 6 || JSON.stringify(got) !== JSON.stringify(want)) {
       throw new Error(`self-test failed: ${clients} client files, violations:\n  ${got.join("\n  ") || "(none)"}`);
     }
   } finally {
