@@ -3,10 +3,10 @@
 // Pure SAT study planner (Node-testable, no server-only imports, no answer
 // data): turns the student's SAT date, practice days and minutes into a
 // dated plan of daily challenges, full practice exams ("mocks"), review days
-// and the exam itself (buildPlan -- the full rebuild, on the first build and
-// on profile changes); keeps it day to day (maintainPlan -- statuses, missed
-// full exams re-placed once, practice tests re-validated); and enforces the
-// rules for moving a full exam (SAT Coach spec section 6).
+// and the exam itself (buildPlan -- on the first build, and on a profile edit
+// with the scope rebuildScope gives); keeps it day to day (maintainPlan --
+// statuses, missed full exams re-placed once, practice tests re-validated);
+// and enforces the rules for moving a full exam (SAT Coach spec section 6).
 //
 // Dates are PKT calendar days "YYYY-MM-DD". All arithmetic runs on UTC
 // midnights built from those strings, so the host timezone never shifts a
@@ -111,15 +111,19 @@ export function mockDates(today: string, exam: string, days: number[]): string[]
 
 // --- Plan generation ---------------------------------------------------------
 //
-// Two entry points (spec 6.5): buildPlan is the FULL rebuild, run on the
-// first build and when profile fields change; maintainPlan (below) is the
-// DAILY step. The full-exam grid is anchored at exam - 5 and stepped
-// backwards, so it does not depend on the day buildPlan runs -- except the
-// earliest target, whose snap lower bound (today + 2) moves with today. So a
-// target counts as covered when any full exam in the plan (whatever its
-// status -- a missed one is covered by its replacement or deliberately left
-// unreplaced), or a day one was moved away from, lies within 3 days of it
-// (the snap window).
+// Two entry points (spec 6.5): buildPlan runs on the first build and on a
+// profile edit, re-planning only what the edit changes (rebuildScope):
+//   "schedule" (exam date / target month / practice days): future scheduled
+//     full exams that were neither moved nor started are dropped and the
+//     grid is recomputed from today; everything the student did or chose --
+//     done, late, missed, started and moved full exams -- stays;
+//   "sizes" (minutes only): future challenge/review sizes change, nothing
+//     else (no full exam moves);
+//   no scope (anything else): the plan does not change.
+// maintainPlan (below) is the DAILY step. A recomputed target counts as
+// covered when a kept full exam (whatever its status -- a missed one is
+// covered by its replacement or deliberately left unreplaced) or a day one
+// was moved away from lies within 3 days of it (the snap window).
 
 /** Started or finished: recorded work, so a regeneration never replaces it. */
 function isStarted(item: PlanItem): boolean {
@@ -184,7 +188,20 @@ type BuildInput = {
   practiceAvailable: number[];
   newId: () => string;
   diagnosticId?: string | null;
+  scope?: RebuildScope;          // default "schedule" (and a first build is one)
 };
+
+export type RebuildScope = "schedule" | "sizes";
+
+/** What a profile edit re-plans: the schedule when the exam date, target
+ *  month or practice days change; only the challenge sizes when only the
+ *  minutes change; null (nothing) for any other field (target score,
+ *  starting point). */
+export function rebuildScope(previous: PlannerProfile, next: PlannerProfile): RebuildScope | null {
+  const daySet = (days: number[]) => [...new Set(days)].sort((a, b) => a - b).join();
+  if (previous.examDate !== next.examDate || previous.targetMonth !== next.targetMonth || daySet(previous.days) !== daySet(next.days)) return "schedule";
+  return previous.minutes !== next.minutes ? "sizes" : null;
+}
 
 function planDiagnostic(input: BuildInput, upcoming: PlanItem[]): PlanItem | null {
   const { today, profile, existing, newId, diagnosticId } = input;
@@ -195,13 +212,14 @@ function planDiagnostic(input: BuildInput, upcoming: PlanItem[]): PlanItem | nul
   return { id: newId(), date: today, kind: "diagnostic", status: "scheduled", size: DIAGNOSTIC_SIZE, ...(diagnosticId ? { sessionId: diagnosticId } : {}) };
 }
 
-/** Future scheduled full exams that are still valid (on or after today, at
- *  least 2 days before the end, not on a day that already holds one). */
+/** Future scheduled full exams a student moved, while still valid (on or
+ *  after today, at least 2 days before the end, not on a day that already
+ *  holds one). The planner's own unstarted ones are recomputed instead. */
 function keptMocks(upcoming: PlanItem[], end: string, plan: PlanItem[]): PlanItem[] {
   const lastDay = addDays(end, -2);
   const taken = new Set(plan.filter((i) => i.kind === "mock").map((i) => i.date));
   const kept: PlanItem[] = [];
-  for (const mock of sortPlan(upcoming.filter((i) => i.kind === "mock" && !isStarted(i)))) {
+  for (const mock of sortPlan(upcoming.filter((i) => i.kind === "mock" && !isStarted(i) && i.moves?.length))) {
     if (mock.date > lastDay || taken.has(mock.date)) continue;
     kept.push(mock);
     taken.add(mock.date);
@@ -217,7 +235,7 @@ function keptMocks(upcoming: PlanItem[], end: string, plan: PlanItem[]): PlanIte
  *  relative to the chronologically previous full exam: an official practice
  *  test (the lowest untaken, unassigned one) after anything but a practice
  *  test, else the adaptive mock. */
-function newMocks(input: BuildInput, end: string, plan: PlanItem[]): PlanItem[] {
+function newMocks(input: BuildInput, end: string, plan: PlanItem[], reusable: Map<string, string>): PlanItem[] {
   const { today, profile, practiceTaken, practiceAvailable, newId } = input;
   const grid = plan.filter((i) => i.kind === "mock");
   const vacated = [...vacatedDays(plan)];
@@ -236,7 +254,7 @@ function newMocks(input: BuildInput, end: string, plan: PlanItem[]): PlanItem[] 
     const previous = sortPlan(grid.filter((m) => m.date < date)).pop();
     const testNo = previous?.mock?.kind === "practice" ? undefined : tests.find((n) => !held.has(n));
     const item: PlanItem = {
-      id: newId(),
+      id: reusable.get(date) ?? newId(),
       date,
       kind: "mock",
       status: "scheduled",
@@ -274,14 +292,25 @@ function dailyItems(input: BuildInput, end: string, upcoming: PlanItem[], plan: 
   return items;
 }
 
-/** The full rebuild: the plan from `today` to the horizon. Past items (and
- *  started/finished ones) are kept unchanged; future scheduled full exams are
- *  kept while still valid; everything else is regenerated with stable ids,
- *  and future practice exams are re-validated against the tests taken. On
+/** A minutes-only edit: future unstarted challenges and reviews take the new
+ *  size; nothing else changes. */
+function resizeDaily(items: PlanItem[], today: string, size: number): PlanItem[] {
+  return sortPlan(items.map((item) =>
+    (item.kind === "challenge" || item.kind === "review") && item.date >= today && !isStarted(item) && item.size !== size ? { ...item, size } : item));
+}
+
+/** The plan from `today` to the horizon, for a first build or a profile
+ *  edit (`scope`, see rebuildScope). "sizes" only resizes future challenges
+ *  and reviews. "schedule": past items (and started/finished ones) are kept
+ *  unchanged; moved full exams are kept while still valid; the grid is
+ *  recomputed from today (reusing the id of a dropped full exam on the same
+ *  day); challenges, reviews and the exam item are regenerated with stable
+ *  ids; future practice exams are re-validated against the tests taken. On
  *  the horizon's last day (exam day) every item dated today or earlier stays
  *  as it is. */
 export function buildPlan(input: BuildInput): PlanItem[] {
-  const { today, profile, existing, practiceTaken, practiceAvailable, newId } = input;
+  const { today, profile, existing, practiceTaken, practiceAvailable, newId, scope = "schedule" } = input;
+  if (scope === "sizes") return resizeDaily(existing, today, challengeSize(profile.minutes));
   const upcoming = existing.filter((i) => i.date >= today);
   const plan = [...existing.filter((i) => i.date < today), ...upcoming.filter(isStarted)];
   const end = horizonEnd(profile);
@@ -291,7 +320,8 @@ export function buildPlan(input: BuildInput): PlanItem[] {
   const diagnostic = planDiagnostic(input, upcoming);
   if (diagnostic) plan.push(diagnostic);
   plan.push(...keptMocks(upcoming, end, plan));
-  plan.push(...newMocks(input, end, plan));
+  const dropped = new Map(upcoming.filter((i) => i.kind === "mock" && !plan.includes(i)).map((i) => [i.date, i.id]));
+  plan.push(...newMocks(input, end, plan, dropped));
   plan.push(...dailyItems(input, end, upcoming, plan));
   if (profile.examDate) {
     const exam = upcoming.find((i) => i.kind === "exam");
@@ -332,11 +362,13 @@ type MaintainInput = {
 
 /** Where a missed full exam's replacement goes: the first practice day from
  *  tomorrow to exam - 2 with no other full exam (missed ones aside) within 3
- *  days -- so never on a day that already holds one. */
+ *  days -- so never on a day that already holds one -- and not a day a full
+ *  exam was moved away from. */
 function replacementDay(plan: PlanItem[], today: string, exam: string, days: number[]): string | null {
   const others = plan.filter((i) => i.kind === "mock" && i.status !== "missed").map((i) => i.date);
+  const vacated = vacatedDays(plan);
   for (let day = addDays(today, 1); day <= addDays(exam, -2); day = addDays(day, 1)) {
-    if (days.includes(weekday(day)) && !others.some((other) => withinThreeDays(other, day))) return day;
+    if (days.includes(weekday(day)) && !vacated.has(day) && !others.some((other) => withinThreeDays(other, day))) return day;
   }
   return null;
 }
@@ -344,15 +376,15 @@ function replacementDay(plan: PlanItem[], today: string, exam: string, days: num
 /** The daily step (spec 6.5): mark statuses; re-place each newly missed full
  *  exam once, as a full exam marked `replacementFor` that sits the same test
  *  and takes over that day's challenge (the planner may do what the student
- *  may not); re-validate future practice exams against the tests taken. It
- *  never adds or moves any other full exam, so the grid a build laid down
- *  stays put. */
+ *  may not) -- except one that was started (it can still be finished, late);
+ *  re-validate future practice exams against the tests taken. It never adds
+ *  or moves any other full exam, so the grid a build laid down stays put. */
 export function maintainPlan(input: MaintainInput): PlanItem[] {
   const { items, today, done, practiceTaken, practiceAvailable, examDate, days, newId } = input;
   const alreadyMissed = new Set(items.filter((i) => i.status === "missed").map((i) => i.id));
   let plan = markStatuses(items, today, done);
   if (examDate) {
-    const newlyMissed = sortPlan(plan).filter((i) => i.kind === "mock" && i.status === "missed" && !alreadyMissed.has(i.id));
+    const newlyMissed = sortPlan(plan).filter((i) => i.kind === "mock" && i.status === "missed" && !i.sessionId && !alreadyMissed.has(i.id));
     for (const missed of newlyMissed) {
       if (plan.some((i) => i.replacementFor === missed.id)) continue;
       const day = replacementDay(plan, today, examDate, days);
