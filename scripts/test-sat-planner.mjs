@@ -46,6 +46,10 @@ assert.deepEqual(mockDates(TODAY, "2027-01-29", [0]), [
   "2026-10-04", "2026-10-18", "2026-11-01", "2026-11-15", "2026-11-29", "2026-12-13", "2026-12-27", "2027-01-10", "2027-01-24",
 ], "light schedule (Sundays only): every 14 days");
 assert.deepEqual(mockDates(TODAY, "2026-11-10", [2, 4]), ["2026-10-08", "2026-10-22", "2026-11-05"], "light schedule (Tue/Thu): every 14 days");
+// built on Sat 10-03, the 10-05 slot can't reach Sunday 10-04 (lower bound
+// 10-05) and falls on Mon 10-05, 13 days before 10-18: a light schedule never
+// has full exams closer than 14 days (spec 6.3), so it is left out
+assert.deepEqual(mockDates("2026-10-03", "2026-10-24", [0]), ["2026-10-18"], "light schedule: no full exams under 14 days apart");
 
 // --- challengeSize
 assert.equal(challengeSize(15), 8);
@@ -272,6 +276,10 @@ const mocksIn = (items) => items.filter((i) => i.kind === "mock");
 
 const mockKey = (items) => items.filter((i) => i.kind === "mock").map((i) => `${i.id}@${i.date}`).sort();
 const mocksOf = (items) => items.filter((i) => i.kind === "mock");
+// One counter for every helper call, so two edits on the same day never hand
+// out the same id (a clash could make a new item look like an old one).
+let helperIds = 0;
+const freshIds = (tag) => () => `${tag}-${++helperIds}`;
 const isDaily = (i) => i.kind === "challenge" || i.kind === "review";
 
 /** Everything scheduled before `today` finished on its own date, except `skip` ids. */
@@ -290,18 +298,18 @@ function maintain(items, today, prof, { skip, done, practiceTaken } = {}) {
   return maintainPlan({
     items, today, done: doneMap,
     practiceTaken: practiceTaken ?? takenOf(markStatuses(items, today, doneMap)),
-    practiceAvailable: PRACTICE_TESTS, examDate: prof.examDate, days: prof.days, newId: idGen(`m${today}-`),
+    practiceAvailable: PRACTICE_TESTS, examDate: prof.examDate, days: prof.days, newId: freshIds(`m${today}`),
   });
 }
 
 /** A schedule edit (exam date / target month / days) on `today`. */
 function replan(items, today, prof, practiceTaken = takenOf(items)) {
-  return buildPlan({ today, profile: prof, existing: items, practiceTaken, practiceAvailable: PRACTICE_TESTS, newId: idGen(`r${today}-`), scope: "schedule" });
+  return buildPlan({ today, profile: prof, existing: items, practiceTaken, practiceAvailable: PRACTICE_TESTS, newId: freshIds(`r${today}`), scope: "schedule" });
 }
 
 /** A minutes-only edit on `today`. */
 function resizeOn(items, today, prof, minutes) {
-  return buildPlan({ today, profile: { ...prof, minutes }, existing: items, practiceTaken: takenOf(items), practiceAvailable: PRACTICE_TESTS, newId: idGen(`z${today}-`), scope: "sizes" });
+  return buildPlan({ today, profile: { ...prof, minutes }, existing: items, practiceTaken: takenOf(items), practiceAvailable: PRACTICE_TESTS, newId: freshIds(`z${today}`), scope: "sizes" });
 }
 
 /** A minutes edit changes nothing but future unstarted challenge/review sizes. */
@@ -345,6 +353,10 @@ function nextSuitable(items, today, exam, days) {
   assert.equal(rebuildScope(base, { ...base, minutes: 45 }), "sizes");
   assert.equal(rebuildScope(base, { ...base, minutes: 45, days: [1, 3] }), "schedule");
   assert.equal(rebuildScope(base, { ...base, start: { kind: "skip" } }), null, "a starting-point edit changes no plan");
+  assert.equal(rebuildScope(base, { ...base, targetMonth: "2026-12" }), null, "a target month under a booked date moves no horizon");
+  const unbooked = profile({ examDate: null, targetMonth: "2026-11" });
+  assert.equal(rebuildScope(unbooked, { ...unbooked, targetMonth: "2026-12" }), "schedule", "a new target month moves the horizon");
+  assert.equal(rebuildScope(unbooked, { ...unbooked, examDate: "2026-11-01" }), "schedule", "booking a date adds the exam day");
 }
 
 // --- multi-day progression: several profiles, built on day 0, maintained daily
@@ -369,6 +381,18 @@ function nextSuitable(items, today, exam, days) {
         assert.equal(new Set(dates).size, dates.length, `${label}, ${t}: one full exam per day`);
         assert.ok(dates.every((d) => d <= addDays(exam, -2)), `${label}, ${t}: no full exam after exam - 2`);
         assertOnlySizes(plan, resizeOn(plan, t, prof, 60), t, 60, `${label}, ${t}`);
+        if (t === exam) continue;
+        // a schedule edit that leaves the profile unchanged is a no-op
+        const same = replan(plan, t, prof);
+        assert.deepEqual(mockKey(same), grid, `${label}, ${t}: an unchanged-profile schedule edit keeps every full exam`);
+        if (daysBetween(t, exam) >= 3) assert.deepEqual(same, plan, `${label}, ${t}: an unchanged-profile schedule edit is a no-op`);
+        // adding a practice day on a full-exam day keeps that exam
+        const today = mockOn(plan, t);
+        const extraDay = EVERY_DAY.find((d) => !days.includes(d));
+        if (today && extraDay !== undefined) {
+          const widened = replan(plan, t, { ...prof, days: [...days, extraDay].sort() });
+          assert.deepEqual(mockOn(widened, t), today, `${label}, ${t}: adding a practice day keeps today's full exam`);
+        }
       }
 
       // the first full exam missed: exactly one replacement, on the next suitable day
@@ -424,6 +448,7 @@ function nextSuitable(items, today, exam, days) {
           plan = maintain(plan, t, after);
           assert.deepEqual(mockKey(plan), grid, `${label}, ${t}: the recomputed grid holds`);
           assertOnlySizes(plan, resizeOn(plan, t, after, 45), t, 45, `${label}, ${t}`);
+          assert.deepEqual(mockKey(replan(plan, t, after)), grid, `${label}, ${t}: a later unchanged-profile schedule edit keeps the grid`);
         }
         scenarios++;
       }
@@ -461,6 +486,155 @@ function nextSuitable(items, today, exam, days) {
   const edited = resizeOn(plan, "2026-11-14", after, 45);
   assert.equal(mockOn(edited, "2026-11-16"), undefined, "no full exam added on 11-16");
   assert.ok(edited.some((i) => i.id === challenge16.id), "the 11-16 challenge stays");
+}
+
+// --- regression: a schedule edit keeps today's and tomorrow's full exams.
+// Exam 10-24, Mon/Wed/Fri, everything done through Mon 10-12; on 10-12 the
+// student adds Tuesday. Before the fix today's exam vanished and 10-19 P5
+// became adaptive.
+{
+  const prof = profile({ start: { kind: "skip" } });
+  let plan = buildPlan({ today: TODAY, profile: prof, existing: [], practiceTaken: [], practiceAvailable: PRACTICE_TESTS, newId: idGen("t") });
+  for (let t = "2026-10-02"; t <= "2026-10-12"; t = addDays(t, 1)) plan = maintain(plan, t, prof);
+  const todays = mockOn(plan, "2026-10-12");
+  const next = mockOn(plan, "2026-10-19");
+  assert.deepEqual([todays.mock, next.mock], [{ kind: "adaptive" }, { kind: "practice", testNo: 5 }]);
+  const widened = replan(plan, "2026-10-12", { ...prof, days: [1, 2, 3, 5] });
+  assert.deepEqual(mockOn(widened, "2026-10-12"), todays, "today's full exam stays, id and all");
+  assert.deepEqual(mockOn(widened, "2026-10-19"), next, "10-19 stays Practice Test 5");
+  assert.deepEqual(widened.filter((i) => i.date >= "2026-10-12" && i.date < "2026-10-19").map((i) => [i.date, i.kind]),
+    [["2026-10-12", "mock"], ["2026-10-13", "challenge"], ["2026-10-14", "challenge"], ["2026-10-16", "challenge"]], "Tuesday gets a challenge");
+  // tomorrow's exam too: the same edit on Sun 10-11
+  let sunday = buildPlan({ today: TODAY, profile: prof, existing: [], practiceTaken: [], practiceAvailable: PRACTICE_TESTS, newId: idGen("u") });
+  for (let t = "2026-10-02"; t <= "2026-10-11"; t = addDays(t, 1)) sunday = maintain(sunday, t, prof);
+  const tomorrows = mockOn(sunday, "2026-10-12");
+  assert.deepEqual(mockOn(replan(sunday, "2026-10-11", { ...prof, days: [1, 2, 3, 5] }), "2026-10-12"), tomorrows, "tomorrow's full exam stays");
+}
+
+// --- after an exam-date change, a later schedule edit sees the same grid:
+// days Sun/Mon/Tue, exam 11-19 -> 11-16 on Sat 10-10. Today's 10-10 exam is
+// kept and covers the new grid's 10-14 slot (it snaps to 10-13 that day);
+// on 10-12 the same slot snaps to Wed 10-14 (lower bound 10-14), 4 days on,
+// so without the unbounded-snap check an unchanged edit would add it.
+{
+  const before = profile({ examDate: "2026-11-19", days: [0, 1, 2], start: { kind: "skip" } });
+  const after = { ...before, examDate: "2026-11-16" };
+  let plan = buildPlan({ today: TODAY, profile: before, existing: [], practiceTaken: [], practiceAvailable: PRACTICE_TESTS, newId: idGen("s") });
+  for (let t = "2026-10-02"; t <= "2026-10-10"; t = addDays(t, 1)) plan = maintain(plan, t, before);
+  plan = replan(plan, "2026-10-10", after);
+  assert.deepEqual(mocksOf(plan).map((m) => m.date), ["2026-10-03", "2026-10-10", "2026-10-18", "2026-10-25", "2026-11-01", "2026-11-08"]);
+  for (let t = "2026-10-11"; t <= "2026-10-12"; t = addDays(t, 1)) plan = maintain(plan, t, after);
+  const again = replan(plan, "2026-10-12", after);
+  assert.equal(mockOn(again, "2026-10-14"), undefined, "no full exam on Wed 10-14");
+  assert.deepEqual(again, plan, "the unchanged-profile schedule edit is a no-op");
+}
+
+// --- light schedules keep 14 days between full exams through schedule edits:
+// Sundays only, exam 11-20; 10-04 and 10-18 done; on 10-19 the exam moves to
+// 11-13. The recomputed 10-25 slot is 7 days after the kept 10-18 exam, so it
+// is left out; the next one, 11-08, is 21 days on.
+{
+  const before = profile({ examDate: "2026-11-20", days: [0], start: { kind: "skip" } });
+  let plan = buildPlan({ today: TODAY, profile: before, existing: [], practiceTaken: [], practiceAvailable: PRACTICE_TESTS, newId: idGen("l") });
+  assert.deepEqual(mocksOf(plan).map((m) => m.date), ["2026-10-04", "2026-10-18", "2026-11-01", "2026-11-15"]);
+  for (let t = "2026-10-02"; t <= "2026-10-19"; t = addDays(t, 1)) plan = maintain(plan, t, before);
+  const edited = replan(plan, "2026-10-19", { ...before, examDate: "2026-11-13" });
+  assert.deepEqual(mocksOf(edited).map((m) => [m.date, m.status]), [["2026-10-04", "done"], ["2026-10-18", "done"], ["2026-11-08", "scheduled"]],
+    "no full exam 4-13 days from the kept 10-18 one");
+}
+{
+  // a move never makes room for a new full exam on a light schedule: Fridays
+  // only, exam 12-17. The 11-27 exam moved to 11-30 blocks 12-11 (11 days on);
+  // moved again to 11-20, the day it left (11-30) still blocks it.
+  const prof = profile({ examDate: "2026-12-17", days: [5], start: { kind: "skip" } });
+  const built = buildPlan({ today: TODAY, profile: prof, existing: [], practiceTaken: [], practiceAvailable: PRACTICE_TESTS, newId: idGen("fr") });
+  assert.deepEqual(mocksOf(built).map((m) => m.date), ["2026-10-16", "2026-10-30", "2026-11-13", "2026-11-27", "2026-12-11"]);
+  const exam27 = mockOn(built, "2026-11-27");
+  const once = replan(applyMove(built, exam27.id, "2026-11-30", "2026-10-01T09:00:00.000Z"), TODAY, prof);
+  assert.equal(mockOn(once, "2026-12-11"), undefined, "12-11 is 11 days after the moved exam");
+  const challenge = once.find((i) => i.kind === "challenge" && i.date === "2026-12-11");
+  assert.ok(challenge, "12-11 holds a challenge instead");
+  const twice = applyMove(once, exam27.id, "2026-11-20", "2026-10-01T09:05:00.000Z");
+  const replanned = replan(twice, TODAY, prof);
+  assert.ok(mocksOf(replanned).every((m) => twice.some((i) => i.id === m.id && i.date === m.date)), "the second move makes room for no new full exam");
+  assert.ok(replanned.some((i) => i.id === challenge.id), "the 12-11 challenge stays");
+}
+{
+  // ...but the day a full exam first left is the planner's own grid day and
+  // holds no exam: it blocks only the 3-day snap window (spec 6.5), so a move
+  // never leaves a hole after a schedule edit. Sundays only, exam 2027-01-29;
+  // 11-15 moved to 11-08; everything done through 10-20, when the SAT moves to
+  // 2027-01-22. 11-22 is 7 days from the vacated 11-15 and 14 from the moved
+  // exam, so it stays (not 11-08 and then 12-06, a 28-day gap).
+  const before = profile({ examDate: "2027-01-29", days: [0], start: { kind: "skip" } });
+  const after = { ...before, examDate: "2027-01-22" };
+  const built = buildPlan({ today: TODAY, profile: before, existing: [], practiceTaken: [], practiceAvailable: PRACTICE_TESTS, newId: idGen("o") });
+  const exam15 = mockOn(built, "2026-11-15");
+  assert.deepEqual(checkMove(built, exam15.id, "2026-11-08", TODAY, before.examDate), { ok: true });
+  let moved = applyMove(built, exam15.id, "2026-11-08", "2026-10-01T09:00:00.000Z");
+  let unmoved = built;
+  for (let t = "2026-10-02"; t <= "2026-10-20"; t = addDays(t, 1)) {
+    moved = maintain(moved, t, before);
+    unmoved = maintain(unmoved, t, before);
+  }
+  const dates = (items) => mocksOf(items).map((m) => m.date);
+  const expected = ["2026-10-04", "2026-10-18", "2026-11-08", "2026-11-22", "2026-12-06", "2026-12-20", "2027-01-03", "2027-01-17"];
+  assert.deepEqual(dates(replan(unmoved, "2026-10-20", after)), expected, "the date change without a move");
+  const edited = replan(moved, "2026-10-20", after);
+  assert.deepEqual(dates(edited), expected, "the move leaves no hole: 11-22 stays");
+  assert.equal(mockOn(edited, "2026-11-08").id, exam15.id, "the moved exam is kept");
+  // the same once the vacated day has passed: edited on 11-16 instead, 11-22 stays
+  for (let t = "2026-10-21"; t <= "2026-11-16"; t = addDays(t, 1)) moved = maintain(moved, t, before);
+  assert.deepEqual(dates(replan(moved, "2026-11-16", after)), [...expected.slice(0, 2), "2026-11-01", ...expected.slice(2)],
+    "a vacated day in the past blocks only 3 days: 11-22 stays");
+}
+{
+  // ...unless that day is today or tomorrow: without the move the exam would
+  // still stand there as a kept one (today's and tomorrow's full exams survive
+  // a schedule edit) and block 13 days on a light schedule, so the day it left
+  // keeps that window. Sat+Sun, SAT 12-07; everything done through Sat 10-31,
+  // when tomorrow's 11-01 exam moves to today and the SAT moves to 12-04. The
+  // recomputed 11-14 slot is 13 days after 11-01: it stays a challenge, with
+  // or without the move.
+  const today = "2026-10-31";
+  const before = profile({ examDate: "2026-12-07", days: [0, 6], start: { kind: "skip" } });
+  const after = { ...before, examDate: "2026-12-04" };
+  let plan = buildPlan({ today: TODAY, profile: before, existing: [], practiceTaken: [], practiceAvailable: PRACTICE_TESTS, newId: idGen("e") });
+  for (let t = "2026-10-02"; t <= today; t = addDays(t, 1)) plan = maintain(plan, t, before);
+  const exam01 = mockOn(plan, "2026-11-01");
+  assert.deepEqual(checkMove(plan, exam01.id, today, today, before.examDate), { ok: true });
+  const moved = applyMove(plan, exam01.id, today, "2026-10-31T08:00:00.000Z");
+  const ahead = (items) => mocksOf(items).filter((m) => m.date >= today).map((m) => m.date);
+  const challenge14 = plan.find((i) => i.kind === "challenge" && i.date === "2026-11-14");
+  const unmoved = replan(plan, today, after);
+  assert.deepEqual(ahead(unmoved), ["2026-11-01", "2026-11-28"], "the date change without a move");
+  assert.ok(unmoved.some((i) => i.id === challenge14.id), "without the move the 11-14 challenge stays");
+  const edited = replan(moved, today, after);
+  assert.deepEqual(ahead(edited), [today, "2026-11-28"], "moving tomorrow's exam to today adds no full exam: 11-14 stays a challenge");
+  assert.equal(mockOn(edited, today).id, exam01.id, "the moved exam is kept");
+  assert.ok(edited.some((i) => i.id === challenge14.id), "the 11-14 challenge stays");
+}
+{
+  // light progression across build days: an unchanged-profile schedule edit
+  // is a no-op every day, and no two full exams are ever under 14 days apart
+  for (const days of [[0], [2, 4]]) {
+    for (let start = 0; start < 7; start++) {
+      for (const offset of [23, 70]) {
+        const built = addDays(TODAY, start);
+        const exam = addDays(built, offset);
+        const prof = profile({ examDate: exam, days, start: { kind: "skip" } });
+        const label = `light [${days}] built ${built}, exam ${exam}`;
+        let plan = buildPlan({ today: built, profile: prof, existing: [], practiceTaken: [], practiceAvailable: PRACTICE_TESTS, newId: idGen("p") });
+        const grid = mockKey(plan);
+        for (let t = addDays(built, 1); t < exam; t = addDays(t, 1)) {
+          plan = maintain(plan, t, prof);
+          assert.deepEqual(mockKey(replan(plan, t, prof)), grid, `${label}, ${t}: an unchanged-profile schedule edit keeps the grid`);
+        }
+        const dates = mocksOf(plan).map((m) => m.date);
+        assert.ok(dates.slice(1).every((d, i) => daysBetween(dates[i], d) >= 14), `${label}: 14 days between full exams (${dates})`);
+      }
+    }
+  }
 }
 
 // --- a date change keeps done, late, missed, started and moved full exams (ids and all)
@@ -585,6 +759,11 @@ function nextSuitable(items, today, exam, days) {
   const movedRepl = replan(applyMove(plan, replacement.id, "2026-10-19", "2026-10-12T09:00:00.000Z"), "2026-10-12", prof);
   assert.equal(mockOn(movedRepl, "2026-10-19")?.id, replacement.id, "the moved replacement is kept");
   assert.equal(mockOn(movedRepl, "2026-10-14"), undefined, "still no full exam on Wed 10-14");
+  // moved far away (10-28, 14 days past 10-14; the day it left, 10-18, is 4
+  // days from it): only the missed 10-11 exam still covers that Wednesday
+  const farRepl = replan(applyMove(plan, replacement.id, "2026-10-28", "2026-10-12T09:00:00.000Z"), "2026-10-12", prof);
+  assert.equal(mockOn(farRepl, "2026-10-28")?.id, replacement.id);
+  assert.equal(mockOn(farRepl, "2026-10-14"), undefined, "no full exam on Wed 10-14 with the replacement moved away");
 }
 
 // --- regression: a legal move never shifts the grid (exam 12-05, every day)
