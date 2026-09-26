@@ -48,6 +48,7 @@ const cfg = {
   apiKey,
   model: env.GROQ_MODEL || "qwen/qwen3.8-27b",
   fallbackModel: env.GROQ_FALLBACK_MODEL || "openai/gpt-oss-20b",
+  fallbackAcceptsImages: false, // Groq's text-only fallback can't read the image call below
   timeoutMs: 20_000,
 };
 

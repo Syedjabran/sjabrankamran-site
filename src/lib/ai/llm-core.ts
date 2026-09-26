@@ -6,17 +6,60 @@
 export type LlmImage = { mime: "image/jpeg" | "image/png"; base64: string };
 export type LlmMessage = { role: "user" | "assistant"; content: string; images?: LlmImage[] };
 export type LlmRequest = { system: string; messages: LlmMessage[]; json: boolean; maxTokens: number; temperature?: number };
-export type ProviderConfig = { provider: "gemini" | "groq"; apiKey: string; model: string; fallbackModel?: string; timeoutMs?: number };
+/** `fallbackAcceptsImages`: whether `fallbackModel` can read images (Groq's
+ *  text-only fallback cannot; a Gemini fallback would). A request that
+ *  carries images is never sent to a fallback that can't read them. */
+export type ProviderConfig = { provider: "gemini" | "groq"; apiKey: string; model: string; fallbackModel?: string; fallbackAcceptsImages: boolean; timeoutMs?: number };
 export type LlmResult =
   | { ok: true; text: string; json: unknown | null; provider: string; model: string; usage: { input: number; output: number } }
-  | { ok: false; reason: "timeout" | "http" | "parse" | "empty" | "no-provider"; status?: number };
+  | { ok: false; reason: "timeout" | "http" | "parse" | "empty" | "no-provider"; status?: number }
+  | { ok: false; reason: "budget"; scope: "student" | "global" };
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const DEFAULT_TIMEOUT_MS = 20_000;
 const RETRYABLE_STATUS = new Set([429, 503]);
 
+// Same slow-alias guard as physics-tutor.ts: these generic "*-latest" Gemini
+// aliases resolve to heavy reasoning models that blow the serverless time
+// budget, so an explicit override of one of these names is ignored.
+const GEMINI_SLOW_ALIASES = new Set(["gemini-flash-latest", "gemini-pro-latest"]);
+const GEMINI_DEFAULT_MODEL = "gemini-3.1-flash-lite";
+
+// Groq free tier: qwen/qwen3.8-27b supports JSON mode + images; the fallback
+// is text-only but steadier under load (see global-constraints.md).
+const GROQ_DEFAULT_MODEL = "qwen/qwen3.8-27b";
+const GROQ_DEFAULT_FALLBACK_MODEL = "openai/gpt-oss-20b";
+
 function geminiUrl(model: string, apiKey: string): string {
   return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+}
+
+function geminiFromEnv(env: Record<string, string | undefined>): ProviderConfig | null {
+  const apiKey = env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+  const configured = (env.GEMINI_MODEL || "").trim();
+  const model = configured && !GEMINI_SLOW_ALIASES.has(configured) ? configured : GEMINI_DEFAULT_MODEL;
+  return { provider: "gemini", apiKey, model, timeoutMs: DEFAULT_TIMEOUT_MS, fallbackAcceptsImages: true };
+}
+
+function groqFromEnv(env: Record<string, string | undefined>): ProviderConfig | null {
+  const apiKey = env.GROQ_API_KEY;
+  if (!apiKey) return null;
+  const model = (env.GROQ_MODEL || "").trim() || GROQ_DEFAULT_MODEL;
+  const fallbackModel = (env.GROQ_FALLBACK_MODEL || "").trim() || GROQ_DEFAULT_FALLBACK_MODEL;
+  return { provider: "groq", apiKey, model, fallbackModel, timeoutMs: DEFAULT_TIMEOUT_MS, fallbackAcceptsImages: false };
+}
+
+/** `SAT_AI_PROVIDER` ("gemini" | "groq") wins when set; otherwise Gemini when
+ *  `GEMINI_API_KEY` is set, else Groq when `GROQ_API_KEY` is set, else null
+ *  (no provider configured — every caller has a deterministic fallback).
+ *  PURE: takes the env map as a parameter (llm.ts calls it with
+ *  `process.env`) so it can be tested without touching real env vars. */
+export function selectProvider(env: Record<string, string | undefined>): ProviderConfig | null {
+  const explicit = (env.SAT_AI_PROVIDER || "").trim().toLowerCase();
+  if (explicit === "gemini") return geminiFromEnv(env);
+  if (explicit === "groq") return groqFromEnv(env);
+  return geminiFromEnv(env) ?? groqFromEnv(env);
 }
 
 /** OpenAI-compatible chat body for Groq: system message first, images as
@@ -111,19 +154,25 @@ export function extractJson(text: string): unknown | null {
   const whole = tryParse(t);
   if (whole) return whole.value;
 
-  const starts = [t.indexOf("{"), t.indexOf("[")].filter((i) => i !== -1);
-  if (!starts.length) return null;
-  const from = Math.min(...starts);
-  const sub = t.slice(from);
+  // Every plausible JSON start position, in order. A leading citation like
+  // "See [1] for details: {...}" must not let the stray "[1]" win over the
+  // real object later in the text, so each candidate start is tried in turn
+  // rather than only the first one found.
+  const starts: number[] = [];
+  for (let i = 0; i < t.length; i++) if (t[i] === "{" || t[i] === "[") starts.push(i);
 
-  const fromStart = tryParse(sub);
-  if (fromStart) return fromStart.value;
+  for (const from of starts) {
+    const sub = t.slice(from);
+    const fromStart = tryParse(sub);
+    if (fromStart) return fromStart.value;
 
-  const ends = [sub.lastIndexOf("}"), sub.lastIndexOf("]")].filter((i) => i !== -1);
-  if (!ends.length) return null;
-  const to = Math.max(...ends);
-  const trimmed = tryParse(sub.slice(0, to + 1));
-  return trimmed ? trimmed.value : null;
+    const ends = [sub.lastIndexOf("}"), sub.lastIndexOf("]")].filter((i) => i !== -1);
+    if (!ends.length) continue;
+    const to = Math.max(...ends);
+    const trimmed = tryParse(sub.slice(0, to + 1));
+    if (trimmed) return trimmed.value;
+  }
+  return null;
 }
 
 type AttemptResult =
@@ -174,15 +223,37 @@ function finalize(r: Extract<AttemptResult, { kind: "ok" }>, req: LlmRequest, cf
   return { ok: true, text: r.text, json, provider: cfg.provider, model, usage: r.usage };
 }
 
+/** A non-`"ok"` attempt converted to its final `LlmResult`, or `null` when
+ *  it's `"retryable"` (the only kind that isn't terminal yet). */
 function terminal(r: AttemptResult): LlmResult | null {
-  if (r.kind === "timeout") return { ok: false, reason: "timeout" };
-  if (r.kind === "empty") return { ok: false, reason: "empty" };
-  if (r.kind === "http") return { ok: false, reason: "http", status: r.status };
-  return null;
+  switch (r.kind) {
+    case "timeout": return { ok: false, reason: "timeout" };
+    case "empty": return { ok: false, reason: "empty" };
+    case "http": return { ok: false, reason: "http", status: r.status };
+    case "retryable": return null;
+    case "ok": return null;
+  }
+}
+
+/** The HTTP status of a `"retryable"` or `"http"` attempt, for a final
+ *  `ok: false` result once no more retries/fallback are available. */
+function statusOf(r: AttemptResult): number | undefined {
+  switch (r.kind) {
+    case "retryable":
+    case "http":
+      return r.status;
+    default:
+      return undefined;
+  }
+}
+
+function hasImages(req: LlmRequest): boolean {
+  return req.messages.some((m) => (m.images?.length ?? 0) > 0);
 }
 
 /** One retry after 1.5 s on 429/503, then `fallbackModel` once (if
- *  configured), else `ok: false`. Never throws — fetch/parse failures map to
+ *  configured, and only when the request has no images or the fallback can
+ *  read them), else `ok: false`. Never throws — fetch/parse failures map to
  *  an `LlmResult` reason. */
 export async function callLlm(
   cfg: ProviderConfig,
@@ -201,13 +272,14 @@ export async function callLlm(
   const doneSecond = terminal(second);
   if (doneSecond) return doneSecond;
 
-  if (cfg.fallbackModel) {
-    const fb = await attempt(cfg, req, cfg.fallbackModel, fetchImpl);
-    if (fb.kind === "ok") return finalize(fb, req, cfg, cfg.fallbackModel);
+  const fallbackModel = cfg.fallbackModel;
+  if (fallbackModel && (!hasImages(req) || cfg.fallbackAcceptsImages)) {
+    const fb = await attempt(cfg, req, fallbackModel, fetchImpl);
+    if (fb.kind === "ok") return finalize(fb, req, cfg, fallbackModel);
     const doneFb = terminal(fb);
     if (doneFb) return doneFb;
-    return { ok: false, reason: "http", status: (fb as { status?: number }).status };
+    return { ok: false, reason: "http", status: statusOf(fb) };
   }
 
-  return { ok: false, reason: "http", status: (second as { status?: number }).status };
+  return { ok: false, reason: "http", status: statusOf(second) };
 }

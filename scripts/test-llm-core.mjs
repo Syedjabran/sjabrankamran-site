@@ -9,6 +9,7 @@ import {
   parseGemini,
   extractJson,
   callLlm,
+  selectProvider,
 } from "../src/lib/ai/llm-core.ts";
 
 // --- buildGroqBody -----------------------------------------------------------
@@ -89,6 +90,7 @@ assert.deepEqual(extractJson('Sure, here you go:\n{"a":1}'), { a: 1 }, "leading 
 assert.deepEqual(extractJson('{"a":1}\nHope that helps!'), { a: 1 }, "trailing prose");
 assert.equal(extractJson("not json at all"), null, "invalid input");
 assert.equal(extractJson(""), null, "empty string");
+assert.deepEqual(extractJson('See [1] for details: {"a":1}'), { a: 1 }, "a stray leading bracket in prose doesn't win over the real JSON");
 
 // --- callLlm -------------------------------------------------------------------
 
@@ -147,6 +149,49 @@ function fakeRes(status, body) {
   assert.equal(res.ok, false);
   assert.equal(res.reason, "http");
   assert.equal(res.status, 503);
+}
+
+// A request with images + 503, 503 + a fallback that can't read images →
+// ok:false with the last attempt's reason/status; fetch is called exactly
+// twice (the fallback is never attempted).
+{
+  let calls = 0;
+  const fetchImpl = async () => { calls++; return fakeRes(503, {}); };
+  const reqWithImages = {
+    system: "s",
+    messages: [{ role: "user", content: "hi", images: [{ mime: "image/png", base64: "AAAA" }] }],
+    json: true,
+    maxTokens: 100,
+  };
+  const cfg = { provider: "groq", apiKey: "k", model: "primary-model", fallbackModel: "fallback-model", fallbackAcceptsImages: false };
+  const res = await callLlm(cfg, reqWithImages, fetchImpl, async () => {});
+  assert.equal(res.ok, false);
+  assert.equal(res.reason, "http");
+  assert.equal(res.status, 503);
+  assert.equal(calls, 2, "the image-blind fallback is never called");
+}
+
+// The same shape, but the fallback CAN read images → it is used normally.
+{
+  let calls = 0;
+  const seenModels = [];
+  const fetchImpl = async (_url, opts) => {
+    calls++;
+    seenModels.push(JSON.parse(opts.body).model ?? "gemini");
+    if (calls <= 2) return fakeRes(503, {});
+    return fakeRes(200, { choices: [{ message: { content: '{"c":3}' } }], usage: {} });
+  };
+  const reqWithImages = {
+    system: "s",
+    messages: [{ role: "user", content: "hi", images: [{ mime: "image/png", base64: "AAAA" }] }],
+    json: true,
+    maxTokens: 100,
+  };
+  const cfg = { provider: "groq", apiKey: "k", model: "primary-model", fallbackModel: "fallback-model", fallbackAcceptsImages: true };
+  const res = await callLlm(cfg, reqWithImages, fetchImpl, async () => {});
+  assert.equal(res.ok, true);
+  assert.equal(res.model, "fallback-model");
+  assert.equal(calls, 3, "the image-capable fallback is used");
 }
 
 // 400 → ok:false http, without retry.
@@ -208,5 +253,58 @@ function fakeRes(status, body) {
   assert.equal(res.provider, "gemini");
   assert.deepEqual(res.json, { g: 1 });
 }
+
+// --- selectProvider ------------------------------------------------------------
+
+// SAT_AI_PROVIDER wins even when the other provider's key is also set.
+{
+  const cfg = selectProvider({ SAT_AI_PROVIDER: "groq", GEMINI_API_KEY: "gk", GROQ_API_KEY: "qk" });
+  assert.equal(cfg.provider, "groq");
+  assert.equal(cfg.apiKey, "qk");
+}
+{
+  const cfg = selectProvider({ SAT_AI_PROVIDER: "gemini", GEMINI_API_KEY: "gk", GROQ_API_KEY: "qk" });
+  assert.equal(cfg.provider, "gemini");
+  assert.equal(cfg.apiKey, "gk");
+}
+
+// No override: GEMINI_API_KEY set → gemini.
+{
+  const cfg = selectProvider({ GEMINI_API_KEY: "gk" });
+  assert.equal(cfg.provider, "gemini");
+  assert.equal(cfg.apiKey, "gk");
+  assert.equal(cfg.model, "gemini-3.1-flash-lite");
+  assert.equal(cfg.fallbackAcceptsImages, true);
+}
+
+// GEMINI_MODEL override, and the slow-alias guard still applies.
+{
+  const cfg = selectProvider({ GEMINI_API_KEY: "gk", GEMINI_MODEL: "gemini-2.0-flash" });
+  assert.equal(cfg.model, "gemini-2.0-flash");
+  const slow = selectProvider({ GEMINI_API_KEY: "gk", GEMINI_MODEL: "gemini-flash-latest" });
+  assert.equal(slow.model, "gemini-3.1-flash-lite", "the slow generic alias is ignored");
+}
+
+// GROQ_API_KEY only → groq, with the qwen/gpt-oss defaults and an
+// image-blind fallback.
+{
+  const cfg = selectProvider({ GROQ_API_KEY: "qk" });
+  assert.equal(cfg.provider, "groq");
+  assert.equal(cfg.apiKey, "qk");
+  assert.equal(cfg.model, "qwen/qwen3.8-27b");
+  assert.equal(cfg.fallbackModel, "openai/gpt-oss-20b");
+  assert.equal(cfg.fallbackAcceptsImages, false);
+}
+
+// GROQ_MODEL / GROQ_FALLBACK_MODEL overrides.
+{
+  const cfg = selectProvider({ GROQ_API_KEY: "qk", GROQ_MODEL: "custom-model", GROQ_FALLBACK_MODEL: "custom-fallback" });
+  assert.equal(cfg.model, "custom-model");
+  assert.equal(cfg.fallbackModel, "custom-fallback");
+}
+
+// Neither key set → null (every caller has a deterministic fallback).
+assert.equal(selectProvider({}), null);
+assert.equal(selectProvider({ SAT_AI_PROVIDER: "groq" }), null, "an override with no matching key still yields null");
 
 console.log("llm-core tests passed");
