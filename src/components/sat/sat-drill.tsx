@@ -6,13 +6,15 @@ import { DRILL_TIME_CAP_MS, type DrillState, type ReviewItem } from "@/lib/sat/c
 import { validateSPR } from "@/lib/sat/grade";
 import { SprPad } from "./spr-pad";
 import { QuestionImage } from "./question-image";
+import { ExplainLink } from "./explain-link";
 import { useSignedImages } from "./use-signed-images";
 import { createQuestionTimer, isTimeoutError } from "./sat-runner-utils";
 
 // The same bound the runner puts on its requests: a hung Check must end.
 const CHECK_TIMEOUT_MS = 20_000;
 
-export function SatDrill({ initial }: { initial: DrillState }) {
+/** `explain`: a checked wrong answer offers "Explain my mistake" (students). */
+export function SatDrill({ initial, explain = false }: { initial: DrillState; explain?: boolean }) {
   const [state, setState] = useState(initial);
   const firstOpen = initial.questions.findIndex((q) => !initial.checked[q.id]);
   const [idx, setIdx] = useState(firstOpen === -1 ? 0 : firstOpen);
@@ -106,6 +108,7 @@ export function SatDrill({ initial }: { initial: DrillState }) {
                 fallback={rationaleText}
               />
             ) : rationaleText}
+            {explain && !done.correct ? <ExplainLink questionId={q.id} /> : null}
           </div>
         ) : q.kind === "mcq" ? (
           <div className="grid grid-cols-4 gap-2">{["A", "B", "C", "D"].map((l) => <button key={l} type="button" disabled={busy} onClick={() => setResponse(l)} className={"rounded-xl border py-3 font-display text-lg disabled:opacity-40 " + (response === l ? "border-cyan bg-cyan/15 text-ice" : "border-white/15 text-fog")}>{l}</button>)}</div>

@@ -120,6 +120,21 @@ function fakeRes(status, body) {
   assert.deepEqual(sleeps, [1500]);
 }
 
+// 429 with Retry-After → the one retry waits that long (at least 1.5 s,
+// at most 8 s); an unreadable header keeps the 1.5 s default.
+for (const [header, want] of [["4", 4000], ["0.5", 1500], ["120", 8000], ["soon", 1500]]) {
+  let calls = 0;
+  const fetchImpl = async () => {
+    calls++;
+    if (calls === 1) return { ...fakeRes(429, {}), headers: new Headers({ "retry-after": header }) };
+    return fakeRes(200, { choices: [{ message: { content: '{"a":1}' } }], usage: { prompt_tokens: 1, completion_tokens: 2 } });
+  };
+  const sleeps = [];
+  const res = await callLlm({ provider: "groq", apiKey: "k", model: "m" }, groqReq, fetchImpl, async (ms) => { sleeps.push(ms); });
+  assert.equal(res.ok, true);
+  assert.deepEqual(sleeps, [want], `Retry-After "${header}" waits ${want} ms`);
+}
+
 // 503, 503 → switches to fallbackModel → ok with model = fallback.
 {
   let calls = 0;

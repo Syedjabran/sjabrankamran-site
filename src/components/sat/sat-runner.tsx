@@ -35,7 +35,8 @@ const pickTime = (snapshot: Record<string, number>, ids: string[], capMs: number
   return out;
 };
 
-export function SatRunner({ sessionId }: { sessionId: string }) {
+/** `explain`: the finished report offers "Explain my mistake" (students). */
+export function SatRunner({ sessionId, explain = false }: { sessionId: string; explain?: boolean }) {
   const [state, setState] = useState<SessionState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -419,7 +420,7 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
 
   if (error && !state) return <p className="rounded-2xl border border-signal/30 bg-signal/5 p-5 text-sm text-fog">{error} <button className="ml-2 text-cyan underline" onClick={() => void load()}>Retry</button></p>;
   if (!state) return <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading your sitting…</p>;
-  if (state.status === "finished" && state.report) return <ScoreReport report={state.report} />;
+  if (state.status === "finished" && state.report) return <ScoreReport report={state.report} explain={explain} />;
 
   // Why nothing is being saved or reloaded automatically (a 401/403/404/423).
   const haltMessage = halt ? stopMessage(halt.status, { onBreak: state.status === "break", serverMessage: halt.serverMessage }) : null;

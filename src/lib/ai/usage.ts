@@ -81,12 +81,31 @@ export async function takeBudget(
   return { ok: true, remaining: Math.max(0, remaining) };
 }
 
+/** Gives back one of today's per-student `purpose` calls after the AI call
+ *  it paid for failed (spec §11: a failed tutor turn is not counted). The
+ *  global counter keeps it -- the provider request was still made. Best
+ *  effort: an unreadable counter or a failed write leaves it counted. */
+export async function refundBudget(uid: string, purpose: "insights" | "tutor" | "parent", today: string): Promise<void> {
+  if (!SAFE_UID.test(uid) || !SAFE_DATE.test(today)) return;
+  const fresh = await readFreshJson<unknown>(BUCKET, studentPath(uid, today));
+  if (!fresh.ok || fresh.data == null) return;
+  const counters = asStudentCounters(fresh.data);
+  if (counters[purpose] <= 0) return;
+  await writeFreshJson(BUCKET, studentPath(uid, today), { ...counters, [purpose]: counters[purpose] - 1 });
+}
+
 /** Tutor messages left today for this student (for the "n left today" UI);
  *  fails closed to 0 when the counter can't be read. */
 export async function tutorRemaining(uid: string, today: string): Promise<number> {
-  if (!SAFE_UID.test(uid) || !SAFE_DATE.test(today)) return 0;
+  return (await readTutorRemaining(uid, today)) ?? 0;
+}
+
+/** Tutor messages left today, or null when the counter can't be read --
+ *  so the tutor can say "couldn't check" rather than "none left". */
+export async function readTutorRemaining(uid: string, today: string): Promise<number | null> {
+  if (!SAFE_UID.test(uid) || !SAFE_DATE.test(today)) return null;
   const fresh = await readFreshJson<unknown>(BUCKET, studentPath(uid, today));
-  if (!fresh.ok) return 0;
+  if (!fresh.ok) return null;
   const counters = asStudentCounters(fresh.data);
   return Math.max(0, LIMITS.tutor - counters.tutor);
 }

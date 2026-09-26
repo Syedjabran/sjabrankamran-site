@@ -2,9 +2,12 @@
 import { useState } from "react";
 import { CheckCircle2, XCircle, Info } from "lucide-react";
 import { DOMAIN_LABEL, SECTION_LABEL, type SATReport } from "@/lib/sat/client-types";
+import { ExplainLink } from "./explain-link";
 import { useSignedImages } from "./use-signed-images";
 
-export function ScoreReport({ report }: { report: SATReport }) {
+/** `explain`: the student's own finished report -- wrong answers get an
+ *  "Explain my mistake" link to the SAT tutor (never on a staff view). */
+export function ScoreReport({ report, explain = false }: { report: SATReport; explain?: boolean }) {
   const [open, setOpen] = useState<string | null>(null);
   const { urls, error: imgError, missing: imgMissing } = useSignedImages(report.review.flatMap((r) => [r.img, r.rationaleImg ?? ""]));
   const s = report.score;
@@ -71,6 +74,7 @@ export function ScoreReport({ report }: { report: SATReport }) {
                     : imgMissing[r.img] ? <p className="text-sm text-signal">{imgMissing[r.img]}</p> : null}
                   {r.rationaleImg && urls[r.rationaleImg] ? <img src={urls[r.rationaleImg]} alt="Official rationale" className="w-full rounded-lg bg-white" />
                     : r.rationale ? <p className="whitespace-pre-line text-sm text-fog">{r.rationale}</p> : null}
+                  {explain && !r.correct ? <ExplainLink questionId={r.id} /> : null}
                 </div>
               ) : null}
             </li>

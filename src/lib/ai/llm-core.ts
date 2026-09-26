@@ -18,6 +18,11 @@ export type LlmResult =
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const DEFAULT_TIMEOUT_MS = 20_000;
 const RETRYABLE_STATUS = new Set([429, 503]);
+// The one retry waits the provider's Retry-After (Groq sends it on a 429
+// when a per-minute token limit is hit), at least RETRY_MIN_MS and at most
+// RETRY_MAX_MS so a turn still fits a 60 s serverless function.
+const RETRY_MIN_MS = 1500;
+const RETRY_MAX_MS = 8000;
 
 // Same slow-alias guard as physics-tutor.ts: these generic "*-latest" Gemini
 // aliases resolve to heavy reasoning models that blow the serverless time
@@ -60,6 +65,15 @@ export function selectProvider(env: Record<string, string | undefined>): Provide
   if (explicit === "gemini") return geminiFromEnv(env);
   if (explicit === "groq") return groqFromEnv(env);
   return geminiFromEnv(env) ?? groqFromEnv(env);
+}
+
+/** Whether the configured primary model reads images: every Gemini model
+ *  does; on Groq, the default qwen model and the vision/Llama-4 families do,
+ *  while text models such as the gpt-oss fallback don't. Callers send a
+ *  text alternative instead of images when this is false. */
+export function modelAcceptsImages(cfg: ProviderConfig): boolean {
+  if (cfg.provider === "gemini") return true;
+  return cfg.model === GROQ_DEFAULT_MODEL || /vision|llama-4|qwen[^/]*-vl/i.test(cfg.model);
 }
 
 /** OpenAI-compatible chat body for Groq: system message first, images as
@@ -177,10 +191,23 @@ export function extractJson(text: string): unknown | null {
 
 type AttemptResult =
   | { kind: "ok"; text: string; usage: { input: number; output: number } }
-  | { kind: "retryable"; status: number }
+  | { kind: "retryable"; status: number; retryAfterMs?: number }
   | { kind: "http"; status?: number }
   | { kind: "timeout" }
   | { kind: "empty" };
+
+/** A Retry-After header given in seconds, as ms; undefined when absent or
+ *  unreadable (an HTTP-date form is ignored). */
+function retryAfterMs(res: Response): number | undefined {
+  const raw = res.headers?.get?.("retry-after");
+  const seconds = raw == null || raw.trim() === "" ? NaN : Number(raw);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : undefined;
+}
+
+function retryDelay(r: AttemptResult): number {
+  const wanted = r.kind === "retryable" ? r.retryAfterMs ?? 0 : 0;
+  return Math.min(RETRY_MAX_MS, Math.max(RETRY_MIN_MS, wanted));
+}
 
 async function attempt(cfg: ProviderConfig, req: LlmRequest, model: string, fetchImpl: typeof fetch): Promise<AttemptResult> {
   const isGroq = cfg.provider === "groq";
@@ -202,7 +229,7 @@ async function attempt(cfg: ProviderConfig, req: LlmRequest, model: string, fetc
     clearTimeout(timer);
   }
 
-  if (RETRYABLE_STATUS.has(res.status)) return { kind: "retryable", status: res.status };
+  if (RETRYABLE_STATUS.has(res.status)) return { kind: "retryable", status: res.status, retryAfterMs: retryAfterMs(res) };
   if (!res.ok) return { kind: "http", status: res.status };
 
   let json: unknown;
@@ -251,7 +278,7 @@ function hasImages(req: LlmRequest): boolean {
   return req.messages.some((m) => (m.images?.length ?? 0) > 0);
 }
 
-/** One retry after 1.5 s on 429/503, then `fallbackModel` once (if
+/** One retry on 429/503 (after the provider's Retry-After, 1.5-8 s), then `fallbackModel` once (if
  *  configured, and only when the request has no images or the fallback can
  *  read them), else `ok: false`. Never throws — fetch/parse failures map to
  *  an `LlmResult` reason. */
@@ -266,7 +293,7 @@ export async function callLlm(
   const doneFirst = terminal(first);
   if (doneFirst) return doneFirst;
 
-  await sleep(1500);
+  await sleep(retryDelay(first));
   const second = await attempt(cfg, req, cfg.model, fetchImpl);
   if (second.kind === "ok") return finalize(second, req, cfg, cfg.model);
   const doneSecond = terminal(second);

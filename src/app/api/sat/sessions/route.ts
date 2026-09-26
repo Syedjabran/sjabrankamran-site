@@ -7,10 +7,10 @@ import { satAccess } from "@/lib/sat/access";
 import { assembleForm } from "@/lib/sat/forms";
 import { loadQuestionBank } from "@/lib/sat/bank";
 import { startAdaptive, startPractice, type TimedPracticeTest } from "@/lib/sat/session";
-import { startDrill } from "@/lib/sat/drills";
+import { buildFilteredDrill } from "@/lib/sat/drill-start";
 import { hasConversionTables, practiceTest, practiceTestList } from "@/lib/sat/serve";
 import { ROUTING_DISCLOSURE } from "@/lib/sat/adaptive";
-import { inPlayQuestionIds, listSummaries, mockExcludeIds, saveDoc } from "@/lib/sat/store";
+import { listSummaries, mockExcludeIds, saveDoc } from "@/lib/sat/store";
 import { listAssignments, markAssignment, resolveStart, type SATAssignment } from "@/lib/sat/assignments";
 import { satFilterSchema } from "@/lib/sat/filter-schema";
 import { invalidRequest } from "@/lib/sat/zod-messages";
@@ -127,13 +127,11 @@ export async function POST(req: Request) {
     const filter: SATFilter = assignment ? (assignment.filter ?? {}) : (b.kind === "drill" ? (b.filter ?? {}) : {});
     const count = assignment ? assignment.count : (b.kind === "drill" ? (b.count ?? null) : null);
     if (count === null) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
-    const exclude = await inPlayQuestionIds(user.id, ids.now);
-    if (exclude === null) return NextResponse.json({ error: "Your SAT history couldn't be checked. Please try again." }, { status: 503 });
-    try {
-      doc = startDrill(loadQuestionBank(), filter, count, rng, ids, exclude);
-    } catch (e) {
-      return NextResponse.json({ error: (e as Error).message }, { status: 400 });
-    }
+    // Shared with the SAT tutor's create_drill (drill-start.ts): the same
+    // running-sitting exclusion and pool rules.
+    const built = await buildFilteredDrill(filter, count, ids);
+    if (!built.ok) return NextResponse.json({ error: built.error }, { status: built.status });
+    doc = built.doc;
   }
   if (!(await saveDoc(doc))) return NextResponse.json({ error: "Couldn't start the sitting. Please try again." }, { status: 503 });
   // ASSIGNMENT HOOK (Task 9): best-effort -- awaited so it's actually

@@ -21,5 +21,7 @@ export default async function SatSittingPage({ params }: { params: Promise<{ ses
   const loaded = await loadDoc(user.id, sessionId);
   if (!loaded.ok) return <p className="text-sm text-fog">This sitting couldn&rsquo;t be loaded just now. Nothing has been lost — please refresh.</p>;
   if (!loaded.doc) redirect("/portal/sat-lab");
-  return loaded.doc.kind === "drill" ? <SatDrill initial={drillState(loaded.doc, Date.now())} /> : <SatRunner sessionId={sessionId} />;
+  // Students can ask the tutor about a finished wrong answer; staff have no tutor.
+  const explain = !access.isStaff;
+  return loaded.doc.kind === "drill" ? <SatDrill initial={drillState(loaded.doc, Date.now())} explain={explain} /> : <SatRunner sessionId={sessionId} explain={explain} />;
 }

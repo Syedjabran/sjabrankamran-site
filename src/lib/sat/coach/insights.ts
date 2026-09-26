@@ -34,6 +34,15 @@ function asCache(raw: unknown): InsightsCache | null {
   return c as InsightsCache;
 }
 
+/** The last "Coach says" view stored for this student, whatever its
+ *  fingerprint, or null (none yet, or an unreadable cache). Read-only and
+ *  never calls the LLM -- the tutor quotes what the home last showed. */
+export async function cachedInsights(uid: string): Promise<InsightsView | null> {
+  if (!SAFE_UID.test(uid)) return null;
+  const read = await readFreshJson<unknown>(BUCKET, cachePath(uid)).catch(() => null);
+  return read?.ok ? asCache(read.data)?.view ?? null : null;
+}
+
 /** The student's "Coach says" view. Fresh cache (fingerprint unchanged) is
  *  served without calling the LLM at all; otherwise it asks the adapter for
  *  a new one and validates the reply, falling back to deterministic rules

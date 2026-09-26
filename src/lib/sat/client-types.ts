@@ -318,3 +318,37 @@ export type InsightsView = {
   source: "ai" | "rules";
   generatedAt: string;
 };
+
+// --- Digital SAT Tutor (src/lib/sat/coach/tutor.ts) --------------------------
+//
+// Client-safe: what the tutor chat shows and sends. Actions are proposals the
+// server validated; each runs only when the student taps it
+// (POST /api/sat/tutor/action). No answer data -- an explanation's question
+// facts stay on the server.
+
+export type TutorDrillFilter = { section?: SATSection; domain?: SATDomainId; skill?: string; difficulty?: SATDifficulty };
+
+export type TutorAction =
+  | { id: string; type: "create_drill"; label: string; filter: TutorDrillFilter; count: number }
+  | { id: string; type: "move_mock"; label: string; itemId: string; date: string }
+  | { id: string; type: "open"; label: string; href: string };
+
+export type TutorMessageView = { role: "user" | "assistant"; text: string; at: number; actions?: TutorAction[] };
+
+/** GET /api/sat/tutor. `pending`: the ids of the latest reply's actions
+ *  that can still be tapped. `lastWrongId`: the newest finished question
+ *  the student got wrong, for "Explain my last wrong answer". */
+export type TutorPayload = {
+  messages: TutorMessageView[];
+  pending: string[];
+  remaining: number;
+  limit: number;
+  paused: boolean;
+  lastWrongId: string | null;
+};
+
+/** POST /api/sat/tutor. */
+export type TutorTurnResult = { reply: string; actions: TutorAction[]; remaining: number };
+
+/** A recently missed finished question, for the Progress page's "Explain". */
+export type TutorMistake = { id: string; label: string; at: number };

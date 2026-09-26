@@ -92,18 +92,29 @@ const RECENT_MS = 4 * 60 * 60 * 1000;
  *  refuse to build an unfiltered drill or form rather than silently start
  *  one. */
 export async function inPlayQuestionIds(uid: string, now: number, summaries?: SessionSummary[]): Promise<Set<string> | null> {
+  const sittings = await recentUnfinishedSittings(uid, now, summaries);
+  if (sittings === null) return null;
+  const exclude = new Set<string>();
+  for (const doc of sittings) for (const id of sittingQuestionIds(doc)) exclude.add(id);
+  return exclude;
+}
+
+/** The student's unfinished adaptive/practice sittings started in the last
+ *  four hours (RECENT_MS) -- the ones that can be in play right now: what
+ *  inPlayQuestionIds excludes from new drills and mocks, and what the SAT
+ *  tutor's pause rule reads. Fails closed: null on any read failure. */
+export async function recentUnfinishedSittings(uid: string, now: number, summaries?: SessionSummary[]): Promise<SATSession[] | null> {
   const list = summaries ?? (await listSummaries(uid));
   if (list === null) return null;
   const recent = list.filter((s) => s.kind !== "drill" && s.finishedAt === null && now - s.createdAt <= RECENT_MS);
-  const exclude = new Set<string>();
+  const sittings: SATSession[] = [];
   for (const summary of recent) {
     const loaded = await loadDoc(uid, summary.id);
     if (!loaded.ok) return null;
     const doc = loaded.doc;
-    if (!doc || doc.kind === "drill") continue;
-    for (const id of sittingQuestionIds(doc)) exclude.add(id);
+    if (doc && doc.kind !== "drill") sittings.push(doc);
   }
-  return exclude;
+  return sittings;
 }
 
 /** What a NEW adaptive mock must not draw (SAT Coach ruling 7a): the

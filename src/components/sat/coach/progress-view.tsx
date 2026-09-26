@@ -1,7 +1,8 @@
 "use client";
 // The student's SAT Progress page body (SAT Coach spec 7.4): scores,
 // section accuracy, the 8-domain mastery grid, weakest skills with "Drill
-// this", skills without enough data yet, and pacing. Reads GET
+// this", skills without enough data yet, pacing, and recent mistakes with
+// "Explain" (the SAT tutor). Reads GET
 // /api/sat/analytics (finished work only). Bars are plain CSS in one accent
 // (cyan on a lighter cyan track) with every value also written as text
 // beside its bar, so nothing depends on colour or hover.
@@ -9,9 +10,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowDownRight, ArrowUpRight, Loader2, Minus } from "lucide-react";
-import { DOMAIN_LABEL, DRILL_COUNT_DEFAULT, SECTION_LABEL, type MasteryRow, type SATAnalytics } from "@/lib/sat/client-types";
+import { DOMAIN_LABEL, DRILL_COUNT_DEFAULT, SECTION_LABEL, type MasteryRow, type SATAnalytics, type TutorMistake } from "@/lib/sat/client-types";
 import type { SATSection } from "@/lib/sat/types";
 import { formatPk } from "@/lib/portal/pk-time";
+import { ExplainLink } from "@/components/sat/explain-link";
 import { ScoreBadge } from "@/components/sat/score-badge";
 import { Meter } from "./meter";
 
@@ -29,6 +31,7 @@ const day = (ms: number) => formatPk(ms, { day: "numeric", month: "short", year:
 export function ProgressView() {
   const router = useRouter();
   const [analytics, setAnalytics] = useState<SATAnalytics | null>(null);
+  const [mistakes, setMistakes] = useState<TutorMistake[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [drillError, setDrillError] = useState<string | null>(null);
@@ -39,7 +42,9 @@ export function ProgressView() {
       const res = await fetch("/api/sat/analytics", { cache: "no-store" });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error || "Your progress couldn't be loaded. Please try again.");
-      setAnalytics((j as { analytics: SATAnalytics }).analytics);
+      const payload = j as { analytics: SATAnalytics; mistakes?: TutorMistake[] };
+      setAnalytics(payload.analytics);
+      setMistakes(payload.mistakes ?? []);
     } catch (e) {
       setLoadError((e as Error).message);
     }
@@ -82,6 +87,7 @@ export function ProgressView() {
       <DomainsCard domains={analytics.domains} />
       <SkillsCard weakSkills={analytics.weakSkills} notEnoughData={analytics.notEnoughData} busyKey={busyKey} error={drillError} onDrill={(s) => void drill(s)} />
       <PacingCard pacing={analytics.pacing} flags={analytics.pacingFlags} />
+      {mistakes.length ? <MistakesCard mistakes={mistakes} /> : null}
     </div>
   );
 }
@@ -324,6 +330,24 @@ function PacingCard({ pacing, flags }: { pacing: SATAnalytics["pacing"]; flags: 
           </ul>
         </div>
       ) : null}
+    </Card>
+  );
+}
+
+function MistakesCard({ mistakes }: { mistakes: TutorMistake[] }) {
+  return (
+    <Card title="Recent mistakes" note="Finished questions you got wrong most recently. The tutor can walk you through any of them.">
+      <ul className="space-y-2">
+        {mistakes.map((m) => (
+          <li key={m.id} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-white/10 px-3 py-2 text-sm">
+            <div className="min-w-0 flex-1 basis-48">
+              <p className="break-words text-ice">{m.label}</p>
+              <p className="text-xs text-dust">{day(m.at)}</p>
+            </div>
+            <ExplainLink questionId={m.id} label="Explain" />
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }

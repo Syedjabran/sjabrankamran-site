@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Info, Loader2 } from "lucide-react";
+import { Info, Loader2, MessagesSquare } from "lucide-react";
 import {
   BLUEPRINT, DRILL_COUNT_DEFAULT, SECTION_LABEL, practiceTestTitle, type AssignmentView, type PracticeTestInfo, type SessionSummary,
 } from "@/lib/sat/client-types";
@@ -29,8 +30,23 @@ const MOCK_DESCRIPTION =
   `${SECTION_LABEL.math}: ${BLUEPRINT.math.perModule} questions × ${BLUEPRINT.math.minutes} minutes per module — ` +
   `with a ${BLUEPRINT.breakMinutes}-minute break between sections. Module 2 of each section adapts to your Module 1 performance.`;
 
+/** The way into the Digital SAT Tutor (coach/tutor-chat.tsx). */
+function TutorEntry() {
+  return (
+    <section className="flex min-w-0 flex-wrap items-center gap-3 rounded-2xl border border-cyan/30 bg-space/60 p-5">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-cyan/30 text-cyan"><MessagesSquare size={18} /></span>
+      <div className="min-w-0 flex-1 basis-48">
+        <h2 className="font-display text-lg text-ice">Ask the tutor</h2>
+        <p className="text-sm text-fog">Questions about the SAT, your plan or a mistake? Your tutor knows your record.</p>
+      </div>
+      <Link href="/portal/sat-lab/tutor" className="btn-primary shrink-0 !px-4 !py-2 text-sm">Ask the tutor</Link>
+    </section>
+  );
+}
+
 /** `coach`: a student with an SAT profile -- the study plan, goals and
- *  "Coach says" (coach/coach-home.tsx) come first, the sections below stay. */
+ *  "Coach says" (coach/coach-home.tsx) come first, then the way into the
+ *  tutor; the sections below stay. */
 export function SatHub({ isStaff, coach = false }: { isStaff: boolean; coach?: boolean }) {
   const router = useRouter();
   const [data, setData] = useState<SessionsPayload | null>(null);
@@ -97,9 +113,10 @@ export function SatHub({ isStaff, coach = false }: { isStaff: boolean; coach?: b
     void start(`assign-${a.id}`, { kind: a.kind, assignmentId: a.id });
   }
 
-  // The coach loads on its own, first in every branch (same position, so it
-  // is never remounted while the sections below load).
-  const coachHome = coach && !isStaff ? <CoachHome /> : null;
+  // The coach (and the tutor's entry) loads on its own, first in every
+  // branch (same position, so it is never remounted while the sections
+  // below load).
+  const coachHome = coach && !isStaff ? <><CoachHome /><TutorEntry /></> : null;
   if (loadError && !data) {
     return (
       <div className="space-y-6">
