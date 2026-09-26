@@ -86,14 +86,46 @@ const first = plan({ diagnosticId: "diag-1" });
   assert.deepEqual(again, first, "regeneration with the same inputs is a no-op");
 }
 
-// --- a moved full exam is kept where it was moved to on regeneration
+// --- moves survive rebuilds (spec 6.4): a moved exam stays where it was
+// moved to, the challenge on its new day stays, and the day it left gets
+// nothing new -- neither a challenge nor a refilled full exam
+const mockOn = (items, date) => items.find((i) => i.kind === "mock" && i.date === date);
+const rebuild = (existing) => plan({ diagnosticId: "diag-1", existing, newId: idGen("new") });
 {
-  const moved = applyMove(first, first.find((i) => i.date === "2026-10-05").id, "2026-10-06", "2026-10-01T10:00:00.000Z");
-  const again = plan({ diagnosticId: "diag-1", existing: moved, newId: idGen("new") });
+  // 10-05 (Mon) -> 10-06 (Tue, not a practice day)
+  const moved = applyMove(first, mockOn(first, "2026-10-05").id, "2026-10-06", "2026-10-01T10:00:00.000Z");
+  const again = rebuild(moved);
   const mocks = again.filter((i) => i.kind === "mock");
   assert.deepEqual(mocks.map((m) => m.date), ["2026-10-06", "2026-10-12", "2026-10-19"], "the moved exam stays on its new day; no extra exam near it");
   assert.equal(mocks[0].moves.length, 1);
   assert.deepEqual(mocks[0].mock, { kind: "practice", testNo: 4 });
+  assert.equal(again.some((i) => i.date === "2026-10-05"), false, "the day the exam left gets no challenge");
+  assert.deepEqual(again, moved, "a rebuild after a move changes nothing");
+}
+{
+  // 10-12 (Mon, full-exam day) -> 10-14 (Wed, challenge day)
+  const m2 = mockOn(first, "2026-10-12");
+  const challenge14 = first.find((i) => i.kind === "challenge" && i.date === "2026-10-14");
+  const moved = applyMove(first, m2.id, "2026-10-14", "2026-10-01T10:00:00.000Z");
+  const again = rebuild(moved);
+  assert.deepEqual(again.filter((i) => i.date === "2026-10-14").map((i) => [i.kind, i.id]), [["mock", m2.id], ["challenge", challenge14.id]],
+    "the 10-14 challenge is still there, next to the moved exam");
+  assert.deepEqual(mockOn(again, "2026-10-14").moves, [{ from: "2026-10-12", to: "2026-10-14", at: "2026-10-01T10:00:00.000Z" }], "the move is recorded");
+  assert.equal(again.some((i) => i.date === "2026-10-12"), false, "10-12 gets no challenge and no new full exam");
+  assert.deepEqual(again.map((i) => i.id), moved.map((i) => i.id), "ids are stable");
+  assert.deepEqual(again, moved);
+}
+{
+  // 10-12 -> 10-14 -> 10-16: 10-16 is 4 days from 10-12, so without the rule
+  // the planner would refill 10-12 with a new full exam
+  const m2 = mockOn(first, "2026-10-12");
+  const once = applyMove(first, m2.id, "2026-10-14", "2026-10-01T10:00:00.000Z");
+  const twice = applyMove(once, m2.id, "2026-10-16", "2026-10-01T10:05:00.000Z");
+  const again = rebuild(twice);
+  assert.equal(again.some((i) => i.date === "2026-10-12"), false, "the original day gets nothing new");
+  assert.ok(again.some((i) => i.kind === "challenge" && i.date === "2026-10-14"), "the challenge on the day it passed through stays");
+  assert.ok(again.some((i) => i.kind === "challenge" && i.date === "2026-10-16"), "the challenge on its final day stays");
+  assert.deepEqual(again, twice, "a rebuild after two moves changes nothing");
 }
 
 // --- practice tests already taken are skipped; once they run out, adaptive only
@@ -136,7 +168,25 @@ const first = plan({ diagnosticId: "diag-1" });
   const withPast = plan({ existing: [past], profile: { start: { kind: "skip" } } });
   assert.deepEqual(withPast[0], past, "past items are frozen");
   const ended = plan({ existing: [past], profile: { examDate: TODAY } });
-  assert.deepEqual(ended, [past], "exam date reached: only the past remains");
+  assert.deepEqual(ended, [past], "exam date reached: nothing new is planned");
+}
+
+// --- exam day: every item dated today or earlier stays, the exam among them
+{
+  const examDay = "2026-10-24";
+  const lastChallenge = first.find((i) => i.kind === "challenge" && i.date === "2026-10-23");
+  const marked = markStatuses(first, examDay, { [lastChallenge.id]: { finishedDate: "2026-10-23", sessionId: "s-last" } });
+  const stale = { id: "stale", date: "2026-10-26", kind: "challenge", status: "scheduled", size: 15 };
+  const onExamDay = buildPlan({
+    today: examDay, profile: profile(), existing: [...marked, stale], practiceTaken: [], practiceAvailable: PRACTICE_TESTS, newId: idGen("new"),
+  });
+  const exam = onExamDay.find((i) => i.kind === "exam");
+  assert.ok(exam, "the exam item is still there on exam day");
+  assert.equal(exam.id, first[first.length - 1].id);
+  assert.equal(exam.date, examDay);
+  assert.ok(onExamDay.every((i) => i.date <= examDay), "nothing after today");
+  assert.deepEqual(onExamDay, marked, "every earlier item keeps its status");
+  assert.equal(onExamDay.find((i) => i.id === lastChallenge.id).status, "done");
 }
 
 // --- markStatuses

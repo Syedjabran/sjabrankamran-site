@@ -120,6 +120,12 @@ function mockCounts(item: PlanItem): boolean {
   return item.kind === "mock" && !(item.status === "missed" && !item.sessionId);
 }
 
+/** Every day a full exam was moved away from. Spec 6.4: the old day gets
+ *  nothing new -- no new challenge and no refilled full exam. */
+function vacatedDays(plan: PlanItem[]): Set<string> {
+  return new Set(plan.flatMap((i) => (i.kind === "mock" ? (i.moves ?? []).map((move) => move.from) : [])));
+}
+
 type BuildInput = {
   today: string;
   profile: PlannerProfile;
@@ -154,11 +160,14 @@ function keptMocks(upcoming: PlanItem[], end: string, plan: PlanItem[]): PlanIte
 }
 
 /** New full exams on the mockDates targets not within 3 days of one already
- *  in the plan, alternating official practice test / adaptive mock. */
+ *  in the plan and not on a day an exam was moved away from, alternating
+ *  official practice test / adaptive mock. */
 function newMocks(input: BuildInput, end: string, plan: PlanItem[]): PlanItem[] {
   const { today, profile, practiceTaken, practiceAvailable, newId } = input;
   const chain = plan.filter(mockCounts);
-  const targets = mockDates(today, end, profile.days).filter((target) => chain.every((m) => Math.abs(daysBetween(m.date, target)) > 3));
+  const vacated = vacatedDays(plan);
+  const targets = mockDates(today, end, profile.days)
+    .filter((target) => !vacated.has(target) && chain.every((m) => Math.abs(daysBetween(m.date, target)) > 3));
   const held = new Set(practiceTaken);
   for (const m of chain) if (m.mock?.kind === "practice") held.add(m.mock.testNo);
   const tests = [...new Set(practiceAvailable)].sort((a, b) => a - b);
@@ -181,32 +190,41 @@ function newMocks(input: BuildInput, end: string, plan: PlanItem[]): PlanItem[] 
 }
 
 /** Challenges on practice days (or, with fewer than 3 days to go, a review on
- *  every remaining day) that hold no full exam, reusing the id of an
- *  existing item of the same kind on the same day. */
+ *  every remaining day), reusing the id of an existing item of the same kind
+ *  on the same day. A day holding a full exam the planner placed gets none;
+ *  a day a student moved an exam to keeps its challenge; a day an exam was
+ *  moved away from keeps only a challenge it already had (spec 6.4:
+ *  challenges are never removed, the old day gets nothing new). */
 function dailyItems(input: BuildInput, end: string, upcoming: PlanItem[], plan: PlanItem[]): PlanItem[] {
   const { today, profile, newId } = input;
   const kind = daysBetween(today, end) < 3 ? "review" : "challenge";
   const size = challengeSize(profile.minutes);
-  const busy = new Set(plan.filter((i) => i.kind === "mock" || i.kind === "challenge" || i.kind === "review").map((i) => i.date));
+  const placedMock = (i: PlanItem) => i.kind === "mock" && !i.moves?.length;
+  const busy = new Set(plan.filter((i) => placedMock(i) || i.kind === "challenge" || i.kind === "review").map((i) => i.date));
+  const vacated = vacatedDays(plan);
   const reusable = new Map(upcoming.filter((i) => i.kind === kind && !isStarted(i)).map((i) => [i.date, i.id]));
   const diagnosticToday = plan.some((i) => i.kind === "diagnostic" && i.date === today);
   const items: PlanItem[] = [];
   for (let day = diagnosticToday ? addDays(today, 1) : today; day < end; day = addDays(day, 1)) {
     if (busy.has(day) || (kind === "challenge" && !profile.days.includes(weekday(day)))) continue;
-    items.push({ id: reusable.get(day) ?? newId(), date: day, kind, status: "scheduled", size });
+    const id = reusable.get(day);
+    if (id === undefined && vacated.has(day)) continue;
+    items.push({ id: id ?? newId(), date: day, kind, status: "scheduled", size });
   }
   return items;
 }
 
 /** The plan from `today` to the horizon. Past items (and started/finished
  *  ones) are kept unchanged; future scheduled full exams are kept while still
- *  valid; everything else is regenerated with stable ids. */
+ *  valid; everything else is regenerated with stable ids. On the horizon's
+ *  last day (exam day) every item dated today or earlier stays as it is. */
 export function buildPlan(input: BuildInput): PlanItem[] {
   const { today, profile, existing, newId } = input;
   const upcoming = existing.filter((i) => i.date >= today);
   const plan = [...existing.filter((i) => i.date < today), ...upcoming.filter(isStarted)];
   const end = horizonEnd(profile);
-  if (end === null || end <= today) return sortPlan(plan);
+  if (end === today) return sortPlan(existing.filter((i) => i.date <= today));
+  if (end === null || end < today) return sortPlan(plan);
 
   const diagnostic = planDiagnostic(input, upcoming);
   if (diagnostic && !plan.includes(diagnostic)) plan.push(diagnostic);
