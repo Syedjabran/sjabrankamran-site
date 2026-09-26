@@ -126,15 +126,17 @@ export function mockDates(today: string, exam: string, days: number[]): string[]
 //     exams that were neither moved nor started are dropped and the grid is
 //     recomputed from today; everything the student did or chose -- done,
 //     late, missed, started and moved full exams -- stays, and so do today's
-//     and tomorrow's (the grid never places one that soon, so dropping them
-//     would delete or slide them);
+//     and tomorrow's (with 7 or more days to go the grid places none that
+//     soon, so dropping them would delete or slide them);
 //   "sizes" (minutes only): future challenge/review sizes change, nothing
 //     else (no full exam moves);
 //   no scope (anything else): the plan does not change.
 // maintainPlan (below) is the DAILY step. A recomputed target counts as
 // covered when a kept full exam (whatever its status -- a missed one is
-// covered by its replacement or deliberately left unreplaced) or a day one
-// was moved away from lies within 3 days of it (the snap window).
+// covered by its replacement or deliberately left unreplaced), or a day a
+// student had moved one to and then away from again, lies within 3 days of
+// it (the snap window; 13 on a light schedule, spec 6.3), or the day a full
+// exam first left -- a day the planner chose -- lies within 3 days of it.
 
 /** Started or finished: recorded work, so a regeneration never replaces it. */
 function isStarted(item: PlanItem): boolean {
@@ -225,9 +227,10 @@ function planDiagnostic(input: BuildInput, upcoming: PlanItem[]): PlanItem | nul
 }
 
 /** Future scheduled full exams a student moved, and the planner's own for
- *  today and tomorrow (mockDates never places one before today + 2), while
- *  still valid (at least 2 days before the end, not on a day that already
- *  holds one). The planner's later unstarted ones are recomputed instead. */
+ *  today and tomorrow (with 7 or more days to go mockDates places none
+ *  before today + 2), while still valid (at least 2 days before the end, not
+ *  on a day that already holds one). The planner's later unstarted ones are
+ *  recomputed instead. */
 function keptMocks(upcoming: PlanItem[], end: string, plan: PlanItem[], today: string): PlanItem[] {
   const lastDay = addDays(end, -2);
   const soon = addDays(today, 2);
@@ -241,31 +244,40 @@ function keptMocks(upcoming: PlanItem[], end: string, plan: PlanItem[], today: s
   return kept;
 }
 
-/** New full exams on the mockDates targets not already covered: no full exam
- *  and no moved-away-from day within 3 days, and for the final-week target
- *  (fewer than 7 days to go) no full exam and no moved-away-from day within
- *  the cadence gap (7 days, 14 on a light schedule) before exam - 2 -- a
- *  student's move never makes the planner refill the slot. Kinds alternate
- *  relative to the chronologically previous full exam: an official practice
- *  test (the lowest untaken, unassigned one) after anything but a practice
- *  test, else the adaptive mock. */
+/** New full exams on the mockDates targets not already covered (see the
+ *  windows below), and for the final-week target (fewer than 7 days to go)
+ *  no full exam and no moved-away-from day within the cadence gap (7 days,
+ *  14 on a light schedule) before exam - 2 -- a student's move never makes
+ *  the planner refill the slot. Kinds alternate relative to the
+ *  chronologically previous full exam: an official practice test (the
+ *  lowest untaken, unassigned one) after anything but a practice test, else
+ *  the adaptive mock. */
 function newMocks(input: BuildInput, end: string, plan: PlanItem[], reusable: Map<string, string>): PlanItem[] {
   const { today, profile, practiceTaken, practiceAvailable, newId } = input;
   const grid = plan.filter((i) => i.kind === "mock");
-  const vacated = [...vacatedDays(plan)];
   const gapStart = addDays(end, -2 - (isLight(profile.days) ? 14 : 7));
   const kept = grid.map((m) => m.date);
-  // A target is covered when a kept full exam, or a day one was moved away
-  // from (it stands in for the exam that was there, so a move never makes
-  // room for a new one), lies within 3 days of where it snaps -- 13 on a
-  // light schedule, whose full exams are never closer than 14 days (spec
-  // 6.3). "Where it snaps" is checked today and with no lower bound at all
-  // (where it snapped before today moved on), so a later edit sees the same
-  // grid.
+  // Days full exams were moved away from stand in for the exam that was
+  // there, so a move never makes room for a new one. A full exam's first
+  // moved-from day is one the planner chose and holds no exam; a later one
+  // is a day the student had picked, where the moved exam stood as a kept
+  // exam.
+  const moveLists = grid.map((m) => m.moves ?? []);
+  const plannedFrom = moveLists.flatMap((moves) => moves.slice(0, 1).map((move) => move.from));
+  const pickedFrom = moveLists.flatMap((moves) => moves.slice(1).map((move) => move.from));
+  // A target is covered when, from where it snaps, a kept full exam or a
+  // student-picked moved-from day lies within `spacing` days -- 3 (the snap
+  // window), 13 on a light schedule, whose full exams are never closer than
+  // 14 days (spec 6.3) -- or a first moved-from day lies within 3 days (spec
+  // 6.5; with the light window it would block the grid both where the exam
+  // is and where it was, leaving a hole). "Where it snaps" is checked today
+  // and with no lower bound at all (where it snapped before today moved on),
+  // so a later edit sees the same grid.
   const spacing = isLight(profile.days) ? 13 : 3;
-  const anchors = [...kept, ...vacated];
-  const finalWeekCovered = daysBetween(today, end) < 7 && anchors.some((day) => day >= gapStart);
-  const covered = (day: string | null) => day !== null && anchors.some((anchor) => Math.abs(daysBetween(anchor, day)) <= spacing);
+  const spaced = [...kept, ...pickedFrom];
+  const finalWeekCovered = daysBetween(today, end) < 7 && [...spaced, ...plannedFrom].some((day) => day >= gapStart);
+  const covered = (day: string | null) => day !== null
+    && (spaced.some((anchor) => Math.abs(daysBetween(anchor, day)) <= spacing) || plannedFrom.some((anchor) => withinThreeDays(anchor, day)));
   const targets = mockSlots(today, end, profile.days)
     .filter(({ slot, date }) => !finalWeekCovered && !covered(date) && !covered(snap(slot, profile.days, "")))
     .map(({ date }) => date);
