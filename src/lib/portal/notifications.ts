@@ -28,7 +28,7 @@ import { formatPk } from "@/lib/portal/pk-time";
 
 export type NotifKind =
   | "task" | "challenge" | "assignment" | "test" | "announcement"
-  | "mail" | "resource" | "marks" | "attendance" | "rank" | "reminder";
+  | "mail" | "resource" | "marks" | "attendance" | "rank" | "reminder" | "sat";
 
 export type NotificationRow = {
   id: string; kind: string; title: string; body: string | null;

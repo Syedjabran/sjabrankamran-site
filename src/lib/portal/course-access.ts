@@ -12,9 +12,11 @@
  * keep full access to all three.
  *
  * The student's course(s) are derived from the `year` of their active class
- * enrolment(s) — the same signal study-plan's courseStage already uses — so no
- * new data model is required; assigning a student to an SAT or O-Level class
- * in the registry is what grants (and limits) their access.
+ * enrolment(s) — the same signal study-plan's courseStage already uses — so
+ * assigning a student to an SAT or O-Level class in the registry grants (and
+ * limits) their access. Direct subject grants (subjects.ts, stored by
+ * subject-grants.ts) add their courses on top: an admin can give a student
+ * SAT with no SAT class. Physics stays class-based.
  */
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getRegistry } from "@/lib/portal/institutions";
@@ -22,26 +24,29 @@ import { isExamLabStaff, type PortalUser } from "@/lib/edu/auth";
 import {
   courseFromYear, coursesForEnrolment, primaryCourse, studentCourseAccess, COURSE_LABEL, type Course,
 } from "@/lib/portal/course-labels";
+import { coursesFromGrants } from "@/lib/portal/subjects";
+import { readGrants } from "@/lib/portal/subject-grants";
 
 export type { Course };
 export { courseFromYear, COURSE_LABEL };
 
 /** `strict` (the SAT path): a failed read throws instead of reading as "no
- *  enrolment". Without it -- every physics / Exam Lab caller, unchanged --
- *  a failed read resolves to null, exactly as before. */
+ *  enrolment" / "no grants". Without it -- every physics / Exam Lab caller,
+ *  unchanged -- a failed enrolment read resolves to null and a failed grants
+ *  read to no grants, exactly as before subjects existed. */
 export type CourseAccessOptions = { strict?: boolean };
 
-/** Every awarding-body course a student is actively enrolled into, keyed off
- * class `year` labels (see `coursesForEnrolment`), or null when the student
- * has no active enrolment at all. The one enrolment lookup behind
- * `studentCourse`, `studentCourses` and `resolveCourseAccess`.
+type ActiveEnrolment = { ids: Set<string>; classes: readonly { id: string; year: string }[] };
+
+/** The student's active enrolled class ids and the registry classes to place
+ * them with, or null when the student has no active enrolment at all.
  *
  * Strict: a Supabase query error throws, and so does an empty registry --
  * `getRegistry()` turns a failed storage read into an empty one, and a live
  * registry always has classes (the same rule /api/sat/results applies).
  * The SAT routes turn that throw into a retryable 503 rather than a 403.
  */
-async function enrolledCourses(uid: string, { strict = false }: CourseAccessOptions = {}): Promise<Set<Course> | null> {
+async function activeEnrolment(uid: string, { strict = false }: CourseAccessOptions): Promise<ActiveEnrolment | null> {
   try {
     const db = createAdminClient();
     const { data: student, error: studentError } = await db.from("edu_students").select("id").eq("profile_id", uid).maybeSingle();
@@ -57,11 +62,33 @@ async function enrolledCourses(uid: string, { strict = false }: CourseAccessOpti
     if (!ids.size) return null;
     const registry = await getRegistry();
     if (strict && !registry.classes.length) throw new Error("The class registry couldn't be read.");
-    return coursesForEnrolment(ids, registry.classes);
+    return { ids, classes: registry.classes };
   } catch (e) {
     if (strict) throw e;
     return null;
   }
+}
+
+/** The courses the student's direct subject grants open. Strict: a failed
+ *  grants read throws (the SAT routes' 503); otherwise it reads as none. */
+async function grantedCourses(uid: string, { strict = false }: CourseAccessOptions): Promise<Course[]> {
+  try {
+    return coursesFromGrants((await readGrants(uid)).grants);
+  } catch (e) {
+    if (strict) throw e;
+    return [];
+  }
+}
+
+/** Every awarding-body course a student may open: their active class
+ * enrolments keyed off class `year` labels plus their direct subject grants
+ * (see `coursesForEnrolment`), or null when they have neither. The one
+ * enrolment lookup and one grants read behind `studentCourse`,
+ * `studentCourses` and `resolveCourseAccess`; the two run concurrently. */
+async function enrolledCourses(uid: string, options: CourseAccessOptions = {}): Promise<Set<Course> | null> {
+  const [enrolment, directCourses] = await Promise.all([activeEnrolment(uid, options), grantedCourses(uid, options)]);
+  if (!enrolment && !directCourses.length) return null;
+  return coursesForEnrolment(enrolment?.ids ?? new Set(), enrolment?.classes ?? [], { directCourses });
 }
 
 /** The single awarding-body course a student is enrolled into, or null. */

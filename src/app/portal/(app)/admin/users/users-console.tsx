@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { UserCog, Search, UserPlus, ShieldAlert, KeyRound, Ban, RotateCcw, Copy, LockKeyhole, X } from "lucide-react";
+import { DIRECT_SUBJECTS, type SubjectId } from "@/lib/portal/subjects";
 
 export const ROLES: [string, string][] = [
   ["super_admin", "Super Admin"], ["admin", "Admin"], ["teacher", "Teacher"],
@@ -180,22 +181,31 @@ function CreateUser({ classes, onClose, onCreated }: { classes: ClassItem[]; onC
   const [name, setName] = useState("");
   const [roles, setRoles] = useState<string[]>(["student"]);
   const [classId, setClassId] = useState("");
+  const [subjects, setSubjects] = useState<SubjectId[]>([]);
   const [sendEmail, setSendEmail] = useState(true);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [pw, setPw] = useState("");
 
   const toggle = (r: string) => setRoles((s) => (s.includes(r) ? s.filter((x) => x !== r) : [...s, r]));
+  const toggleSubject = (id: SubjectId) => setSubjects((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
   async function submit() {
     setBusy(true); setMsg(""); setPw("");
+    const isStudent = roles.includes("student");
     try {
       const j = await api("/api/portal/admin/users", {
         method: "POST",
-        body: JSON.stringify({ email, full_name: name, roles, class_id: roles.includes("student") && classId ? classId : undefined, send_email: sendEmail }),
+        body: JSON.stringify({
+          email, full_name: name, roles,
+          class_id: isStudent && classId ? classId : undefined,
+          subjects: isStudent && subjects.length ? subjects : undefined,
+          send_email: sendEmail,
+        }),
       });
       setPw(j.password);
-      onCreated(`Created ${email}${j.emailStatus ? ` · email ${j.emailStatus}` : ""}`);
+      const warnings: string[] = Array.isArray(j.warnings) ? j.warnings : [];
+      onCreated(`Created ${email}${j.emailStatus ? ` · email ${j.emailStatus}` : ""}${warnings.length ? ` · ${warnings.join(" ")}` : ""}`);
       setEmail(""); setName("");
     } catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
   }
@@ -225,6 +235,11 @@ function CreateUser({ classes, onClose, onCreated }: { classes: ClassItem[]; onC
           {classes.map((c) => <option key={c.id} value={c.id}>{c.school} — {c.name}{c.section ? ` (${c.section})` : ""}</option>)}
         </select>
       ) : null}
+      {roles.includes("student") ? DIRECT_SUBJECTS.map((s) => (
+        <label key={s.id} className="flex items-center gap-2 text-xs text-fog">
+          <input type="checkbox" checked={subjects.includes(s.id)} onChange={() => toggleSubject(s.id)} /> {s.label}
+        </label>
+      )) : null}
       <label className="flex items-center gap-2 text-xs text-fog">
         <input type="checkbox" checked={sendEmail} onChange={(e) => setSendEmail(e.target.checked)} /> Email login details to the user
       </label>

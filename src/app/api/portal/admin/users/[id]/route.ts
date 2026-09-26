@@ -11,6 +11,9 @@ import { getRankingsCached } from "@/lib/portal/rankings";
 import { getPortalRestriction } from "@/lib/portal/access-control";
 import { attendancePercent, countedStatuses, isAttended } from "@/lib/edu/attendance";
 import { pkToday } from "@/lib/portal/pk-time";
+import { courseFromYear } from "@/lib/portal/course-labels";
+import { subjectOf } from "@/lib/portal/subjects";
+import { readGrants } from "@/lib/portal/subject-grants";
 
 export const runtime = "nodejs";
 
@@ -129,8 +132,23 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     }
   }
 
-  const onboarding = await getOnboarding(uid);
-  const staffSchool = await getStaffSchool(uid);
+  const [onboarding, staffSchool, grants] = await Promise.all([
+    getOnboarding(uid),
+    getStaffSchool(uid),
+    // null = couldn't be read: the Subjects card says so and locks its toggles
+    // rather than showing a failed read as "not granted".
+    readGrants(uid).then((g) => g.grants, () => null),
+  ]);
+  // Physics is class-based: the active classes whose registry year names a
+  // physics course, shown read-only on the Subjects card.
+  const physicsCourses = subjectOf("physics")?.courses ?? [];
+  const physicsClasses = enrolments
+    .filter((e) => {
+      const year = regById.get(e.classId)?.year;
+      const course = year ? courseFromYear(year) : null;
+      return e.status === "active" && !!course && physicsCourses.includes(course);
+    })
+    .map((e) => e.className);
 
   return NextResponse.json({
     profile: { id: profile.id, full_name: profile.full_name || "", email: profile.email || "", phone: profile.phone || "", status: profile.status, created_at: profile.created_at, roles },
@@ -139,6 +157,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     schools: reg.schools,
     student: student ? { id: student.id, student_no: student.student_no, school: student.school, admission_status: student.admission_status, date_of_birth: student.date_of_birth } : null,
     enrolments,
+    subjects: { grants, physicsClasses },
     onboarding: onboarding ? { completed: !!onboarding.completed_at, whatsapp: onboarding.whatsapp || null, city: onboarding.city || null, dob: onboarding.date_of_birth || null, guardians: onboarding.guardians || [] } : null,
     progress: progress
       ? {

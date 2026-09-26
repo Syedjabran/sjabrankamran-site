@@ -4,6 +4,8 @@ import { requireAdmin, audit, genPassword, isEmail, ALL_ROLES, emailCredentials,
 import { getAccessControlDocument } from "@/lib/portal/access-control";
 import { isRestrictionActive } from "@/lib/portal/access-shared";
 import type { EduRole } from "@/lib/edu/auth";
+import { DIRECT_SUBJECT_ONLY, directSubjectOf, subjectOf, type SubjectId } from "@/lib/portal/subjects";
+import { switchSubject } from "@/lib/portal/subject-admin";
 
 export const runtime = "nodejs";
 
@@ -54,14 +56,28 @@ export async function GET(req: Request) {
   return NextResponse.json({ users, counts }, { status: 200 });
 }
 
-/** POST /api/portal/admin/users — create a new account (any role), optionally enrol + email. */
+/** The direct-grant subjects asked for on a new account, or an error sentence. */
+function requestedSubjects(raw: unknown): { subjects: SubjectId[] } | { error: string } {
+  if (raw === undefined || raw === null) return { subjects: [] };
+  if (!Array.isArray(raw)) return { error: DIRECT_SUBJECT_ONLY };
+  const subjects: SubjectId[] = [];
+  for (const id of raw) {
+    const subject = directSubjectOf(id);
+    if (!subject) return { error: DIRECT_SUBJECT_ONLY };
+    if (!subjects.includes(subject.id)) subjects.push(subject.id);
+  }
+  return { subjects };
+}
+
+/** POST /api/portal/admin/users — create a new account (any role), optionally
+ *  enrol, add direct subjects (`subjects: ["sat"]`, students only) + email. */
 export async function POST(req: Request) {
   const admin = await requireAdmin();
   if (!admin) return NextResponse.json({ error: "Admins only." }, { status: 403 });
 
   const b = (await req.json().catch(() => null)) as {
     email?: string; full_name?: string; roles?: string[]; password?: string;
-    school?: string; student_no?: string; class_id?: string; send_email?: boolean;
+    school?: string; student_no?: string; class_id?: string; send_email?: boolean; subjects?: unknown;
   } | null;
   if (!b) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
 
@@ -73,6 +89,12 @@ export async function POST(req: Request) {
   if (roles.length === 0) return NextResponse.json({ error: "Assign at least one role." }, { status: 400 });
   if (roles.some((r) => r === "admin" || r === "super_admin") && !isSuperAdmin(admin)) {
     return NextResponse.json({ error: "Only a super-admin can create admin accounts." }, { status: 403 });
+  }
+  const requested = requestedSubjects(b.subjects);
+  if ("error" in requested) return NextResponse.json({ error: requested.error }, { status: 400 });
+  const { subjects } = requested;
+  if (subjects.length && !roles.includes("student")) {
+    return NextResponse.json({ error: "Subjects are for student accounts. Add the Student role too." }, { status: 400 });
   }
 
   const password = (b.password || "").trim() || genPassword();
@@ -121,7 +143,19 @@ export async function POST(req: Request) {
     }
   }
 
-  await audit(admin.id, "user.create", "edu_profiles", uid, { email, roles, class_id: b.class_id || null, warnings });
+  // 5) Direct subjects, once the account exists. A failure leaves the account
+  // in place (like a failed enrolment) and says how to finish it.
+  const granted: SubjectId[] = [];
+  for (const subject of subjects) {
+    try {
+      await switchSubject(uid, subject, true, admin.id);
+      granted.push(subject);
+    } catch {
+      warnings.push(`Account created, but ${subjectOf(subject)?.label ?? subject} couldn't be added. Turn it on from the user's page.`);
+    }
+  }
+
+  await audit(admin.id, "user.create", "edu_profiles", uid, { email, roles, class_id: b.class_id || null, subjects: granted, warnings });
 
   let emailStatus: string | undefined;
   if (b.send_email) {

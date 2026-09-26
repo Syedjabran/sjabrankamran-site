@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, KeyRound, Ban, RotateCcw, Trash2, Mail, GraduationCap, Activity, ShieldCheck, BookOpen, ClipboardList } from "lucide-react";
+import { ArrowLeft, KeyRound, Ban, RotateCcw, Trash2, Mail, GraduationCap, Activity, ShieldCheck, BookOpen, ClipboardList, Layers } from "lucide-react";
+import { DIRECT_SUBJECTS, subjectOf, type SubjectId } from "@/lib/portal/subjects";
 import { ROLES } from "../users-console";
 import { ActivityTimeline } from "./activity-timeline";
 import { StudentVisualReport, type StudentVisualData } from "./student-visual-report";
@@ -21,6 +22,8 @@ type Detail = {
   schools?: string[];
   student: { id: string; student_no: string | null; school: string | null; admission_status: string; date_of_birth: string | null } | null;
   enrolments: { id: string; classId: string; status: string; className: string; school: string; section: string | null }[];
+  /** `grants` is null when the subjects record couldn't be read. */
+  subjects: { grants: SubjectGrantMap | null; physicsClasses: string[] };
   onboarding: { completed: boolean; whatsapp: string | null; city: string | null; dob: string | null; guardians: { name: string; email: string; phone: string; relationship: string }[] } | null;
   progress: (StudentVisualData & { strengths: { topic: string; accuracy: number }[]; weaknesses: { topic: string; accuracy: number }[]; recentAttempts: { ts: number; mode: string; score: number; total: number; qCount: number }[] }) | null;
   attendance: { total: number; present: number; late: number; absent: number; pct: number } | null;
@@ -28,6 +31,7 @@ type Detail = {
   submissions: { title: string; status: string; marks: number | null; submittedAt: string | null }[];
 };
 type ClassItem = { id: string; name: string; school: string; section: string | null };
+type SubjectGrantMap = Partial<Record<SubjectId, { by: string; at: string }>>;
 
 async function api(url: string, opts?: RequestInit) {
   const r = await fetch(url, { ...opts, headers: { "content-type": "application/json", ...(opts?.headers || {}) } });
@@ -185,6 +189,9 @@ export function UserDetail({ id, isSuper, selfId }: { id: string; isSuper: boole
         )}
       </Card>
 
+      {/* Subjects — physics from class enrolment, Digital SAT granted directly. */}
+      {p.roles.includes("student") ? <SubjectsCard id={id} subjects={d.subjects} /> : null}
+
       {/* Enrolments */}
       <Card title={schoolScoped ? "Assigned class access" : "Enrolments (schools & classes)"} icon={<GraduationCap size={13} className="text-cyan" />}>
         {d.enrolments.length ? (
@@ -281,5 +288,59 @@ export function UserDetail({ id, isSuper, selfId }: { id: string; isSuper: boole
         </Card>
       ) : null}
     </div>
+  );
+}
+
+const PHYSICS = subjectOf("physics");
+const SUBJECT_ROW = "flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-abyss/40 px-3 py-2 text-xs";
+
+/** Physics is read-only here (it follows the Enrolments card); each
+ *  direct-grant subject (Digital SAT) is a switch saved straight away. */
+function SubjectsCard({ id, subjects }: { id: string; subjects: Detail["subjects"] }) {
+  const [grants, setGrants] = useState(subjects.grants);
+  const [saving, setSaving] = useState<SubjectId | null>(null);
+  const [error, setError] = useState("");
+  // A reload of the whole page (after another action) brings fresh grants.
+  useEffect(() => { setGrants(subjects.grants); }, [subjects.grants]);
+
+  async function toggle(subject: SubjectId, on: boolean) {
+    setSaving(subject); setError("");
+    try {
+      const j = await api(`/api/portal/admin/users/${id}/subjects`, { method: "POST", body: JSON.stringify({ subject, on }) });
+      setGrants(j.grants);
+    } catch (e) { setError((e as Error).message); } finally { setSaving(null); }
+  }
+
+  return (
+    <Card title="Subjects" icon={<Layers size={13} className="text-cyan" />}>
+      <ul className="space-y-1.5">
+        {PHYSICS ? (
+          <li className={SUBJECT_ROW}>
+            <span className="min-w-0">
+              <span className="block text-ice">{PHYSICS.label}</span>
+              <span className="block truncate text-dust">{subjects.physicsClasses.length ? `From class: ${subjects.physicsClasses.join(", ")}` : "Not in a physics class — use Enrolments below"}</span>
+            </span>
+          </li>
+        ) : null}
+        {DIRECT_SUBJECTS.map((s) => {
+          const on = !!grants?.[s.id];
+          const busy = saving === s.id;
+          return (
+            <li key={s.id} className={SUBJECT_ROW}>
+              <span className="min-w-0">
+                <span className="block text-ice">{s.label}</span>
+                <span className="block truncate text-dust">{grants === null ? "Couldn’t be read just now — refresh to try again" : busy ? "Saving…" : on ? "On" : "Off"}</span>
+              </span>
+              <button type="button" role="switch" aria-checked={on} aria-label={s.label} disabled={grants === null || saving !== null}
+                onClick={() => toggle(s.id, !on)}
+                className={"relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition disabled:opacity-50 " + (on ? "border-cyan/60 bg-cyan/20" : "border-white/15 bg-abyss/60")}>
+                <span className={"inline-block h-4 w-4 rounded-full transition " + (on ? "translate-x-6 bg-cyan" : "translate-x-1 bg-dust")} />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {error ? <p className="mt-2 text-xs text-signal">{error}</p> : null}
+    </Card>
   );
 }
