@@ -12,6 +12,7 @@ import {
   type SATSession, type SATStageKey, type StageResult,
 } from "./session.ts";
 import type { SATDrill } from "./drills.ts";
+import { analyticsItemsFromDoc, type AnalyticsItem, type AnalyticsLookupEntry } from "./analytics.ts";
 import type { PublicQuestion, ReviewItem, SATReport, SessionState, DrillState, SessionSummary } from "./client-types.ts";
 import type { SATAnswer, SATDifficulty, SATSection } from "./types.ts";
 
@@ -50,6 +51,21 @@ export function publicQuestion(id: string, n: number): PublicQuestion | null {
   const e = index().get(id);
   if (!e) return null;
   return { id, n, img: e.img, kind: e.answer.kind, section: e.section, domain: e.domain, skill: e.skill, difficulty: e.difficulty };
+}
+
+/** Labels + grader for one question id, for analytics (no answer text leaves
+ *  here -- only a correct/incorrect verdict on a stored response). */
+function analyticsLookup(id: string): AnalyticsLookupEntry | null {
+  const e = index().get(id);
+  if (!e) return null;
+  return { section: e.section, domain: e.domain, skill: e.skill, difficulty: e.difficulty, correct: (response) => isCorrect(e.answer, response) };
+}
+
+/** A sitting's or drill's finished items for analytics (SAT Coach spec 7):
+ *  checked drill questions and submitted modules only -- see
+ *  analyticsItemsFromDoc. Practice-test items carry null labels. */
+export function itemsOf(doc: SATSession | SATDrill): AnalyticsItem[] {
+  return analyticsItemsFromDoc(doc, analyticsLookup);
 }
 
 export function reviewItem(id: string, n: number, response: string | null): ReviewItem | null {
@@ -165,6 +181,9 @@ export function drillState(d: SATDrill, now: number): DrillState {
 /** `correct`/`total` are reported only once the doc is finished — 0/0 before.
  *  A mid-sitting Module 1 count would reveal an adaptive session's routing
  *  (and a mid-drill count is simply not a finished result yet either).
+ *  A drill's `checkedCount` is its progress, not a result (the student sees
+ *  each check's outcome as it happens), so it is shown throughout: it lets
+ *  the analytics cache see an unfinished drill's new checks.
  *  `overtime` follows the same rule: set once a finished sitting has any
  *  module submitted past its limit, so the staff list can flag its score. */
 export function summaryOf(doc: SATSession | SATDrill): SessionSummary {
@@ -172,8 +191,8 @@ export function summaryOf(doc: SATSession | SATDrill): SessionSummary {
   if (doc.kind === "drill") {
     const values = Object.values(doc.checked);
     return { id: doc.id, kind: "drill", ...(doc.purpose ? { purpose: doc.purpose } : {}), title: doc.title, createdAt: doc.createdAt, finishedAt: doc.finishedAt, score: null,
-      correct: finished ? values.filter(Boolean).length : 0, total: finished ? doc.questionIds.length : 0, assignmentId: doc.assignmentId,
-      overtime: false };
+      correct: finished ? values.filter(Boolean).length : 0, total: finished ? doc.questionIds.length : 0, checkedCount: values.length,
+      assignmentId: doc.assignmentId, overtime: false };
   }
   const results = finished ? STAGES.map((k) => doc.results[k]).filter((r): r is StageResult => !!r) : [];
   return { id: doc.id, kind: doc.kind, title: doc.title, createdAt: doc.createdAt, finishedAt: doc.finishedAt, score: doc.score,

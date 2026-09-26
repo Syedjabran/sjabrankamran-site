@@ -33,6 +33,11 @@
 import type { SATDifficulty, SATScore, SATSection } from "./types.ts";
 import type { MasteryRow, SATAnalytics } from "./client-types.ts";
 import { DOMAIN_LABEL } from "./client-types.ts";
+// Type-only (erased): the doc shapes and the challenge builder's History.
+// No runtime value comes from session.ts/drills.ts, which reach the bank.
+import type { SATSession, SATStageKey } from "./session.ts";
+import type { SATDrill } from "./drills.ts";
+import type { History } from "./coach/challenge-builder.ts";
 
 export type AnalyticsItem = {
   qid: string;
@@ -53,6 +58,83 @@ export type SittingScore = {
   finishedAt: number;
   score: SATScore | null;
 };
+
+/** What analyticsItemsFromDoc needs to know about one question id: its
+ *  labels (null on practice-test items) and a grader for a stored response.
+ *  Injected, so this module never touches the answer key itself -- the
+ *  server wires it to its bank/practice index (serve.ts `itemsOf`). */
+export type AnalyticsLookupEntry = {
+  section: SATSection;
+  domain: string | null;
+  skill: string | null;
+  difficulty: SATDifficulty | null;
+  correct: (response: string | null) => boolean;
+};
+export type AnalyticsLookup = (id: string) => AnalyticsLookupEntry | null;
+
+// session.ts's STAGES, spelled here as a type-checked literal: importing the
+// runtime value would pull session.ts (and through it the bank) into any
+// client module that imports this one.
+const STAGE_ORDER: readonly SATStageKey[] = ["rw.m1", "rw.m2", "math.m1", "math.m2"];
+
+function toItem(id: string, e: AnalyticsLookupEntry, correct: boolean, at: number, timeMs: number | undefined, source: AnalyticsItem["source"]): AnalyticsItem {
+  const out: AnalyticsItem = { qid: id, section: e.section, domain: e.domain, skill: e.skill, difficulty: e.difficulty, correct, at, source };
+  if (typeof timeMs === "number") out.timeMs = timeMs;
+  return out;
+}
+
+/** The finished items of one sitting or drill (integrity rule 1: finished
+ *  work only).
+ *  - A drill contributes only its checked questions, each with its RECORDED
+ *    first-answer result (`checked[id]`, never a re-grade), dated at the
+ *    drill's `finishedAt` -- or its `createdAt` while unfinished: a drill
+ *    stores no per-question check time. Source = its purpose ("diagnostic" /
+ *    "challenge"), else "drill".
+ *  - A sitting contributes only its SUBMITTED modules (`results[stage]`
+ *    exists), every planned question of each -- a blank counts as wrong, as
+ *    in the module's own score -- dated at that module's `submittedAt` and
+ *    graded through the lookup. A running or not-yet-reached module
+ *    contributes nothing. Source = the sitting's kind.
+ *  - A question id the lookup doesn't know is skipped. */
+export function analyticsItemsFromDoc(doc: SATSession | SATDrill, lookup: AnalyticsLookup): AnalyticsItem[] {
+  const items: AnalyticsItem[] = [];
+  if (doc.kind === "drill") {
+    const source: AnalyticsItem["source"] = doc.purpose === "diagnostic" || doc.purpose === "challenge" ? doc.purpose : "drill";
+    const at = doc.finishedAt ?? doc.createdAt;
+    for (const id of doc.questionIds) {
+      if (!(id in doc.checked)) continue;
+      const e = lookup(id);
+      if (e) items.push(toItem(id, e, doc.checked[id] === true, at, doc.timeMs?.[id], source));
+    }
+    return items;
+  }
+  for (const stage of STAGE_ORDER) {
+    const result = doc.results[stage];
+    if (!result) continue;
+    for (const id of doc.plan[stage] ?? []) {
+      const e = lookup(id);
+      if (e) items.push(toItem(id, e, e.correct(doc.answers[id] ?? null), result.submittedAt, doc.timeMs?.[id], doc.kind));
+    }
+  }
+  return items;
+}
+
+/** The challenge builder's per-question history from the same finished
+ *  items: `times` = how often the student has answered the question,
+ *  `lastAt`/`lastCorrect` from the latest of those answers. */
+export function historyOf(items: AnalyticsItem[]): History {
+  const history: History = new Map();
+  for (const it of items) {
+    const prev = history.get(it.qid);
+    if (!prev) {
+      history.set(it.qid, { lastAt: it.at, lastCorrect: it.correct, times: 1 });
+      continue;
+    }
+    const latest = it.at >= prev.lastAt;
+    history.set(it.qid, { lastAt: latest ? it.at : prev.lastAt, lastCorrect: latest ? it.correct : prev.lastCorrect, times: prev.times + 1 });
+  }
+  return history;
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_HALF_LIFE_DAYS = 14;

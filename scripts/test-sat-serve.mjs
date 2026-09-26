@@ -3,7 +3,7 @@ import { loadQuestionBank } from "../src/lib/sat/bank.ts";
 import { assembleForm } from "../src/lib/sat/forms.ts";
 import { startAdaptive, submitStage, beginStage } from "../src/lib/sat/session.ts";
 import { startDrill, checkDrillAnswer } from "../src/lib/sat/drills.ts";
-import { answerOf, sessionState, drillState, summaryOf } from "../src/lib/sat/serve.ts";
+import { answerOf, sessionState, drillState, summaryOf, itemsOf } from "../src/lib/sat/serve.ts";
 
 // Deterministic RNG so a run is reproducible and a failure is debuggable.
 function seeded(seed) {
@@ -98,6 +98,20 @@ assert.equal(lateFinish.results["math.m2"].overtime, true);
 assert.equal(summaryOf(lateFinish).overtime, true, "a finished sitting with an overtime module is flagged");
 assert.equal(sessionState(lateFinish, T0 + 109 * 60_000).report.overtime, true, "and so is its report, as before");
 
+// --- itemsOf (SAT Coach analytics): the real index wired into
+// analyticsItemsFromDoc -- submitted modules only, graded like the scores.
+{
+  const planned = (k) => beforeMath2.plan[k].length;
+  const midItems = itemsOf(beforeMath2); // rw.m1, rw.m2, math.m1 submitted; math.m2 running
+  assert.equal(midItems.length, planned("rw.m1") + planned("rw.m2") + planned("math.m1"), "a running module contributes nothing");
+  assert.ok(!midItems.some((it) => beforeMath2.plan["math.m2"].includes(it.qid)), "no item from the running module");
+  const rwCorrect = midItems.filter((it) => it.section === "rw" && it.correct).length;
+  assert.equal(rwCorrect, beforeMath2.results["rw.m1"].correct + beforeMath2.results["rw.m2"].correct, "items grade exactly like the module scores");
+  assert.ok(midItems.every((it) => it.domain !== null && it.skill !== null && it.source === "adaptive"), "bank questions carry their labels");
+  assert.equal(itemsOf(s).length, midItems.length + planned("math.m2"), "a finished sitting contributes every module");
+  assert.equal(summaryOf(s).checkedCount, undefined, "sittings carry no checkedCount");
+}
+
 console.log("sat-serve session-state tests passed");
 
 // --- drills: unchecked questions carry no answer/rationale, a checked ------
@@ -126,5 +140,12 @@ for (const key of LEAKY_KEYS) {
 }
 
 assert.equal(summaryOf(checkedDrill).overtime, false, "drills are never flagged");
+
+const drillItems = itemsOf(checkedDrill);
+assert.deepEqual(drillItems.map((it) => it.qid), [firstId], "a drill's only item is its one checked question");
+assert.equal(drillItems[0].correct, checkedDrill.checked[firstId], "graded as recorded at check time");
+assert.equal(summaryOf(checkedDrill).checkedCount, 1, "an unfinished drill's summary counts its checked questions");
+assert.equal(summaryOf(checkedDrill).total, 0, "... but still shows no result before it finishes");
+assert.equal(summaryOf(drill).checkedCount, 0);
 
 console.log("sat-serve drill-state tests passed");

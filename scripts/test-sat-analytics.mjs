@@ -4,7 +4,7 @@
 // computeAnalytics call) so unrelated items never merge into the same
 // domain/skill row.
 import assert from "node:assert/strict";
-import { computeAnalytics } from "../src/lib/sat/analytics.ts";
+import { analyticsItemsFromDoc, computeAnalytics, historyOf } from "../src/lib/sat/analytics.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.UTC(2026, 9, 1); // 2026-10-01T00:00:00Z
@@ -137,6 +137,145 @@ function item(overrides) {
   assert.equal(result.scores.latestOfficial?.id, "p2");
   assert.equal(result.scores.latestEstimate?.id, "a2");
   assert.equal(result.scores.history.length, 4);
+}
+
+// --- 10-14: analyticsItemsFromDoc -- finished items only, with an injected
+// lookup (id -> labels + a grader), so no question bank is needed here.
+const LABELS = {
+  q1: { section: "math", domain: "algebra", skill: "Linear equations in one variable", difficulty: "E" },
+  q2: { section: "math", domain: "algebra", skill: "Linear equations in one variable", difficulty: "M" },
+  q3: { section: "math", domain: "psda", skill: "Percentages", difficulty: "H" },
+  r1: { section: "rw", domain: "craft-structure", skill: "Words in Context", difficulty: "M" },
+  r2: { section: "rw", domain: "craft-structure", skill: "Words in Context", difficulty: "H" },
+  r3: { section: "rw", domain: "standard-english", skill: "Boundaries", difficulty: "M" },
+  r4: { section: "rw", domain: "standard-english", skill: "Form, Structure, and Sense", difficulty: "E" },
+  "pt4-rw-m1-q1": { section: "rw", domain: null, skill: null, difficulty: null },
+  "pt4-rw-m1-q2": { section: "rw", domain: null, skill: null, difficulty: null },
+};
+// Every question's key is "A" in this fixture.
+const lookup = (id) => (LABELS[id] ? { ...LABELS[id], correct: (response) => response === "A" } : null);
+
+const T_CREATED = NOW - 3 * DAY;
+const T_FINISHED = NOW - 2 * DAY;
+
+function drill(overrides) {
+  return {
+    version: 1, id: "drill-1", uid: "u-analytics", kind: "drill", title: "Math drill", createdAt: T_CREATED,
+    filter: {}, questionIds: ["q1", "q2", "q3"], answers: {}, checked: {}, finishedAt: null, assignmentId: null,
+    ...overrides,
+  };
+}
+
+function sitting(overrides) {
+  return {
+    version: 1, id: "sit-1", uid: "u-analytics", kind: "adaptive", title: "Adaptive mock exam", testNo: null,
+    createdAt: T_CREATED, plan: {}, variants: {}, routed: {},
+    minutes: { "rw.m1": 32, "rw.m2": 32, "math.m1": 35, "math.m2": 35 },
+    current: 0, stageStartedAt: T_CREATED, breakUntil: null, answers: {}, flagged: [], results: {},
+    score: null, scoreNote: null, finishedAt: null, assignmentId: null,
+    ...overrides,
+  };
+}
+
+// 10: a drill with 2 of 3 checked -> exactly those 2 items; correctness is the
+//     RECORDED first answer (checked), not a re-grade of the stored response;
+//     `at` = createdAt while unfinished; timeMs carried when present.
+{
+  const doc = drill({
+    answers: { q1: "A", q2: "A" },
+    checked: { q1: true, q2: false }, // q2's recorded first answer was wrong, whatever `answers` now says
+    timeMs: { q1: 42_000 },
+  });
+  const items = analyticsItemsFromDoc(doc, lookup);
+  assert.equal(items.length, 2, "only checked drill questions are items");
+  const byId = Object.fromEntries(items.map((it) => [it.qid, it]));
+  assert.ok(byId.q1 && byId.q2 && !byId.q3, "q1 and q2 only -- q3 was never checked");
+  assert.equal(byId.q1.correct, true);
+  assert.equal(byId.q2.correct, false, "a drill item's correctness is the recorded check result");
+  assert.equal(byId.q1.source, "drill", "a drill without a purpose is a plain drill");
+  assert.equal(byId.q1.at, T_CREATED, "an unfinished drill's items are dated at its creation");
+  assert.equal(byId.q1.timeMs, 42_000);
+  assert.equal(byId.q2.timeMs, undefined, "no time recorded -> no timeMs");
+  assert.equal(byId.q1.domain, "algebra");
+  assert.equal(byId.q1.skill, "Linear equations in one variable");
+  assert.equal(byId.q1.difficulty, "E");
+  assert.equal(byId.q3, undefined);
+}
+
+// 11: a finished challenge/diagnostic drill -> source follows the purpose, `at` = finishedAt.
+{
+  const all = { q1: true, q2: true, q3: false };
+  const challenge = analyticsItemsFromDoc(drill({ purpose: "challenge", checked: all, finishedAt: T_FINISHED }), lookup);
+  assert.equal(challenge.length, 3);
+  assert.ok(challenge.every((it) => it.source === "challenge" && it.at === T_FINISHED), "challenge drill items");
+  const diagnostic = analyticsItemsFromDoc(drill({ purpose: "diagnostic", checked: all, finishedAt: T_FINISHED }), lookup);
+  assert.ok(diagnostic.every((it) => it.source === "diagnostic"), "diagnostic drill items");
+  const plain = analyticsItemsFromDoc(drill({ purpose: "drill", checked: all, finishedAt: T_FINISHED }), lookup);
+  assert.ok(plain.every((it) => it.source === "drill"), "an explicit purpose \"drill\" is a plain drill");
+}
+
+// 12: an adaptive sitting with rw.m1 submitted and rw.m2 running -> only rw.m1's
+//     items (the running module's answers are not finished work), dated at
+//     rw.m1's submission, graded through the lookup; a blank answer is wrong.
+{
+  const T_SUB = NOW - DAY;
+  const doc = sitting({
+    plan: { "rw.m1": ["r1", "r2", "r3"], "math.m1": ["q1"], "rw.m2": ["r4"] },
+    routed: { rw: "upper" },
+    current: 1,
+    stageStartedAt: T_SUB,
+    answers: { r1: "A", r2: "B", r4: "A" }, // r3 left blank; r4 is in the RUNNING module
+    timeMs: { r1: 60_000, r4: 30_000 },
+    results: { "rw.m1": { correct: 1, total: 3, answered: 2, overtime: false, submittedAt: T_SUB } },
+  });
+  const items = analyticsItemsFromDoc(doc, lookup);
+  assert.deepEqual(items.map((it) => it.qid).sort(), ["r1", "r2", "r3"], "only the submitted module's questions");
+  const byId = Object.fromEntries(items.map((it) => [it.qid, it]));
+  assert.equal(byId.r1.correct, true);
+  assert.equal(byId.r2.correct, false);
+  assert.equal(byId.r3.correct, false, "an unanswered question in a submitted module counts as wrong");
+  assert.ok(items.every((it) => it.at === T_SUB && it.source === "adaptive" && it.section === "rw"));
+  assert.equal(byId.r1.timeMs, 60_000);
+}
+
+// 13: practice-test items carry null domain/skill/difficulty; source "practice".
+{
+  const T_SUB = NOW - 5 * DAY;
+  const doc = sitting({
+    kind: "practice", title: "Official Practice Test 4", testNo: 4,
+    plan: { "rw.m1": ["pt4-rw-m1-q1", "pt4-rw-m1-q2"] },
+    current: 4, stageStartedAt: null, finishedAt: T_SUB,
+    answers: { "pt4-rw-m1-q1": "A", "pt4-rw-m1-q2": "C" },
+    results: { "rw.m1": { correct: 1, total: 2, answered: 2, overtime: false, submittedAt: T_SUB } },
+  });
+  const items = analyticsItemsFromDoc(doc, lookup);
+  assert.equal(items.length, 2);
+  for (const it of items) {
+    assert.equal(it.source, "practice");
+    assert.equal(it.domain, null, "practice items carry no domain");
+    assert.equal(it.skill, null, "practice items carry no skill");
+    assert.equal(it.difficulty, null, "practice items carry no difficulty");
+  }
+  assert.deepEqual(items.map((it) => it.correct), [true, false]);
+}
+
+// 14: a question the lookup doesn't know (e.g. removed from the bank) is skipped.
+{
+  const items = analyticsItemsFromDoc(drill({ questionIds: ["q1", "gone"], checked: { q1: true, gone: true } }), lookup);
+  assert.deepEqual(items.map((it) => it.qid), ["q1"]);
+}
+
+// 15: historyOf -- per question: how many times answered, and the latest outcome.
+{
+  const history = historyOf([
+    item({ qid: "h1", correct: false, at: NOW - 10 * DAY }),
+    item({ qid: "h1", correct: true, at: NOW - 1 * DAY }),
+    item({ qid: "h2", correct: false, at: NOW - 4 * DAY }),
+    item({ qid: "h1", correct: false, at: NOW - 20 * DAY }), // older, listed last: must not win
+  ]);
+  assert.equal(history.size, 2);
+  assert.deepEqual(history.get("h1"), { lastAt: NOW - DAY, lastCorrect: true, times: 3 });
+  assert.deepEqual(history.get("h2"), { lastAt: NOW - 4 * DAY, lastCorrect: false, times: 1 });
 }
 
 console.log("sat-analytics tests passed");

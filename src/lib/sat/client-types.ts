@@ -88,6 +88,10 @@ export type SessionSummary = {
   score: SATScore | null;
   correct: number;
   total: number;
+  /** Drills only: how many questions have been checked so far, finished or
+   *  not (progress, not a result -- see summaryOf). Absent on sittings and on
+   *  index entries written before SAT Coach analytics. */
+  checkedCount?: number;
   assignmentId: string | null;
   /** A module of this finished sitting was submitted after its time limit
    *  (always false for drills and unfinished sittings). Index entries
