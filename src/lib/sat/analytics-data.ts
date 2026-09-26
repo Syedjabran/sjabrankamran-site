@@ -8,33 +8,31 @@
 // summary or doc read returns null, and a failed cache read is never
 // followed by a cache write.
 //
-// Which docs are loaded (the summary tells):
-//   - finished sittings -- every module;
-//   - drills (diagnostic and challenge included) with at least one checked
-//     question, finished or not -- their checked questions only.
-// An UNFINISHED sitting is not loaded, even with a module submitted: while
-// it can still be resumed, its Module 1 results would show on the Progress
-// page mid-exam and reveal the route (the reason summaryOf hides them too).
-// It counts once it's finished.
+// Which docs hold finished work is the summary's call (analytics.ts
+// `hasFinishedWork`): finished sittings, and drills with a checked question.
+// An unfinished sitting is never loaded -- it counts once it's finished.
 //
 // The cache is fresh while the summaries' fingerprint AND the Pakistan
 // calendar day are unchanged: the fingerprint catches new finished work,
-// the day refreshes the recency weighting and the 7/30-day totals.
+// the day refreshes the recency weighting and the 7/30-day totals. It also
+// keeps the items of every FINISHED doc by id (a finished doc never
+// changes), so a recompute re-reads only new or still-open docs.
 import "server-only";
 import { createHash } from "node:crypto";
 import { readFreshJson, writeFreshJson } from "@/lib/exam-lab/storage-fresh";
 import { pkToday } from "@/lib/portal/pk-time";
-import { computeAnalytics, historyOf, type SittingScore } from "./analytics.ts";
+import {
+  computeAnalytics, docsToLoad, finishedItemsCache, hasFinishedWork, historyOf, sittingScores, type AnalyticsItem,
+} from "./analytics.ts";
 import type { History } from "./coach/challenge-builder.ts";
 import type { SATAnalytics, SessionSummary } from "./client-types.ts";
 import { itemsOf } from "./serve.ts";
-import { listSummaries, loadDoc, type SATDoc } from "./store.ts";
+import { listSummaries, loadDocs } from "./store.ts";
 
 const BUCKET = "portal-data";
 const SAFE_UID = /^[A-Za-z0-9_-]{6,64}$/;
 const cachePath = (uid: string) => `sat/analytics/${uid}.json`;
-const LOAD_CONCURRENCY = 8;
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 
 type HistoryEntry = History extends Map<string, infer V> ? V : never;
 
@@ -44,6 +42,7 @@ type AnalyticsCache = {
   day: string; // PKT YYYY-MM-DD the analytics were computed on
   analytics: SATAnalytics;
   history: [string, HistoryEntry][];
+  finished: Record<string, AnalyticsItem[]>; // items per FINISHED doc id
 };
 
 export type StudentAnalytics = { analytics: SATAnalytics; history: History; fingerprint: string };
@@ -58,51 +57,13 @@ export function analyticsFingerprint(summaries: SessionSummary[]): string {
   return createHash("sha1").update(JSON.stringify(rows)).digest("hex");
 }
 
-/** Does this summary's doc hold finished work worth loading? An index entry
- *  written before `checkedCount` existed can't say, so an unfinished drill
- *  without it is loaded to find out. */
-function hasFinishedWork(s: SessionSummary): boolean {
-  if (s.kind !== "drill") return s.finishedAt !== null;
-  return s.finishedAt !== null || s.checkedCount === undefined || s.checkedCount > 0;
-}
-
-function sittingScores(summaries: SessionSummary[]): SittingScore[] {
-  const out: SittingScore[] = [];
-  for (const s of summaries) {
-    if (s.kind === "drill" || s.finishedAt === null) continue;
-    out.push({ id: s.id, kind: s.kind, title: s.title, finishedAt: s.finishedAt, score: s.score });
-  }
-  return out;
-}
-
-/** The docs for `ids`, at most LOAD_CONCURRENCY reads in flight; null as
- *  soon as any read fails. Kept in `ids` order so the computed analytics
- *  (label ties, ranking ties) never depend on which read finished first. */
-async function loadDocs(uid: string, ids: string[]): Promise<SATDoc[] | null> {
-  const docs: (SATDoc | null)[] = new Array(ids.length).fill(null);
-  let next = 0;
-  let failed = false;
-  async function worker(): Promise<void> {
-    while (!failed && next < ids.length) {
-      const i = next++;
-      const loaded = await loadDoc(uid, ids[i]);
-      if (!loaded.ok) {
-        failed = true;
-        return;
-      }
-      docs[i] = loaded.doc;
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(LOAD_CONCURRENCY, ids.length) }, () => worker()));
-  return failed ? null : docs.filter((d): d is SATDoc => d !== null);
-}
-
 /** A stored cache doc, or null when it isn't one this version wrote. */
 function asCache(raw: unknown): AnalyticsCache | null {
   if (!raw || typeof raw !== "object") return null;
   const c = raw as Partial<AnalyticsCache>;
   if (c.version !== CACHE_VERSION || typeof c.fingerprint !== "string" || typeof c.day !== "string") return null;
   if (!c.analytics || typeof c.analytics !== "object" || !Array.isArray(c.history)) return null;
+  if (!c.finished || typeof c.finished !== "object") return null;
   return c as AnalyticsCache;
 }
 
@@ -121,16 +82,27 @@ export async function studentAnalytics(uid: string, now: number): Promise<Studen
     return { analytics: hit.analytics, history: new Map(hit.history), fingerprint };
   }
 
-  const docs = await loadDocs(uid, summaries.filter(hasFinishedWork).map((s) => s.id));
+  const reuse = hit?.finished ?? {};
+  const docs = await loadDocs(uid, docsToLoad(summaries, reuse));
   if (docs === null) return null;
-  const items = docs.flatMap((doc) => itemsOf(doc));
+  const loaded = new Map(docs.map((doc) => [doc.id, itemsOf(doc)]));
+  // In summary order, so label and ranking ties never depend on the cache.
+  const byDoc = new Map<string, AnalyticsItem[]>();
+  for (const s of summaries) {
+    if (!hasFinishedWork(s)) continue;
+    const docItems = loaded.get(s.id) ?? (Object.hasOwn(reuse, s.id) ? reuse[s.id] : undefined);
+    if (docItems) byDoc.set(s.id, docItems);
+  }
+  const items = [...byDoc.values()].flat();
   const analytics = computeAnalytics(items, sittingScores(summaries), now);
   const history = historyOf(items);
 
   // Best-effort (a failed write only means recomputing next time) -- and
   // never after a failed cache read (storage fails closed).
   if (cached.ok) {
-    const doc: AnalyticsCache = { version: CACHE_VERSION, fingerprint, day, analytics, history: [...history] };
+    const doc: AnalyticsCache = {
+      version: CACHE_VERSION, fingerprint, day, analytics, history: [...history], finished: finishedItemsCache(summaries, byDoc),
+    };
     await writeFreshJson(BUCKET, cachePath(uid), doc);
   }
   return { analytics, history, fingerprint };

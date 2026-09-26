@@ -4,7 +4,9 @@
 // computeAnalytics call) so unrelated items never merge into the same
 // domain/skill row.
 import assert from "node:assert/strict";
-import { analyticsItemsFromDoc, computeAnalytics, historyOf } from "../src/lib/sat/analytics.ts";
+import {
+  analyticsItemsFromDoc, computeAnalytics, docsToLoad, finishedItemsCache, hasFinishedWork, historyOf, sittingScores,
+} from "../src/lib/sat/analytics.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.UTC(2026, 9, 1); // 2026-10-01T00:00:00Z
@@ -276,6 +278,47 @@ function sitting(overrides) {
   assert.equal(history.size, 2);
   assert.deepEqual(history.get("h1"), { lastAt: NOW - DAY, lastCorrect: true, times: 3 });
   assert.deepEqual(history.get("h2"), { lastAt: NOW - 4 * DAY, lastCorrect: false, times: 1 });
+}
+
+// --- 16-19: which docs a recompute reads (analytics-data.ts). The summary
+// decides, so an unfinished sitting's submitted Module 1 is never loaded.
+{
+  const summary = (overrides) => ({ id: "x", kind: "drill", title: "t", createdAt: NOW, finishedAt: null, score: null, correct: 0, total: 0, assignmentId: null, overtime: false, ...overrides });
+  // 16: unfinished adaptive (even with rw.m1 submitted -- the summary can't
+  // tell, and must not) -> not loaded; finished -> loaded.
+  assert.equal(hasFinishedWork(summary({ kind: "adaptive" })), false, "unfinished adaptive is not loaded");
+  assert.equal(hasFinishedWork(summary({ kind: "practice", finishedAt: NOW })), true, "finished practice is loaded");
+  // 17: unfinished drill with no checks -> not loaded; with checks -> loaded.
+  assert.equal(hasFinishedWork(summary({ checkedCount: 0 })), false, "unfinished drill, nothing checked");
+  assert.equal(hasFinishedWork(summary({ checkedCount: 2 })), true, "unfinished drill with checks");
+  // 18: a legacy index entry (no checkedCount) can't say -> loaded.
+  assert.equal(hasFinishedWork(summary({})), true, "legacy drill without checkedCount is loaded");
+  assert.equal(hasFinishedWork(summary({ finishedAt: NOW, checkedCount: 0 })), true, "a finished drill is loaded");
+
+  // 19: per-doc item cache -- finished docs whose items are cached are not
+  // re-read; unfinished drills always are; only finished docs are cached.
+  const list = [
+    summary({ id: "fin-cached", kind: "practice", finishedAt: NOW }),
+    summary({ id: "fin-new", kind: "adaptive", finishedAt: NOW }),
+    summary({ id: "open-drill", checkedCount: 3 }),
+    summary({ id: "open-sitting", kind: "adaptive" }),
+    summary({ id: "fin-drill", finishedAt: NOW, checkedCount: 5 }),
+  ];
+  const cachedItems = { "fin-cached": [item({ qid: "c1" })], "open-drill": [item({ qid: "stale" })] };
+  assert.deepEqual(docsToLoad(list, cachedItems), ["fin-new", "open-drill", "fin-drill"], "only new/changed docs are read");
+  assert.deepEqual(docsToLoad(list, {}), ["fin-cached", "fin-new", "open-drill", "fin-drill"], "an empty cache reads everything with finished work");
+  const all = new Map([
+    ["fin-cached", cachedItems["fin-cached"]], ["fin-new", [item({ qid: "n1" })]], ["open-drill", [item({ qid: "o1" })]], ["fin-drill", []],
+  ]);
+  assert.deepEqual(Object.keys(finishedItemsCache(list, all)).sort(), ["fin-cached", "fin-drill", "fin-new"], "unfinished docs are never cached");
+
+  // sittingScores: finished sittings only, drills never.
+  const scores = sittingScores([
+    summary({ id: "s1", kind: "practice", finishedAt: NOW, score: { lower: 1000, upper: 1060 } }),
+    summary({ id: "s2", kind: "adaptive" }),
+    summary({ id: "d1", finishedAt: NOW }),
+  ]);
+  assert.deepEqual(scores.map((s) => s.id), ["s1"]);
 }
 
 console.log("sat-analytics tests passed");

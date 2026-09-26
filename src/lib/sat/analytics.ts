@@ -31,7 +31,7 @@
 //     sections, difficulty (when known) and pacing, and totals -- never
 //     toward domain/skill mastery.
 import type { SATDifficulty, SATScore, SATSection } from "./types.ts";
-import type { MasteryRow, SATAnalytics } from "./client-types.ts";
+import type { MasteryRow, SATAnalytics, SessionSummary } from "./client-types.ts";
 import { DOMAIN_LABEL } from "./client-types.ts";
 // Type-only (erased): the doc shapes and the challenge builder's History.
 // No runtime value comes from session.ts/drills.ts, which reach the bank.
@@ -117,6 +117,53 @@ export function analyticsItemsFromDoc(doc: SATSession | SATDrill, lookup: Analyt
     }
   }
   return items;
+}
+
+// --- Which docs to load (analytics-data.ts) ----------------------------------
+//
+// The summary decides, so an unneeded doc is never read:
+//   - finished sittings -- every submitted module;
+//   - drills (diagnostic and challenge included) with at least one checked
+//     question, finished or not -- their checked questions only.
+// An UNFINISHED sitting is not loaded, even with a module submitted: while
+// it can still be resumed, its Module 1 results would show on the Progress
+// page mid-exam and reveal the route (the reason summaryOf hides them too).
+
+/** Does this summary's doc hold finished work worth loading? An index entry
+ *  written before `checkedCount` existed can't say, so an unfinished drill
+ *  without it is loaded to find out. */
+export function hasFinishedWork(s: SessionSummary): boolean {
+  if (s.kind !== "drill") return s.finishedAt !== null;
+  return s.finishedAt !== null || s.checkedCount === undefined || s.checkedCount > 0;
+}
+
+/** The finished sittings' scores, for the score history. */
+export function sittingScores(summaries: SessionSummary[]): SittingScore[] {
+  const out: SittingScore[] = [];
+  for (const s of summaries) {
+    if (s.kind === "drill" || s.finishedAt === null) continue;
+    out.push({ id: s.id, kind: s.kind, title: s.title, finishedAt: s.finishedAt, score: s.score });
+  }
+  return out;
+}
+
+/** The ids (in `summaries` order) of the docs a recompute must read: every
+ *  doc with finished work except a FINISHED one whose items are already in
+ *  `cached` -- a finished doc never changes, so its items are reused. An
+ *  unfinished drill is always re-read (it gains checks). */
+export function docsToLoad(summaries: SessionSummary[], cached: Record<string, AnalyticsItem[]>): string[] {
+  return summaries.filter((s) => hasFinishedWork(s) && !(s.finishedAt !== null && Object.hasOwn(cached, s.id))).map((s) => s.id);
+}
+
+/** The per-doc item cache to store next: the items of every FINISHED doc
+ *  (by id) in `items`; unfinished docs are never cached. */
+export function finishedItemsCache(summaries: SessionSummary[], items: Map<string, AnalyticsItem[]>): Record<string, AnalyticsItem[]> {
+  const out: Record<string, AnalyticsItem[]> = {};
+  for (const s of summaries) {
+    const docItems = items.get(s.id);
+    if (s.finishedAt !== null && docItems) out[s.id] = docItems;
+  }
+  return out;
 }
 
 /** The challenge builder's per-question history from the same finished
