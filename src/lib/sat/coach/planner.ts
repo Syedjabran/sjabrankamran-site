@@ -16,7 +16,9 @@
 //   d = days(today -> exam). d < 3 -> none. 3 <= d < 7 -> one target
 //   exam - 2, snapped with lower bound today. d >= 7 -> light = fewer than 3
 //   practice days; t = exam - 5; while t >= today + 2: s = snap(t, days,
-//   today + 2); keep s if it is >= 4 days before the previously kept date;
+//   today + 2); keep s if it is >= 4 days before the previously kept date
+//   (>= 14 on a light schedule -- spec 6.3: never closer than 14 days; the
+//   earliest slot can snap later than the rest because of the lower bound);
 //   t -= (light || exam - t > 56) ? 14 : 7.
 //   snap(t, days, lo): of t, t-1, t-2, t-3 that are >= lo, the practice days
 //   win -- Saturday, else Sunday, else the latest; with no practice day among
@@ -106,7 +108,7 @@ function mockSlots(today: string, exam: string, days: number[]): { slot: string;
   for (let t = addDays(exam, -5); t >= lo; t = addDays(t, light || daysBetween(t, exam) > 56 ? -14 : -7)) {
     const s = snap(t, days, lo);
     const previous = picked[picked.length - 1];
-    if (s && (previous === undefined || daysBetween(s, previous.date) >= 4)) picked.push({ slot: t, date: s });
+    if (s && (previous === undefined || daysBetween(s, previous.date) >= (light ? 14 : 4))) picked.push({ slot: t, date: s });
   }
   return picked.sort((a, b) => a.date.localeCompare(b.date));
 }
@@ -252,12 +254,18 @@ function newMocks(input: BuildInput, end: string, plan: PlanItem[], reusable: Ma
   const grid = plan.filter((i) => i.kind === "mock");
   const vacated = [...vacatedDays(plan)];
   const gapStart = addDays(end, -2 - (isLight(profile.days) ? 14 : 7));
-  const anchors = [...grid.map((m) => m.date), ...vacated];
+  const kept = grid.map((m) => m.date);
+  // A target is covered when a kept full exam, or a day one was moved away
+  // from (it stands in for the exam that was there, so a move never makes
+  // room for a new one), lies within 3 days of where it snaps -- 13 on a
+  // light schedule, whose full exams are never closer than 14 days (spec
+  // 6.3). "Where it snaps" is checked today and with no lower bound at all
+  // (where it snapped before today moved on), so a later edit sees the same
+  // grid.
+  const spacing = isLight(profile.days) ? 13 : 3;
+  const anchors = [...kept, ...vacated];
   const finalWeekCovered = daysBetween(today, end) < 7 && anchors.some((day) => day >= gapStart);
-  // A target is covered when a kept full exam or a moved-from day lies within
-  // 3 days of where it snaps -- today, or with no lower bound at all (where
-  // it snapped before today moved on), so a later edit sees the same grid.
-  const covered = (day: string | null) => day !== null && anchors.some((anchor) => withinThreeDays(anchor, day));
+  const covered = (day: string | null) => day !== null && anchors.some((anchor) => Math.abs(daysBetween(anchor, day)) <= spacing);
   const targets = mockSlots(today, end, profile.days)
     .filter(({ slot, date }) => !finalWeekCovered && !covered(date) && !covered(snap(slot, profile.days, "")))
     .map(({ date }) => date);
