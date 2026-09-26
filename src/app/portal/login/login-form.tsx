@@ -101,8 +101,21 @@ export function LoginForm() {
     }
   }
 
+  // Fallback target if the browser submits this form natively before React
+  // hydrates (slow connection, JS still loading): with an explicit POST
+  // method, the credentials travel in the request body instead of a GET
+  // query string, where they'd land in browser history, server/proxy logs
+  // and Referer headers. The route handler at /portal/login/submit never
+  // reads the body — it just bounces back here — so nothing is ever echoed
+  // or logged. Once hydrated, `onSubmit` below intercepts and this string
+  // action is never actually used.
+  const rawNext = params.get("next");
+  const nativeSubmitAction = rawNext
+    ? `/portal/login/submit?next=${encodeURIComponent(safeNextPath(rawNext))}`
+    : "/portal/login/submit";
+
   return (
-    <form onSubmit={signIn} className="space-y-4">
+    <form onSubmit={signIn} method="post" action={nativeSubmitAction} className="space-y-4">
       <div>
         <label htmlFor="portal-email" className="mb-1.5 block text-xs font-medium text-fog">
           Email
