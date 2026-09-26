@@ -90,33 +90,42 @@ function snap(target: string, days: number[], lo: string): string | null {
   return target >= lo ? target : null;
 }
 
-/** The full-exam dates for a plan from `today` to `exam`, ascending. */
-export function mockDates(today: string, exam: string, days: number[]): string[] {
+/** The grid behind mockDates: each full-exam date with the grid slot `t` it
+ *  was snapped from, ascending by date. */
+function mockSlots(today: string, exam: string, days: number[]): { slot: string; date: string }[] {
   const d = daysBetween(today, exam);
   if (d < 3) return [];
   if (d < 7) {
-    const only = snap(addDays(exam, -2), days, today);
-    return only ? [only] : [];
+    const slot = addDays(exam, -2);
+    const only = snap(slot, days, today);
+    return only ? [{ slot, date: only }] : [];
   }
   const light = isLight(days);
   const lo = addDays(today, 2);
-  const picked: string[] = [];
+  const picked: { slot: string; date: string }[] = [];
   for (let t = addDays(exam, -5); t >= lo; t = addDays(t, light || daysBetween(t, exam) > 56 ? -14 : -7)) {
     const s = snap(t, days, lo);
     const previous = picked[picked.length - 1];
-    if (s && (previous === undefined || daysBetween(s, previous) >= 4)) picked.push(s);
+    if (s && (previous === undefined || daysBetween(s, previous.date) >= 4)) picked.push({ slot: t, date: s });
   }
-  return picked.sort();
+  return picked.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** The full-exam dates for a plan from `today` to `exam`, ascending. */
+export function mockDates(today: string, exam: string, days: number[]): string[] {
+  return mockSlots(today, exam, days).map((target) => target.date);
 }
 
 // --- Plan generation ---------------------------------------------------------
 //
 // Two entry points (spec 6.5): buildPlan runs on the first build and on a
 // profile edit, re-planning only what the edit changes (rebuildScope):
-//   "schedule" (exam date / target month / practice days): future scheduled
-//     full exams that were neither moved nor started are dropped and the
-//     grid is recomputed from today; everything the student did or chose --
-//     done, late, missed, started and moved full exams -- stays;
+//   "schedule" (exam date / horizon / practice days): future scheduled full
+//     exams that were neither moved nor started are dropped and the grid is
+//     recomputed from today; everything the student did or chose -- done,
+//     late, missed, started and moved full exams -- stays, and so do today's
+//     and tomorrow's (the grid never places one that soon, so dropping them
+//     would delete or slide them);
 //   "sizes" (minutes only): future challenge/review sizes change, nothing
 //     else (no full exam moves);
 //   no scope (anything else): the plan does not change.
@@ -193,13 +202,14 @@ type BuildInput = {
 
 export type RebuildScope = "schedule" | "sizes";
 
-/** What a profile edit re-plans: the schedule when the exam date, target
- *  month or practice days change; only the challenge sizes when only the
- *  minutes change; null (nothing) for any other field (target score,
- *  starting point). */
+/** What a profile edit re-plans: the schedule when the exam date, the
+ *  horizon (a target month change that moves it) or the practice days
+ *  change; only the challenge sizes when only the minutes change; null
+ *  (nothing) for any other field (target score, starting point, a target
+ *  month under a booked date). */
 export function rebuildScope(previous: PlannerProfile, next: PlannerProfile): RebuildScope | null {
   const daySet = (days: number[]) => [...new Set(days)].sort((a, b) => a - b).join();
-  if (previous.examDate !== next.examDate || previous.targetMonth !== next.targetMonth || daySet(previous.days) !== daySet(next.days)) return "schedule";
+  if (previous.examDate !== next.examDate || horizonEnd(previous) !== horizonEnd(next) || daySet(previous.days) !== daySet(next.days)) return "schedule";
   return previous.minutes !== next.minutes ? "sizes" : null;
 }
 
@@ -212,14 +222,16 @@ function planDiagnostic(input: BuildInput, upcoming: PlanItem[]): PlanItem | nul
   return { id: newId(), date: today, kind: "diagnostic", status: "scheduled", size: DIAGNOSTIC_SIZE, ...(diagnosticId ? { sessionId: diagnosticId } : {}) };
 }
 
-/** Future scheduled full exams a student moved, while still valid (on or
- *  after today, at least 2 days before the end, not on a day that already
- *  holds one). The planner's own unstarted ones are recomputed instead. */
-function keptMocks(upcoming: PlanItem[], end: string, plan: PlanItem[]): PlanItem[] {
+/** Future scheduled full exams a student moved, and the planner's own for
+ *  today and tomorrow (mockDates never places one before today + 2), while
+ *  still valid (at least 2 days before the end, not on a day that already
+ *  holds one). The planner's later unstarted ones are recomputed instead. */
+function keptMocks(upcoming: PlanItem[], end: string, plan: PlanItem[], today: string): PlanItem[] {
   const lastDay = addDays(end, -2);
+  const soon = addDays(today, 2);
   const taken = new Set(plan.filter((i) => i.kind === "mock").map((i) => i.date));
   const kept: PlanItem[] = [];
-  for (const mock of sortPlan(upcoming.filter((i) => i.kind === "mock" && !isStarted(i) && i.moves?.length))) {
+  for (const mock of sortPlan(upcoming.filter((i) => i.kind === "mock" && !isStarted(i) && (i.moves?.length || i.date < soon)))) {
     if (mock.date > lastDay || taken.has(mock.date)) continue;
     kept.push(mock);
     taken.add(mock.date);
@@ -240,9 +252,15 @@ function newMocks(input: BuildInput, end: string, plan: PlanItem[], reusable: Ma
   const grid = plan.filter((i) => i.kind === "mock");
   const vacated = [...vacatedDays(plan)];
   const gapStart = addDays(end, -2 - (isLight(profile.days) ? 14 : 7));
-  const finalWeekCovered = daysBetween(today, end) < 7 && [...grid.map((m) => m.date), ...vacated].some((day) => day >= gapStart);
-  const targets = mockDates(today, end, profile.days).filter((target) =>
-    !finalWeekCovered && !grid.some((m) => withinThreeDays(m.date, target)) && !vacated.some((day) => withinThreeDays(day, target)));
+  const anchors = [...grid.map((m) => m.date), ...vacated];
+  const finalWeekCovered = daysBetween(today, end) < 7 && anchors.some((day) => day >= gapStart);
+  // A target is covered when a kept full exam or a moved-from day lies within
+  // 3 days of where it snaps -- today, or with no lower bound at all (where
+  // it snapped before today moved on), so a later edit sees the same grid.
+  const covered = (day: string | null) => day !== null && anchors.some((anchor) => withinThreeDays(anchor, day));
+  const targets = mockSlots(today, end, profile.days)
+    .filter(({ slot, date }) => !finalWeekCovered && !covered(date) && !covered(snap(slot, profile.days, "")))
+    .map(({ date }) => date);
   const held = new Set(practiceTaken);
   for (const item of plan) {
     const testNo = heldTest(item);
@@ -302,8 +320,8 @@ function resizeDaily(items: PlanItem[], today: string, size: number): PlanItem[]
 /** The plan from `today` to the horizon, for a first build or a profile
  *  edit (`scope`, see rebuildScope). "sizes" only resizes future challenges
  *  and reviews. "schedule": past items (and started/finished ones) are kept
- *  unchanged; moved full exams are kept while still valid; the grid is
- *  recomputed from today (reusing the id of a dropped full exam on the same
+ *  unchanged; moved full exams, and today's and tomorrow's, are kept while
+ *  still valid; the grid is recomputed from today (reusing the id of a dropped full exam on the same
  *  day); challenges, reviews and the exam item are regenerated with stable
  *  ids; future practice exams are re-validated against the tests taken. On
  *  the horizon's last day (exam day) every item dated today or earlier stays
@@ -319,7 +337,7 @@ export function buildPlan(input: BuildInput): PlanItem[] {
 
   const diagnostic = planDiagnostic(input, upcoming);
   if (diagnostic) plan.push(diagnostic);
-  plan.push(...keptMocks(upcoming, end, plan));
+  plan.push(...keptMocks(upcoming, end, plan, today));
   const dropped = new Map(upcoming.filter((i) => i.kind === "mock" && !plan.includes(i)).map((i) => [i.date, i.id]));
   plan.push(...newMocks(input, end, plan, dropped));
   plan.push(...dailyItems(input, end, upcoming, plan));
