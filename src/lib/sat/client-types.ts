@@ -226,3 +226,31 @@ export type SATAnalytics = {
   notEnoughData: { key: string; label: string; attempts: number }[];
   scores: { latestOfficial: SittingScore | null; latestEstimate: SittingScore | null; history: SittingScore[] };
 };
+
+// --- Study plan (src/lib/sat/coach/planner.ts) -------------------------------
+//
+// Plan dates are PKT calendar days "YYYY-MM-DD" (spec 6.1). Shown dates go
+// through formatPk (src/lib/portal/pk-time.ts).
+
+export type PlanItem = {
+  id: string;                  // stable across regenerations
+  date: string;                // "YYYY-MM-DD" PKT
+  kind: "diagnostic" | "challenge" | "mock" | "review" | "exam";
+  status: "scheduled" | "done" | "late" | "missed";
+  mock?: { kind: "adaptive" } | { kind: "practice"; testNo: number };
+  size?: number;               // questions, for challenge/review/diagnostic
+  sessionId?: string;          // the drill/sitting that fulfils it
+  moves?: { from: string; to: string; at: string }[];   // mocks only, at most MAX_MOCK_MOVES
+  completedAt?: string;
+};
+
+/** The plan part of GET /api/sat/coach: today's items, the next 14 days,
+ *  the countdown, the streak and this week's tallies. */
+export type SATPlanView = {
+  today: PlanItem[];
+  upcoming: PlanItem[];        // the next 14 days after today
+  examDate: string | null;
+  daysToExam: number | null;
+  streak: number;
+  week: { scheduled: number; done: number; late: number; missed: number };
+};
