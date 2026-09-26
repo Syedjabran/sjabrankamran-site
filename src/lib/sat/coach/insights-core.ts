@@ -106,7 +106,7 @@ const MAX_SUMMARY_SENTENCES = 2;
 /** A rough sentence count -- good enough to gate "at most two sentences"
  *  without a full NLP pass: consecutive non-terminator runs each ending in
  *  ./!/?, or one trailing run with no terminator at all. */
-function sentenceCount(text: string): number {
+export function sentenceCount(text: string): number {
   const trimmed = text.trim();
   if (!trimmed) return 0;
   const terminated = trimmed.match(/[^.!?]+[.!?]+/g) ?? [];
