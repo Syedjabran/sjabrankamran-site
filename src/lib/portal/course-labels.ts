@@ -38,9 +38,11 @@ export function courseFromYear(year: string): Course | null {
  *
  * `directCourses` are the courses the student's direct subject grants open
  * (subjects.ts `coursesFromGrants`); they are added after the class-derived
- * ones. The 9702 default applies only when there are none: a student given
- * SAT through subjects is not also given physics because of an unplaced
- * class.
+ * ones. The default stays class-based and a grant never switches it off --
+ * adding SAT never removes physics. With no classes at all, 9702 applies
+ * only when there are no grants either, so an SAT-only account created
+ * through subjects gets no physics. (course-access.ts never asks about a
+ * student with neither classes nor grants: that student has no course.)
  */
 export function coursesForEnrolment(
   enrolledClassIds: ReadonlySet<string>, classes: readonly { id: string; year: string }[],
@@ -56,7 +58,9 @@ export function coursesForEnrolment(
     recognised.add(c.id);
   }
   const unrecognised = [...enrolledClassIds].some((id) => !recognised.has(id));
-  if (unrecognised && !directCourses.length && !courses.has("9702") && !courses.has("5054")) courses.add("9702");
+  const noClasses = enrolledClassIds.size === 0;
+  const physics = courses.has("9702") || courses.has("5054");
+  if ((unrecognised && !physics) || (noClasses && !directCourses.length)) courses.add("9702");
   for (const course of directCourses) courses.add(course);
   return courses;
 }

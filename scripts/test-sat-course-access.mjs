@@ -36,7 +36,10 @@ const { satAccess } = await import("../src/lib/sat/access.ts");
 const { readGrants, setGrant } = await import("../src/lib/portal/subject-grants.ts");
 const { switchSubject } = await import("../src/lib/portal/subject-admin.ts");
 
-const REGISTRY = { updated_at: "x", schools: ["S"], classes: [{ id: "sat-1", year: "SAT 2026" }, { id: "phy-1", year: "A Level" }, { id: "odd-1", year: "Nursery" }] };
+const REGISTRY = {
+  updated_at: "x", schools: ["S"],
+  classes: [{ id: "sat-1", year: "SAT 2026" }, { id: "phy-1", year: "A Level" }, { id: "odd-1", year: "Nursery" }, { id: "a1-1", year: "A1" }, { id: "as-1", year: "AS" }],
+};
 const EMPTY_REGISTRY = { updated_at: "", schools: [], classes: [] };
 const MISSING = { ok: true, data: null };
 const FAILED = { ok: false };
@@ -135,11 +138,29 @@ assert.deepEqual((await resolveCourseAccess(studentUser)).allowed, ["SAT"], "no 
 // Physics class + SAT grant -> both; physics opens first.
 scenario({ enrolments: { data: [{ class_id: "phy-1" }], error: null }, grants: satGrant });
 assert.deepEqual(await resolveCourseAccess(studentUser, { strict: true }), { allowed: ["9702", "SAT"], primary: "9702", locked: false, isStaff: false });
-// An SAT-only student created through subjects never gets the physics default.
+// Adding SAT never removes physics (spec 4, amended): the class-based 9702
+// default stays, grant or not.
+// (a) unrecognised class "A1" + SAT grant -> 9702 and SAT.
+scenario({ enrolments: { data: [{ class_id: "a1-1" }], error: null }, grants: satGrant });
+assert.deepEqual(await resolveCourseAccess(studentUser, { strict: true }), { allowed: ["9702", "SAT"], primary: "9702", locked: false, isStaff: false });
 scenario({ enrolments: { data: [{ class_id: "odd-1" }], error: null }, grants: satGrant });
-assert.deepEqual((await resolveCourseAccess(studentUser, { strict: true })).allowed, ["SAT"]);
+assert.deepEqual((await resolveCourseAccess(studentUser)).allowed, ["9702", "SAT"], "any unplaced class keeps 9702 beside the grant");
 scenario({ enrolments: { data: [{ class_id: "odd-1" }], error: null } });
 assert.deepEqual((await resolveCourseAccess(studentUser, { strict: true })).allowed, ["9702"], "without grants the default is kept");
+// (b) no classes + SAT grant -> SAT only: covered above (no student row /
+// no active enrolment + grant = ["SAT"]).
+// (c) no classes, no grants: coursesForEnrolment answers 9702
+// (test-subjects.mjs), but a student with no active enrolment at all never
+// reaches it -- the hard gate still gives them no course.
+scenario({ enrolments: noEnrolments });
+assert.deepEqual((await resolveCourseAccess(studentUser)).allowed, [], "no enrolment and no grant is still no course");
+// (d) SAT-year class only + no grant -> SAT only (F10, unchanged): see the
+// first scenario at the top of this file.
+// (e) "AS" class + SAT grant -> 9702 and SAT.
+scenario({ enrolments: { data: [{ class_id: "as-1" }], error: null }, grants: satGrant });
+assert.deepEqual((await resolveCourseAccess(studentUser, { strict: true })).allowed, ["9702", "SAT"]);
+scenario({ enrolments: { data: [{ class_id: "as-1" }], error: null }, grants: satGrant });
+assert.deepEqual(await satAccess(studentUser), { ok: true, isStaff: false });
 // SAT class + SAT grant -> SAT once.
 scenario({ grants: satGrant });
 assert.deepEqual((await resolveCourseAccess(studentUser)).allowed, ["SAT"]);

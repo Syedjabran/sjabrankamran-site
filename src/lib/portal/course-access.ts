@@ -82,9 +82,11 @@ async function grantedCourses(uid: string, { strict = false }: CourseAccessOptio
 
 /** Every awarding-body course a student may open: their active class
  * enrolments keyed off class `year` labels plus their direct subject grants
- * (see `coursesForEnrolment`), or null when they have neither. The one
- * enrolment lookup and one grants read behind `studentCourse`,
- * `studentCourses` and `resolveCourseAccess`; the two run concurrently. */
+ * (see `coursesForEnrolment`; a grant never removes class-based physics),
+ * or null when they have neither -- the hard gate: no enrolment and no grant
+ * is no course, never the 9702 default. The one enrolment lookup and one
+ * grants read behind `studentCourse`, `studentCourses` and
+ * `resolveCourseAccess`; the two run concurrently. */
 async function enrolledCourses(uid: string, options: CourseAccessOptions = {}): Promise<Set<Course> | null> {
   const [enrolment, directCourses] = await Promise.all([activeEnrolment(uid, options), grantedCourses(uid, options)]);
   if (!enrolment && !directCourses.length) return null;

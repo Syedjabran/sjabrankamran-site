@@ -139,16 +139,19 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     // rather than showing a failed read as "not granted".
     readGrants(uid).then((g) => g.grants, () => null),
   ]);
-  // Physics is class-based: the active classes whose registry year names a
-  // physics course, shown read-only on the Subjects card.
+  // Physics is class-based, shown read-only on the Subjects card: the active
+  // classes whose registry year names a physics course or, when there are
+  // none, the active classes the registry can't place -- those grant the 9702
+  // default (coursesForEnrolment), whatever the student's grants.
   const physicsCourses = subjectOf("physics")?.courses ?? [];
-  const physicsClasses = enrolments
-    .filter((e) => {
+  const placed = enrolments
+    .filter((e) => e.status === "active")
+    .map((e) => {
       const year = regById.get(e.classId)?.year;
-      const course = year ? courseFromYear(year) : null;
-      return e.status === "active" && !!course && physicsCourses.includes(course);
-    })
-    .map((e) => e.className);
+      return { name: e.className, course: year ? courseFromYear(year) : null };
+    });
+  const recognisedPhysics = placed.filter((c) => !!c.course && physicsCourses.includes(c.course));
+  const physicsClasses = (recognisedPhysics.length ? recognisedPhysics : placed.filter((c) => !c.course)).map((c) => c.name);
 
   return NextResponse.json({
     profile: { id: profile.id, full_name: profile.full_name || "", email: profile.email || "", phone: profile.phone || "", status: profile.status, created_at: profile.created_at, roles },
