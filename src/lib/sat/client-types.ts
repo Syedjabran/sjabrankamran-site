@@ -271,3 +271,17 @@ export type SATPlanView = {
   streak: number;
   week: { scheduled: number; done: number; late: number; missed: number };
 };
+
+// --- Coach says (src/lib/sat/coach/insights.ts) ------------------------------
+//
+// Client-safe: no analytics internals, no student PII beyond what the coach
+// itself already renders. `source` tells the UI whether the AI wrote this or
+// the deterministic rules fallback did (spec 8.2).
+
+export type InsightsView = {
+  headline: string;
+  summary: string;
+  tips: { title: string; body: string; skill?: string }[];
+  source: "ai" | "rules";
+  generatedAt: string;
+};
