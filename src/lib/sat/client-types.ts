@@ -10,6 +10,8 @@ import type { SATDifficulty, SATScore, SATSection } from "./types.ts";
 // Both sides are `import type`, so this is erased at compile time and forms
 // no runtime cycle (verified by tsc and by the two modules loading in Node).
 import type { SittingScore } from "./analytics.ts";
+// Type-only too (goals.ts imports this module's types and one pure helper).
+import type { WeeklyGoal } from "./coach/goals.ts";
 
 export type PublicQuestion = {
   id: string;
@@ -97,6 +99,12 @@ export type SessionSummary = {
    *  (always false for drills and unfinished sittings). Index entries
    *  written before this field existed read as false (store.ts). */
   overtime: boolean;
+  /** The study-plan item the doc was started from (SAT Coach), when any.
+   *  Absent on index entries written before the study plan existed. */
+  planItemId?: string;
+  /** Official practice sittings: the test's number. Absent on index entries
+   *  written before it was recorded (plan-logic.ts reads their title). */
+  testNo?: number;
 };
 
 export type AssignmentView = {
@@ -261,15 +269,40 @@ export type PlanItem = {
   replacementFor?: string;     // mocks only: the id of the missed full exam this one re-places
 };
 
+/** What a plan item is called wherever it's shown: the card rows, the
+ *  reminder, the coach's "next full exam". */
+export function planItemTitle(item: Pick<PlanItem, "kind" | "mock">): string {
+  if (item.kind === "mock") return item.mock?.kind === "practice" ? practiceTestTitle(item.mock.testNo) : "Adaptive mock exam";
+  return { diagnostic: "Diagnostic", challenge: "Daily challenge", review: "Review", exam: "Your SAT" }[item.kind];
+}
+
 /** The plan part of GET /api/sat/coach: today's items, the next 14 days,
  *  the countdown, the streak and this week's tallies. */
 export type SATPlanView = {
-  today: PlanItem[];
+  today: PlanItem[];           // today's items, then up to 3 recent ones still worth a tap (missed, or done late today)
   upcoming: PlanItem[];        // the next 14 days after today
-  examDate: string | null;
-  daysToExam: number | null;
-  streak: number;
+  fullExams: PlanItem[];       // every full exam from today on -- what the move rules check against
+  examDate: string | null;     // the booked SAT date (null while "not booked yet")
+  horizonEnd: string | null;   // where the plan ends: the SAT date, or the target month's first day
+  daysToExam: number | null;   // to horizonEnd
+  streak: number;              // plan sessions done on their day, in a row
   week: { scheduled: number; done: number; late: number; missed: number };
+};
+
+/** GET /api/sat/coach: everything the SAT Lab home shows, in one call. */
+export type CoachPayload = {
+  today: string;               // PKT "YYYY-MM-DD" the view was built for
+  profile: { examDate: string | null; targetMonth: string | null; targetScore: number };
+  plan: SATPlanView | null;    // null when the plan couldn't be loaded (planError says so)
+  planError: string | null;
+  horizonPassed: boolean;      // the SAT date (or target month) has gone by
+  analyticsSummary: {
+    sections: SATAnalytics["sections"];
+    weakSkills: SATAnalytics["weakSkills"];   // top 3
+    latestScore: SittingScore | null;
+  } | null;
+  goals: WeeklyGoal[];
+  insights: InsightsView | null;
 };
 
 // --- Coach says (src/lib/sat/coach/insights.ts) ------------------------------

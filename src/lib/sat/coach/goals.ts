@@ -29,7 +29,7 @@ function addDays(day: string, n: number): string {
 }
 
 /** The Monday-start ISO week [start, end] (inclusive) containing `day`. */
-function isoWeekRange(day: string): [string, string] {
+export function isoWeekRange(day: string): [string, string] {
   const dow = new Date(dayMs(day)).getUTCDay(); // 0 = Sunday ... 6 = Saturday
   const sinceMonday = dow === 0 ? 6 : dow - 1;
   const start = addDays(day, -sinceMonday);

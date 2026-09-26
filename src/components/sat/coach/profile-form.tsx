@@ -10,6 +10,7 @@ import {
   HORIZON_MONTHS, type DayPreset, type PracticeMinutes, type ProfileField, type SATProfile,
 } from "@/lib/sat/coach/profile";
 import { DIAGNOSTIC_SIZE } from "@/lib/sat/coach/diagnostic";
+import { FIELD } from "./field-class";
 
 type StartKind = "diagnostic" | "score" | "skip";
 type Block = "when" | "target" | "start" | "days" | "minutes";
@@ -33,7 +34,6 @@ type Draft = {
 };
 type SetDraft = (patch: Partial<Draft>) => void;
 
-const FIELD = "mt-1 w-full min-w-0 rounded-xl border border-white/15 bg-void px-3 py-2 text-sm text-ice [color-scheme:dark] focus:border-cyan focus:outline-none";
 const BLOCK_OF: Record<ProfileField, Block> = { examDate: "when", targetMonth: "when", targetScore: "target", start: "start", days: "days", minutes: "minutes" };
 const WEEK: [number, string][] = [[1, "Mon"], [2, "Tue"], [3, "Wed"], [4, "Thu"], [5, "Fri"], [6, "Sat"], [0, "Sun"]];
 const PRESETS: [DayPreset, string][] = [["every", "Every day"], ["weekdays", "Weekdays"], ["weekends", "Weekends"], ["once", "Once a week"], ["custom", "Custom"]];
@@ -161,9 +161,10 @@ export function ProfileForm({ mode, today, initial }: { mode: "setup" | "setting
   );
 }
 
-function Section({ n, title, error, children }: { n: number; title: string; error?: string; children: ReactNode }) {
+// `id`: an anchor the SAT Lab home links to (e.g. "add your score").
+function Section({ n, title, error, id, children }: { n: number; title: string; error?: string; id?: string; children: ReactNode }) {
   return (
-    <section className="min-w-0 rounded-2xl border border-white/10 bg-space/60 p-5">
+    <section id={id} className="min-w-0 scroll-mt-24 rounded-2xl border border-white/10 bg-space/60 p-5">
       <h2 className="font-display text-lg text-ice"><span className="mr-2 text-dust">{n}.</span>{title}</h2>
       <div className="mt-3 space-y-3">{children}</div>
       {error ? <p role="alert" className="mt-3 text-sm text-signal">{error}</p> : null}
@@ -185,7 +186,7 @@ function Choice({ on, onClick, children, className = "" }: { on: boolean; onClic
 function WhenBlock({ draft, set, today, error }: { draft: Draft; set: SetDraft; today: string; error?: string }) {
   const months = useMemo(() => targetMonthOptions(today), [today]);
   return (
-    <Section n={1} title="When is your SAT?" error={error}>
+    <Section n={1} title="When is your SAT?" error={error} id="sat-when">
       <div className="flex flex-wrap gap-2">
         <Choice on={draft.booked} onClick={() => set({ booked: true })}>I&rsquo;ve booked it</Choice>
         <Choice on={!draft.booked} onClick={() => set({ booked: false })}>Not booked yet</Choice>
@@ -234,7 +235,7 @@ function StartBlock({ draft, set, today, error }: { draft: Draft; set: SetDraft;
     set(draft.targetTouched ? patch : { ...patch, targetScore: targetFromScore(total ?? null) });
   };
   return (
-    <Section n={3} title="Where are you starting?" error={error}>
+    <Section n={3} title="Where are you starting?" error={error} id="sat-start">
       <div className="grid grid-cols-1 gap-2">
         <Choice on={draft.start === "diagnostic"} onClick={() => follow({ start: "diagnostic" })} className="text-left">
           Take a short diagnostic <span className="block text-xs text-dust">{DIAGNOSTIC_SIZE} questions, about 30 minutes</span>

@@ -8,6 +8,7 @@ import { checkDrillAnswer, drillCheckRefusal, type SATDrill } from "@/lib/sat/dr
 import { answerOf, drillState, finishSession, reviewItem, sessionState } from "@/lib/sat/serve";
 import { inPlayQuestionIds, listSummaries, loadDoc, saveDoc } from "@/lib/sat/store";
 import { markAssignment } from "@/lib/sat/assignments";
+import { recordPlanCompletion } from "@/lib/sat/coach/plan-store";
 
 export const runtime = "nodejs";
 
@@ -43,6 +44,15 @@ const accessUnavailable = () => NextResponse.json({ error: "Your access couldn't
 
 function stateOf(doc: SATSession | SATDrill, now: number) {
   return doc.kind === "drill" ? drillState(doc, now) : sessionState(doc, now);
+}
+
+/** PLAN HOOK (SAT Coach): the finish of a doc started from the study plan
+ *  marks its item done/late. Best effort, awaited like the assignment hook;
+ *  a miss is recovered by the next plan maintenance (the summary carries
+ *  planItemId). */
+async function planHook(uid: string, doc: SATSession | SATDrill): Promise<void> {
+  if (doc.finishedAt === null || !doc.planItemId) return;
+  await recordPlanCompletion(uid, doc.planItemId, doc.id, doc.finishedAt).catch(() => undefined);
 }
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -156,6 +166,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (result.drill.finishedAt !== null && result.drill.assignmentId) {
       await markAssignment(user.id, result.drill.assignmentId, { status: "done" });
     }
+    if (result.drill !== doc) await planHook(user.id, result.drill);
     const n = result.drill.questionIds.indexOf(a.questionId) + 1;
     return NextResponse.json({ state: drillState(result.drill, now), item: reviewItem(a.questionId, n, result.drill.answers[a.questionId] ?? null) });
   }
@@ -195,5 +206,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (next.finishedAt !== null && next.assignmentId) {
     await markAssignment(user.id, next.assignmentId, { status: "done" });
   }
+  if (doc.finishedAt === null) await planHook(user.id, next);
   return NextResponse.json(sessionState(next, now));
 }

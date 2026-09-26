@@ -22,6 +22,8 @@
 //   win -- Saturday, else Sunday, else the latest; with no practice day among
 //   them, t itself when t >= lo, else nothing.
 import type { PlanItem } from "../client-types.ts";
+// One diagnostic size for the plan item and the drill it starts (24).
+import { DIAGNOSTIC_SIZE } from "./diagnostic.ts";
 
 export type { PlanItem } from "../client-types.ts";
 
@@ -35,7 +37,6 @@ export type PlannerProfile = {
 
 export const MAX_MOCK_MOVES = 2;
 
-const DIAGNOSTIC_SIZE = 24;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SATURDAY = 6;
 const SUNDAY = 0;

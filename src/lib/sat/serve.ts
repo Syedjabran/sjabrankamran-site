@@ -188,16 +188,17 @@ export function drillState(d: SATDrill, now: number): DrillState {
  *  module submitted past its limit, so the staff list can flag its score. */
 export function summaryOf(doc: SATSession | SATDrill): SessionSummary {
   const finished = doc.finishedAt !== null;
+  const plan = doc.planItemId ? { planItemId: doc.planItemId } : {};
   if (doc.kind === "drill") {
     const values = Object.values(doc.checked);
     return { id: doc.id, kind: "drill", ...(doc.purpose ? { purpose: doc.purpose } : {}), title: doc.title, createdAt: doc.createdAt, finishedAt: doc.finishedAt, score: null,
       correct: finished ? values.filter(Boolean).length : 0, total: finished ? doc.questionIds.length : 0, checkedCount: values.length,
-      assignmentId: doc.assignmentId, overtime: false };
+      assignmentId: doc.assignmentId, overtime: false, ...plan };
   }
   const results = finished ? STAGES.map((k) => doc.results[k]).filter((r): r is StageResult => !!r) : [];
   return { id: doc.id, kind: doc.kind, title: doc.title, createdAt: doc.createdAt, finishedAt: doc.finishedAt, score: doc.score,
     correct: results.reduce((n, r) => n + r.correct, 0), total: results.reduce((n, r) => n + r.total, 0), assignmentId: doc.assignmentId,
-    overtime: results.some((r) => r.overtime) };
+    overtime: results.some((r) => r.overtime), ...plan, ...(doc.kind === "practice" && doc.testNo !== null ? { testNo: doc.testNo } : {}) };
 }
 
 export { practiceTest };

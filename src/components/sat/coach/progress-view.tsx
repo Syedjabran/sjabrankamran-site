@@ -13,6 +13,7 @@ import { DOMAIN_LABEL, DRILL_COUNT_DEFAULT, SECTION_LABEL, type MasteryRow, type
 import type { SATSection } from "@/lib/sat/types";
 import { formatPk } from "@/lib/portal/pk-time";
 import { ScoreBadge } from "@/components/sat/score-badge";
+import { Meter } from "./meter";
 
 type Sitting = SATAnalytics["scores"]["history"][number];
 type WeakSkill = SATAnalytics["weakSkills"][number];
@@ -94,19 +95,6 @@ function Card({ title, note, children }: { title: string; note?: string; childre
       {note ? <p className="mt-1 text-xs text-dust">{note}</p> : null}
       <div className="mt-4">{children}</div>
     </section>
-  );
-}
-
-/** A thin horizontal bar: `fraction` (0..1) filled in the accent on a lighter
- *  track of the same hue; `marker` (0..1) draws a reference tick. Decorative
- *  -- the value is always written next to it. */
-function Meter({ fraction, marker }: { fraction: number; marker?: number }) {
-  const clamp = (x: number) => Math.max(0, Math.min(1, x)) * 100;
-  return (
-    <div aria-hidden className="relative h-2 w-full rounded-full bg-cyan/15">
-      <div className="h-full rounded-full bg-cyan" style={{ width: `${clamp(fraction)}%` }} />
-      {marker !== undefined ? <div className="absolute -top-1 h-4 w-0.5 rounded-full bg-ice" style={{ left: `calc(${clamp(marker)}% - 1px)` }} /> : null}
-    </div>
   );
 }
 

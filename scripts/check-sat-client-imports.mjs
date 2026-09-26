@@ -4,7 +4,8 @@
 // "use client" directive and fails if it reaches bank.ts, serve.ts,
 // session.ts, forms.ts, adaptive.ts, scoring.ts, drills.ts, store.ts or
 // analytics-data.ts in src/lib/sat/, a server-only SAT Coach module in src/lib/sat/coach/
-// (profile-store.ts, diagnostic-drill.ts, insights.ts), or any src/lib/sat/*.json (the
+// (profile-store.ts, diagnostic-drill.ts, insights.ts, plan-store.ts, student-guard.ts),
+// or any src/lib/sat/*.json (the
 // question bank and practice tests). Anything a client module imports is bundled for the browser, so
 // this is what keeps the answer key out of it mechanically rather than by
 // convention.
@@ -28,6 +29,7 @@ const FORBIDDEN = new Set([
   "bank.ts", "serve.ts", "session.ts", "forms.ts", "adaptive.ts", "scoring.ts", "drills.ts", "store.ts",
   "analytics-data.ts",
   "coach/profile-store.ts", "coach/diagnostic-drill.ts", "coach/insights.ts",
+  "coach/plan-store.ts", "coach/student-guard.ts",
 ]);
 // Paths relative to src/lib/ai/ — server-only (budgets, provider API keys),
 // same "never reachable from a 'use client' module" rule as the SAT modules

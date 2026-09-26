@@ -148,4 +148,15 @@ assert.equal(summaryOf(checkedDrill).checkedCount, 1, "an unfinished drill's sum
 assert.equal(summaryOf(checkedDrill).total, 0, "... but still shows no result before it finishes");
 assert.equal(summaryOf(drill).checkedCount, 0);
 
+// --- SAT Coach: a summary carries the plan item it was started from and,
+// for an official practice sitting, the test number (rulings 3 and 4).
+{
+  assert.equal(summaryOf({ ...checkedDrill, planItemId: "item-7" }).planItemId, "item-7");
+  assert.equal("planItemId" in summaryOf(checkedDrill), false, "absent when the doc has none");
+  const practice = { ...s, kind: "practice", testNo: 6, planItemId: "item-8" };
+  assert.equal(summaryOf(practice).testNo, 6);
+  assert.equal(summaryOf(practice).planItemId, "item-8");
+  assert.equal("testNo" in summaryOf(s), false, "an adaptive sitting has no test number");
+}
+
 console.log("sat-serve drill-state tests passed");

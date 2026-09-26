@@ -9,6 +9,7 @@ import { formatPk } from "@/lib/portal/pk-time";
 import { OvertimeTag, ScoreBadge } from "./score-badge";
 import { SatAssign } from "./sat-assign";
 import { DrillFields, type DifficultyFilter, type SectionFilter } from "./drill-fields";
+import { CoachHome } from "./coach/coach-home";
 
 type SessionsPayload = {
   sessions: SessionSummary[];
@@ -28,7 +29,9 @@ const MOCK_DESCRIPTION =
   `${SECTION_LABEL.math}: ${BLUEPRINT.math.perModule} questions × ${BLUEPRINT.math.minutes} minutes per module — ` +
   `with a ${BLUEPRINT.breakMinutes}-minute break between sections. Module 2 of each section adapts to your Module 1 performance.`;
 
-export function SatHub({ isStaff }: { isStaff: boolean }) {
+/** `coach`: a student with an SAT profile -- the study plan, goals and
+ *  "Coach says" (coach/coach-home.tsx) come first, the sections below stay. */
+export function SatHub({ isStaff, coach = false }: { isStaff: boolean; coach?: boolean }) {
   const router = useRouter();
   const [data, setData] = useState<SessionsPayload | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -94,17 +97,32 @@ export function SatHub({ isStaff }: { isStaff: boolean }) {
     void start(`assign-${a.id}`, { kind: a.kind, assignmentId: a.id });
   }
 
+  // The coach loads on its own, first in every branch (same position, so it
+  // is never remounted while the sections below load).
+  const coachHome = coach && !isStaff ? <CoachHome /> : null;
   if (loadError && !data) {
     return (
-      <p className="rounded-2xl border border-signal/30 bg-signal/5 p-5 text-sm text-fog">
-        {loadError} <button className="ml-2 text-cyan underline" onClick={() => void load()}>Retry</button>
-      </p>
+      <div className="space-y-6">
+        {coachHome}
+        <p className="rounded-2xl border border-signal/30 bg-signal/5 p-5 text-sm text-fog">
+          {loadError} <button className="ml-2 text-cyan underline" onClick={() => void load()}>Retry</button>
+        </p>
+      </div>
     );
   }
-  if (!data) return <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading the SAT Lab…</p>;
+  if (!data) {
+    return (
+      <div className="space-y-6">
+        {coachHome}
+        <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading the SAT Lab…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
+      {coachHome}
+
       {actionError ? <p className="rounded-xl border border-signal/30 bg-signal/5 p-3 text-sm text-fog">{actionError}</p> : null}
 
       {isStaff ? <SatAssign practiceTests={data.practiceTests} /> : null}

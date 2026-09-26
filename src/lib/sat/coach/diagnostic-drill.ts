@@ -19,9 +19,10 @@ export type DiagnosticStart = { ok: true; id: string } | { ok: false; status: 40
 
 const historyUnavailable: DiagnosticStart = { ok: false, status: 503, error: "Your SAT history couldn't be checked. Please try again." };
 
-/** The id of the student's unfinished diagnostic, or of a new one. Reads
- *  fail closed: a failed history read never starts an unfiltered drill. */
-export async function ensureDiagnostic(uid: string, now: number): Promise<DiagnosticStart> {
+/** The id of the student's unfinished diagnostic, or of a new one (tagged
+ *  with `planItemId` when the study plan starts it). Reads fail closed: a
+ *  failed history read never starts an unfiltered drill. */
+export async function ensureDiagnostic(uid: string, now: number, planItemId?: string): Promise<DiagnosticStart> {
   const summaries = await listSummaries(uid);
   if (summaries === null) return historyUnavailable;
   const open = summaries.find((s) => s.kind === "drill" && s.purpose === "diagnostic" && s.finishedAt === null);
@@ -30,7 +31,7 @@ export async function ensureDiagnostic(uid: string, now: number): Promise<Diagno
   if (exclude === null) return historyUnavailable;
   let doc: SATDrill;
   try {
-    doc = startDiagnostic(loadQuestionBank(), rng, { id: newId(), uid, now }, exclude);
+    doc = startDiagnostic(loadQuestionBank(), rng, { id: newId(), uid, now, planItemId }, exclude);
   } catch (e) {
     return { ok: false, status: 409, error: (e as Error).message };
   }
