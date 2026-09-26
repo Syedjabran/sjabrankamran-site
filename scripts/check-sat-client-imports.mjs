@@ -28,6 +28,10 @@ const FORBIDDEN = new Set([
   "bank.ts", "serve.ts", "session.ts", "forms.ts", "adaptive.ts", "scoring.ts", "drills.ts", "store.ts",
   "coach/profile-store.ts", "coach/diagnostic-drill.ts",
 ]);
+// Paths relative to src/lib/ai/ — server-only (budgets, provider API keys),
+// same "never reachable from a 'use client' module" rule as the SAT modules
+// above, just rooted under a different directory.
+const FORBIDDEN_AI = new Set(["llm.ts", "usage.ts"]);
 const CODE = /\.(ts|tsx|js|jsx|mjs)$/;
 const EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".json"];
 
@@ -44,8 +48,13 @@ function listFiles(dir) {
 function isForbidden(file, srcDir) {
   const satDir = path.join(srcDir, "lib", "sat");
   const rel = path.relative(satDir, file).split(path.sep).join("/");
-  if (rel.startsWith("..") || path.isAbsolute(rel)) return false;
-  return FORBIDDEN.has(rel) || (path.dirname(file) === satDir && rel.endsWith(".json"));
+  if (!rel.startsWith("..") && !path.isAbsolute(rel)) {
+    if (FORBIDDEN.has(rel) || (path.dirname(file) === satDir && rel.endsWith(".json"))) return true;
+  }
+  const aiDir = path.join(srcDir, "lib", "ai");
+  const relAi = path.relative(aiDir, file).split(path.sep).join("/");
+  if (relAi.startsWith("..") || path.isAbsolute(relAi)) return false;
+  return FORBIDDEN_AI.has(relAi);
 }
 
 /** `@/x` and relative specifiers to a file on disk; null for a package. */
@@ -150,15 +159,21 @@ function selfTest() {
     put("components/coach-ok.tsx", '"use client";\nimport { p } from "@/lib/sat/coach/profile";\nexport const c = p;\n');
     put("components/coach-store.tsx", '"use client";\nimport { ps } from "../lib/sat/coach/profile-store";\nexport const c = ps;\n');
     put("components/server-only-page.tsx", 'import { bank } from "@/lib/sat/bank";\nexport const p = bank;\n');
+    put("lib/ai/llm.ts", "export const complete = 1;\n");
+    put("lib/ai/usage.ts", "export const takeBudget = 1;\n");
+    put("components/ai-llm.tsx", '"use client";\nimport { complete } from "@/lib/ai/llm";\nexport const c = complete;\n');
+    put("components/ai-usage.tsx", '"use client";\nimport { takeBudget } from "../lib/ai/usage";\nexport const t = takeBudget;\n');
     const { clients, violations } = findViolations(src);
     const got = violations.map((v) => v.join(" -> ")).sort();
     const want = [
+      "components/ai-llm.tsx -> lib/ai/llm.ts",
+      "components/ai-usage.tsx -> lib/ai/usage.ts",
       "components/coach-store.tsx -> lib/sat/coach/profile-store.ts",
       "components/dynamic.tsx -> lib/sat/drills.ts",
       "components/json.tsx -> lib/sat/question-bank.json",
       "components/reexport.tsx -> lib/util.ts -> lib/sat/bank.ts",
     ];
-    if (clients !== 6 || JSON.stringify(got) !== JSON.stringify(want)) {
+    if (clients !== 8 || JSON.stringify(got) !== JSON.stringify(want)) {
       throw new Error(`self-test failed: ${clients} client files, violations:\n  ${got.join("\n  ") || "(none)"}`);
     }
   } finally {
