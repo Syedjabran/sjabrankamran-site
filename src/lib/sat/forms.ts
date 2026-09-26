@@ -94,23 +94,40 @@ export function pickWeighted(
   return picked;
 }
 
+/** A pool split into the questions not in `avoid` and the ones that are --
+ *  a short pool uses the first, then tops up from the second. */
+function preferFirst(pool: SATQuestion[], avoid: ReadonlySet<string> | undefined): { preferred: SATQuestion[]; avoided: SATQuestion[] } {
+  if (!avoid) return { preferred: pool, avoided: [] };
+  return { preferred: pool.filter((q) => !avoid.has(q.id)), avoided: pool.filter((q) => avoid.has(q.id)) };
+}
+
 function buildSet(
   bank: SATQuestion[], section: SATSection, weights: Record<string, number>,
-  used: Set<string>, rng: Rng, exclude?: ReadonlySet<string>,
+  used: Set<string>, rng: Rng, exclude?: ReadonlySet<string>, avoid?: ReadonlySet<string>,
 ): SATQuestion[] {
   const groups = byDomain(bank, section);
-  const allocation = allocateByDomain(BLUEPRINT[section].perModule, domainProportions(bank, section));
+  const want = BLUEPRINT[section].perModule;
+  const allocation = allocateByDomain(want, domainProportions(bank, section));
+  // `exclude` (the running sittings' questions) is never drawn, whatever it
+  // costs; `avoid` (an open drill's unchecked questions) only tops up a
+  // domain that can't fill its share otherwise.
+  const drawable = (q: SATQuestion) => !used.has(q.id) && !exclude?.has(q.id);
   const out: SATQuestion[] = [];
-  for (const [domain, count] of Object.entries(allocation)) {
-    const unused = (groups[domain] ?? []).filter((q) => !used.has(q.id));
-    // Keep `exclude` out of this domain's draw -- unless that would leave the
-    // domain's share of the module unfillable, when it falls back to the
-    // unrestricted pool: a short module is a broken form.
-    const allowed = exclude ? unused.filter((q) => !exclude.has(q.id)) : unused;
-    const available = allowed.length >= count ? allowed : unused;
-    const chosen = pickWeighted(available, count, weights, rng);
+  const take = (chosen: SATQuestion[]) => {
     for (const q of chosen) used.add(q.id);
     out.push(...chosen);
+  };
+  for (const [domain, count] of Object.entries(allocation)) {
+    const { preferred, avoided } = preferFirst((groups[domain] ?? []).filter(drawable), avoid);
+    if (preferred.length >= count) take(pickWeighted(preferred, count, weights, rng));
+    else take([...preferred, ...pickWeighted(avoided, count - preferred.length, weights, rng)]);
+  }
+  // Still short (a domain with too little left even so): top up from the
+  // section's other questions, avoided ones last -- a short module is a
+  // broken form, and an excluded question is never the fix.
+  if (out.length < want) {
+    const { preferred, avoided } = preferFirst(bank.filter((q) => q.section === section && drawable(q)), avoid);
+    take([...shuffle(preferred, rng), ...shuffle(avoided, rng)].slice(0, want - out.length));
   }
   return shuffle(out, rng);
 }
@@ -123,22 +140,23 @@ function buildSet(
  * in one sitting would invalidate the score. The two Module 2 variants may
  * overlap each other: no student ever sees both.
  *
- * `exclude`: ids to keep out of the form -- the questions of the student's
- * own unfinished sittings, so a second mock can't be blank-submitted to read
- * answers to items of the one still running. Honoured per domain unless
- * that domain could not then fill its share (see buildSet).
+ * `exclude`: ids never drawn -- the questions of the student's own
+ * unfinished sittings, so a second mock can't be blank-submitted to read
+ * answers to items of the one still running. `avoid`: ids drawn only to
+ * top up a domain that can't fill its share otherwise -- an open drill's
+ * unchecked questions (see buildSet).
  */
-export function assembleForm(bank: SATQuestion[], rng: Rng, exclude?: ReadonlySet<string>): SATForm {
+export function assembleForm(bank: SATQuestion[], rng: Rng, exclude?: ReadonlySet<string>, avoid?: ReadonlySet<string>): SATForm {
   const sets = {} as Record<SATFormKey, SATQuestion[]>;
   for (const section of ["rw", "math"] as const) {
     const used = new Set<string>();
-    sets[`${section}.m1`] = buildSet(bank, section, DIFFICULTY_WEIGHTS.m1, used, rng, exclude);
+    sets[`${section}.m1`] = buildSet(bank, section, DIFFICULTY_WEIGHTS.m1, used, rng, exclude, avoid);
     // A fresh `used` per Module 2 variant, seeded with Module 1's ids: the
     // two variants are alternatives, so they may share questions with each
     // other but never with Module 1.
     const afterM1 = new Set(used);
-    sets[`${section}.m2.lower`] = buildSet(bank, section, DIFFICULTY_WEIGHTS.lower, new Set(afterM1), rng, exclude);
-    sets[`${section}.m2.upper`] = buildSet(bank, section, DIFFICULTY_WEIGHTS.upper, new Set(afterM1), rng, exclude);
+    sets[`${section}.m2.lower`] = buildSet(bank, section, DIFFICULTY_WEIGHTS.lower, new Set(afterM1), rng, exclude, avoid);
+    sets[`${section}.m2.upper`] = buildSet(bank, section, DIFFICULTY_WEIGHTS.upper, new Set(afterM1), rng, exclude, avoid);
   }
   return { id: `form-${Date.now().toString(36)}`, kind: "adaptive", sets };
 }

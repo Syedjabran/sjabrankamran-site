@@ -21,12 +21,13 @@ import { assembleForm } from "../forms.ts";
 import { startAdaptive, startPractice, type TimedPracticeTest } from "../session.ts";
 import { startChallenge } from "../drills.ts";
 import { practiceTest, practiceTestList } from "../serve.ts";
-import { inPlayQuestionIds, listSummaries, mockExcludeIds, saveDoc, type SATDoc } from "../store.ts";
+import { inPlayQuestionIds, listSummaries, mockExclusions, saveDoc, type SATDoc } from "../store.ts";
 import { studentAnalytics } from "../analytics-data.ts";
 import type { PlanItem, SATAnalytics, SessionSummary } from "../client-types.ts";
 import { buildChallenge, type BankLite } from "./challenge-builder.ts";
 import { ensureDiagnostic } from "./diagnostic-drill.ts";
 import { readProfile } from "./profile-store.ts";
+import type { SATProfile } from "./profile.ts";
 import { applyMove, challengeSize, checkMove, horizonEnd } from "./planner.ts";
 import {
   attachSession, challengeAnalytics, completeItem, doneMapFrom, existingSessionFor, latestDiagnosticId, nextPlan,
@@ -94,11 +95,14 @@ function practiceAvailable(): number[] {
  * weakest skill when a new ISO week begins (ruling 5). Writes only when
  * something changed. Throws on any failed read or unconfirmed write.
  *
- * `known.analytics`, when the caller already loaded them, is used for the
- * week snapshot instead of loading them again.
+ * `known`: what the caller already read, so it isn't read twice -- the
+ * analytics (used for the week snapshot; null = they couldn't be loaded)
+ * and the profile.
  */
-export async function ensureSatPlan(uid: string, today: string, known?: { analytics: SATAnalytics | null }): Promise<SATPlan | null> {
-  const profile = await readProfile(uid);
+export async function ensureSatPlan(
+  uid: string, today: string, known?: { analytics?: SATAnalytics | null; profile?: SATProfile },
+): Promise<SATPlan | null> {
+  const profile = known?.profile ?? (await readProfile(uid));
   if (!profile) return null;
   const summaries = await listSummaries(uid);
   if (summaries === null) throw unreadable();
@@ -108,7 +112,7 @@ export async function ensureSatPlan(uid: string, today: string, known?: { analyt
   let weak: WeakAtWeekStart | null | undefined;
   return updatePlan(uid, async (prev) => {
     if (weak === undefined && weekRolled(prev, today)) {
-      const analytics = known ? known.analytics : (await studentAnalytics(uid, Date.now()).catch(() => null))?.analytics ?? null;
+      const analytics = known?.analytics !== undefined ? known.analytics : (await studentAnalytics(uid, Date.now()).catch(() => null))?.analytics ?? null;
       // No analytics (a failed read) leaves the week to roll on a later pass.
       weak = analytics ? weakSnapshot(analytics) : undefined;
     }
@@ -195,9 +199,9 @@ async function createMock(uid: string, item: PlanItem, now: number, summaries: S
     if (!test?.minutes) return { ok: false, error: "That practice test isn't available right now.", status: 409 };
     return saved({ ...startPractice(test, ids), planItemId: item.id });
   }
-  const exclude = await mockExcludeIds(uid, now, summaries);
+  const exclude = await mockExclusions(uid, now, summaries);
   if (exclude === null) return historyUnavailable;
-  return saved({ ...startAdaptive(assembleForm(loadQuestionBank(), rng, exclude), ids), planItemId: item.id });
+  return saved({ ...startAdaptive(assembleForm(loadQuestionBank(), rng, exclude.inPlay, exclude.openDrill), ids), planItemId: item.id });
 }
 
 async function createFor(uid: string, item: PlanItem, plan: SATPlan, now: number, summaries: SessionSummary[]): Promise<Created> {

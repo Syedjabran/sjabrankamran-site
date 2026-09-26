@@ -1,12 +1,13 @@
 "use client";
 // "Coach says" (SAT Coach spec 8.2): the headline, two-sentence summary and
 // up to 3 tips built from the student's analytics + plan status. Purely
-// presentational -- Task 9 (sat-hub.tsx) fetches the InsightsView from
-// GET /api/sat/coach (refreshed server-side there) and passes it in, along
-// with what a "Drill this" tap should do.
+// presentational -- coach-home.tsx fetches the InsightsView from
+// GET /api/sat/coach/insights (after the plan, so the plan never waits on
+// the AI) and passes it in, with what a "Drill this" tap should do and
+// whether a start is already under way (`busy`: the buttons wait).
 import type { InsightsView } from "@/lib/sat/client-types";
 
-export function CoachSays({ view, onDrill }: { view: InsightsView; onDrill: (skill: string) => void }) {
+export function CoachSays({ view, onDrill, busy = false }: { view: InsightsView; onDrill: (skill: string) => void; busy?: boolean }) {
   return (
     <section className="min-w-0 rounded-2xl border border-white/10 bg-space/60 p-5">
       <div className="flex items-center justify-between gap-3">
@@ -28,8 +29,9 @@ export function CoachSays({ view, onDrill }: { view: InsightsView; onDrill: (ski
                 </div>
                 {tip.skill ? (
                   <button
+                    disabled={busy}
                     onClick={() => onDrill(tip.skill as string)}
-                    className="btn-primary shrink-0 !px-3 !py-1.5 text-xs"
+                    className="btn-primary shrink-0 !px-3 !py-1.5 text-xs disabled:opacity-40"
                   >
                     Drill this
                   </button>
@@ -39,6 +41,20 @@ export function CoachSays({ view, onDrill }: { view: InsightsView; onDrill: (ski
           ))}
         </ul>
       ) : null}
+    </section>
+  );
+}
+
+/** Holds Coach says' place while GET /api/sat/coach/insights is on its way. */
+export function CoachSaysSkeleton() {
+  return (
+    <section aria-busy="true" aria-label="Coach says is loading" className="min-w-0 rounded-2xl border border-white/10 bg-space/60 p-5">
+      <h2 className="font-display text-lg text-ice">Coach says</h2>
+      <div aria-hidden className="mt-3 space-y-2 motion-safe:animate-pulse">
+        <div className="h-4 w-2/3 rounded bg-white/10" />
+        <div className="h-3 w-full rounded bg-white/[0.07]" />
+        <div className="h-3 w-5/6 rounded bg-white/[0.07]" />
+      </div>
     </section>
   );
 }

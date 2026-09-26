@@ -34,7 +34,13 @@ async function satPass(uids: string[], now: number) {
   const reminded = marker.ok ? new Set(marker.data?.uids ?? []) : null;
   const tally = { planned: 0, reminded: 0, skipped: 0, failed: 0, remindersOff: reminded === null };
   let saving: Promise<unknown> = Promise.resolve();
-  const saveReminded = (list: Set<string>) => (saving = saving.then(() => writeFreshJson(BUCKET, remindedPath(today), { uids: [...list] })));
+  // A failed write is logged: that student could be reminded twice if the
+  // run is repeated today (the next successful write carries them too).
+  const saveReminded = (list: Set<string>) => (saving = saving.then(async () => {
+    if (!(await writeFreshJson(BUCKET, remindedPath(today), { uids: [...list] }))) {
+      console.error("daily-study-plans: SAT reminder marker write failed", remindedPath(today), list.size);
+    }
+  }));
 
   let next = 0;
   async function worker(): Promise<void> {
@@ -42,10 +48,11 @@ async function satPass(uids: string[], now: number) {
       const uid = uids[next++];
       try {
         // Profile first: most students have none, and it costs one read.
-        if (!(await readProfile(uid))) { tally.skipped++; continue; }
+        const profile = await readProfile(uid);
+        if (!profile) { tally.skipped++; continue; }
         const access = await satAccess({ id: uid, email: "", fullName: "", roles: ["student"], status: "active" });
         if (!access.ok || access.isStaff) { tally.skipped++; continue; }
-        const plan = await ensureSatPlan(uid, today);
+        const plan = await ensureSatPlan(uid, today, { profile });
         if (!plan) { tally.skipped++; continue; }
         tally.planned++;
         const reminder = reminderFor(plan.items, today);

@@ -10,7 +10,7 @@ import { startAdaptive, startPractice, type TimedPracticeTest } from "@/lib/sat/
 import { buildFilteredDrill } from "@/lib/sat/drill-start";
 import { hasConversionTables, practiceTest, practiceTestList } from "@/lib/sat/serve";
 import { ROUTING_DISCLOSURE } from "@/lib/sat/adaptive";
-import { listSummaries, mockExcludeIds, saveDoc } from "@/lib/sat/store";
+import { listSummaries, mockExclusions, saveDoc } from "@/lib/sat/store";
 import { listAssignments, markAssignment, resolveStart, type SATAssignment } from "@/lib/sat/assignments";
 import { satFilterSchema } from "@/lib/sat/filter-schema";
 import { invalidRequest } from "@/lib/sat/zod-messages";
@@ -111,11 +111,11 @@ export async function POST(req: Request) {
 
   let doc;
   if (kind === "adaptive") {
-    // A new mock never holds a running sitting's questions, nor any an open
-    // drill hasn't checked yet (SAT Coach ruling 7a).
-    const exclude = await mockExcludeIds(user.id, ids.now);
+    // A new mock never holds a running sitting's questions, and an open
+    // drill's unchecked ones only to fill a short domain (SAT Coach ruling 7a).
+    const exclude = await mockExclusions(user.id, ids.now);
     if (exclude === null) return NextResponse.json({ error: "Your SAT history couldn't be checked. Please try again." }, { status: 503 });
-    doc = startAdaptive(assembleForm(loadQuestionBank(), rng, exclude), ids);
+    doc = startAdaptive(assembleForm(loadQuestionBank(), rng, exclude.inPlay, exclude.openDrill), ids);
   } else if (kind === "practice") {
     const testNo = assignment ? assignment.testNo : (b.kind === "practice" ? (b.testNo ?? null) : null);
     if (testNo === null) return NextResponse.json({ error: "Invalid request." }, { status: 400 });

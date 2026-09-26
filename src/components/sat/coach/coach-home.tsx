@@ -1,15 +1,17 @@
 "use client";
 // The coach part of the SAT Lab home (SAT Coach spec 7.4), for a student
-// with an SAT profile: Today, Your plan, This week's goals and Coach says,
-// from one GET /api/sat/coach. Starting today's work, moving a full exam and
-// "Drill this" are one tap each. When the SAT date has gone by, a card asks
-// how it went instead of showing the plan.
+// with an SAT profile: Today, Your plan and This week's goals from one GET
+// /api/sat/coach, then Coach says from GET /api/sat/coach/insights -- asked
+// for only once the plan is showing, so the plan never waits on the AI (a
+// skeleton holds its place meanwhile). Starting today's work, moving a full
+// exam and "Drill this" are one tap each, and one start at a time. When the
+// SAT date has gone by, a card asks how it went instead of the plan.
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import { DRILL_COUNT_DEFAULT, type CoachPayload, type PlanItem } from "@/lib/sat/client-types";
-import { CoachSays } from "./coach-says";
+import { DRILL_COUNT_DEFAULT, type CoachInsightsPayload, type CoachPayload, type InsightsView, type PlanItem } from "@/lib/sat/client-types";
+import { CoachSays, CoachSaysSkeleton } from "./coach-says";
 import { GoalsCard } from "./goals-card";
 import { PlanCard } from "./plan-card";
 import { TodayCard } from "./today-card";
@@ -45,6 +47,20 @@ export function CoachHome() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [insights, setInsights] = useState<InsightsView | null>(null);
+  const [insightsState, setInsightsState] = useState<"loading" | "ready" | "failed">("loading");
+
+  // Coach says is optional: a failure hides the card (a view already shown stays).
+  async function loadInsights() {
+    try {
+      const res = await fetch("/api/sat/coach/insights", { cache: "no-store" });
+      if (!res.ok) throw new Error();
+      setInsights(((await res.json()) as CoachInsightsPayload).insights);
+      setInsightsState("ready");
+    } catch {
+      setInsightsState((state) => (state === "ready" ? state : "failed"));
+    }
+  }
 
   async function load() {
     setLoadError(null);
@@ -55,11 +71,14 @@ export function CoachHome() {
       setData(j as CoachPayload);
     } catch (e) {
       setLoadError((e as Error).message);
+      return;
     }
+    void loadInsights();
   }
   useEffect(() => { void load(); }, []);
 
   async function begin(key: string, url: string, body: unknown) {
+    if (busyId) return;
     setBusyId(key);
     setActionError(null);
     try {
@@ -94,14 +113,14 @@ export function CoachHome() {
       {actionError ? <Notice>{actionError}</Notice> : null}
       {data.horizonPassed ? <ExamPassed /> : data.plan ? (
         <>
-          <TodayCard plan={data.plan} today={data.today} busyId={busyId} onStart={start} onOpen={(id) => router.push(`/portal/sat-lab/${id}`)} />
+          <TodayCard plan={data.plan} today={data.today} busyId={busyId} onStart={start} onOpen={(id) => router.push(`/portal/sat-lab/${id}`)} onMove={move} />
           <PlanCard plan={data.plan} today={data.today} onMove={move} />
         </>
       ) : (
         <Notice>{data.planError ?? "Your plan couldn't be loaded — retry."} <button className="ml-2 text-cyan underline" onClick={() => void load()}>Retry</button></Notice>
       )}
       {data.goals.length ? <GoalsCard goals={data.goals} /> : null}
-      {data.insights ? <CoachSays view={data.insights} onDrill={drill} /> : null}
+      {insights ? <CoachSays view={insights} onDrill={drill} busy={busyId !== null} /> : insightsState === "loading" ? <CoachSaysSkeleton /> : null}
     </div>
   );
 }

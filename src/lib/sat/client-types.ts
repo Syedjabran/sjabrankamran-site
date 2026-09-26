@@ -289,7 +289,9 @@ export type SATPlanView = {
   week: { scheduled: number; done: number; late: number; missed: number };
 };
 
-/** GET /api/sat/coach: everything the SAT Lab home shows, in one call. */
+/** GET /api/sat/coach: everything the SAT Lab home shows but "Coach says"
+ *  (CoachInsightsPayload, fetched afterwards so the plan never waits on
+ *  the AI), in one call. */
 export type CoachPayload = {
   today: string;               // PKT "YYYY-MM-DD" the view was built for
   profile: { examDate: string | null; targetMonth: string | null; targetScore: number };
@@ -302,8 +304,10 @@ export type CoachPayload = {
     latestScore: SittingScore | null;
   } | null;
   goals: WeeklyGoal[];
-  insights: InsightsView | null;
 };
+
+/** GET /api/sat/coach/insights: "Coach says" for the home. */
+export type CoachInsightsPayload = { insights: InsightsView };
 
 // --- Coach says (src/lib/sat/coach/insights.ts) ------------------------------
 //

@@ -109,17 +109,38 @@ assert.ok(setIds(second).every((id) => !inPlay.has(id)), "no question of the run
 const secondM1 = new Set(second.sets["rw.m1"].map((x) => x.id));
 assert.ok(second.sets["rw.m2.upper"].every((x) => !secondM1.has(x.id)), "Module 1 / Module 2 disjointness still holds");
 
-// Exclude every algebra question: that domain alone falls back to the
-// unrestricted pool (a short module is a broken form); the other domains
-// still honour the exclusion.
-const algebraAndMore = new Set([...bank.filter((x) => x.domain === "algebra").map((x) => x.id), ...inPlay]);
+// Task 9 fix round 1: an excluded (in-play) question is NEVER drawn. Exclude
+// every algebra question: that domain can't fill its share, so the module is
+// topped up from the section's other domains -- still full (a short module is
+// a broken form), still without a single excluded question.
+const algebraIds = bank.filter((x) => x.domain === "algebra").map((x) => x.id);
+const algebraAndMore = new Set([...algebraIds, ...inPlay]);
 const fallback = assembleForm(bank, seeded(23), algebraAndMore);
 for (const key of ["math.m1", "math.m2.lower", "math.m2.upper"]) assert.equal(fallback.sets[key].length, 22, `${key} full despite the exclusion`);
-assert.ok(fallback.sets["math.m1"].some((x) => x.domain === "algebra"), "the unfillable domain falls back to its whole pool");
-assert.ok(
-  Object.values(fallback.sets).flat().filter((x) => x.domain !== "algebra").every((x) => !algebraAndMore.has(x.id)),
-  "every fillable domain still honours the exclusion",
-);
+assert.ok(setIds(fallback).every((id) => !algebraAndMore.has(id)), "no excluded (in-play) question, not even to fill a short domain");
+assert.ok(fallback.sets["math.m1"].every((x) => x.domain !== "algebra"));
+{
+  const m1 = new Set(fallback.sets["math.m1"].map((x) => x.id));
+  assert.ok(fallback.sets["math.m2.upper"].every((x) => !m1.has(x.id)), "the top-up keeps Module 1 / Module 2 disjoint");
+}
+
+// Avoided (open-drill) questions are the only top-up: avoid every algebra
+// question but three -> those three are all drawn first, the rest of the
+// algebra share comes from the avoided ones, and no in-play id appears.
+{
+  const keep = algebraIds.filter((id) => !inPlay.has(id)).slice(0, 3);
+  const avoid = new Set(algebraIds.filter((id) => !keep.includes(id)));
+  const soft = assembleForm(bank, seeded(24), inPlay, avoid);
+  for (const key of ["math.m1", "math.m2.lower", "math.m2.upper"]) assert.equal(soft.sets[key].length, 22, `${key} full`);
+  const m1 = soft.sets["math.m1"].map((x) => x.id);
+  assert.ok(keep.every((id) => m1.includes(id)), "the domain's non-avoided questions are used before any avoided one");
+  assert.ok(soft.sets["math.m1"].some((x) => avoid.has(x.id)), "then it tops up from the avoided (open-drill) questions");
+  assert.ok(setIds(soft).every((id) => !inPlay.has(id)), "never an in-play question");
+  assert.ok(
+    Object.values(soft.sets).flat().filter((x) => x.domain !== "algebra").every((x) => !avoid.has(x.id)),
+    "a fillable domain never needs an avoided question",
+  );
+}
 // No exclusion set behaves exactly as before.
 assert.deepEqual(setIds(assembleForm(bank, seeded(7), new Set())), setIds(assembleForm(bank, seeded(7))));
 
@@ -136,8 +157,9 @@ assert.deepEqual(setIds(assembleForm(bank, seeded(7), new Set())), setIds(assemb
   const open = openDrillQuestionIds(checked);
   assert.deepEqual(open, challenge.questionIds.slice(2), "checked questions are no longer secret; the rest are");
   assert.deepEqual(openDrillQuestionIds({ ...checked, finishedAt: 1 }), [], "a finished drill holds nothing open");
-  const mock = assembleForm(bank, seeded(31), new Set([...inPlay, ...open]));
+  const mock = assembleForm(bank, seeded(31), inPlay, new Set(open));
   assert.ok(setIds(mock).every((id) => !open.includes(id)), "no unchecked drill question in the new mock");
+  assert.ok(setIds(mock).every((id) => !inPlay.has(id)));
 }
 
 console.log("sat-forms tests passed");

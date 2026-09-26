@@ -13,6 +13,8 @@ import {
 } from "../src/lib/sat/coach/coach-view.ts";
 import { DIAGNOSTIC_SIZE } from "../src/lib/sat/coach/diagnostic.ts";
 import { formatPkDay } from "../src/lib/portal/pk-time.ts";
+import { isMovable, movesLeft } from "../src/lib/sat/coach/plan-moves.ts";
+import { addDays, checkMove } from "../src/lib/sat/coach/planner.ts";
 import { planItemTitle } from "../src/lib/sat/client-types.ts";
 
 const TODAY = "2026-10-01";
@@ -277,6 +279,28 @@ assert.equal(challengeAnalytics(null), null);
   assert.equal(unbooked.examDate, null);
   assert.equal(unbooked.horizonEnd, "2026-12-01");
   assert.equal(unbooked.daysToExam, 61);
+}
+
+// --- Fix round 1: a full exam dated TODAY is still movable (spec 6.4 "today
+// or later") -- it is in the Today list and in fullExams, isMovable says so,
+// and checkMove accepts a later day for it.
+{
+  const firstMock = first.items.find((i) => i.kind === "mock");
+  const onTheDay = planView(first, firstMock.date);
+  const todays = onTheDay.today.find((i) => i.id === firstMock.id);
+  assert.ok(todays, "today's full exam is in the Today list");
+  assert.ok(!onTheDay.upcoming.some((i) => i.id === firstMock.id), "and not in the next-14-days list");
+  assert.ok(onTheDay.fullExams.some((i) => i.id === firstMock.id), "the move rules see it");
+  assert.equal(isMovable(todays), true);
+  assert.equal(movesLeft(todays), 2);
+  assert.deepEqual(checkMove(onTheDay.fullExams, todays.id, addDays(firstMock.date, 1), firstMock.date, onTheDay.horizonEnd), { ok: true });
+  assert.deepEqual(checkMove(onTheDay.fullExams, todays.id, firstMock.date, firstMock.date, onTheDay.horizonEnd), { ok: false, error: "That day already has a full exam." });
+  assert.equal(isMovable({ ...todays, sessionId: "s1" }), false, "a started exam stays put");
+  assert.equal(isMovable({ ...todays, status: "missed" }), false);
+  const twice = { ...todays, moves: [{ from: "a", to: "b", at: "x" }, { from: "b", to: "c", at: "y" }] };
+  assert.equal(movesLeft(twice), 0);
+  assert.equal(isMovable(twice), false, "at most two moves");
+  assert.equal(isMovable({ id: "c", date: TODAY, kind: "challenge", status: "scheduled" }), false, "challenges never move");
 }
 
 // --- reminderFor: the cron's "Today's SAT ... is ready"

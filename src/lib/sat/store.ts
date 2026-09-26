@@ -117,19 +117,22 @@ export async function recentUnfinishedSittings(uid: string, now: number, summari
   return sittings;
 }
 
-/** What a NEW adaptive mock must not draw (SAT Coach ruling 7a): the
- *  in-play sittings' questions, plus every question an unfinished drill of
- *  the student's (practice drill, diagnostic or challenge) has not checked
- *  yet -- a blank-submitted mock's report would show their answers. No time
- *  window for drills: an open drill can be finished any day. Fails closed:
- *  null on any read failure. */
-export async function mockExcludeIds(uid: string, now: number, summaries?: SessionSummary[]): Promise<Set<string> | null> {
+/** What a NEW adaptive mock must keep out (SAT Coach ruling 7a), for
+ *  assembleForm: `inPlay` -- the in-play sittings' questions, never drawn;
+ *  `openDrill` -- every question an unfinished drill of the student's
+ *  (practice drill, diagnostic or challenge) has not checked yet, drawn only
+ *  to top up a domain that can't fill its share otherwise (a blank-submitted
+ *  mock's report would show their answers). No time window for drills: an
+ *  open drill can be finished any day. Fails closed: null on any read
+ *  failure. */
+export async function mockExclusions(uid: string, now: number, summaries?: SessionSummary[]): Promise<{ inPlay: Set<string>; openDrill: Set<string> } | null> {
   const list = summaries ?? (await listSummaries(uid));
   if (list === null) return null;
-  const exclude = await inPlayQuestionIds(uid, now, list);
-  if (exclude === null) return null;
+  const inPlay = await inPlayQuestionIds(uid, now, list);
+  if (inPlay === null) return null;
   const drills = await loadDocs(uid, list.filter((s) => s.kind === "drill" && s.finishedAt === null).map((s) => s.id));
   if (drills === null) return null;
-  for (const doc of drills) if (doc.kind === "drill") for (const id of openDrillQuestionIds(doc)) exclude.add(id);
-  return exclude;
+  const openDrill = new Set<string>();
+  for (const doc of drills) if (doc.kind === "drill") for (const id of openDrillQuestionIds(doc)) openDrill.add(id);
+  return { inPlay, openDrill };
 }
