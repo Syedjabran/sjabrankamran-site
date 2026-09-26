@@ -170,10 +170,24 @@
     box-shadow: none !important;
   }
   .el-print-sheet, .el-print-sheet * { background: transparent !important; color: #000 !important; }
+  /* The global shell rule hides semantic header/footer elements. Restore the
+     paper's own header/footer so test identity and student fields print. */
+  .el-print-sheet > header, .el-print-sheet > footer { display: block !important; }
   .el-print-sheet img { background: #fff !important; max-width: 100% !important; height: auto !important; }
   .el-print-sheet .el-print-rule { border-color: #bbb !important; }
-  /* A question (and its mark scheme) is never sliced across a page break. */
-  .el-print-q { break-inside: avoid; page-break-inside: avoid; }
+  /* Review/allocation state is useful on screen, but is not part of a student
+     paper. Student identity fields are always printed, including test mode. */
+  .el-print-review-status { display: none !important; }
+  .el-print-student { display: grid !important; grid-template-columns: 1fr 1fr !important; }
+  /* Long structured Paper 2/4 question images can exceed one A4 page. Do not
+     mark the whole question as unbreakable: Chromium otherwise strands the
+     metadata on a blank page before moving the image. The source image already
+     contains its question number/marks, so hide the duplicate metadata in the
+     printed copy and let the image paginate naturally. */
+  .el-print-q { break-inside: auto; page-break-inside: auto; }
+  .el-print-q + .el-print-q { break-before: page; page-break-before: always; }
+  .el-print-q-head { display: none !important; }
+  .el-print-q-image { margin-top: 0 !important; break-before: auto; page-break-before: auto; }
   /* Keep the paper header attached to the first question. */
   .el-print-head { break-after: avoid; page-break-after: avoid; }
   /* The mark-scheme section always starts on a fresh sheet. */

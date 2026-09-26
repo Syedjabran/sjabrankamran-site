@@ -183,7 +183,7 @@ export function DrillPrintClient({ idOrRef }: { idOrRef: string }) {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="font-display text-2xl font-bold leading-tight text-black">{rec.name}</h2>
-              <p className="mt-1 text-sm text-black/70">{MODE_LABEL[rec.mode] || rec.mode}</p>
+              <p className="el-print-review-status mt-1 text-sm text-black/70">{MODE_LABEL[rec.mode] || rec.mode}</p>
             </div>
             {ref ? (
               <div className="text-right">
@@ -198,24 +198,25 @@ export function DrillPrintClient({ idOrRef }: { idOrRef: string }) {
             <div><dt className="font-mono text-[10px] uppercase tracking-widest text-black/50">Date</dt><dd className="font-semibold text-black">{when(rec.createdAt)}</dd></div>
             <div><dt className="font-mono text-[10px] uppercase tracking-widest text-black/50">Paper</dt><dd className="font-semibold text-black">{rec.snapshot.length} questions · {rec.totalMarks} marks</dd></div>
           </dl>
-          <div className="el-print-rule mt-4 flex flex-wrap gap-x-8 gap-y-2 border-t border-black/20 pt-3 text-[13px] text-black/70">
-            <span>Name: <span className="inline-block w-48 border-b border-black/40">&nbsp;</span></span>
-            <span>Class: <span className="inline-block w-28 border-b border-black/40">&nbsp;</span></span>
-            <span>Date: <span className="inline-block w-28 border-b border-black/40">&nbsp;</span></span>
+          <div className="el-print-student el-print-rule mt-4 grid grid-cols-1 gap-x-8 gap-y-3 border-t border-black/20 pt-3 text-[13px] text-black/70 sm:grid-cols-2">
+            <span className="flex items-end gap-2">Name: <span className="min-w-0 flex-1 border-b border-black/50">&nbsp;</span></span>
+            <span className="flex items-end gap-2">Roll No.: <span className="min-w-0 flex-1 border-b border-black/50">&nbsp;</span></span>
+            <span className="flex items-end gap-2">Class / section: <span className="min-w-0 flex-1 border-b border-black/50">&nbsp;</span></span>
+            <span className="flex items-end gap-2">Date: <span className="min-w-0 flex-1 border-b border-black/50">&nbsp;</span></span>
           </div>
         </header>
 
         <ol className="mt-6 space-y-7">
           {rec.snapshot.map((q, i) => (
             <li key={`${q.id}-${i}`} className="el-print-q">
-              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <div className="el-print-q-head flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <span className="font-display text-base font-bold text-black">{i + 1}.</span>
                 <span className="font-mono text-[11px] text-black/60">{q.paperType}{q.ref ? ` · ${q.ref}` : ""}</span>
                 {q.topic ? <span className="font-mono text-[11px] text-black/60">· {q.topic}</span> : null}
                 <span className="font-mono text-[11px] text-black/60">· {q.level}</span>
                 {q.marks != null ? <span className="ml-auto font-mono text-[12px] font-bold text-black">[{q.marks}]</span> : null}
               </div>
-              <div className="mt-2">
+              <div className="el-print-q-image mt-2">
                 {imgs[q.img] ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
