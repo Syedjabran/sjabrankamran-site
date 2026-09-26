@@ -136,7 +136,9 @@ export function mockDates(today: string, exam: string, days: number[]): string[]
 // covered by its replacement or deliberately left unreplaced), or a day a
 // student had moved one to and then away from again, lies within 3 days of
 // it (the snap window; 13 on a light schedule, spec 6.3), or the day a full
-// exam first left -- a day the planner chose -- lies within 3 days of it.
+// exam first left -- a day the planner chose -- lies within 3 days of it
+// (within the kept-exam window when that day is today or tomorrow, where the
+// unmoved exam would have been kept).
 
 /** Started or finished: recorded work, so a regeneration never replaces it. */
 function isStarted(item: PlanItem): boolean {
@@ -270,11 +272,13 @@ function newMocks(input: BuildInput, end: string, plan: PlanItem[], reusable: Ma
   // window), 13 on a light schedule, whose full exams are never closer than
   // 14 days (spec 6.3) -- or a first moved-from day lies within 3 days (spec
   // 6.5; with the light window it would block the grid both where the exam
-  // is and where it was, leaving a hole). "Where it snaps" is checked today
-  // and with no lower bound at all (where it snapped before today moved on),
-  // so a later edit sees the same grid.
+  // is and where it was, leaving a hole). A first moved-from day dated today
+  // or tomorrow takes the kept-exam window too: unmoved, that exam would be
+  // kept (keptMocks), so the move must not make room for more. "Where it
+  // snaps" is checked today and with no lower bound at all (where it snapped
+  // before today moved on), so a later edit sees the same grid.
   const spacing = isLight(profile.days) ? 13 : 3;
-  const spaced = [...kept, ...pickedFrom];
+  const spaced = [...kept, ...pickedFrom, ...plannedFrom.filter((day) => day >= today && day < addDays(today, 2))];
   const finalWeekCovered = daysBetween(today, end) < 7 && [...spaced, ...plannedFrom].some((day) => day >= gapStart);
   const covered = (day: string | null) => day !== null
     && (spaced.some((anchor) => Math.abs(daysBetween(anchor, day)) <= spacing) || plannedFrom.some((anchor) => withinThreeDays(anchor, day)));
