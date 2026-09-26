@@ -138,7 +138,7 @@ const item = (id, date, kind, status, extra = {}) => ({ id, date, kind, status, 
   assert.equal(parentFirstName("  "), "Your child");
   assert.equal(parentFirstName(""), "Your child");
   assert.equal(parentFirstName("@example.com"), "Your child");
-  assert.equal(parentFirstName("ali@example.com"), "ali", "never an email address");
+  assert.equal(parentFirstName("ali@example.com"), "Your child", "never an email address, never \"there\" either");
 }
 
 // --- 8: fallbackSummary -- the brief's sentence, and the edges

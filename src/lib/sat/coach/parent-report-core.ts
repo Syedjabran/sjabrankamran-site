@@ -157,11 +157,14 @@ export async function runBeforeDeadline<T>(
 // --- the week ------------------------------------------------------------------
 
 /** The student's first name for a parent: first word, never an email; "Your
- *  child" when there is none. */
+ *  child" when there is none. Unlike the tutor/insights fallback ("there"),
+ *  a parent email never addresses the student as "there" -- any source
+ *  containing "@", or a sanitised result of "there", falls back here too. */
 export function parentFirstName(raw: string): string {
   const trimmed = raw.trim();
-  if (!trimmed || trimmed.startsWith("@")) return NAME_FALLBACK;
-  return sanitiseFirstName(trimmed);
+  if (!trimmed || raw.includes("@")) return NAME_FALLBACK;
+  const name = sanitiseFirstName(trimmed);
+  return name === "there" ? NAME_FALLBACK : name;
 }
 
 /** The name inside a sentence: "your child", not "Your child". */
