@@ -5,7 +5,7 @@
 // next 14 days, countdown, streak, this week's tallies), the analytics
 // summary, the "Coach says" input (ruling 9) and the reminder text. No
 // answer data, no server-only imports; dates are PKT calendar days.
-import type { CoachPayload, InsightsView, PlanItem, SATAnalytics, SATPlanView } from "../client-types.ts";
+import type { CoachPayload, InsightsView, MasteryRow, PlanItem, SATAnalytics, SATPlanView } from "../client-types.ts";
 import { planItemTitle } from "../client-types.ts";
 import { formatPkDay } from "../../portal/pk-time.ts";
 import { addDays, daysBetween, horizonEnd } from "./planner.ts";
@@ -89,6 +89,15 @@ export function analyticsSummary(a: Pick<SATAnalytics, "sections" | "weakSkills"
   return { sections: a.sections, weakSkills: a.weakSkills.slice(0, SUMMARY_WEAK_SKILLS), latestScore: history.length ? history[history.length - 1] : null };
 }
 
+/** The strongest skills by mastery, among those with enough recent evidence
+ *  (confidence >= 3) -- "Coach says" and the parent email's strongest area. */
+export function strongSkills(skills: MasteryRow[], n: number = MAX_STRONG): MasteryRow[] {
+  return skills
+    .filter((s) => s.confidence >= STRONG_MIN_CONFIDENCE)
+    .sort((x, y) => y.mastery - x.mastery)
+    .slice(0, n);
+}
+
 /** The next full exam still to sit, from today on. */
 function nextMockOf(view: SATPlanView | null): { date: string; title: string } | null {
   const next = view?.fullExams.find((i) => i.status === "scheduled" && !i.sessionId);
@@ -115,11 +124,7 @@ export function insightsInputOf(input: {
     latestScore: history.length ? history[history.length - 1].score : null,
     sections: { rw: { accuracy: a?.sections.rw.accuracy ?? null }, math: { accuracy: a?.sections.math.accuracy ?? null } },
     weakSkills: (a?.weakSkills ?? []).map((w) => ({ label: w.label, mastery: w.mastery })),
-    strongSkills: (a?.skills ?? [])
-      .filter((s) => s.confidence >= STRONG_MIN_CONFIDENCE)
-      .sort((x, y) => y.mastery - x.mastery)
-      .slice(0, MAX_STRONG)
-      .map((s) => ({ label: s.label, mastery: s.mastery })),
+    strongSkills: strongSkills(a?.skills ?? []).map((s) => ({ label: s.label, mastery: s.mastery })),
     pacingFlags: (a?.pacingFlags ?? []).map((f) => ({ label: f.label, medianSec: f.medianSec, accuracy: f.accuracy })),
     week: view?.week ?? { scheduled: 0, done: 0, late: 0, missed: 0 },
     nextMock: nextMockOf(view),
