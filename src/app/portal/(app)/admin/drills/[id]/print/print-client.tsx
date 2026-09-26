@@ -151,7 +151,8 @@ export function DrillPrintClient({ idOrRef }: { idOrRef: string }) {
           <h1 className="font-display text-xl text-ice">Print / download this drill</h1>
           <p className="mt-1 text-sm text-dust">
             Press <b className="text-fog">Print / Save as PDF</b> and choose <b className="text-fog">Save as PDF</b> as the destination in your browser&rsquo;s print dialog —
-            that is where the download comes from, on desktop, iPad and Android alike. No separate download button is needed.
+            that is where the download comes from, on desktop, iPad and Android alike. Under <b className="text-fog">More settings</b>, turn off
+            <b className="text-fog"> Headers and footers</b> so the browser does not add the URL, date and page title. No separate download button is needed.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button onClick={printNow} disabled={preparing || msLoading} className="btn-primary !py-2.5 text-sm disabled:opacity-50">

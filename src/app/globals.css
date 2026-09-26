@@ -159,7 +159,7 @@
    screen, so this block only has to strip the app shell and control where the
    page breaks fall. */
 @media print {
-  @page { margin: 14mm 12mm; }
+  @page { size: A4 portrait; margin: 14mm 12mm; }
   html, body { background: #fff !important; }
   .el-print-sheet {
     max-width: none !important;
