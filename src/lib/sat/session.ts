@@ -45,6 +45,11 @@ export type SATSession = {
   breakUntil: number | null;
   answers: Record<string, string>;
   flagged: string[];
+  /** Active time per question, ms (spec 7.1) -- visible-tab time only, merged
+   *  by max and capped at the sitting stage's own minutes (see mergeTime,
+   *  saveAnswers/submitStage). Absent on docs saved before this existed, and
+   *  on any question never sent a time for: no pacing data for it. */
+  timeMs?: Record<string, number>;
   results: Partial<Record<SATStageKey, StageResult>>;
   score: SATScore | null;
   /** Why no score is shown, when score is null after finishing. */
@@ -135,11 +140,32 @@ export function isStaleStage(s: SATSession, stage: SATStageKey): boolean {
   return stage !== currentStage(s) || s.stageStartedAt === null;
 }
 
+/** Per-question active time, `id -> max(prev, incoming)`, capped at `capMs`
+ *  and restricted to `allowed` — a module's own planned ids, or (from a
+ *  drill) the single question just checked (spec 7.1). Pure: the caller
+ *  decides what "now" means and when the clock is running — see
+ *  createQuestionTimer in sat-runner-utils.ts. */
+export function mergeTime(
+  prev: Record<string, number> | undefined, incoming: Record<string, number> | undefined,
+  allowed: Set<string>, capMs: number,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [id, v] of Object.entries(prev ?? {})) if (allowed.has(id)) out[id] = Math.min(v, capMs);
+  for (const [id, v] of Object.entries(incoming ?? {})) {
+    if (!allowed.has(id)) continue;
+    out[id] = Math.min(Math.max(out[id] ?? 0, v), capMs);
+  }
+  return out;
+}
+
 /** Keep only answers to the module being sat; a client cannot write into
  *  another module, and a stale request naming a module the session has
- *  already left (or not yet reached) is a no-op — same reference back. */
+ *  already left (or not yet reached) is a no-op — same reference back.
+ *  `timeMs`, when given, merges into the sitting's own per-question time the
+ *  same way — module's ids only, capped at this stage's minutes; omitted
+ *  entirely, the sitting's time map is left untouched (same reference). */
 export function saveAnswers(
-  s: SATSession, stage: SATStageKey, answers: Record<string, string>, flagged: string[],
+  s: SATSession, stage: SATStageKey, answers: Record<string, string>, flagged: string[], timeMs?: Record<string, number>,
 ): SATSession {
   if (isStaleStage(s, stage)) return s;
   const allowed = new Set(s.plan[stage] ?? []);
@@ -153,19 +179,20 @@ export function saveAnswers(
     ...s,
     answers: next,
     flagged: [...new Set([...s.flagged.filter((id) => !allowed.has(id)), ...flagged.filter((id) => allowed.has(id))])],
+    timeMs: timeMs === undefined ? s.timeMs : { ...s.timeMs, ...mergeTime(s.timeMs, timeMs, allowed, s.minutes[stage] * 60_000) },
   };
 }
 
 export function submitStage(
   s: SATSession, stage: SATStageKey, answers: Record<string, string>, flagged: string[], now: number,
-  answerOf: (id: string) => SATAnswer | null,
+  answerOf: (id: string) => SATAnswer | null, timeMs?: Record<string, number>,
 ): SATSession {
   // Finished, on the break, or a stale/duplicate submit (double-click, a
   // retried fetch, a second tab) naming a module the session already left:
   // never score a different module than the one the client named.
   if (isStaleStage(s, stage)) return s;
   const k = stage;
-  const saved = saveAnswers(s, stage, answers, flagged);
+  const saved = saveAnswers(s, stage, answers, flagged, timeMs);
   const ids = saved.plan[k] ?? [];
   let correct = 0;
   let answered = 0;

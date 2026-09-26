@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   STAGES, GRACE_MS, startAdaptive, startPractice, currentStage, stageDeadline, isOnBreak,
   settleBreak, saveAnswers, submitStage, beginStage, rawBySection, practiceQuestionId, domainBreakdown,
-  isStaleStage,
+  isStaleStage, mergeTime,
 } from "../src/lib/sat/session.ts";
 import { startDrill, checkDrillAnswer } from "../src/lib/sat/drills.ts";
 import { DRILL_COUNT_MAX, drillTitle } from "../src/lib/sat/client-types.ts";
@@ -118,6 +118,35 @@ assert.equal(pm.routed.rw, undefined, "a linear paper has no routing");
 assert.deepEqual(pm.plan["rw.m2"], [practiceQuestionId(4, "rw", 2, 1)]);
 assert.equal(STAGES.length, 4);
 
+// --- per-question timing: mergeTime (pure) ---
+assert.deepEqual(
+  mergeTime({ a: 5000 }, { a: 3000, b: 9000, x: 1 }, new Set(["a", "b"]), 8000),
+  { a: 5000, b: 8000 },
+  "per id max(prev, incoming), capped, ids outside allowed dropped",
+);
+assert.deepEqual(mergeTime(undefined, { a: 100 }, new Set(["a"]), 8000), { a: 100 }, "no prior time is fine");
+assert.deepEqual(mergeTime({ a: 100 }, undefined, new Set(["a"]), 8000), { a: 100 }, "no incoming time keeps prev, still capped/filtered");
+assert.deepEqual(mergeTime({ a: 100, b: 200 }, {}, new Set(["a"]), 8000), { a: 100 }, "an id outside allowed is dropped even with no incoming");
+
+// --- per-question timing: saveAnswers merges timeMs for the module's ids
+// only, capped at that stage's own minutes ---
+let timed = startAdaptive(form, { id: "timed1", uid: "u1", now: T0 });
+timed = saveAnswers(timed, "rw.m1", {}, [], { "r1-0": 5000, "r1-1": 2000, "not-a-question": 999 });
+assert.deepEqual(timed.timeMs, { "r1-0": 5000, "r1-1": 2000 }, "time for ids outside the module is dropped");
+timed = saveAnswers(timed, "rw.m1", {}, [], { "r1-0": 3000, "r1-2": 40 * 60_000 });
+assert.deepEqual(
+  timed.timeMs, { "r1-0": 5000, "r1-1": 2000, "r1-2": 32 * 60_000 },
+  "max(prev, incoming), and a huge incoming value is capped at R&W Module 1's own 32 minutes",
+);
+assert.equal(saveAnswers(timed, "rw.m1", {}, [], undefined).timeMs, timed.timeMs, "an absent timeMs leaves the map untouched (same reference)");
+assert.equal(saveAnswers(timed, "rw.m2", {}, [], { "ru-0": 1000 }), timed, "a stale-stage save ignores timeMs too");
+
+// --- per-question timing: submitStage carries timeMs through the same
+// merge, capping independently per stage ---
+let ts = startAdaptive(form, { id: "ts1", uid: "u1", now: T0 });
+ts = submitStage(ts, "rw.m1", allA(form.sets["rw.m1"].map((x) => x.id)), [], T0 + 10 * 60_000, answerOf, { "r1-0": 33 * 60_000 });
+assert.equal(ts.timeMs["r1-0"], 32 * 60_000, "submitStage caps time at the stage's own minutes (R&W Module 1: 32)");
+
 // --- domain breakdown ---
 assert.deepEqual(
   domainBreakdown([{ domain: "algebra", correct: true }, { domain: "algebra", correct: false }, { domain: "psda", correct: true }]),
@@ -167,6 +196,18 @@ assert.equal(sprOk.correct, true, "the first VALID entry is the recorded one");
 assert.equal(sprOk.drill.answers[sprId], "1.5");
 // MCQ checks are unaffected: any letter is judged as before.
 assert.equal(checkDrillAnswer(d, d.questionIds[1], "C", answerOf, T0).correct, false);
+
+// --- drills: checkDrillAnswer merges the checked question's own time,
+// capped at 30 minutes; a re-check of an already-checked question (same
+// reference back) ignores a later time payload too ---
+const timedDrill = startDrill(pool, { section: "math" }, 5, seeded(4), { id: "d6", uid: "u1", now: T0 });
+const tId = timedDrill.questionIds[0];
+const t1 = checkDrillAnswer(timedDrill, tId, "A", answerOf, T0 + 1000, 31 * 60_000);
+assert.equal(t1.drill.timeMs[tId], 30 * 60_000, "drill time is capped at 30 minutes");
+const t2 = checkDrillAnswer(t1.drill, tId, "B", answerOf, T0 + 2000, 5000);
+assert.equal(t2.drill, t1.drill, "an already-checked question ignores a later time payload too");
+const untimed = checkDrillAnswer(timedDrill, timedDrill.questionIds[1], "A", answerOf, T0 + 500);
+assert.equal(untimed.drill.timeMs, timedDrill.timeMs, "no timeMs argument leaves the map untouched");
 
 // --- drill titles: one function for the stored title and the staff preview ---
 assert.equal(drillTitle({}), "Mixed drill");

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import {
-  RETRY_CAP_MS, SAVE_DEBOUNCE_MS, answersChangedFor, classifyFailure, flaggedChangedFor, isTimeoutError, looksLikeSessionState,
-  mergeAnswers, mergeFlagged, mixedNumberWarning, nextTypedSPR, pickAnswers, pickFlagged, retryDelayMs, splitSignedUrls,
-  sprAnswerPreview, stopMessage, stripSPR, haltAfter,
+  RETRY_CAP_MS, SAVE_DEBOUNCE_MS, answersChangedFor, classifyFailure, createQuestionTimer, flaggedChangedFor, isTimeoutError,
+  looksLikeSessionState, mergeAnswers, mergeFlagged, mixedNumberWarning, nextTypedSPR, pickAnswers, pickFlagged, retryDelayMs,
+  splitSignedUrls, sprAnswerPreview, stopMessage, stripSPR, haltAfter,
 } from "../src/components/sat/sat-runner-utils.ts";
 
 // --- pickAnswers / pickFlagged: a save/submit body carries only the module
@@ -284,5 +284,54 @@ assert.equal(sprAnswerPreview(""), null, "nothing entered, no preview");
 assert.equal(sprAnswerPreview("1/0"), null, "an invalid entry has no preview");
 assert.equal(sprAnswerPreview("123456"), null, "too long");
 assert.equal(sprAnswerPreview("1.2.3"), null);
+
+// --- createQuestionTimer: accumulates active time per question id, only
+// while the tab is visible ("pause"/"resume") and only for the entered
+// question ("enter"/"leave"). ---
+{
+  const timer = createQuestionTimer();
+  // Nothing entered yet: pause/leave are no-ops, snapshot is empty.
+  timer.pause(100);
+  timer.leave(200);
+  assert.deepEqual(timer.snapshot(300), {}, "nothing accumulated before any enter");
+}
+{
+  // The brief's own worked example: enter a@0, pause@1000, resume@5000,
+  // leave@6000 -> { a: 2000 }; re-enter a@7000, snapshot@8000 -> { a: 3000 }.
+  const timer = createQuestionTimer();
+  timer.enter("a", 0);
+  timer.pause(1000);
+  timer.resume(5000);
+  timer.leave(6000);
+  assert.deepEqual(timer.snapshot(6000), { a: 2000 }, "1s before the pause plus 1s after resume");
+  timer.enter("a", 7000);
+  assert.deepEqual(timer.snapshot(8000), { a: 3000 }, "re-entering the same question keeps accumulating");
+}
+{
+  // Switching directly from one question to another (no explicit leave in
+  // between) closes out the first at the moment the second is entered.
+  const timer = createQuestionTimer();
+  timer.enter("a", 0);
+  timer.enter("b", 1000);
+  timer.leave(1500);
+  assert.deepEqual(timer.snapshot(1500), { a: 1000, b: 500 });
+}
+{
+  // snapshot() returns a copy: mutating it must not affect the timer's own state.
+  const timer = createQuestionTimer();
+  timer.enter("a", 0);
+  timer.leave(1000);
+  const snap = timer.snapshot(1000);
+  snap.a = 999_999;
+  assert.deepEqual(timer.snapshot(1000), { a: 1000 }, "snapshot returns a copy, not a live reference");
+}
+{
+  // A resume that doesn't follow a pause (the tab was never hidden) must not
+  // reset the running interval's start time.
+  const timer = createQuestionTimer();
+  timer.enter("a", 0);
+  timer.resume(500);
+  assert.deepEqual(timer.snapshot(1000), { a: 1000 }, "an extra resume call does not reset the running interval");
+}
 
 console.log("sat-runner-utils tests passed");

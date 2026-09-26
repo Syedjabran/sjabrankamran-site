@@ -92,6 +92,66 @@ export function isTimeoutError(e: unknown): boolean {
   return name === "TimeoutError" || name === "AbortError";
 }
 
+// --- Per-question timing (spec 7.1) ---
+
+export type QuestionTimer = {
+  /** The student is now looking at `id`; closes out whatever question was
+   *  entered before. */
+  enter(id: string, now: number): void;
+  /** The student has left the current question (navigated away, or the
+   *  module ended); closes out its running interval. */
+  leave(now: number): void;
+  /** The tab went hidden (visibilitychange): stop counting until resume. */
+  pause(now: number): void;
+  /** The tab is visible again: resume counting the entered question, if any. */
+  resume(now: number): void;
+  /** The accumulated active ms per question id entered so far — a copy, not
+   *  a live reference; safe to send in a save/submit/check body. */
+  snapshot(now: number): Record<string, number>;
+};
+
+/** Accumulates active (visible-tab) time per question id for the runner and
+ *  the drill (spec 7.1): `enter`/`leave` around navigating between
+ *  questions, `pause`/`resume` around the tab going hidden/visible. Pure —
+ *  no DOM access; the caller supplies every `now` and decides when the tab
+ *  is hidden — so it is directly Node-testable (see
+ *  scripts/test-sat-runner-utils.mjs) without a browser. */
+export function createQuestionTimer(): QuestionTimer {
+  let current: string | null = null;
+  let since: number | null = null; // set only while actively accumulating time for `current`
+  const totals: Record<string, number> = {};
+
+  function flush(now: number): void {
+    if (current !== null && since !== null) totals[current] = (totals[current] ?? 0) + Math.max(0, now - since);
+    since = null;
+  }
+
+  return {
+    enter(id, now) {
+      flush(now);
+      current = id;
+      since = now;
+    },
+    leave(now) {
+      flush(now);
+      current = null;
+    },
+    pause(now) {
+      flush(now);
+    },
+    resume(now) {
+      // A resume that doesn't follow a pause (since is already running, or
+      // nothing is entered) must never reset the running interval's start.
+      if (current !== null && since === null) since = now;
+    },
+    snapshot(now) {
+      flush(now);
+      if (current !== null) since = now; // keep counting past the snapshot instant
+      return { ...totals };
+    },
+  };
+}
+
 // --- Failed requests: back-off and when to stop ---
 
 /** The autosave debounce after an edit, and the base of the retry back-off. */

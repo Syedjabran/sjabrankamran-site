@@ -7,8 +7,8 @@ import { ScoreReport } from "./score-report";
 import { QuestionImage } from "./question-image";
 import { useSignedImages } from "./use-signed-images";
 import {
-  SAVE_DEBOUNCE_MS, answersChangedFor, flaggedChangedFor, isTimeoutError, looksLikeSessionState, mergeAnswers, mergeFlagged,
-  haltAfter, pickAnswers, pickFlagged, retryDelayMs, stopMessage, type Halt,
+  SAVE_DEBOUNCE_MS, answersChangedFor, createQuestionTimer, flaggedChangedFor, isTimeoutError, looksLikeSessionState, mergeAnswers,
+  mergeFlagged, haltAfter, pickAnswers, pickFlagged, retryDelayMs, stopMessage, type Halt,
 } from "./sat-runner-utils";
 
 type SaveState = "idle" | "saving" | "saved" | "unsaved" | "failed" | "stopped";
@@ -23,6 +23,13 @@ const fmt = (ms: number) => {
   const t = Math.max(0, Math.ceil(ms / 1000));
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
 };
+/** A timer snapshot restricted to one module's ids -- a save/submit body
+ *  must carry only the module on screen, same rule as pickAnswers/pickFlagged. */
+const pickTime = (snapshot: Record<string, number>, ids: string[]): Record<string, number> => {
+  const out: Record<string, number> = {};
+  for (const id of ids) if (id in snapshot) out[id] = snapshot[id];
+  return out;
+};
 
 export function SatRunner({ sessionId }: { sessionId: string }) {
   const [state, setState] = useState<SessionState | null>(null);
@@ -35,6 +42,9 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   const [save, setSave] = useState<SaveState>("idle");
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Per-question active time (spec 7.1); a stable instance for the life of
+  // this sitting -- see createQuestionTimer's own tests for its behaviour.
+  const [timer] = useState(() => createQuestionTimer());
   const skew = useRef(0);
   const expiredOnLoad = useRef(false);
   const dirty = useRef(false);
@@ -208,6 +218,15 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  // The question timer counts only while the tab is visible (spec 7.1).
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") timer.resume(Date.now());
+      else timer.pause(Date.now());
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [timer]);
 
   const postRaw = useCallback(async (
     body: object, timeoutMessage = "The connection timed out — your answers are kept. Please try again.",
@@ -249,7 +268,10 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
       setSave("saving");
       const ids = stateRef.current?.stage?.questions.map((x) => x.id) ?? [];
       const seqAtSend = editSeq.current;
-      const body = { action: "save" as const, stage: stageKey, answers: pickAnswers(answersRef.current, ids), flagged: pickFlagged(flaggedRef.current, ids) };
+      const body = {
+        action: "save" as const, stage: stageKey, answers: pickAnswers(answersRef.current, ids), flagged: pickFlagged(flaggedRef.current, ids),
+        timeMs: pickTime(timer.snapshot(Date.now()), ids),
+      };
       const result = await postRaw(body);
       if (submittedStage.current === stageKey) { setSave("idle"); return; } // ditto, while this request was in flight
       if (result.kind === "error") {
@@ -266,7 +288,7 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
     } finally {
       saveBusy.current = false;
     }
-  }, [postRaw, applyStale, rearmSave]);
+  }, [postRaw, applyStale, rearmSave, timer]);
 
   const requestSave = useCallback(() => {
     const stageKey = stateRef.current?.stage?.key ?? null;
@@ -302,7 +324,10 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
       // Wait for an in-flight save to settle (enqueue puts us right after it in the same chain), then submit with the latest local answers.
       await enqueue(async () => {
         const ids = stateRef.current?.stage?.key === stageKey ? (stateRef.current?.stage?.questions.map((x) => x.id) ?? []) : [];
-        const body = { action: "submit" as const, stage: stageKey, answers: pickAnswers(answersRef.current, ids), flagged: pickFlagged(flaggedRef.current, ids) };
+        const body = {
+          action: "submit" as const, stage: stageKey, answers: pickAnswers(answersRef.current, ids), flagged: pickFlagged(flaggedRef.current, ids),
+          timeMs: pickTime(timer.snapshot(Date.now()), ids),
+        };
         const result = await postRaw(body, "The connection timed out — your answers are kept. Press Submit again.");
         if (result.kind === "error") {
           // We don't know if this submit actually reached the server -- keep
@@ -320,7 +345,7 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
       submittedStage.current = null;
       setBusy(false);
     }
-  }, [enqueue, postRaw, applyStale, apply]);
+  }, [enqueue, postRaw, applyStale, apply, timer]);
 
   const beginModule = useCallback(async () => {
     setBusy(true);
@@ -373,6 +398,14 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
 
   const questions = useMemo(() => state?.stage?.questions ?? [], [state]);
   const { urls, error: imgError, missing: imgMissing, resign } = useSignedImages(questions.map((q) => q.img));
+  // enter/leave around navigating between questions (spec 7.1) -- only while
+  // a module is actually running (not on the break/finished screens).
+  const currentQuestionId = questions[Math.min(idx, Math.max(questions.length - 1, 0))]?.id ?? null;
+  useEffect(() => {
+    if (state?.status !== "running" || !currentQuestionId) return;
+    timer.enter(currentQuestionId, Date.now());
+    return () => { timer.leave(Date.now()); };
+  }, [state?.status, currentQuestionId, timer]);
 
   if (error && !state) return <p className="rounded-2xl border border-signal/30 bg-signal/5 p-5 text-sm text-fog">{error} <button className="ml-2 text-cyan underline" onClick={() => void load()}>Retry</button></p>;
   if (!state) return <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading your sitting…</p>;

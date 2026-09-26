@@ -19,11 +19,17 @@ export const runtime = "nodejs";
 const answersSchema = z.record(z.string().max(80), z.string().max(12)).refine((a) => Object.keys(a).length <= 200);
 const flaggedSchema = z.array(z.string().max(80)).max(200);
 const stageSchema = z.enum(["rw.m1", "rw.m2", "math.m1", "math.m2"]);
+// Per-question active time, ms (spec 7.1) -- a generous sanity ceiling (4h);
+// the real per-question caps (a stage's own minutes, or 30 min for a drill)
+// are enforced by mergeTime in session.ts/drills.ts, not here.
+const timeMsSchema = z.record(z.string().max(80), z.number().int().min(0).max(4 * 3600_000)).optional();
 const action = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("save"), stage: stageSchema, answers: answersSchema, flagged: flaggedSchema }),
-  z.object({ action: z.literal("submit"), stage: stageSchema, answers: answersSchema, flagged: flaggedSchema }),
+  z.object({ action: z.literal("save"), stage: stageSchema, answers: answersSchema, flagged: flaggedSchema, timeMs: timeMsSchema }),
+  z.object({ action: z.literal("submit"), stage: stageSchema, answers: answersSchema, flagged: flaggedSchema, timeMs: timeMsSchema }),
   z.object({ action: z.literal("begin") }),
-  z.object({ action: z.literal("check"), questionId: z.string().max(80), response: z.string().trim().min(1).max(12) }),
+  z.object({
+    action: z.literal("check"), questionId: z.string().max(80), response: z.string().trim().min(1).max(12), timeMs: timeMsSchema,
+  }),
 ]);
 
 const unavailable = () => NextResponse.json({ error: "Your sitting couldn't be loaded. Nothing has been lost — please try again." }, { status: 503 });
@@ -120,7 +126,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (a.action !== "check") return NextResponse.json({ error: "Drills are answered one question at a time." }, { status: 400 });
     let result;
     try {
-      result = checkDrillAnswer(doc, a.questionId, a.response, answerOf, now);
+      result = checkDrillAnswer(doc, a.questionId, a.response, answerOf, now, a.timeMs?.[a.questionId]);
     } catch (e) {
       return NextResponse.json({ error: (e as Error).message }, { status: 400 });
     }
@@ -145,8 +151,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (next !== doc) await saveDoc(next);
     return NextResponse.json({ stale: true, state: sessionState(next, now) }, { status: 409 });
   }
-  if (a.action === "save") next = saveAnswers(next, a.stage, a.answers, a.flagged);
-  else if (a.action === "submit") next = finishSession(submitStage(next, a.stage, a.answers, a.flagged, now, answerOf));
+  if (a.action === "save") next = saveAnswers(next, a.stage, a.answers, a.flagged, a.timeMs);
+  else if (a.action === "submit") next = finishSession(submitStage(next, a.stage, a.answers, a.flagged, now, answerOf, a.timeMs));
   else if (a.action === "begin") next = beginStage(next, now);
   else return NextResponse.json({ error: "Only drills are checked question by question." }, { status: 400 });
 

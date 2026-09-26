@@ -7,7 +7,7 @@ import { validateSPR } from "@/lib/sat/grade";
 import { SprPad } from "./spr-pad";
 import { QuestionImage } from "./question-image";
 import { useSignedImages } from "./use-signed-images";
-import { isTimeoutError } from "./sat-runner-utils";
+import { createQuestionTimer, isTimeoutError } from "./sat-runner-utils";
 
 // The same bound the runner puts on its requests: a hung Check must end.
 const CHECK_TIMEOUT_MS = 20_000;
@@ -19,8 +19,28 @@ export function SatDrill({ initial }: { initial: DrillState }) {
   const [response, setResponse] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Per-question active time (spec 7.1); a stable instance for the life of this drill.
+  const [timer] = useState(() => createQuestionTimer());
   const { urls, error: imgError, missing: imgMissing, resign } = useSignedImages(state.questions.flatMap((x) => [x.img, state.checked[x.id]?.rationaleImg ?? ""]));
   useEffect(() => setResponse(""), [idx]);
+  // The question timer counts only while the tab is visible (spec 7.1).
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") timer.resume(Date.now());
+      else timer.pause(Date.now());
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [timer]);
+  // enter/leave around navigating between questions -- stopped once a
+  // question is checked (no more input possible; the rationale isn't "time
+  // spent on the question" for pacing purposes).
+  const currentQuestionId = state.questions[Math.min(idx, Math.max(state.questions.length - 1, 0))]?.id ?? null;
+  useEffect(() => {
+    if (!currentQuestionId || state.checked[currentQuestionId]) return;
+    timer.enter(currentQuestionId, Date.now());
+    return () => { timer.leave(Date.now()); };
+  }, [currentQuestionId, state.checked, timer]);
 
   const correct = Object.values(state.checked).filter((r) => r.correct).length;
   // Every question id of this drill has gone from a rebuilt bank: say so
@@ -44,8 +64,10 @@ export function SatDrill({ initial }: { initial: DrillState }) {
   async function check() {
     setBusy(true); setError(null);
     try {
+      const spent = timer.snapshot(Date.now())[q.id] ?? 0;
       const res = await fetch(`/api/sat/sessions/${state.id}`, {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "check", questionId: q.id, response }),
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "check", questionId: q.id, response, timeMs: { [q.id]: spent } }),
         signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
       });
       const j = await res.json().catch(() => ({}));

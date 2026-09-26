@@ -7,7 +7,7 @@
 import { filterQuestions, type SATFilter } from "./bank.ts";
 import { isCorrect, validateSPR } from "./grade.ts";
 import { shuffle, type Rng } from "./shuffle.ts";
-import { MAX_RESPONSE_CHARS } from "./session.ts";
+import { MAX_RESPONSE_CHARS, mergeTime } from "./session.ts";
 import type { SATAnswer, SATQuestion } from "./types.ts";
 // drillTitle is the same pure function the staff assign panel previews
 // with, so a drill's stored/notified title matches that preview exactly.
@@ -29,9 +29,16 @@ export type SATDrill = {
   questionIds: string[];
   answers: Record<string, string>;
   checked: Record<string, boolean>;
+  /** Active time per question, ms (spec 7.1) — see SATSession.timeMs; a drill
+   *  has no module clock, so its own cap is a flat DRILL_TIME_CAP_MS. */
+  timeMs?: Record<string, number>;
   finishedAt: number | null;
   assignmentId: string | null;
 };
+
+/** No module clock bounds a drill question the way a sitting's stage does
+ *  (session.ts) -- a flat 30 minutes per question (spec 7.1). */
+export const DRILL_TIME_CAP_MS = 30 * 60_000;
 
 export function startDrill(
   bank: SATQuestion[], filter: SATFilter, count: number, rng: Rng,
@@ -69,9 +76,13 @@ export function startDiagnostic(
   };
 }
 
+/** `timeMs`, when given, is the checked question's own accumulated active
+ *  time (spec 7.1) — merged in only when this call actually records an
+ *  answer; a re-check of an already-checked question returns the same
+ *  reference back, so a later time payload for it changes nothing either. */
 export function checkDrillAnswer(
   d: SATDrill, questionId: string, response: string,
-  answerOf: (id: string) => SATAnswer | null, now: number,
+  answerOf: (id: string) => SATAnswer | null, now: number, timeMs?: number,
 ): { drill: SATDrill; correct: boolean } {
   if (!d.questionIds.includes(questionId)) throw new Error("That question is not part of this drill.");
   if (questionId in d.checked) return { drill: d, correct: d.checked[questionId] };
@@ -88,6 +99,9 @@ export function checkDrillAnswer(
     ...d,
     answers: { ...d.answers, [questionId]: response.trim().slice(0, MAX_RESPONSE_CHARS) },
     checked: { ...d.checked, [questionId]: correct },
+    timeMs: timeMs === undefined
+      ? d.timeMs
+      : { ...d.timeMs, ...mergeTime(d.timeMs, { [questionId]: timeMs }, new Set([questionId]), DRILL_TIME_CAP_MS) },
   };
   if (drill.questionIds.every((id) => id in drill.checked)) drill.finishedAt = now;
   return { drill, correct };
