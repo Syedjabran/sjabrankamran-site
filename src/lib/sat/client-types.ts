@@ -173,6 +173,12 @@ export const DRILL_COUNT_MIN = 5;
 export const DRILL_COUNT_MAX = 30;
 export const DRILL_COUNT_DEFAULT = 10;
 
+// Per-question timing (spec 7.1): a drill has no module clock the way a
+// sitting's stage does (session.ts), so its own cap is a flat 30 minutes per
+// question -- enforced server-side (mergeTime, drills.ts) and applied
+// client-side too (sat-drill.tsx clamps before sending).
+export const DRILL_TIME_CAP_MS = 30 * 60_000;
+
 export const DIFFICULTY_LABEL: Record<SATDifficulty, string> = { E: "Easy", M: "Medium", H: "Hard" };
 
 /** A drill's title ("Math · Algebra · Hard drill"): stored on the drill and

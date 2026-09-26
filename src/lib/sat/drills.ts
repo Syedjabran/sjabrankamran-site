@@ -11,7 +11,7 @@ import { MAX_RESPONSE_CHARS, mergeTime } from "./session.ts";
 import type { SATAnswer, SATQuestion } from "./types.ts";
 // drillTitle is the same pure function the staff assign panel previews
 // with, so a drill's stored/notified title matches that preview exactly.
-import { DRILL_COUNT_MAX, DRILL_COUNT_MIN, drillTitle, type DrillPurpose } from "./client-types.ts";
+import { DRILL_COUNT_MAX, DRILL_COUNT_MIN, DRILL_TIME_CAP_MS, drillTitle, type DrillPurpose } from "./client-types.ts";
 import { DIAGNOSTIC_TITLE, pickDiagnostic } from "./coach/diagnostic.ts";
 
 export type SATDrill = {
@@ -35,10 +35,6 @@ export type SATDrill = {
   finishedAt: number | null;
   assignmentId: string | null;
 };
-
-/** No module clock bounds a drill question the way a sitting's stage does
- *  (session.ts) -- a flat 30 minutes per question (spec 7.1). */
-export const DRILL_TIME_CAP_MS = 30 * 60_000;
 
 export function startDrill(
   bank: SATQuestion[], filter: SATFilter, count: number, rng: Rng,

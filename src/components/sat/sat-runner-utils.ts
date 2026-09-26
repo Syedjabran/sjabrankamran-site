@@ -115,10 +115,17 @@ export type QuestionTimer = {
  *  questions, `pause`/`resume` around the tab going hidden/visible. Pure —
  *  no DOM access; the caller supplies every `now` and decides when the tab
  *  is hidden — so it is directly Node-testable (see
- *  scripts/test-sat-runner-utils.mjs) without a browser. */
+ *  scripts/test-sat-runner-utils.mjs) without a browser.
+ *
+ *  `hidden` remembers a pause across `enter`/`snapshot` calls that land
+ *  while the tab is still hidden (a background tab's autosave/backstop/
+ *  auto-submit, a break ending while away, a question opened while the tab
+ *  itself was opened in the background) — those must never start (or keep
+ *  running) a clock that a matching `resume` would otherwise restart. */
 export function createQuestionTimer(): QuestionTimer {
   let current: string | null = null;
   let since: number | null = null; // set only while actively accumulating time for `current`
+  let hidden = false;
   const totals: Record<string, number> = {};
 
   function flush(now: number): void {
@@ -130,7 +137,7 @@ export function createQuestionTimer(): QuestionTimer {
     enter(id, now) {
       flush(now);
       current = id;
-      since = now;
+      since = hidden ? null : now;
     },
     leave(now) {
       flush(now);
@@ -138,15 +145,21 @@ export function createQuestionTimer(): QuestionTimer {
     },
     pause(now) {
       flush(now);
+      hidden = true;
     },
     resume(now) {
+      hidden = false;
       // A resume that doesn't follow a pause (since is already running, or
       // nothing is entered) must never reset the running interval's start.
       if (current !== null && since === null) since = now;
     },
     snapshot(now) {
+      // Restart the clock afterward only if it was actually running before
+      // this call -- a snapshot taken while paused (since already null)
+      // must stay paused, not silently resume counting.
+      const running = since !== null;
       flush(now);
-      if (current !== null) since = now; // keep counting past the snapshot instant
+      if (running) since = now;
       return { ...totals };
     },
   };

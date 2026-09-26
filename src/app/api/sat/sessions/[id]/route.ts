@@ -19,10 +19,16 @@ export const runtime = "nodejs";
 const answersSchema = z.record(z.string().max(80), z.string().max(12)).refine((a) => Object.keys(a).length <= 200);
 const flaggedSchema = z.array(z.string().max(80)).max(200);
 const stageSchema = z.enum(["rw.m1", "rw.m2", "math.m1", "math.m2"]);
-// Per-question active time, ms (spec 7.1) -- a generous sanity ceiling (4h);
-// the real per-question caps (a stage's own minutes, or 30 min for a drill)
-// are enforced by mergeTime in session.ts/drills.ts, not here.
-const timeMsSchema = z.record(z.string().max(80), z.number().int().min(0).max(4 * 3600_000)).optional();
+// Per-question active time, ms (spec 7.1). Timing data must never block an
+// answer: a value over the 4h sanity ceiling is CLAMPED, not rejected (an
+// unusually long-open tab is a pacing-data quality issue, not a reason to
+// fail the whole save/submit/check); the real per-question caps (a stage's
+// own minutes, or 30 min for a drill) are enforced by mergeTime in
+// session.ts/drills.ts, not here. Capped at 200 keys, same reasoning as
+// answersSchema above.
+const timeMsSchema = z.record(z.string().max(80), z.number().int().min(0).transform((v) => Math.min(v, 4 * 3600_000)))
+  .refine((o) => Object.keys(o).length <= 200)
+  .optional();
 const action = z.discriminatedUnion("action", [
   z.object({ action: z.literal("save"), stage: stageSchema, answers: answersSchema, flagged: flaggedSchema, timeMs: timeMsSchema }),
   z.object({ action: z.literal("submit"), stage: stageSchema, answers: answersSchema, flagged: flaggedSchema, timeMs: timeMsSchema }),

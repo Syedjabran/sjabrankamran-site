@@ -24,10 +24,14 @@ const fmt = (ms: number) => {
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
 };
 /** A timer snapshot restricted to one module's ids -- a save/submit body
- *  must carry only the module on screen, same rule as pickAnswers/pickFlagged. */
-const pickTime = (snapshot: Record<string, number>, ids: string[]): Record<string, number> => {
+ *  must carry only the module on screen, same rule as pickAnswers/pickFlagged.
+ *  A question never entered is left out entirely (never sent as 0), and
+ *  every value is clamped to `capMs` client-side too -- the server clamps
+ *  the same way, but timing data must never round-trip through a request
+ *  the server would otherwise have to reject. */
+const pickTime = (snapshot: Record<string, number>, ids: string[], capMs: number): Record<string, number> => {
   const out: Record<string, number> = {};
-  for (const id of ids) if (id in snapshot) out[id] = snapshot[id];
+  for (const id of ids) if (id in snapshot) out[id] = Math.min(snapshot[id], capMs);
   return out;
 };
 
@@ -219,7 +223,10 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
   // The question timer counts only while the tab is visible (spec 7.1).
+  // Seeded on mount too -- a page opened in a background tab must never
+  // start counting before the student has actually looked at it.
   useEffect(() => {
+    if (document.visibilityState === "hidden") timer.pause(Date.now());
     const onVisibility = () => {
       if (document.visibilityState === "visible") timer.resume(Date.now());
       else timer.pause(Date.now());
@@ -267,10 +274,11 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
       if (submittedStage.current === stageKey) { setSave("idle"); return; } // a submit took over
       setSave("saving");
       const ids = stateRef.current?.stage?.questions.map((x) => x.id) ?? [];
+      const capMs = (stateRef.current?.stage?.minutes ?? 0) * 60_000;
       const seqAtSend = editSeq.current;
       const body = {
         action: "save" as const, stage: stageKey, answers: pickAnswers(answersRef.current, ids), flagged: pickFlagged(flaggedRef.current, ids),
-        timeMs: pickTime(timer.snapshot(Date.now()), ids),
+        timeMs: pickTime(timer.snapshot(Date.now()), ids, capMs),
       };
       const result = await postRaw(body);
       if (submittedStage.current === stageKey) { setSave("idle"); return; } // ditto, while this request was in flight
@@ -323,10 +331,12 @@ export function SatRunner({ sessionId }: { sessionId: string }) {
     try {
       // Wait for an in-flight save to settle (enqueue puts us right after it in the same chain), then submit with the latest local answers.
       await enqueue(async () => {
-        const ids = stateRef.current?.stage?.key === stageKey ? (stateRef.current?.stage?.questions.map((x) => x.id) ?? []) : [];
+        const onStage = stateRef.current?.stage?.key === stageKey;
+        const ids = onStage ? (stateRef.current?.stage?.questions.map((x) => x.id) ?? []) : [];
+        const capMs = onStage ? (stateRef.current?.stage?.minutes ?? 0) * 60_000 : 0;
         const body = {
           action: "submit" as const, stage: stageKey, answers: pickAnswers(answersRef.current, ids), flagged: pickFlagged(flaggedRef.current, ids),
-          timeMs: pickTime(timer.snapshot(Date.now()), ids),
+          timeMs: pickTime(timer.snapshot(Date.now()), ids, capMs),
         };
         const result = await postRaw(body, "The connection timed out — your answers are kept. Press Submit again.");
         if (result.kind === "error") {

@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
-import type { DrillState, ReviewItem } from "@/lib/sat/client-types";
+import { DRILL_TIME_CAP_MS, type DrillState, type ReviewItem } from "@/lib/sat/client-types";
 import { validateSPR } from "@/lib/sat/grade";
 import { SprPad } from "./spr-pad";
 import { QuestionImage } from "./question-image";
@@ -24,7 +24,10 @@ export function SatDrill({ initial }: { initial: DrillState }) {
   const { urls, error: imgError, missing: imgMissing, resign } = useSignedImages(state.questions.flatMap((x) => [x.img, state.checked[x.id]?.rationaleImg ?? ""]));
   useEffect(() => setResponse(""), [idx]);
   // The question timer counts only while the tab is visible (spec 7.1).
+  // Seeded on mount too -- a page opened in a background tab must never
+  // start counting before the student has actually looked at it.
   useEffect(() => {
+    if (document.visibilityState === "hidden") timer.pause(Date.now());
     const onVisibility = () => {
       if (document.visibilityState === "visible") timer.resume(Date.now());
       else timer.pause(Date.now());
@@ -64,10 +67,14 @@ export function SatDrill({ initial }: { initial: DrillState }) {
   async function check() {
     setBusy(true); setError(null);
     try {
-      const spent = timer.snapshot(Date.now())[q.id] ?? 0;
+      // A question never entered (shouldn't normally happen, but never send
+      // a false "0 ms" for it) is left out of the body entirely -- clamped
+      // client-side too, though the server clamps the same way regardless.
+      const snap = timer.snapshot(Date.now());
+      const timeMs = q.id in snap ? { [q.id]: Math.min(snap[q.id], DRILL_TIME_CAP_MS) } : undefined;
       const res = await fetch(`/api/sat/sessions/${state.id}`, {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "check", questionId: q.id, response, timeMs: { [q.id]: spent } }),
+        body: JSON.stringify({ action: "check", questionId: q.id, response, timeMs }),
         signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
       });
       const j = await res.json().catch(() => ({}));

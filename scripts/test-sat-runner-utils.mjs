@@ -333,5 +333,40 @@ assert.equal(sprAnswerPreview("1.2.3"), null);
   timer.resume(500);
   assert.deepEqual(timer.snapshot(1000), { a: 1000 }, "an extra resume call does not reset the running interval");
 }
+{
+  // Fix round 1 probe 1: a snapshot (or an enter) landing while the tab is
+  // still hidden must not silently restart the clock -- only an actual
+  // resume may. enter a@0, pause@1000, snapshot@2000 (still hidden),
+  // resume@5000, snapshot@6000 -> { a: 2000 }, never { a: 5000 }.
+  const timer = createQuestionTimer();
+  timer.enter("a", 0);
+  timer.pause(1000);
+  assert.deepEqual(timer.snapshot(2000), { a: 1000 }, "a snapshot while still hidden must not start counting hidden time");
+  timer.resume(5000);
+  assert.deepEqual(timer.snapshot(6000), { a: 2000 }, "only the resumed 1s (5000-6000) is added, not the hidden gap");
+}
+{
+  // Fix round 1 probe 2: an enter() while still hidden (leaving one question
+  // for another during a background tab) must not start b's clock either --
+  // only the later resume does. enter a@0, pause@1000, leave+enter b@2000
+  // (still hidden), resume@5000, snapshot@6000 -> b: 1000, never b: 4000.
+  const timer = createQuestionTimer();
+  timer.enter("a", 0);
+  timer.pause(1000);
+  timer.leave(2000);
+  timer.enter("b", 2000);
+  timer.resume(5000);
+  assert.deepEqual(timer.snapshot(6000), { a: 1000, b: 1000 }, "b only counts from resume (5000) to the snapshot (6000)");
+}
+{
+  // A pause seeded before anything is ever entered (the page opened in a
+  // background tab) must still hold the clock until the matching resume.
+  const timer = createQuestionTimer();
+  timer.pause(0);
+  timer.enter("a", 100);
+  assert.deepEqual(timer.snapshot(200), {}, "entering a question while still hidden accumulates nothing");
+  timer.resume(300);
+  assert.deepEqual(timer.snapshot(400), { a: 100 }, "counting starts only once resumed");
+}
 
 console.log("sat-runner-utils tests passed");
