@@ -11,17 +11,20 @@
 //     where the student's accuracy on that skill is < 70% (else one step up
 //     from the hardest difficulty they've attempted; "M" with no data at
 //     all for that skill).
-//   - review: questions answered wrong >= 7 days ago (oldest first, each
-//     re-asked at most once -- times < 2), then questions from skills not
-//     practised in >= 7 days (never, counts as stale).
+//   - review: questions answered wrong >= 7 days ago (oldest first), then
+//     questions from skills not practised in >= 7 days (never, counts as
+//     stale).
 //   - stretch: one difficulty above the most-improving skill's (max trend)
 //     best difficulty -- the highest difficulty it has >= 70% accuracy at
 //     ("M" with no data at all).
-// Every pick excludes `exclude`, and a question answered correctly in the
-// last 30 days, and prefers a question never seen (not in `history`) within
-// its pool. Any shortfall (a slot with no eligible candidate) is filled at
-// the end with balanced unseen medium questions across the 8 domains. No
-// analytics -> the whole challenge is that balanced-domain fill.
+// Every pick excludes `exclude`, a question answered correctly in the last
+// 30 days, and a question already re-asked once (history.times >= 2 --
+// spec 6.2's "re-asked at most once" applies on every path, not only
+// review: a question never shows a third time), and prefers a question
+// never seen (not in `history`) within its pool. Any shortfall (a slot with
+// no eligible candidate) is filled at the end with balanced unseen medium
+// questions across the 8 domains. No analytics -> the whole challenge is
+// that balanced-domain fill.
 import type { SATDifficulty } from "../types.ts";
 import type { MasteryRow, SATAnalytics } from "../client-types.ts";
 import { SAT_DOMAIN_IDS } from "../client-types.ts";
@@ -69,8 +72,17 @@ function recentlyCorrect(id: string, now: number, history: History): boolean {
   return Boolean(h) && h!.lastCorrect && now - h!.lastAt < RECENT_CORRECT_DAYS * DAY_MS;
 }
 
+/** Spec 6.2: a question is "re-asked at most once" -- once `times` reaches 2
+ *  (its original showing plus one re-ask) it never shows a third time, on
+ *  any path (weak, review, stretch, balanced or shortfall fill), whatever
+ *  its outcome was. */
+function askedTwice(id: string, history: History): boolean {
+  const h = history.get(id);
+  return Boolean(h) && h!.times >= 2;
+}
+
 function eligible(id: string, now: number, history: History, exclude: Set<string>, used: Set<string>): boolean {
-  return !exclude.has(id) && !used.has(id) && !recentlyCorrect(id, now, history);
+  return !exclude.has(id) && !used.has(id) && !recentlyCorrect(id, now, history) && !askedTwice(id, history);
 }
 
 /** Attempts and accuracy for one skill at one difficulty, from the finished
@@ -188,12 +200,13 @@ function fillWeak(
   return ids;
 }
 
-/** Wrong-answered questions eligible for spaced review, oldest first (spec
- *  6.2: "re-asked at most once" -- times < 2, the question is not yet on
- *  its second re-ask). */
+/** Wrong-answered questions old enough for spaced review, oldest first.
+ *  `eligible()` (called on each one before it's used) is the single place
+ *  that enforces "re-asked at most once" (`askedTwice`), so this only
+ *  narrows to "wrong" and "old enough". */
 function wrongReviewCandidates(now: number, byId: Map<string, BankLite>, history: History): string[] {
   return [...history.entries()]
-    .filter(([id, h]) => !h.lastCorrect && h.times < 2 && now - h.lastAt >= REVIEW_REASK_DAYS * DAY_MS && byId.has(id))
+    .filter(([id, h]) => !h.lastCorrect && now - h.lastAt >= REVIEW_REASK_DAYS * DAY_MS && byId.has(id))
     .sort((a, b) => a[1].lastAt - b[1].lastAt)
     .map(([id]) => id);
 }

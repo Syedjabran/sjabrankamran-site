@@ -154,6 +154,63 @@ function baseFixture() {
   assert.ok(result.ids.includes("stale0"), "the review slot is filled from the never-practised skill");
 }
 
+// --- 8 (fix round 1 repro): a weak-slot question already re-asked once
+// (times: 2) is never shown a third time, even as the only candidate
+{
+  const analytics = emptyAnalytics({
+    weakSkills: [{ key: "alpha skill", label: "Alpha Skill", domain: "algebra", section: "math", mastery: 0.3, priority: 0.3 }],
+  });
+  const bank = [bankItem("alpha0", "math", "algebra", "Alpha Skill", "M")];
+  const history = new Map([["alpha0", { lastAt: NOW - 8 * DAY, lastCorrect: false, times: 2 }]]);
+  const result = buildChallenge({ bank, analytics, history, size: 1, now: NOW, rng: rngZero, exclude: new Set() });
+  assert.deepEqual(result.ids, [], "a weak-slot candidate asked twice is never picked, even with no other candidate to fall back on");
+}
+
+// --- 9 (fix round 1 repro): same rule in the no-analytics balanced path
+{
+  const bank = [bankItem("q1", "math", "algebra", "Any Skill", "M")];
+  const history = new Map([["q1", { lastAt: NOW - 8 * DAY, lastCorrect: false, times: 2 }]]);
+  const result = buildChallenge({ bank, analytics: null, history, size: 1, now: NOW, rng: rngZero, exclude: new Set() });
+  assert.deepEqual(result.ids, [], "the balanced-fill path never picks a question asked twice either");
+}
+
+// --- 10 (fix round 1): stretch shares the same rule. The stretch skill's
+// only candidate at its computed difficulty has been asked twice; a second,
+// unrelated (recently-correct, so itself never pickable) attempt exists
+// only to push the skill's "best difficulty" up to the one the asked-twice
+// item sits at.
+{
+  const analytics = emptyAnalytics({
+    skills: [{ key: "epsilon skill", label: "Epsilon Skill", section: "math", domain: "advanced-math", attempts: 2, correct: 1, mastery: 0.5, confidence: 2, trend: 0.3, lastAt: NOW }],
+  });
+  const bank = [
+    bankItem("epsilon-mastered", "math", "advanced-math", "Epsilon Skill", "M"),
+    bankItem("epsilon-h-asked", "math", "advanced-math", "Epsilon Skill", "H"),
+  ];
+  const history = new Map([
+    ["epsilon-mastered", { lastAt: NOW, lastCorrect: true, times: 1 }], // mastered at M -> stretch targets H
+    ["epsilon-h-asked", { lastAt: NOW - 8 * DAY, lastCorrect: false, times: 2 }], // the only H candidate, already re-asked once
+  ]);
+  const result = buildChallenge({ bank, analytics, history, size: 4, now: NOW, rng: rngZero, exclude: new Set() });
+  assert.equal(result.ids.includes("epsilon-h-asked"), false, "stretch never shows a question asked twice either");
+  assert.deepEqual(result.ids, [], "no other candidate exists anywhere in the bank");
+}
+
+// --- 11 (fix round 1): shortfall fill respects the rule too, so a small
+// pool yields a shorter challenge rather than a third showing (the ruling's
+// stated consequence) -- one weak-skill question is used, and the only
+// other bank question anywhere is asked twice, so the requested size 3
+// comes back as 1
+{
+  const analytics = emptyAnalytics({
+    weakSkills: [{ key: "solo skill", label: "Solo Skill", domain: "algebra", section: "math", mastery: 0.2, priority: 0.5 }],
+  });
+  const bank = [bankItem("solo0", "math", "algebra", "Solo Skill", "M"), bankItem("fill-asked", "math", "psda", "Filler", "M")];
+  const history = new Map([["fill-asked", { lastAt: NOW - 3 * DAY, lastCorrect: false, times: 2 }]]);
+  const result = buildChallenge({ bank, analytics, history, size: 3, now: NOW, rng: rngZero, exclude: new Set() });
+  assert.deepEqual(result.ids, ["solo0"], "the shortfall fill has nowhere eligible to go, so the challenge comes back short rather than reusing 'fill-asked'");
+}
+
 console.log("sat-coach-challenge-builder tests passed");
 
 // =============================================================================
