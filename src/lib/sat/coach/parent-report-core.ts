@@ -16,9 +16,13 @@
 //
 // No invented scores (spec 3, rule 3): only the official practice ranges and
 // the labelled adaptive estimates the analytics already hold are shown, and
-// an AI summary that mentions any score-like number it wasn't given is
-// rejected. AI data minimisation (rule 4): the summary prompt carries the
-// first name and the week's numbers only.
+// an AI summary that mentions any score-like number -- or any "points"
+// figure -- it wasn't given is rejected. AI data minimisation (rule 4): the
+// summary prompt carries the first name and the week's numbers only.
+//
+// The weekly run's pure rules live here too: which sections a student's
+// email has (sectionsFor / sectionsOrPhysics) and the deadline loop that
+// checkpoints after every student (runBeforeDeadline).
 //
 // Email HTML: table-based, inline styles only, max 600 px wide, dark text on
 // white; every interpolated string goes through escapeHtml.
@@ -27,6 +31,7 @@ import { planItemTitle } from "../client-types.ts";
 import type { SATScore } from "../types.ts";
 import type { AnalyticsItem, SittingScore } from "../analytics.ts";
 import type { DoneMap } from "./plan-logic.ts";
+import type { Course } from "../../portal/course-labels.ts";
 import { formatPk, formatPkDay, pkToday } from "../../portal/pk-time.ts";
 import { addDays, daysBetween, horizonEnd } from "./planner.ts";
 import { isoWeekRange } from "./goals.ts";
@@ -105,6 +110,50 @@ const SAT_UNAVAILABLE = "Digital SAT: this week's SAT summary couldn't be prepar
 const SIGN_OFF = ["Warm regards,", "Syed Jabran Ali Kamran", "sjabrankamran.com"];
 const TEXT_RULE = "------------------------------";
 
+// --- the weekly run ---------------------------------------------------------------
+
+export type Sections = { physics: boolean; sat: boolean };
+
+/** The sections a student's email has, from their courses: Digital SAT for
+ *  SAT; Physics for a physics course -- and for every student without SAT,
+ *  so each family that got the Saturday email before SAT existed still gets
+ *  it (a student with no active class and no grant included). Only SAT-only
+ *  students skip Physics. */
+export function sectionsFor(allowed: readonly Course[]): Sections {
+  const sat = allowed.includes("SAT");
+  return { physics: allowed.includes("9702") || allowed.includes("5054") || !sat, sat };
+}
+
+/** sectionsFor the courses `read` resolves. When that read fails: the email
+ *  the student got before SAT existed -- Physics only -- after reporting the
+ *  failure, so a registry or grants outage never costs a family its email. */
+export async function sectionsOrPhysics(read: () => Promise<readonly Course[]>, onError: (e: unknown) => void): Promise<Sections> {
+  try {
+    return sectionsFor(await read());
+  } catch (e) {
+    onError(e);
+    return { physics: true, sat: false };
+  }
+}
+
+/** Works through `items` in order, starting each one only while `now()` is
+ *  before `deadlineAt`. `handle` says whether the item is complete, and a
+ *  complete one is checkpointed (`onComplete`) straight away, so a run the
+ *  platform kills re-sends nobody already done. `partial`: the deadline
+ *  stopped it with items left. */
+export async function runBeforeDeadline<T>(
+  items: readonly T[],
+  opts: { now: () => number; deadlineAt: number; handle: (item: T) => Promise<boolean>; onComplete: (item: T) => Promise<void> },
+): Promise<{ processed: number; partial: boolean }> {
+  let processed = 0;
+  for (const item of items) {
+    if (opts.now() >= opts.deadlineAt) return { processed, partial: true };
+    if (await opts.handle(item)) await opts.onComplete(item);
+    processed++;
+  }
+  return { processed, partial: false };
+}
+
 // --- the week ------------------------------------------------------------------
 
 /** The student's first name for a parent: first word, never an email; "Your
@@ -113,6 +162,11 @@ export function parentFirstName(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed || trimmed.startsWith("@")) return NAME_FALLBACK;
   return sanitiseFirstName(trimmed);
+}
+
+/** The name inside a sentence: "your child", not "Your child". */
+function nameMidSentence(firstName: string): string {
+  return firstName === NAME_FALLBACK ? NAME_FALLBACK.toLowerCase() : firstName;
 }
 
 /** The Monday-to-Sunday week holding `runDate`, and the week before it. */
@@ -133,6 +187,17 @@ function outcomeOf(item: PlanItem, runDate: string, done: DoneMap): "done" | "la
   if (finish) return finish.finishedDate <= item.date ? "done" : "late";
   if (item.status === "missed" || item.date < runDate) return "missed";
   return "upcoming";
+}
+
+/** The plan with the finishes it hasn't recorded yet applied (done on the
+ *  item's day, late after it) -- what the streak is counted from, so it
+ *  agrees with the tallies. */
+function withFinishes(items: PlanItem[], done: DoneMap): PlanItem[] {
+  return items.map((item): PlanItem => {
+    const finish = done[item.id];
+    if (!finish || item.status === "done" || item.status === "late") return item;
+    return { ...item, status: finish.finishedDate <= item.date ? "done" : "late", sessionId: finish.sessionId, completedAt: finish.finishedDate };
+  });
 }
 
 /** This week's daily sessions: due so far (done / late / missed) and still
@@ -260,7 +325,7 @@ export function satWeekFrom(input: SatWeekInput): SatWeek {
     accuracyPrev: percent(lastWeek.correct, lastWeek.answered),
     minutes: Math.round(thisWeek.ms / 60_000),
     fullExam: weekFullExam(input.planItems, week, input.done, (id) => scoreById.get(id) ?? null),
-    streak: planStreak(input.planItems, week.runDate),
+    streak: planStreak(withFinishes(input.planItems, input.done), week.runDate),
     ...examTiming(input.profile, week.runDate),
     targetScore: input.profile.targetScore,
     scores: rows,
@@ -335,6 +400,7 @@ export function summaryPrompt(w: SatWeek): { system: string; user: string } {
       questionsAnswered: w.answered,
       accuracyPercent: w.accuracy,
       lastWeekAccuracyPercent: w.accuracyPrev,
+      accuracyChangePoints: accuracyChange(w),
       minutesPractised: w.minutes,
       fullExam: w.fullExam.status,
       streak: w.streak,
@@ -346,17 +412,31 @@ export function summaryPrompt(w: SatWeek): { system: string; user: string } {
   return { system, user };
 }
 
+/** This week's accuracy minus last week's, in percentage points; null
+ *  unless both weeks had answers. */
+function accuracyChange(w: Pick<SatWeek, "accuracy" | "accuracyPrev">): number | null {
+  return w.accuracy !== null && w.accuracyPrev !== null ? w.accuracy - w.accuracyPrev : null;
+}
+
+// "120 points", "50 pts", "7 percentage points": a points figure must be one
+// the AI was given, whatever its size (a score gain is still a score).
+const POINTS = /(\d+)\s*(?:percentage\s+)?(?:points?|pts?)\b/gi;
+
 function onlyKnownNumbers(text: string, w: SatWeek): boolean {
+  const change = accuracyChange(w);
   const known = new Set(
-    [w.scheduled, w.done, w.late, w.missed, w.upcoming, w.answered, w.accuracy, w.accuracyPrev, w.minutes, w.streak, w.daysToExam]
+    [w.scheduled, w.done, w.late, w.missed, w.upcoming, w.answered, w.accuracy, w.accuracyPrev, w.minutes, w.streak, w.daysToExam, change === null ? null : Math.abs(change)]
       .filter((n): n is number => typeof n === "number"),
   );
-  const numbers = text.replace(/(\d),(?=\d{3}\b)/g, "$1").match(/\d+/g) ?? [];
-  return numbers.every((n) => Number(n) < SCORE_LIKE_MIN || known.has(Number(n)));
+  const plain = text.replace(/(\d),(?=\d{3}\b)/g, "$1");
+  const numbers = plain.match(/\d+/g) ?? [];
+  const points = [...plain.matchAll(POINTS)].map((m) => Number(m[1]));
+  return numbers.every((n) => Number(n) < SCORE_LIKE_MIN || known.has(Number(n))) && points.every((n) => known.has(n));
 }
 
 /** The AI reply's summary when it is usable: one or two sentences, at most
- *  280 characters, and no score-like number it wasn't given. Else null. */
+ *  280 characters, and no score-like number -- nor any points figure -- it
+ *  wasn't given. Else null. */
 export function parseSummary(json: unknown, w: SatWeek): string | null {
   if (!json || typeof json !== "object" || Array.isArray(json)) return null;
   const raw = (json as { summary?: unknown }).summary;
@@ -672,7 +752,7 @@ export type ParentEmail = { subject: string; text: string; html: string };
 
 function satOnlyEmail(studentName: string, guardianName: string, w: SatWeek): ParentEmail {
   const greeting = `Dear ${guardianName},`;
-  const intro = `Here is this week's Digital SAT update for ${w.firstName}.`;
+  const intro = `Here is this week's Digital SAT update for ${nameMidSentence(w.firstName)}.`;
   return {
     subject: `Digital SAT weekly update — ${studentName}`,
     text: [greeting, "", intro, "", renderSatSectionText(w), "", ...SIGN_OFF].join("\n"),

@@ -3,29 +3,30 @@ import { guardianContacts, isOnboardingComplete } from "@/lib/portal/onboarding"
 import { buildStats, composeProgressEmail, type ProgressStats } from "@/lib/portal/progress-report";
 import { sendMail } from "@/lib/portal/mail";
 import { readStorageJson } from "@/lib/portal/forum";
-import { resolveCourseAccess } from "@/lib/portal/course-access";
+import { resolveCourseAccess, type Course } from "@/lib/portal/course-access";
 import { buildSatWeek } from "@/lib/sat/coach/parent-report";
-import { composeParentEmail, type SatWeek } from "@/lib/sat/coach/parent-report-core";
+import { composeParentEmail, runBeforeDeadline, sectionsOrPhysics, type SatWeek } from "@/lib/sat/coach/parent-report-core";
 
 const BUCKET = "portal-data";
-// Progress is checkpointed every N finished students (and at the end), so a
-// run cut short by the serverless time limit resumes where it stopped and a
-// re-run never re-emails families that already have this week's report.
-const CHECKPOINT_EVERY = 5;
+// No new student is started after this long from the run's start: the route
+// has 300 s, and one student (Physics stats, SAT data, a guardian or two)
+// fits comfortably in the minute left. Progress is checkpointed after EVERY
+// completed student, so a run stopped here -- or killed anyway -- resumes
+// where it stopped and a re-run never re-emails a family already done.
+const DEADLINE_MS = 240_000;
 // The SAT section's two-line AI summary is asked for only early in the run:
-// one call can take ~20 s (plus a retry) and the route has 300 s for every
-// student, so later students get the deterministic summary instead.
+// one call can take ~20 s (plus a retry), so later students get the
+// deterministic summary instead.
 const AI_WINDOW_MS = 120_000;
 
 type Db = ReturnType<typeof createAdminClient>;
-type Subjects = { physics: boolean; sat: boolean };
 
-/** The sections a student's email has, from the portal's own course access:
- *  Physics for a 9702/5054 course, Digital SAT for SAT. Strict: a failed
- *  enrolment, registry or subject-grants read throws -- never "no subjects". */
-async function subjectsOf(uid: string): Promise<Subjects> {
-  const { allowed } = await resolveCourseAccess({ id: uid, email: "", fullName: "", roles: ["student"], status: "active" }, { strict: true });
-  return { physics: allowed.includes("9702") || allowed.includes("5054"), sat: allowed.includes("SAT") };
+const message = (e: unknown) => (e instanceof Error ? e.message : e);
+
+/** The student's courses (the portal's own course access). Strict: a failed
+ *  enrolment, registry or subject-grants read throws. */
+async function coursesOf(uid: string): Promise<Course[]> {
+  return (await resolveCourseAccess({ id: uid, email: "", fullName: "", roles: ["student"], status: "active" }, { strict: true })).allowed;
 }
 
 /** The Physics stats exactly as before the SAT section existed; null when the
@@ -44,18 +45,20 @@ async function satWeekOf(uid: string, weekKey: string, fullName: string, ai: boo
   try {
     return await buildSatWeek(uid, weekKey, { ai, fullName, accessChecked: true });
   } catch (e) {
-    console.error("saturday-parent-reports: SAT section failed", uid, e instanceof Error ? e.message : e);
+    console.error("saturday-parent-reports: SAT section failed", uid, message(e));
     return "unavailable";
   }
 }
 
 /**
- * One email per guardian with a section per subject the student has (SAT
- * Coach spec 9): Physics exactly as before (a physics-only email is
- * unchanged), then Digital SAT; SAT-only students get the SAT section alone.
- * A student with neither subject, or no guardian email, is skipped. A
- * student whose subjects -- or, for an SAT-only student, whose SAT data --
- * can't be read counts as failed and stays unsent, so a re-run retries them.
+ * One email per guardian with a section per subject (SAT Coach spec 9):
+ * Physics exactly as before for every student who isn't SAT-only (a
+ * physics-only email is unchanged), then Digital SAT; SAT-only students get
+ * the SAT section alone. When the student's courses can't be read, the old
+ * Physics-only email goes out. A student with no guardian email is skipped;
+ * an SAT-only student whose SAT data can't be read counts as failed and stays
+ * unsent, so a re-run retries them. `partial`: the run stopped at the
+ * deadline with `remaining` students still to do (a re-run carries on).
  */
 export async function sendSaturdayParentReports(weekKey: string) {
   const startedAt = Date.now();
@@ -80,19 +83,16 @@ export async function sendSaturdayParentReports(weekKey: string) {
     const checks = await Promise.all(batch.map(async (uid) => ({ uid, ok: !completed.has(uid) && await isOnboardingComplete(uid) })));
     eligible.push(...checks.filter((x) => x.ok).map((x) => x.uid));
   }
-  let sent = 0, queued = 0, skipped = uids.length - eligible.length, failed = 0, unsaved = 0;
-  for (const uid of eligible) {
-    if (completed.has(uid)) { skipped++; continue; }
-    let subjects: Subjects;
-    let contacts: Awaited<ReturnType<typeof guardianContacts>>;
-    try {
-      [subjects, contacts] = await Promise.all([subjectsOf(uid), guardianContacts(uid)]);
-    } catch (e) {
-      failed++;
-      console.error("saturday-parent-reports: subjects couldn't be read", uid, e instanceof Error ? e.message : e);
-      continue;
-    }
-    if (!contacts.length || (!subjects.physics && !subjects.sat)) { skipped++; continue; }
+  let sent = 0, queued = 0, skipped = uids.length - eligible.length, failed = 0;
+
+  /** One student's emails; true when every guardian's was sent or queued. */
+  async function reportStudent(uid: string): Promise<boolean> {
+    if (completed.has(uid)) { skipped++; return false; }
+    const [subjects, contacts] = await Promise.all([
+      sectionsOrPhysics(() => coursesOf(uid), (e) => console.error("saturday-parent-reports: courses couldn't be read; sending the Physics email as before", uid, message(e))),
+      guardianContacts(uid),
+    ]);
+    if (!contacts.length) { skipped++; return false; }
     const { data: profile } = await db.from("edu_profiles").select("full_name,email").eq("id", uid).maybeSingle();
     const name = profile?.full_name || profile?.email || "Student";
     const [stats, sat] = await Promise.all([
@@ -100,8 +100,8 @@ export async function sendSaturdayParentReports(weekKey: string) {
       // The SAT side never sees the email address: first name only.
       subjects.sat ? satWeekOf(uid, weekKey, profile?.full_name || "", Date.now() - startedAt < AI_WINDOW_MS) : Promise.resolve(null),
     ]);
-    if (!stats && sat === "unavailable") { failed++; continue; }
-    if (!stats && !sat) { skipped++; continue; }
+    if (!stats && sat === "unavailable") { failed++; return false; }
+    if (!stats && !sat) { skipped++; return false; }
     const sections = [stats ? "physics" : null, sat && sat !== "unavailable" ? "sat" : null].filter((s): s is string => s !== null);
     let allSent = true;
     for (const contact of contacts) {
@@ -113,11 +113,21 @@ export async function sendSaturdayParentReports(weekKey: string) {
       else if (result.status === "queued") queued++;
       else allSent = false;
     }
-    if (allSent) {
-      completed.add(uid);
-      if (++unsaved >= CHECKPOINT_EVERY) { await saveProgress(); unsaved = 0; }
-    }
+    return allSent;
   }
+
+  const run = await runBeforeDeadline(eligible, {
+    now: Date.now,
+    deadlineAt: startedAt + DEADLINE_MS,
+    handle: reportStudent,
+    onComplete: async (uid) => {
+      completed.add(uid);
+      await saveProgress();
+    },
+  });
   await saveProgress();
-  return { ok: true, students: uids.length, completed: completed.size, sent, queued, skipped, failed };
+  return {
+    ok: true, students: uids.length, completed: completed.size, sent, queued, skipped, failed,
+    partial: run.partial, remaining: eligible.length - run.processed,
+  };
 }

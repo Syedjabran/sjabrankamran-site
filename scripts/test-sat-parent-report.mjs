@@ -8,7 +8,8 @@
 import assert from "node:assert/strict";
 import {
   activityIn, composeParentEmail, fallbackSummary, parentFirstName, parseSummary, renderSatSectionHtml, renderSatSectionText,
-  reportWeek, satWeekFrom, sessionTally, summaryPrompt, textBlockHtml, warningLevel, warningText, weekFullExam, COLORS,
+  reportWeek, runBeforeDeadline, satWeekFrom, sectionsFor, sectionsOrPhysics, sessionTally, summaryPrompt, textBlockHtml,
+  warningLevel, warningText, weekFullExam, COLORS,
 } from "../src/lib/sat/coach/parent-report-core.ts";
 import { formatPk, formatPkDay } from "../src/lib/portal/pk-time.ts";
 
@@ -364,6 +365,86 @@ const item = (id, date, kind, status, extra = {}) => ({ id, date, kind, status, 
   assert.ok(unavailable.html.startsWith(OLD(physics.body)));
   assert.equal(composeParentEmail({ studentName: "Ali Khan", guardianName: "Mrs Khan", physics: null, sat: "unavailable" }), null);
   assert.equal(composeParentEmail({ studentName: "Ali Khan", guardianName: "Mrs Khan", physics: null, sat: null }), null);
+}
+
+// --- 15 (fix round 1): sectionsFor -- every family that got the email before still gets Physics
+{
+  assert.deepEqual(sectionsFor([]), { physics: true, sat: false }, "no course (no active class, no grant) -> Physics as before");
+  assert.deepEqual(sectionsFor(["SAT"]), { physics: false, sat: true }, "SAT-only -> SAT only");
+  assert.deepEqual(sectionsFor(["9702", "SAT"]), { physics: true, sat: true });
+  assert.deepEqual(sectionsFor(["5054"]), { physics: true, sat: false });
+  assert.deepEqual(sectionsFor(["9702"]), { physics: true, sat: false });
+}
+
+// --- 16 (fix round 1): a failed subjects read falls back to the Physics-only email
+{
+  const errors = [];
+  const failing = await sectionsOrPhysics(async () => { throw new Error("registry unreadable"); }, (e) => errors.push(e));
+  assert.deepEqual(failing, { physics: true, sat: false }, "the old Physics email, never 'failed'");
+  assert.equal(errors.length, 1, "the failure is reported");
+  assert.equal(errors[0].message, "registry unreadable");
+  const ok = await sectionsOrPhysics(async () => ["SAT"], (e) => errors.push(e));
+  assert.deepEqual(ok, { physics: false, sat: true });
+  assert.equal(errors.length, 1, "a good read reports nothing");
+}
+
+// --- 17 (fix round 1): the run stops taking students at the deadline and checkpoints after each one
+{
+  let clock = 0;
+  const handled = [];
+  const saved = [];
+  const run = await runBeforeDeadline(["a", "b", "c", "d", "e"], {
+    now: () => clock,
+    deadlineAt: 240_000,
+    handle: async (uid) => { handled.push(uid); clock += 100_000; return uid !== "b"; },
+    onComplete: async (uid) => { saved.push([uid, clock]); },
+  });
+  assert.deepEqual(run, { processed: 3, partial: true }, "a (t=0), b (t=100 s), c (t=200 s) start; d (t=300 s) doesn't");
+  assert.deepEqual(handled, ["a", "b", "c"]);
+  assert.deepEqual(saved, [["a", 100_000], ["c", 300_000]], "a checkpoint right after every completed student, none for an unsent one");
+
+  const all = await runBeforeDeadline(["a", "b"], { now: () => 0, deadlineAt: 240_000, handle: async () => true, onComplete: async () => {} });
+  assert.deepEqual(all, { processed: 2, partial: false });
+  const none = await runBeforeDeadline(["a"], { now: () => 240_000, deadlineAt: 240_000, handle: async () => true, onComplete: async () => {} });
+  assert.deepEqual(none, { processed: 0, partial: true }, "past the deadline nobody new is started");
+}
+
+// --- 18 (fix round 1): "points" must be a number the AI was given
+{
+  const w = week({ accuracy: 72, accuracyPrev: 65 });
+  assert.equal(parseSummary({ summary: "Ali's accuracy went up 120 points this week." }, w), null, "an invented points gain");
+  assert.equal(parseSummary({ summary: "Ali could gain 50 pts with more practice." }, w), null, "pts too");
+  assert.equal(parseSummary({ summary: "Ali's accuracy rose 7 points to 72%." }, w), "Ali's accuracy rose 7 points to 72%.", "the real change is fine");
+  assert.equal(JSON.parse(summaryPrompt(w).user).thisWeek.accuracyChangePoints, 7, "the prompt gives the change");
+  assert.equal(JSON.parse(summaryPrompt(week({ accuracyPrev: null })).user).thisWeek.accuracyChangePoints, null);
+}
+
+// --- 19 (fix round 1): "your child" mid-sentence
+{
+  const email = composeParentEmail({ studentName: "Student", guardianName: "Parent/Guardian", physics: null, sat: week({ firstName: "Your child" }) });
+  assert.ok(email.text.includes("Here is this week's Digital SAT update for your child."));
+  assert.ok(email.html.includes("Here is this week&#39;s Digital SAT update for your child."));
+  assert.ok(email.text.includes("Your child missed 2 of 5"), "a sentence start keeps the capital");
+}
+
+// --- 20 (fix round 1): the streak counts a finish the plan hasn't recorded, like the tallies do
+{
+  const base = {
+    fullName: "Ali", runDate: RUN, profile: { examDate: "2026-11-07", targetMonth: null, targetScore: 1400 },
+    analytics: null, summaries: [], items: [],
+  };
+  const planItems = [
+    item("c1", "2026-09-23", "challenge", "done"),
+    item("c2", "2026-09-24", "challenge", "done"),
+    item("c3", "2026-09-25", "challenge", "missed"),          // finished on its day; the plan hasn't caught up
+  ];
+  const recorded = satWeekFrom({ ...base, planItems, done: {} });
+  assert.equal(recorded.streak, 0);
+  const w = satWeekFrom({ ...base, planItems, done: { c3: { finishedDate: "2026-09-25", sessionId: "s3" } } });
+  assert.equal(w.done, 3, "the tally counts it");
+  assert.equal(w.streak, 3, "and so does the streak");
+  const late = satWeekFrom({ ...base, planItems, done: { c3: { finishedDate: "2026-09-26", sessionId: "s3" } } });
+  assert.deepEqual([late.late, late.streak], [1, 0], "a late finish breaks the streak");
 }
 
 console.log("sat-parent-report tests passed");

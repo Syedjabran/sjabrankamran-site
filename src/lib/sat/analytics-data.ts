@@ -27,7 +27,7 @@ import {
 import type { History } from "./coach/challenge-builder.ts";
 import type { SATAnalytics, SessionSummary } from "./client-types.ts";
 import { itemsOf } from "./serve.ts";
-import { listSummaries, loadDocs } from "./store.ts";
+import { listSummaries, loadDocs, type SATDoc } from "./store.ts";
 
 const BUCKET = "portal-data";
 const SAFE_UID = /^[A-Za-z0-9_-]{6,64}$/;
@@ -67,11 +67,16 @@ function asCache(raw: unknown): AnalyticsCache | null {
   return c as AnalyticsCache;
 }
 
+/** What a caller already read fresh for this student, so it isn't read
+ *  again: the summaries, and any docs (a doc listed here is used instead of
+ *  re-reading it). */
+export type KnownReads = { summaries: SessionSummary[]; docs?: SATDoc[] };
+
 /** The student's analytics and per-question history (finished items only),
  *  or null when any read fails. */
-export async function studentAnalytics(uid: string, now: number): Promise<StudentAnalytics | null> {
+export async function studentAnalytics(uid: string, now: number, known?: KnownReads): Promise<StudentAnalytics | null> {
   if (!SAFE_UID.test(uid)) return null;
-  const summaries = await listSummaries(uid);
+  const summaries = known ? known.summaries : await listSummaries(uid);
   if (summaries === null) return null;
   const fingerprint = analyticsFingerprint(summaries);
   const day = pkToday(now);
@@ -83,8 +88,11 @@ export async function studentAnalytics(uid: string, now: number): Promise<Studen
   }
 
   const reuse = hit?.finished ?? {};
-  const docs = await loadDocs(uid, docsToLoad(summaries, reuse));
-  if (docs === null) return null;
+  const needed = docsToLoad(summaries, reuse);
+  const given = new Map((known?.docs ?? []).map((doc) => [doc.id, doc]));
+  const fetched = await loadDocs(uid, needed.filter((id) => !given.has(id)));
+  if (fetched === null) return null;
+  const docs = [...needed.flatMap((id) => given.get(id) ?? []), ...fetched];
   const loaded = new Map(docs.map((doc) => [doc.id, itemsOf(doc)]));
   // In summary order, so label and ranking ties never depend on the cache.
   const byDoc = new Map<string, AnalyticsItem[]>();

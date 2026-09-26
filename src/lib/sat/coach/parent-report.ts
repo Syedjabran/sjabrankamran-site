@@ -81,16 +81,10 @@ export async function buildSatWeek(uid: string, weekKey: string, opts: SatWeekOp
   const profile = await readProfile(uid);
   if (!profile) return null;
 
-  const now = Date.now();
-  const [plan, summaries, stats, fullName] = await Promise.all([
-    readPlan(uid),
-    listSummaries(uid),
-    studentAnalytics(uid, now),
-    opts.fullName ?? fullNameOf(uid),
-  ]);
+  // The summaries are read once: the week's docs come from them, and both go
+  // on to the analytics, which then reads neither again.
+  const summaries = await listSummaries(uid);
   if (summaries === null) throw unreadable("SAT history");
-  if (!stats) throw unreadable("SAT analytics");
-
   // Only docs with finished work that can hold an item answered since the
   // week before this one: a drill's items are dated at its finish (or its
   // start while open), a sitting's between its start and its finish.
@@ -99,6 +93,13 @@ export async function buildSatWeek(uid: string, weekKey: string, opts: SatWeekOp
     && pkToday(s.finishedAt ?? s.createdAt) >= week.prevStart && pkToday(s.createdAt) <= week.runDate);
   const docs = await loadDocs(uid, recent.map((s) => s.id));
   if (docs === null) throw unreadable("SAT sessions");
+
+  const [plan, stats, fullName] = await Promise.all([
+    readPlan(uid),
+    studentAnalytics(uid, Date.now(), { summaries, docs }),
+    opts.fullName ?? fullNameOf(uid),
+  ]);
+  if (!stats) throw unreadable("SAT analytics");
 
   const planItems = plan?.items ?? [];
   const base = satWeekFrom({
