@@ -1,5 +1,14 @@
 # SAT Module — Handoff / Resume Point
 
+**Updated 2026-09-26 (second update, same day): the SAT Coach is built on branch
+`feat/sat`.** On top of the SAT Lab below, a student with Digital SAT switched on now gets
+an autonomous coach — subjects/grants, an SAT profile and setup flow, a daily/exam plan the
+student can partly move, analytics (mastery, pacing, weak skills), AI-written "Coach says"
+insights and rule-based weekly goals, a Digital SAT Tutor, and an SAT section in the
+Saturday parent email. Design authority: `docs/superpowers/specs/2026-09-26-sat-coach-design.md`.
+Owner's testing guide, updated for all of this: `docs/SAT-TESTING.md`. Nothing on `feat/sat`
+is pushed or merged yet.
+
 Originally paused 2026-09-22 on branch `design/revamp-2026`. Updated 2026-09-26: the
 module is now built end-to-end on branch `feat/sat-module`, live assets are uploaded, and
 the owner's own testing guide exists — see the top of this file's "Status" section below
@@ -39,7 +48,7 @@ tests (Tests 4–11, 960 crops) are uploaded to the production Supabase bucket
 worked-answer (rationale) images are uploaded as compressed PNGs, under unguessable
 content-hash keys (`sat/<section>/r/...`).
 Production storage under `sat/` is roughly 1.55 GB — over the Supabase Free plan's 1 GB
-limit, so the owner needs to check their plan (see `docs/SAT-TESTING.md` §6).
+limit, so the owner needs to check their plan (see `docs/SAT-TESTING.md` §13).
 
 ### The crop sign-off found a real defect — fixed 2026-09-23, `ebf6d68`
 
@@ -114,7 +123,7 @@ mathematical expression the text layer drops.
    (rationale) images are uploaded too, as compressed PNGs under unguessable content-hash
    keys (`sat/<section>/r/...`).
 
-What's left is no longer a pipeline question — see `docs/SAT-TESTING.md` §6 for the
+What's left is no longer a pipeline question — see `docs/SAT-TESTING.md` §13 for the
 remaining pre-launch checklist (storage plan, the unapplied `sat-001` migration, QA test
 account cleanup, and rotating the service-role key used for the upload).
 
