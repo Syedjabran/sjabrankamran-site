@@ -319,6 +319,7 @@ export function ClassDrillAssign({ questions, title, onAssigned }: {
                   ))}
                 </div>
                 <p className="mt-1.5 text-[11px] text-dust">{modeHint}</p>
+                {allocMode !== "assignment_help" ? <p className="mt-1 text-[11px] text-amber-200/90">Past-paper questions and their mark schemes are public, so a test built from past papers can’t be fully secret; for a secret test, use the staff-written class-test questions.</p> : null}
               </div>
               <label className="min-w-0">
                 <span className={LABEL}>Duration (min)</span>

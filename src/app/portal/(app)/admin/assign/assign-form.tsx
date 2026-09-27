@@ -242,6 +242,7 @@ export function AssignForm({ canTest = false, papers = [] }: { canTest?: boolean
                 ))}
               </div>
               <p className="mt-1 text-[11px] text-dust">{exMode === "test" ? "Strict: student must switch on camera; violations lock the test (super-admin unlock)." : exMode === "assignment_nohelp" ? "Guarded like a mini-exam; answers and mark schemes open after submission." : "Open practice; students may reveal a question's mark scheme (logged; that answer is then final)."}</p>
+              {exMode !== "assignment_help" ? <p className="mt-1 text-[11px] text-amber-200/90">Past-paper questions and their mark schemes are public, so a test built from past papers can’t be fully secret; for a secret test, use the staff-written class-test questions.</p> : null}
             </div>
 
             {/* AI designer */}
