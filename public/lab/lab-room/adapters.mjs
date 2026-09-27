@@ -71,16 +71,20 @@ export async function createExperiment(id) {
   const state = () => ({ active, closed, t: active ? elapsed : 0, run, ...(family === LED && active ? { history: serverHistory() } : {}) });
 
   function newTrack(first) {
-    return { fps: first.fps, perChunk: timing.timed ? timing.fps * timing.chunkSeconds : 1, chunks: new Map([[0, decodeChunk(first)]]), pending: new Set(), last: first.done ? 0 : null };
+    return { fps: first.fps, perChunk: timing.timed ? timing.fps * timing.chunkSeconds : 1, chunks: new Map([[0, decodeChunk(first)]]), pending: new Set(), last: first.done ? 0 : null, version: 0 };
   }
   function fetchChunk(k) {
     if (!track || !timing.timed || track.chunks.has(k) || track.pending.has(k) || (track.last !== null && k > track.last)) return;
-    const mine = track;
+    const mine = track, version = track.version;
     mine.pending.add(k);
     post('trial', { attempt, settings, state: { run, history: serverHistory() }, chunk: k })
-      .then((data) => { if (track === mine) { mine.chunks.set(k, decodeChunk(data.track)); if (data.track.done) mine.last = k; } })
-      .catch(() => { /* asked again on a later frame */ })
-      .finally(() => setTimeout(() => mine.pending.delete(k), 500));
+      .then((data) => {
+        if (track !== mine || mine.version !== version) return; // superseded (reset, or an LED adjustment)
+        mine.pending.delete(k);
+        mine.chunks.set(k, decodeChunk(data.track));
+        if (data.track.done) mine.last = k;
+      })
+      .catch(() => { if (mine.version === version) setTimeout(() => mine.pending.delete(k), 3000); }); // asked again a little later
   }
   /** Global frame g: from its chunk, or the latest loaded frame before it. */
   function frameAt(g) {
@@ -131,16 +135,21 @@ export async function createExperiment(id) {
    *  doesn't allow the setting; the message says why. */
   async function set(key, value) {
     const next = { ...settings, [key]: value };
-    const running = active;
+    const running = active, at = elapsed;
     const body = { attempt, settings: next };
     if (running) body.state = { active, closed, t: elapsed, run };
     const { view: v } = await post('view', body);
     settings[key] = value;
     if (!running) restViews.set(restKey(), v);
+    // A live adjustment of an untimed rig (a circuit, the rod's pull) is now
+    // its running view; the LED's meters are re-fetched from the adjustment on.
+    if (running && track && !timing.timed) track.chunks.set(0, { first: 0, count: 1, frames: [v], meters: null });
     if (family === LED && active) {
-      history.push({ t: elapsed, settings: { ...settings } });
+      history.push({ t: at, settings: { ...settings } });
       if (track) {
-        const k = Math.floor(elapsed / timing.chunkSeconds);
+        const k = Math.floor(at / timing.chunkSeconds);
+        track.version++;
+        track.pending.clear();
         for (const c of [...track.chunks.keys()]) if (c >= k) track.chunks.delete(c);
         track.last = null;
         fetchChunk(k);

@@ -129,6 +129,8 @@ export const trialBody = z.object({
 
 /** The parsed body, or a plain-sentence 400. */
 export async function labBody<T>(req: Request, schema: z.ZodType<T>): Promise<{ body: T } | { refused: NextResponse }> {
+  // The largest real request (an LED trial with 32 adjustments) is a few KB.
+  if (Number(req.headers.get("content-length") ?? 0) > 32_768) return refuse(413, "That lab request is too large. Reload the page and try again.", "bad-request");
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return refuse(400, "The lab couldn’t read that request. Reload the page and try again.", "bad-request");
   return { body: parsed.data };

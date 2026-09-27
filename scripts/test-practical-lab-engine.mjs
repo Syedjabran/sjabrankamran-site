@@ -618,6 +618,19 @@ const asJson = async (res) => ({ status: res.status, body: await res.json(), cac
   assert.ok(r1.r !== r0.r || r1.v !== r0.v, "the meters respond to the new wire length");
   assert.ok(e.liveReadings(), "live meters continue after the change");
 
+  // A live adjustment of an untimed rig while it runs stays on screen (the
+  // magnet's cantilever follows the rheostat, frame after frame).
+  e = await createExperiment("9702_w22_34-q2");
+  await e.set("rheostat", 8);
+  await e.start();
+  const low = e.advance(1 / 60).angle;
+  await e.set("rheostat", 1);
+  for (let i = 0; i < 30; i++) e.advance(1 / 60);
+  assert.notEqual(e.currentView().angle, low, "the running view follows a live adjustment");
+  await e.set("rheostat", 8);
+  for (let i = 0; i < 30; i++) e.advance(1 / 60);
+  assert.equal(e.currentView().angle, low, "and back");
+
   // A fresh attempt: a new apparatus.
   e = await createExperiment("9702_w22_33-q2");
   const n1 = e.attemptNumber;

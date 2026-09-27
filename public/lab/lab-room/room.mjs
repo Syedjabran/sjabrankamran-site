@@ -84,7 +84,7 @@ function refresh(){
   for(const field of[$('connect-from'),$('connect-to')]){const prior=field.value;field.innerHTML='<option value="">Choose a terminal</option>'+parts.filter(p=>p.mounted).flatMap(p=>portNames(p).map(name=>`<option value="${escape(p.id+':'+name)}">${escape(p.label+' · '+name)}</option>`)).join('');field.value=prior;}
   $('connect-selected').disabled=running;
   updateCoach();
-  for(const el of document.querySelectorAll('#controls input,#controls select'))el.disabled=running&&!canAdjustLive(el.id.replace('setting-',''));
+  for(const el of document.querySelectorAll('#controls input,#controls select'))el.disabled=starting||running&&!canAdjustLive(el.id.replace('setting-',''));
   renderTerminals();draw();
 }
 function choose(p){selected=p;$('selected-label').textContent=`${p.label} — ${p.purpose||'Drag to position.'}`;refresh();}
