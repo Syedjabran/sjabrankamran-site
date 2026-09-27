@@ -13,6 +13,7 @@ import {
 import {
   PORTAL_BUCKET, cacheBuster, isOnboardingDocComplete, onboardingPath, type Onboarding,
 } from "@/lib/portal/onboarding-shared";
+import { isSupabaseAuthCookieName, parseBearerToken } from "@/lib/supabase/bearer";
 
 /**
  * Protects /portal routes: refreshes the Supabase session cookie and
@@ -43,7 +44,27 @@ const GATE_VERSION = "v2"; // guardian details + student photo required
 const ACCESS_TIMEOUT_MS = 2800;
 
 function hasAuthCookie(request: NextRequest): boolean {
-  return request.cookies.getAll().some((c) => c.name.startsWith("sb-") && c.name.includes("-auth-token"));
+  return request.cookies.getAll().some((c) => isSupabaseAuthCookieName(c.name));
+}
+
+type AuthLookup = Promise<{ data: { user: { id: string } | null } }>;
+
+/**
+ * Resolves an Auth lookup, but never lets a slow/unreachable Auth server hang
+ * the middleware: "unavailable" on timeout or network error, which callers
+ * treat as FAIL OPEN (the route/page's own getPortalUser() re-checks auth and
+ * RLS protects all data), so a transient Supabase blip is not a 504.
+ */
+async function userWithin(lookup: AuthLookup): Promise<{ id: string } | null | "unavailable"> {
+  try {
+    const raced = await Promise.race([
+      lookup,
+      new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), AUTH_TIMEOUT_MS)),
+    ]);
+    return raced === "timeout" ? "unavailable" : raced.data.user;
+  } catch {
+    return "unavailable";
+  }
 }
 
 /** Portal paths a not-yet-onboarded student must be kept OUT of. */
@@ -241,6 +262,19 @@ async function portalAccessGate(uid: string): Promise<AccessGateResult> {
   }
 }
 
+/** The JSON a locked/suspended user gets from any gated portal API call. */
+function accessRestrictedResponse(restriction: AccessRestriction) {
+  return NextResponse.json({
+    error: restriction.message,
+    code: "PORTAL_ACCESS_RESTRICTED",
+    restriction: {
+      mode: restriction.mode,
+      scopeLabel: restriction.scopeLabel,
+      endsAt: restriction.endsAt,
+    },
+  }, { status: 423, headers: { "cache-control": "no-store" } });
+}
+
 export async function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   const { pathname } = request.nextUrl;
@@ -287,8 +321,23 @@ export async function middleware(request: NextRequest) {
   if (!hasAuthCookie(request)) {
     // Portal API routes perform their own cookie/service-key authentication and
     // must return JSON rather than an HTML login redirect.
-    if (isPortalApi) return response;
-    return isPublicAuthPath ? response : toLogin();
+    if (!isPortalApi) return isPublicAuthPath ? response : toLogin();
+    // A native client (the mobile app) may authenticate an API call with
+    // `Authorization: Bearer <access_token>` and no cookie. getPortalUser()
+    // accepts that token, so it must pass the same access-lock gate a cookie
+    // session does below. No bearer → exactly the old path; an invalid bearer
+    // → the route's own getPortalUser() returns null and it answers 401.
+    const token = parseBearerToken(request.headers.get("authorization"));
+    if (!token || isAccessStatusApi) return response;
+    const bearerClient = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { cookies: { getAll: () => [], setAll: () => {} } },
+    );
+    const bearerUser = await userWithin(bearerClient.auth.getUser(token));
+    if (bearerUser === "unavailable" || !bearerUser) return response;
+    const access = await portalAccessGate(bearerUser.id);
+    return access.decision === "block" ? accessRestrictedResponse(access.restriction) : response;
   }
 
   const supabase = createServerClient(
@@ -314,17 +363,9 @@ export async function middleware(request: NextRequest) {
   // middleware. On timeout or error we FAIL OPEN — the page's own
   // getPortalUser() re-checks auth and RLS protects all data — so a transient
   // Supabase blip degrades to a normal page load, not a 504.
-  let user: { id: string } | null = null;
-  try {
-    const raced = await Promise.race([
-      supabase.auth.getUser(),
-      new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), AUTH_TIMEOUT_MS)),
-    ]);
-    if (raced === "timeout") return response; // fail open
-    user = raced.data.user;
-  } catch {
-    return response; // fail open on network error
-  }
+  const lookup = await userWithin(supabase.auth.getUser());
+  if (lookup === "unavailable") return response; // fail open
+  const user = lookup;
 
   if (!user && !isPublicAuthPath) return isPortalApi ? response : toLogin();
 
@@ -346,17 +387,7 @@ export async function middleware(request: NextRequest) {
   // screen. Public/service-key requests without a user cookie stay route-gated.
   if (user && !isAccessStatusApi && (isPortalApi || !["GET", "HEAD"].includes(request.method))) {
     const access = await portalAccessGate(user.id);
-    if (access.decision === "block") {
-      return NextResponse.json({
-        error: access.restriction.message,
-        code: "PORTAL_ACCESS_RESTRICTED",
-        restriction: {
-          mode: access.restriction.mode,
-          scopeLabel: access.restriction.scopeLabel,
-          endsAt: access.restriction.endsAt,
-        },
-      }, { status: 423, headers: { "cache-control": "no-store" } });
-    }
+    if (access.decision === "block") return accessRestrictedResponse(access.restriction);
   }
 
   // Mandatory onboarding enforcement. Runs for a signed-in user navigating to a
