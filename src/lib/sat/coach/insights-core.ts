@@ -16,6 +16,20 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { SATScore, SATSection } from "../types.ts";
 import type { InsightsView } from "../client-types.ts";
+import type { LlmResult } from "../../ai/llm-core.ts";
+
+/** The whole "Coach says" LLM call -- retry and fallback model included --
+ *  ends within this long (its route runs for at most 60 s). */
+export const INSIGHTS_DEADLINE_MS = 50_000;
+
+/** Whether the view an LLM `result` led to may be cached for the day. A
+ *  fallback caused by a passing provider failure -- a timeout, an HTTP
+ *  error, the network -- is not, so the next visit tries again; a spent
+ *  budget, no provider, or a reply that came back unusable is (retrying
+ *  those on every visit would only spend budget on the same outcome). */
+export function insightsCacheable(result: LlmResult): boolean {
+  return result.ok || (result.reason !== "timeout" && result.reason !== "http");
+}
 
 export type InsightsSkill = { label: string; mastery: number };
 export type InsightsPacingFlag = { label: string; medianSec: number; accuracy: number };

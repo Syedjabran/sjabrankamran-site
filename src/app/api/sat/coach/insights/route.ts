@@ -14,13 +14,15 @@ import { loadQuestionBank } from "@/lib/sat/bank";
 import type { CoachInsightsPayload } from "@/lib/sat/client-types";
 import { insightsInputOf, normaliseTipSkills, planView } from "@/lib/sat/coach/coach-view";
 import { studentInsights } from "@/lib/sat/coach/insights";
+import { INSIGHTS_DEADLINE_MS } from "@/lib/sat/coach/insights-core";
 import { readPlan } from "@/lib/sat/coach/plan-store";
 import { horizonEnd } from "@/lib/sat/coach/planner";
 import { readProfile } from "@/lib/sat/coach/profile-store";
 import { errorResponse, satStudent } from "@/lib/sat/coach/student-guard";
 
 export const runtime = "nodejs";
-// One LLM call at most (20 s timeout, one retry, the fallback model).
+// One LLM call at most (20 s timeout, one retry, the fallback model), all
+// of it ending INSIGHTS_DEADLINE_MS (50 s) after the request started.
 export const maxDuration = 60;
 
 /** Every skill spelling the bank uses -- what a "Drill this" filter can match. */
@@ -29,6 +31,7 @@ function bankSkills(): string[] {
 }
 
 export async function GET() {
+  const startedAt = Date.now();
   const caller = await satStudent();
   if ("refused" in caller) return caller.refused;
   const { user } = caller;
@@ -51,6 +54,6 @@ export async function GET() {
     firstName: user.fullName, targetScore: profile.targetScore, analytics: stats?.analytics ?? null,
     view: plan ? planView(plan, today) : null, horizonPassed: end !== null && end < today, today,
   });
-  const payload: CoachInsightsPayload = { insights: normaliseTipSkills(await studentInsights(user.id, input, today), bankSkills()) };
+  const payload: CoachInsightsPayload = { insights: normaliseTipSkills(await studentInsights(user.id, input, today, { deadlineAt: startedAt + INSIGHTS_DEADLINE_MS }), bankSkills()) };
   return NextResponse.json(payload);
 }

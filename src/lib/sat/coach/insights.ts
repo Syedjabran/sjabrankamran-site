@@ -12,7 +12,7 @@ import "server-only";
 import { readFreshJson, writeFreshJson } from "@/lib/exam-lab/storage-fresh";
 import { complete } from "@/lib/ai/llm";
 import type { InsightsView } from "../client-types.ts";
-import { fallbackInsights, insightsFingerprint, insightsPrompt, parseInsights, type InsightsInput } from "./insights-core.ts";
+import { INSIGHTS_DEADLINE_MS, fallbackInsights, insightsCacheable, insightsFingerprint, insightsPrompt, parseInsights, type InsightsInput } from "./insights-core.ts";
 
 export type { InsightsInput };
 
@@ -47,13 +47,18 @@ export async function cachedInsights(uid: string): Promise<InsightsView | null> 
 /** The student's "Coach says" view. Fresh cache (fingerprint unchanged) is
  *  served without calling the LLM at all; otherwise it asks the adapter for
  *  a new one and validates the reply (shape and the unknown-number guard),
- *  falling back to deterministic rules on any failure. The cache is only
- *  written after a read that itself succeeded (storage fails closed -- rule
- *  5: never write following a failed read). Never throws. */
-export async function studentInsights(uid: string, input: InsightsInput, today: string): Promise<InsightsView> {
+ *  falling back to deterministic rules on any failure. The whole call --
+ *  retry and fallback model included -- ends by `opts.deadlineAt` (default
+ *  50 s from now; the route runs for at most 60). The cache is only written
+ *  after a read that itself succeeded (storage fails closed -- rule 5:
+ *  never write following a failed read), and never for a fallback a
+ *  passing provider failure caused (insightsCacheable): the next visit
+ *  tries again. Never throws. */
+export async function studentInsights(uid: string, input: InsightsInput, today: string, opts: { deadlineAt?: number } = {}): Promise<InsightsView> {
   try {
     if (!SAFE_UID.test(uid)) return fallbackInsights(input);
     const fingerprint = insightsFingerprint(input, today);
+    const deadlineAt = opts.deadlineAt ?? Date.now() + INSIGHTS_DEADLINE_MS;
 
     const read = await readFreshJson<unknown>(BUCKET, cachePath(uid));
     if (read.ok) {
@@ -66,10 +71,11 @@ export async function studentInsights(uid: string, input: InsightsInput, today: 
       { system, messages: [{ role: "user", content: user }], json: true, maxTokens: MAX_OUTPUT_TOKENS },
       "insights",
       uid,
+      { deadlineAt },
     );
     const view = (result.ok ? parseInsights(result.json, input) : null) ?? fallbackInsights(input);
 
-    if (read.ok) {
+    if (read.ok && insightsCacheable(result)) {
       const doc: InsightsCache = { version: CACHE_VERSION, fingerprint, view };
       await writeFreshJson(BUCKET, cachePath(uid), doc);
     }

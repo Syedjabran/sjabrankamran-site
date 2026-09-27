@@ -4,7 +4,7 @@
 // fingerprint.
 import assert from "node:assert/strict";
 import {
-  fallbackInsights, insightsFingerprint, insightsKnownNumbers, insightsPrompt, onlyKnownNumbers, parseInsights, sanitiseFirstName,
+  fallbackInsights, insightsCacheable, insightsFingerprint, insightsKnownNumbers, insightsPrompt, onlyKnownNumbers, parseInsights, sanitiseFirstName,
 } from "../src/lib/sat/coach/insights-core.ts";
 
 function baseInput(overrides = {}) {
@@ -188,6 +188,21 @@ function validInsights() {
   assert.equal(onlyKnownNumbers("Up 7 percentage points.", new Set()), false, "a points figure of any size must be known");
   assert.equal(onlyKnownNumbers("Up 7 percentage points.", new Set([7])), true);
   assert.equal(onlyKnownNumbers("Answered 84 questions in 190 minutes.", new Set()), true, "numbers under 200 that aren't points pass");
+}
+
+// --- 11 (final review M2): a fallback from a passing provider failure isn't
+// cached for the day (the next visit retries); budget / no-provider /
+// unusable-reply fallbacks and AI views are
+{
+  assert.equal(insightsCacheable({ ok: false, reason: "timeout" }), false);
+  assert.equal(insightsCacheable({ ok: false, reason: "http", status: 500 }), false);
+  assert.equal(insightsCacheable({ ok: false, reason: "http" }), false, "a network failure (no status)");
+  assert.equal(insightsCacheable({ ok: false, reason: "budget", scope: "student" }), true);
+  assert.equal(insightsCacheable({ ok: false, reason: "budget", scope: "global" }), true);
+  assert.equal(insightsCacheable({ ok: false, reason: "no-provider" }), true);
+  assert.equal(insightsCacheable({ ok: false, reason: "parse" }), true);
+  assert.equal(insightsCacheable({ ok: false, reason: "empty" }), true);
+  assert.equal(insightsCacheable({ ok: true, text: "{}", json: {}, provider: "gemini", model: "m", usage: { input: 1, output: 1 } }), true);
 }
 
 console.log("sat-coach-insights tests passed");
