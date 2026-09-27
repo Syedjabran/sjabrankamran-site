@@ -1,22 +1,36 @@
 import assert from "node:assert/strict";
-import { SUBJECTS, subjectOf, coursesFromGrants, DIRECT_SUBJECTS, directSubjectOf, DIRECT_SUBJECT_ONLY } from "../src/lib/portal/subjects.ts";
+import {
+  SUBJECTS, subjectOf, coursesFromGrants, DIRECT_SUBJECTS, directSubjectOf, DIRECT_SUBJECT_ONLY,
+  directGrantsIn, grantsDocPath, subjectSwitchLabel,
+} from "../src/lib/portal/subjects.ts";
 import { coursesForEnrolment } from "../src/lib/portal/course-labels.ts";
 
 // --- the registry ------------------------------------------------------------
-assert.deepEqual(SUBJECTS.map((s) => s.id), ["physics", "sat"]);
+assert.deepEqual(SUBJECTS.map((s) => s.id), ["physics", "sat", "practical-lab"]);
+assert.equal(new Set(SUBJECTS.map((s) => s.id)).size, SUBJECTS.length, "ids are unique");
 assert.equal(subjectOf("physics").grant, "class", "physics comes from class enrolment");
 assert.equal(subjectOf("sat").grant, "direct", "SAT is granted directly by an admin");
 assert.equal(subjectOf("sat").label, "Digital SAT");
 assert.equal(subjectOf("sat").setupPath, "/portal/sat-lab/setup");
 assert.equal(subjectOf("nope"), null);
 assert.equal(subjectOf("toString"), null, "an inherited property name is not a subject");
+// Practical Lab: switched on directly, lives inside Physics, opens no course.
+const LAB = subjectOf("practical-lab");
+assert.equal(LAB.label, "Practical Lab");
+assert.equal(LAB.grant, "direct", "Practical Lab is granted directly by an admin, no teacher");
+assert.equal(LAB.partOf, "physics", "Practical Lab is shown inside Physics");
+assert.deepEqual(LAB.courses, [], "a lab grant opens no course (no Exam Lab, no timetable)");
+for (const s of SUBJECTS) if (s.partOf) assert.ok(subjectOf(s.partOf) && !subjectOf(s.partOf).partOf, `${s.id} lives inside a top-level subject`);
+assert.equal(subjectSwitchLabel(LAB), "Practical Lab (Physics)");
+assert.equal(subjectSwitchLabel(subjectOf("sat")), "Digital SAT");
 // What an admin can switch on per student: direct-grant subjects only.
-assert.deepEqual(DIRECT_SUBJECTS.map((s) => s.id), ["sat"]);
+assert.deepEqual(DIRECT_SUBJECTS.map((s) => s.id), ["sat", "practical-lab"]);
 assert.equal(directSubjectOf("sat")?.id, "sat");
+assert.equal(directSubjectOf("practical-lab")?.id, "practical-lab");
 assert.equal(directSubjectOf("physics"), null, "physics is never granted directly");
 assert.equal(directSubjectOf("nope"), null);
 assert.equal(directSubjectOf(42), null);
-assert.equal(DIRECT_SUBJECT_ONLY, "Only Digital SAT can be added directly; Physics comes from class enrolment.");
+assert.equal(DIRECT_SUBJECT_ONLY, "Only Digital SAT and Practical Lab can be added directly; Physics comes from class enrolment.");
 
 // --- direct grants -> courses ------------------------------------------------
 assert.deepEqual(coursesFromGrants({ sat: { by: "a", at: "t" } }), ["SAT"]);
@@ -24,6 +38,20 @@ assert.deepEqual(coursesFromGrants({}), []);
 // A class-granted subject never turns into a course from a grant record.
 assert.deepEqual(coursesFromGrants({ physics: { by: "a", at: "t" } }), []);
 assert.deepEqual(coursesFromGrants({ sat: undefined }), [], "an absent grant grants nothing");
+// Practical Lab never becomes a course, alone or next to SAT.
+assert.deepEqual(coursesFromGrants({ "practical-lab": { by: "a", at: "t" } }), []);
+assert.deepEqual(coursesFromGrants({ "practical-lab": { by: "a", at: "t" }, sat: { by: "a", at: "t" } }), ["SAT"]);
+
+// --- the stored grants rule (subject-grants.ts and the /lab gate) ------------
+const G = { by: "admin-1", at: "2026-09-27T10:00:00.000Z" };
+assert.deepEqual(directGrantsIn({ sat: G, "practical-lab": G }), { sat: G, "practical-lab": G });
+assert.deepEqual(directGrantsIn({ physics: G, nope: G }), {}, "class and unknown subjects are dropped");
+assert.deepEqual(directGrantsIn({ "practical-lab": { by: "a" } }), {}, "a row without `at` is dropped");
+assert.deepEqual(directGrantsIn({ "practical-lab": true }), {}, "a bare true is not a grant");
+assert.deepEqual(directGrantsIn({ "practical-lab": { ...G, extra: 1 } }), { "practical-lab": G }, "only by/at are kept");
+assert.deepEqual(directGrantsIn(null), {});
+assert.deepEqual(directGrantsIn([G]), {});
+assert.equal(grantsDocPath("u-123456"), "subjects/u-123456.json");
 
 // --- class enrolments + direct grants (coursesForEnrolment) ------------------
 // coursesForEnrolment takes the enrolled class ids and the registry classes.

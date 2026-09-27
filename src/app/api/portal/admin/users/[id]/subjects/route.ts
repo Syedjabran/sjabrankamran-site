@@ -15,7 +15,8 @@ const body = z.object({
 });
 
 /** POST /api/portal/admin/users/[id]/subjects { subject, on } — switch a
- *  direct-grant subject (Digital SAT) on or off for a user. Admin-only. */
+ *  direct-grant subject (Digital SAT, Practical Lab) on or off for a user.
+ *  Admin-only. */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   // Same admin gate as the users action route (requireAdmin), split so a
   // signed-out caller gets 401 rather than 403.

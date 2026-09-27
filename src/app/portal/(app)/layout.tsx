@@ -7,6 +7,8 @@ import { getPortalUser, ROLE_LABELS, canConductDrills, isAdmin, isStaff, isRegis
 import { getPortalRestriction } from "@/lib/portal/access-control";
 import { onboardingStatus } from "@/lib/portal/onboarding";
 import { satAccess } from "@/lib/sat/access";
+import { practicalLabAccess } from "@/lib/portal/practical-lab";
+import { PRACTICAL_LAB_PAGE } from "@/lib/portal/practical-lab-access";
 import { effectiveRoles } from "@/lib/portal/view-as";
 import { isEmbeddedClient } from "@/lib/portal/embed";
 import { AccessLockMonitor } from "./access-lock-monitor";
@@ -21,6 +23,12 @@ export const metadata = { robots: { index: false } };
 
 type NavItem = { href: string; label: string; hardNavigate?: boolean };
 type NavSection = { title?: string; items: NavItem[] };
+/** The admin-switched subjects this (student) user has: they add their own
+ *  nav entries. Staff get SAT Lab and Practical Lab from their role. */
+type SwitchedOn = { sat: boolean; practicalLab: boolean };
+
+/** Practical Lab: shown inside Physics (Task 4 moves it into the Physics space). */
+const PRACTICAL_LAB_NAV: NavItem = { href: PRACTICAL_LAB_PAGE, label: "Practical Lab" };
 
 /**
  * Role-aware navigation, grouped so the owner/staff see an Administration
@@ -28,7 +36,7 @@ type NavSection = { title?: string; items: NavItem[] };
  * (Exam Lab / My Learning / My Progress). This prevents the owner being shown
  * their own quiz attempts as if they were a student.
  */
-function navFor(roles: EduRole[], satEnabled: boolean): NavSection[] {
+function navFor(roles: EduRole[], switchedOn: SwitchedOn): NavSection[] {
   const staff = isStaff(roles);
   const admin = isAdmin(roles);
   const isStudent = roles.includes("student");
@@ -54,6 +62,7 @@ function navFor(roles: EduRole[], satEnabled: boolean): NavSection[] {
     return [{ title: "Assigned class", items: [
       { href: "/portal/coordinator", label: "Class staff desk" },
       { href: "/portal/exam-lab", label: "Conduct class drill" },
+      PRACTICAL_LAB_NAV,
       { href: "/portal/admin/assign", label: "Assign drill" },
       { href: "/portal/admin/drills", label: "Drill Records" },
       { href: "/portal/timetable", label: "Physics timetable" },
@@ -91,6 +100,7 @@ function navFor(roles: EduRole[], satEnabled: boolean): NavSection[] {
   }
   if (canConductDrills(roles)) adminItems.push({ href: "/portal/exam-lab", label: "Exam Lab" });
   if (isExamLabStaff(roles)) {
+    adminItems.push(PRACTICAL_LAB_NAV);
     adminItems.push({ href: "/portal/sat-lab", label: "SAT Lab" });
     adminItems.push({ href: "/portal/sat-lab/results", label: "SAT results" });
   }
@@ -111,7 +121,8 @@ function navFor(roles: EduRole[], satEnabled: boolean): NavSection[] {
     // private/no-store and remains protected by the portal middleware.
     learnItems.push({ href: "/portal/study-plan", label: "My study plan", hardNavigate: true });
     learnItems.push({ href: "/portal/exam-lab", label: "Exam Lab" });
-    if (satEnabled) learnItems.push({ href: "/portal/sat-lab", label: "SAT Lab" });
+    if (switchedOn.practicalLab) learnItems.push(PRACTICAL_LAB_NAV);
+    if (switchedOn.sat) learnItems.push({ href: "/portal/sat-lab", label: "SAT Lab" });
     learnItems.push({ href: "/portal/exam-lab/review", label: "My answer scripts" });
     learnItems.push({ href: "/portal/learn", label: "My Learning" });
     learnItems.push({ href: "/portal/progress", label: "My Progress" });
@@ -139,10 +150,12 @@ export default async function PortalLayout({ children }: { children: React.React
   // — this layout re-executes on every portal tab navigation.
   const pathname = (await headers()).get("x-pathname") || "";
   const isStudentUser = user.roles.includes("student");
-  const [restriction, onboarding, satEnabled] = await Promise.all([
+  // A failed SAT or Practical Lab access read hides that entry (fail closed).
+  const [restriction, onboarding, satEnabled, practicalLabEnabled] = await Promise.all([
     getPortalRestriction(user),
     isStudentUser ? onboardingStatus(user.id) : Promise.resolve("complete" as const),
     isStudentUser ? satAccess(user).then((a) => a.ok).catch(() => false) : Promise.resolve(false),
+    isStudentUser ? practicalLabAccess(user).then((a) => a.ok).catch(() => false) : Promise.resolve(false),
   ]);
   if (restriction) return <PortalAccessBlocked restriction={restriction} />;
 
@@ -188,7 +201,7 @@ export default async function PortalLayout({ children }: { children: React.React
     if (!ok) redirect("/portal/admin/attendance-view");
   }
   if (isCoordinatorOnly(user.roles) && pathname) {
-    const allowed = ["/portal", "/portal/search", "/portal/coordinator", "/portal/admin/attendance-view", "/portal/timetable", "/portal/library", "/portal/resources", "/portal/notifications", "/portal/install", "/portal/settings", "/portal/auth"];
+    const allowed = ["/portal", "/portal/search", "/portal/coordinator", "/portal/admin/attendance-view", "/portal/timetable", "/portal/library", "/portal/resources", "/portal/notifications", "/portal/install", "/portal/settings", "/portal/auth", PRACTICAL_LAB_PAGE];
     if (!allowed.some((a) => pathname === a || pathname.startsWith(a + "/"))) redirect("/portal/coordinator");
   }
 
@@ -197,7 +210,7 @@ export default async function PortalLayout({ children }: { children: React.React
   // just be a second copy of both.
   const embedded = await isEmbeddedClient();
   const { roles: navRoles, previewing } = await effectiveRoles(user);
-  const navSections = navFor(navRoles, satEnabled);
+  const navSections = navFor(navRoles, { sat: satEnabled, practicalLab: practicalLabEnabled });
   // Global search is available to every signed-in role; the API only
   // aggregates content the caller could already open.
   if (!isRegistrarOnly(navRoles)) navSections.unshift({ items: [{ href: "/portal/search", label: "Search" }] });

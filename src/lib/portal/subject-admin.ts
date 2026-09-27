@@ -10,10 +10,12 @@ import "server-only";
 import { notify, type NotifyInput } from "@/lib/portal/notifications";
 import { readGrants, setGrant, type SubjectGrants } from "@/lib/portal/subject-grants";
 import type { SubjectId } from "@/lib/portal/subjects";
+import { PRACTICAL_LAB_PAGE } from "@/lib/portal/practical-lab-access";
 
 /** What the student's bell says when an admin opens a subject for them. */
 const OPENED_NOTICE: Partial<Record<SubjectId, NotifyInput>> = {
   sat: { type: "sat", title: "SAT Lab is open for you", body: "Set your exam date and start your plan.", href: "/portal/sat-lab" },
+  "practical-lab": { type: "resource", title: "Practical Lab is open for you", body: "Try the 9702 practicals in the virtual lab.", href: PRACTICAL_LAB_PAGE },
 };
 
 /**

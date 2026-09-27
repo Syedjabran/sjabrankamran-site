@@ -14,6 +14,10 @@ import {
   PORTAL_BUCKET, cacheBuster, isOnboardingDocComplete, onboardingPath, type Onboarding,
 } from "@/lib/portal/onboarding-shared";
 import { isSupabaseAuthCookieName, parseBearerToken } from "@/lib/supabase/bearer";
+import { grantsDocPath } from "@/lib/portal/subjects";
+import {
+  grantsReadFrom, labAccess, labRefusalPage, labRequest, type LabDecision, type LabRequest,
+} from "@/lib/portal/practical-lab-access";
 
 /**
  * Protects /portal routes: refreshes the Supabase session cookie and
@@ -42,12 +46,14 @@ const GATE_TIMEOUT_MS = 2500;
 const GATE_COOKIE = "pb_onb";
 const GATE_VERSION = "v2"; // guardian details + student photo required
 const ACCESS_TIMEOUT_MS = 2800;
+const LAB_TIMEOUT_MS = 2800;
 
 function hasAuthCookie(request: NextRequest): boolean {
   return request.cookies.getAll().some((c) => isSupabaseAuthCookieName(c.name));
 }
 
 type AuthLookup = Promise<{ data: { user: { id: string } | null } }>;
+type SessionUser = { id: string } | null | "unavailable";
 
 /**
  * Resolves an Auth lookup, but never lets a slow/unreachable Auth server hang
@@ -55,7 +61,7 @@ type AuthLookup = Promise<{ data: { user: { id: string } | null } }>;
  * treat as FAIL OPEN (the route/page's own getPortalUser() re-checks auth and
  * RLS protects all data), so a transient Supabase blip is not a 504.
  */
-async function userWithin(lookup: AuthLookup): Promise<{ id: string } | null | "unavailable"> {
+async function userWithin(lookup: AuthLookup): Promise<SessionUser> {
   try {
     const raced = await Promise.race([
       lookup,
@@ -65,6 +71,23 @@ async function userWithin(lookup: AuthLookup): Promise<{ id: string } | null | "
   } catch {
     return "unavailable";
   }
+}
+
+/**
+ * The user behind an `Authorization: Bearer <access_token>` header (a native
+ * client such as the mobile app, sending no session cookie): null when there
+ * is no JWT-shaped bearer or the token is invalid, "unavailable" when Auth
+ * can't answer in time.
+ */
+async function bearerUser(request: NextRequest): Promise<SessionUser> {
+  const token = parseBearerToken(request.headers.get("authorization"));
+  if (!token) return null;
+  const bearerClient = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll: () => [], setAll: () => {} } },
+  );
+  return userWithin(bearerClient.auth.getUser(token));
 }
 
 /** Portal paths a not-yet-onboarded student must be kept OUT of. */
@@ -262,6 +285,52 @@ async function portalAccessGate(uid: string): Promise<AccessGateResult> {
   }
 }
 
+type LabGateResult =
+  | { decision: LabDecision }
+  | { decision: "locked"; restriction: AccessRestriction };
+
+/**
+ * The Practical Lab check for a signed-in user opening a /lab page
+ * (practical-lab-access.ts): their roles and their subjects doc, read with the
+ * service role, plus the portal's access locks. Fails CLOSED -- a missing env,
+ * a timeout or a failed read is "unknown", which /lab refuses -- unlike the
+ * fail-open gates above: those have the page's own checks behind them, and
+ * nothing re-checks a static file. (An access lock that can't be decided
+ * stays fail-open here, exactly as it is for every portal request.)
+ */
+async function practicalLabGate(uid: string): Promise<LabGateResult> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return { decision: "unknown" };
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), LAB_TIMEOUT_MS);
+  const h = { apikey: key, Authorization: `Bearer ${key}` } as Record<string, string>;
+  try {
+    const [rolesResponse, grantsResponse, access] = await Promise.all([
+      fetch(`${url}/rest/v1/edu_user_roles?user_id=eq.${uid}&select=role`, {
+        headers: h, signal: ctrl.signal, cache: "no-store",
+      }),
+      // Cache-busted like every grants read (storage-fresh.ts): a plain read
+      // can be served stale for a while after an admin flips the switch.
+      fetch(`${url}/storage/v1/object/${PORTAL_BUCKET}/${grantsDocPath(uid)}?cb=${cacheBuster()}`, {
+        headers: h, signal: ctrl.signal, cache: "no-store",
+      }),
+      portalAccessGate(uid),
+    ]);
+    if (access.decision === "block") return { decision: "locked", restriction: access.restriction };
+    const rows = rolesResponse.ok
+      ? await rolesResponse.json().catch(() => null) as Array<{ role?: string }> | null
+      : null;
+    const roles = Array.isArray(rows) ? rows.map((r) => r.role || "").filter(Boolean) : null;
+    const grants = grantsReadFrom(grantsResponse.status, await grantsResponse.text());
+    return { decision: labAccess(roles, grants) };
+  } catch {
+    return { decision: "unknown" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** The JSON a locked/suspended user gets from any gated portal API call. */
 function accessRestrictedResponse(restriction: AccessRestriction) {
   return NextResponse.json({
@@ -279,6 +348,8 @@ export async function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   const { pathname } = request.nextUrl;
   const isPortalApi = pathname.startsWith("/api/portal") || pathname.startsWith("/api/exam-lab") || pathname.startsWith("/api/sat");
+  // The Practical Lab's static files (public/lab); null for every other path.
+  const lab = labRequest(pathname);
   // Expose the current path to server components (used by the portal layout to
   // gate students onto the onboarding form without an infinite redirect loop).
   requestHeaders.set("x-pathname", pathname);
@@ -316,9 +387,58 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/portal/auth");
   const isAccessStatusApi = pathname === "/api/portal/access-status";
 
+  /** A refusal from /lab: a small page for a page request, plain text for a
+   *  sub-asset; never cached, and carrying any refreshed session cookies. */
+  function labRefusal(target: LabRequest, status: number, message: string) {
+    const res = target.kind === "page"
+      ? new NextResponse(labRefusalPage(message), { status, headers: { "content-type": "text/html; charset=utf-8" } })
+      : new NextResponse(message, { status, headers: { "content-type": "text/plain; charset=utf-8" } });
+    res.headers.set("cache-control", "no-store");
+    response.cookies.getAll().forEach((c) => res.cookies.set(c));
+    return res;
+  }
+
+  /**
+   * /lab: signed in AND (lab staff OR Practical Lab switched on). Pages (the
+   * HTML entry points, 52 files) get the full check; the sub-assets a page
+   * loads (.mjs/.css/.json/.pdf, about 70 files) get the sign-in check only --
+   * the one Auth round-trip every portal request already makes, instead of
+   * three more service-role reads per file. A sub-asset on its own is inert
+   * code: every way into the lab is a page. Everything here fails closed,
+   * including an Auth lookup that can't answer in time.
+   */
+  async function labGate(target: LabRequest, who: SessionUser): Promise<NextResponse> {
+    if (who === "unavailable") {
+      return labRefusal(target, 503, "The Practical Lab couldn’t check your sign-in just now. Please reload the page.");
+    }
+    if (!who) {
+      if (target.kind === "asset") return labRefusal(target, 401, "Please sign in to use the Practical Lab.");
+      // Plain URLs, not nextUrl clones: NextURL re-adds a trailing slash the
+      // request path had ("/lab/" would become "/portal/login/").
+      const url = new URL("/portal/login", request.url);
+      url.searchParams.set("next", (target.opens ?? pathname) + request.nextUrl.search);
+      return protectedRedirect(url);
+    }
+    if (target.kind === "asset") return response;
+    const gate = await practicalLabGate(who.id);
+    if (gate.decision === "locked") return labRefusal(target, 423, gate.restriction.message);
+    if (gate.decision === "deny") {
+      return labRefusal(target, 403, "Practical Lab isn’t switched on for your account yet. Ask the admin to add Practical Lab to your subjects.");
+    }
+    if (gate.decision !== "allow") {
+      return labRefusal(target, 503, "The Practical Lab couldn’t check your access just now. Please reload the page.");
+    }
+    if (!target.opens) return response;
+    const index = new URL(request.url);
+    index.pathname = target.opens;
+    return protectedRedirect(index);
+  }
+
   // Fast path: no Supabase auth cookie → the visitor is definitely signed out.
   // Skip the Auth network round-trip entirely (this is what occasionally hung).
   if (!hasAuthCookie(request)) {
+    // A native client may open the lab with a Bearer token and no cookie.
+    if (lab) return labGate(lab, await bearerUser(request));
     // Portal API routes perform their own cookie/service-key authentication and
     // must return JSON rather than an HTML login redirect.
     if (!isPortalApi) return isPublicAuthPath ? response : toLogin();
@@ -327,16 +447,10 @@ export async function middleware(request: NextRequest) {
     // accepts that token, so it must pass the same access-lock gate a cookie
     // session does below. No bearer → exactly the old path; an invalid bearer
     // → the route's own getPortalUser() returns null and it answers 401.
-    const token = parseBearerToken(request.headers.get("authorization"));
-    if (!token || isAccessStatusApi) return response;
-    const bearerClient = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      { cookies: { getAll: () => [], setAll: () => {} } },
-    );
-    const bearerUser = await userWithin(bearerClient.auth.getUser(token));
-    if (bearerUser === "unavailable" || !bearerUser) return response;
-    const access = await portalAccessGate(bearerUser.id);
+    if (isAccessStatusApi) return response;
+    const caller = await bearerUser(request);
+    if (caller === "unavailable" || !caller) return response;
+    const access = await portalAccessGate(caller.id);
     return access.decision === "block" ? accessRestrictedResponse(access.restriction) : response;
   }
 
@@ -364,6 +478,7 @@ export async function middleware(request: NextRequest) {
   // getPortalUser() re-checks auth and RLS protects all data — so a transient
   // Supabase blip degrades to a normal page load, not a 504.
   const lookup = await userWithin(supabase.auth.getUser());
+  if (lab) return labGate(lab, lookup); // fails closed, unlike the portal
   if (lookup === "unavailable") return response; // fail open
   const user = lookup;
 
@@ -418,5 +533,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/portal/:path*", "/api/portal/:path*", "/api/exam-lab/:path*", "/api/sat/:path*"],
+  matcher: ["/portal/:path*", "/api/portal/:path*", "/api/exam-lab/:path*", "/api/sat/:path*", "/lab/:path*"],
 };

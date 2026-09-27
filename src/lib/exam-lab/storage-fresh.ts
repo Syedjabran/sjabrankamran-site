@@ -10,15 +10,9 @@
  * the existing doc is overwritten with a near-empty one).
  */
 import { createAdminClient } from "@/lib/supabase/admin";
+import { isStorageNotFound } from "@/lib/exam-lab/storage-not-found";
 
 export type FreshRead<T> = { ok: true; data: T | null } | { ok: false };
-
-function isNotFound(status: number, body: string): boolean {
-  if (status === 404) return true;
-  // Older Storage API versions answer a missing object with HTTP 400 and a
-  // JSON body whose statusCode is "404".
-  return status === 400 && /"statusCode"\s*:\s*"?404|not[ _-]?found/i.test(body);
-}
 
 /** `{ ok: true, data: null }` = object does not exist; `{ ok: false }` = unknown. */
 export async function readFreshJson<T>(bucket: string, path: string): Promise<FreshRead<T>> {
@@ -34,14 +28,14 @@ export async function readFreshJson<T>(bucket: string, path: string): Promise<Fr
       });
       const text = await res.text();
       if (res.ok) return { ok: true, data: JSON.parse(text) as T };
-      return isNotFound(res.status, text) ? { ok: true, data: null } : { ok: false };
+      return isStorageNotFound(res.status, text) ? { ok: true, data: null } : { ok: false };
     }
     // No REST endpoint configured (scripts / local harnesses): SDK read.
     const { data, error } = await createAdminClient().storage.from(bucket).download(path);
     if (data) return { ok: true, data: JSON.parse(await data.text()) as T };
     if (!error) return { ok: true, data: null };
     const e = error as { status?: number; statusCode?: string | number; message?: string };
-    return isNotFound(Number(e.status ?? e.statusCode), e.message || "") ? { ok: true, data: null } : { ok: false };
+    return isStorageNotFound(Number(e.status ?? e.statusCode), e.message || "") ? { ok: true, data: null } : { ok: false };
   } catch {
     return { ok: false };
   }

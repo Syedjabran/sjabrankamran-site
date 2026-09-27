@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { UserCog, Search, UserPlus, ShieldAlert, KeyRound, Ban, RotateCcw, Copy, LockKeyhole, X } from "lucide-react";
-import { DIRECT_SUBJECTS, type SubjectId } from "@/lib/portal/subjects";
+import { DIRECT_SUBJECTS, subjectSwitchLabel, type SubjectId } from "@/lib/portal/subjects";
 
 export const ROLES: [string, string][] = [
   ["super_admin", "Super Admin"], ["admin", "Admin"], ["teacher", "Teacher"],
@@ -237,7 +237,7 @@ function CreateUser({ classes, onClose, onCreated }: { classes: ClassItem[]; onC
       ) : null}
       {roles.includes("student") ? DIRECT_SUBJECTS.map((s) => (
         <label key={s.id} className="flex items-center gap-2 text-xs text-fog">
-          <input type="checkbox" checked={subjects.includes(s.id)} onChange={() => toggleSubject(s.id)} /> {s.label}
+          <input type="checkbox" checked={subjects.includes(s.id)} onChange={() => toggleSubject(s.id)} /> {subjectSwitchLabel(s)}
         </label>
       )) : null}
       <label className="flex items-center gap-2 text-xs text-fog">

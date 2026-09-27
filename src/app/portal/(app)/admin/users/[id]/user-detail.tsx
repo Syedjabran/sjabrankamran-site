@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, KeyRound, Ban, RotateCcw, Trash2, Mail, GraduationCap, Activity, ShieldCheck, BookOpen, ClipboardList, Layers } from "lucide-react";
-import { DIRECT_SUBJECTS, subjectOf, type SubjectId } from "@/lib/portal/subjects";
+import { DIRECT_SUBJECTS, subjectOf, subjectSwitchLabel, type SubjectId } from "@/lib/portal/subjects";
 import { ROLES } from "../users-console";
 import { ActivityTimeline } from "./activity-timeline";
 import { StudentVisualReport, type StudentVisualData } from "./student-visual-report";
@@ -189,7 +189,7 @@ export function UserDetail({ id, isSuper, selfId }: { id: string; isSuper: boole
         )}
       </Card>
 
-      {/* Subjects — physics from class enrolment, Digital SAT granted directly. */}
+      {/* Subjects — physics from class enrolment, Digital SAT and Practical Lab granted directly. */}
       {p.roles.includes("student") ? <SubjectsCard id={id} subjects={d.subjects} /> : null}
 
       {/* Enrolments */}
@@ -295,7 +295,8 @@ const PHYSICS = subjectOf("physics");
 const SUBJECT_ROW = "flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-abyss/40 px-3 py-2 text-xs";
 
 /** Physics is read-only here (it follows the Enrolments card); each
- *  direct-grant subject (Digital SAT) is a switch saved straight away. */
+ *  direct-grant subject (Digital SAT, Practical Lab) is a switch saved
+ *  straight away. */
 function SubjectsCard({ id, subjects }: { id: string; subjects: Detail["subjects"] }) {
   const [grants, setGrants] = useState(subjects.grants);
   const [saving, setSaving] = useState<SubjectId | null>(null);
@@ -325,13 +326,14 @@ function SubjectsCard({ id, subjects }: { id: string; subjects: Detail["subjects
         {DIRECT_SUBJECTS.map((s) => {
           const on = !!grants?.[s.id];
           const busy = saving === s.id;
+          const label = subjectSwitchLabel(s);
           return (
             <li key={s.id} className={SUBJECT_ROW}>
               <span className="min-w-0">
-                <span className="block text-ice">{s.label}</span>
+                <span className="block text-ice">{label}</span>
                 <span className="block truncate text-dust">{grants === null ? "Couldn’t be read just now — refresh to try again" : busy ? "Saving…" : on ? "On" : "Off"}</span>
               </span>
-              <button type="button" role="switch" aria-checked={on} aria-label={s.label} disabled={grants === null || saving !== null}
+              <button type="button" role="switch" aria-checked={on} aria-label={label} disabled={grants === null || saving !== null}
                 onClick={() => toggle(s.id, !on)}
                 className={"relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition disabled:opacity-50 " + (on ? "border-cyan/60 bg-cyan/20" : "border-white/15 bg-abyss/60")}>
                 <span className={"inline-block h-4 w-4 rounded-full transition " + (on ? "translate-x-6 bg-cyan" : "translate-x-1 bg-dust")} />
