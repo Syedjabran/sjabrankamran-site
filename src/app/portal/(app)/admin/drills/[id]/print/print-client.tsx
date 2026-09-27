@@ -151,7 +151,8 @@ export function DrillPrintClient({ idOrRef }: { idOrRef: string }) {
           <h1 className="font-display text-xl text-ice">Print / download this drill</h1>
           <p className="mt-1 text-sm text-dust">
             Press <b className="text-fog">Print / Save as PDF</b> and choose <b className="text-fog">Save as PDF</b> as the destination in your browser&rsquo;s print dialog —
-            that is where the download comes from, on desktop, iPad and Android alike. No separate download button is needed.
+            that is where the download comes from, on desktop, iPad and Android alike. Under <b className="text-fog">More settings</b>, turn off
+            <b className="text-fog"> Headers and footers</b> so the browser does not add the URL, date and page title. No separate download button is needed.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button onClick={printNow} disabled={preparing || msLoading} className="btn-primary !py-2.5 text-sm disabled:opacity-50">
@@ -183,7 +184,7 @@ export function DrillPrintClient({ idOrRef }: { idOrRef: string }) {
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="font-display text-2xl font-bold leading-tight text-black">{rec.name}</h2>
-              <p className="mt-1 text-sm text-black/70">{MODE_LABEL[rec.mode] || rec.mode}</p>
+              <p className="el-print-review-status mt-1 text-sm text-black/70">{MODE_LABEL[rec.mode] || rec.mode}</p>
             </div>
             {ref ? (
               <div className="text-right">
@@ -198,24 +199,25 @@ export function DrillPrintClient({ idOrRef }: { idOrRef: string }) {
             <div><dt className="font-mono text-[10px] uppercase tracking-widest text-black/50">Date</dt><dd className="font-semibold text-black">{when(rec.createdAt)}</dd></div>
             <div><dt className="font-mono text-[10px] uppercase tracking-widest text-black/50">Paper</dt><dd className="font-semibold text-black">{rec.snapshot.length} questions · {rec.totalMarks} marks</dd></div>
           </dl>
-          <div className="el-print-rule mt-4 flex flex-wrap gap-x-8 gap-y-2 border-t border-black/20 pt-3 text-[13px] text-black/70">
-            <span>Name: <span className="inline-block w-48 border-b border-black/40">&nbsp;</span></span>
-            <span>Class: <span className="inline-block w-28 border-b border-black/40">&nbsp;</span></span>
-            <span>Date: <span className="inline-block w-28 border-b border-black/40">&nbsp;</span></span>
+          <div className="el-print-student el-print-rule mt-4 grid grid-cols-1 gap-x-8 gap-y-3 border-t border-black/20 pt-3 text-[13px] text-black/70 sm:grid-cols-2">
+            <span className="flex items-end gap-2">Name: <span className="min-w-0 flex-1 border-b border-black/50">&nbsp;</span></span>
+            <span className="flex items-end gap-2">Roll No.: <span className="min-w-0 flex-1 border-b border-black/50">&nbsp;</span></span>
+            <span className="flex items-end gap-2">Class / section: <span className="min-w-0 flex-1 border-b border-black/50">&nbsp;</span></span>
+            <span className="flex items-end gap-2">Date: <span className="min-w-0 flex-1 border-b border-black/50">&nbsp;</span></span>
           </div>
         </header>
 
         <ol className="mt-6 space-y-7">
           {rec.snapshot.map((q, i) => (
             <li key={`${q.id}-${i}`} className="el-print-q">
-              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <div className="el-print-q-head flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <span className="font-display text-base font-bold text-black">{i + 1}.</span>
                 <span className="font-mono text-[11px] text-black/60">{q.paperType}{q.ref ? ` · ${q.ref}` : ""}</span>
                 {q.topic ? <span className="font-mono text-[11px] text-black/60">· {q.topic}</span> : null}
                 <span className="font-mono text-[11px] text-black/60">· {q.level}</span>
                 {q.marks != null ? <span className="ml-auto font-mono text-[12px] font-bold text-black">[{q.marks}]</span> : null}
               </div>
-              <div className="mt-2">
+              <div className="el-print-q-image mt-2">
                 {imgs[q.img] ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
