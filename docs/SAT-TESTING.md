@@ -320,10 +320,11 @@ practised, this week's full exam result or "missed"/"none this week", and the st
 two-line AI summary (or its rule-based fallback); and a short "progress so far" block (days
 to the SAT and the target, score history, section accuracy, strongest and weakest area).
 
-**When it's sent:** Saturday 18:00 Pakistan time (cron `0 13 * * 6`), and again at 18:10
-(`10 13 * * 6`) to pick up anyone a partial first run left. The run records every family
-it has finished in a checkpoint and skips them, so the second call never emails a family
-twice.
+**When it's sent:** once, Saturday 18:00 Pakistan time (cron `0 13 * * 6`). A run that
+reaches its time limit stops taking new students and reports `partial` with how many are
+left; those are only sent if the run is started again by hand within the same hour (the
+route refuses outside Saturday 18:00–18:59 PKT). The run records every family it has
+finished and skips them on a re-run.
 
 **To preview it without sending anything** (admin only, while signed in as an admin), open:
 
@@ -413,13 +414,12 @@ What's actually left, as of this guide:
 - **Nothing has been pushed or merged yet.** All of this work is on the `feat/sat` branch
   (which itself builds on the earlier `feat/sat-module` work). Merging is the owner's call,
   once testing above looks good.
-- **Scheduled jobs.** `vercel.json` now runs four: the physics study plans daily at 06:00
+- **Scheduled jobs.** `vercel.json` now runs three: the physics study plans daily at 06:00
   PKT (`/api/cron/daily-study-plans`, unchanged), the SAT plans and reminders daily at
   06:15 PKT (`/api/cron/daily-sat-plans`, new — it stops taking students after 4 of its 5
-  minutes and reports `partial`), and the Saturday parent email at 18:00 and again at 18:10
-  PKT (`/api/cron/saturday-parent-reports`). Check the Vercel plan's cron rules before
-  launch: on the Hobby plan crons are only accurate to the hour, so the two Saturday calls
-  could land close together or overlap.
+  minutes and reports `partial`), and the Saturday parent email at 18:00 PKT
+  (`/api/cron/saturday-parent-reports`, unchanged). On Vercel's Hobby plan a job may run at
+  any minute within its scheduled hour.
 - **Check your Supabase storage plan.** The `exam-assets` bucket now holds the
   question-bank images, the 8 official practice tests, and the worked-answer
   (rationale) images, all uploaded — roughly 1.55 GB in total. That's over the Supabase
