@@ -219,6 +219,19 @@ const item = (id, date, kind, status, extra = {}) => ({ id, date, kind, status, 
   assert.ok(quotes.includes("&quot;Quotes&quot; &amp; &#39;apostrophes&#39;"));
 }
 
+// --- 11b: the target bar -- 400 to the target, solid to the range's lower
+// bound, lighter across it (the home's score goal uses the same scale,
+// goals.ts onTargetScale)
+{
+  const cell = (pct, color) => `width="${pct}%" height="10" bgcolor="${color}"`;
+  const html = renderSatSectionHtml(week()); // 1180–1240, target 1400: 78% solid, 6% band, 16% track
+  assert.ok(html.includes(cell(78, COLORS.bar)) && html.includes(cell(6, COLORS.band)) && html.includes(cell(16, COLORS.track)));
+  const straddle = renderSatSectionHtml(week({ targetScore: 1200 })); // 97.5% -> 98 solid, the band fills to 100
+  assert.ok(straddle.includes(cell(98, COLORS.bar)) && straddle.includes(cell(2, COLORS.band)));
+  const reached = renderSatSectionHtml(week({ targetScore: 1100 }));
+  assert.ok(reached.includes(cell(100, COLORS.bar)) && reached.includes("Target reached."));
+}
+
 // --- 12: text -- every metric, warning first
 {
   const w = week();

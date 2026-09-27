@@ -2,8 +2,8 @@
 //
 // Pure weekly-goal computation (Node-testable, no server-only imports, no
 // answer data): the deterministic goals of SAT Coach spec section 8.3.
-// Rules decide, AI only phrases a one-line motivation elsewhere -- every
-// goal, metric and progress value here is computed, never generated.
+// Rules decide and write every word -- every goal, metric and progress value
+// here is computed, never generated (no AI phrasing is added to goals).
 //
 // Priority order (at most 4 kept): sessions, mastery, exam, pacing, score.
 // Dates are PKT calendar days "YYYY-MM-DD"; arithmetic runs on UTC
@@ -12,7 +12,12 @@
 import type { PlanItem, SATAnalytics } from "../client-types.ts";
 import { practiceTestTitle } from "../client-types.ts";
 
-export type WeeklyGoal = { id: string; kind: "sessions" | "mastery" | "exam" | "pacing" | "score"; title: string; progress: number; detail: string };
+/** `band` (0..1, score goal only): the upper end of a score range, drawn
+ *  lighter from `progress` (its lower end) -- the parent email's bar. */
+export type WeeklyGoal = { id: string; kind: "sessions" | "mastery" | "exam" | "pacing" | "score"; title: string; progress: number; band?: number; detail: string };
+
+/** The lowest SAT total score: the score bars run from here to the target. */
+export const SAT_SCALE_MIN = 400;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MASTERY_TARGET_DELTA = 0.07;
@@ -129,24 +134,37 @@ function pacingGoal(analytics: SATAnalytics | null): WeeklyGoal | null {
   };
 }
 
-/** "score": the latest recorded score (official or estimated, whichever is
- *  more recent) against the profile's target. No goal before any score
- *  exists -- there is nothing to show yet. */
+/** Where `score` sits on the SAT scale from 400 to `target`, 0..1 (clamped).
+ *  The home's score goal and the parent email's target bar share it. */
+export function onTargetScale(score: number, target: number): number {
+  return clamp01((score - SAT_SCALE_MIN) / Math.max(1, target - SAT_SCALE_MIN));
+}
+
+/** "score": the latest real score (official or estimated, whichever is more
+ *  recent) against the profile's target, shown as the range with its label
+ *  -- never one invented number (spec 3, rule 3). The gap is a range too,
+ *  and is left out once the range reaches the target. The bar is the parent
+ *  email's: 400 to the target, solid to the range's lower bound (`progress`)
+ *  and lighter across it (`band`). No goal before any score exists. */
 function scoreGoal(analytics: SATAnalytics | null, targetScore: number): WeeklyGoal | null {
   if (!analytics) return null;
   const history = analytics.scores.history;
-  const latest = history.length > 0 ? history[history.length - 1] : null;
-  if (!latest?.score) return null;
-  const current = Math.round((latest.score.lower + latest.score.upper) / 2);
-  const gap = targetScore - current;
+  const score = history.length > 0 ? history[history.length - 1].score : null;
+  if (!score) return null;
+  const { lower, upper } = score;
+  const [near, far] = [targetScore - upper, targetScore - lower];
+  const title = lower >= targetScore
+    ? `You've reached your ${targetScore} target score`
+    : upper >= targetScore
+      ? `Your latest range reaches your ${targetScore} target`
+      : `Reach your ${targetScore} target — ${near === far ? near : `${near}–${far}`} points to go`;
   return {
     id: "score",
     kind: "score",
-    title: gap > 0 ? `${gap} points to your ${targetScore} target` : `You've reached your ${targetScore} target score`,
-    progress: clamp01(current / targetScore),
-    detail: gap > 0
-      ? `Latest score ${current} (range ${latest.score.lower}-${latest.score.upper}).`
-      : `Latest score ${current} meets or beats your ${targetScore} target.`,
+    title,
+    progress: onTargetScale(lower, targetScore),
+    band: onTargetScale(upper, targetScore),
+    detail: `Latest: ${lower}–${upper} (${score.authority === "official" ? "official range" : "estimated"}) · target ${targetScore}`,
   };
 }
 

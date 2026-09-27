@@ -4,7 +4,7 @@
 // and the deterministic goal computations.
 import assert from "node:assert/strict";
 import { buildChallenge } from "../src/lib/sat/coach/challenge-builder.ts";
-import { weeklyGoals } from "../src/lib/sat/coach/goals.ts";
+import { onTargetScale, weeklyGoals } from "../src/lib/sat/coach/goals.ts";
 import { SAT_DOMAIN_IDS } from "../src/lib/sat/client-types.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -313,17 +313,45 @@ function planItem(overrides) {
   assert.equal(goals[0].detail, "You're averaging 100s vs a 71s target on Slow RW.");
 }
 
-// --- 14: score goal gap and "reached target" wording
+// --- 14: score goal (final review I2): the real latest range with its label,
+// never a single invented number; the gap as a range, left out once the
+// range reaches the target; the bar on the parent email's 400 -> target
+// scale, solid to the lower bound and lighter (band) to the upper
 {
-  const short = emptyAnalytics({ scores: { latestOfficial: null, latestEstimate: null, history: [{ id: "s1", kind: "practice", title: "t", finishedAt: NOW, score: { authority: "official", lower: 1180, upper: 1210, testNo: 4 } }] } });
-  const goals = weeklyGoals({ analytics: short, weekItems: [], today: "2026-10-07", targetScore: 1400 });
-  assert.equal(goals[0].kind, "score");
-  assert.equal(goals[0].title, "205 points to your 1400 target", "midpoint 1195, gap 205");
+  const scored = (score) => emptyAnalytics({ scores: { latestOfficial: null, latestEstimate: null, history: [{ id: "s1", kind: score.authority === "official" ? "practice" : "adaptive", title: "t", finishedAt: NOW, score }] } });
+  const estimate = (lower, upper) => ({ authority: "estimated", lower, upper, basis: "b" });
 
-  const met = emptyAnalytics({ scores: { latestOfficial: null, latestEstimate: null, history: [{ id: "s2", kind: "practice", title: "t", finishedAt: NOW, score: { authority: "official", lower: 1400, upper: 1430, testNo: 5 } }] } });
-  const goals2 = weeklyGoals({ analytics: met, weekItems: [], today: "2026-10-07", targetScore: 1400 });
-  assert.equal(goals2[0].title, "You've reached your 1400 target score");
-  assert.equal(goals2[0].progress, 1);
+  const [goal] = weeklyGoals({ analytics: scored(estimate(1000, 1100)), weekItems: [], today: "2026-10-07", targetScore: 1200 });
+  assert.equal(goal.kind, "score");
+  assert.equal(goal.title, "Reach your 1200 target — 100–200 points to go");
+  assert.equal(goal.detail, "Latest: 1000–1100 (estimated) · target 1200", "the range with its authority label");
+  assert.equal(goal.progress, 0.75, "(1000 - 400) / (1200 - 400): the lower bound on the 400 -> target scale");
+  assert.equal(goal.band, 0.875, "(1100 - 400) / (1200 - 400): the upper bound");
+  assert.ok(!/\b1050\b/.test(`${goal.title} ${goal.detail}`), "no midpoint anywhere");
+
+  const [official] = weeklyGoals({ analytics: scored({ authority: "official", lower: 1180, upper: 1210, testNo: 4 }), weekItems: [], today: "2026-10-07", targetScore: 1400 });
+  assert.equal(official.title, "Reach your 1400 target — 190–220 points to go");
+  assert.equal(official.detail, "Latest: 1180–1210 (official range) · target 1400");
+
+  const [straddle] = weeklyGoals({ analytics: scored(estimate(1150, 1250)), weekItems: [], today: "2026-10-07", targetScore: 1200 });
+  assert.equal(straddle.title, "Your latest range reaches your 1200 target", "no gap figure once the range reaches the target");
+  assert.ok(!/points/.test(straddle.title));
+  assert.equal(straddle.band, 1);
+  assert.ok(straddle.progress < 1);
+
+  const met = scored({ authority: "official", lower: 1400, upper: 1430, testNo: 5 });
+  const [reached] = weeklyGoals({ analytics: met, weekItems: [], today: "2026-10-07", targetScore: 1400 });
+  assert.equal(reached.title, "You've reached your 1400 target score");
+  assert.equal(reached.progress, 1);
+  assert.equal(reached.detail, "Latest: 1400–1430 (official range) · target 1400");
+
+  const [narrow] = weeklyGoals({ analytics: scored(estimate(1100, 1100)), weekItems: [], today: "2026-10-07", targetScore: 1200 });
+  assert.equal(narrow.title, "Reach your 1200 target — 100 points to go", "a one-number range gives a one-number gap");
+
+  // The same scale as the parent email's bar (shared helper).
+  assert.equal(onTargetScale(400, 1200), 0);
+  assert.equal(onTargetScale(1300, 1200), 1, "clamped");
+  assert.equal(onTargetScale(800, 400), 1, "a 400 target never divides by zero");
 
   const none = weeklyGoals({ analytics: emptyAnalytics(), weekItems: [], today: "2026-10-07", targetScore: 1400 });
   assert.deepEqual(none, [], "no score history -> no score goal");

@@ -34,7 +34,7 @@ import type { DoneMap } from "./plan-logic.ts";
 import type { Course } from "../../portal/course-labels.ts";
 import { formatPk, formatPkDay, pkToday } from "../../portal/pk-time.ts";
 import { addDays, daysBetween, horizonEnd } from "./planner.ts";
-import { isoWeekRange } from "./goals.ts";
+import { SAT_SCALE_MIN, isoWeekRange, onTargetScale } from "./goals.ts";
 import { planStreak, strongSkills } from "./coach-view.ts";
 import { sanitiseFirstName, sentenceCount } from "./insights-core.ts";
 
@@ -93,7 +93,6 @@ export const COLORS = {
   amberText: "#78350f",
 } as const;
 
-const SAT_MIN = 400;
 const MAX_SCORE_ROWS = 5;
 const SUMMARY_MAX_CHARS = 280;
 const SUMMARY_MAX_SENTENCES = 2;
@@ -661,18 +660,18 @@ function tilesHtml(list: Tile[]): string {
   return table(rows.join(""), "table-layout:fixed");
 }
 
-/** The latest score against the target, on the SAT scale from 400: solid to
- *  the range's lower bound, lighter across the range. */
+/** The latest score against the target, on the SAT scale from 400 (the same
+ *  scale as the home's score goal, goals.ts onTargetScale): solid to the
+ *  range's lower bound, lighter across the range. */
 function targetRows(w: SatWeek): string {
   const latest = w.scores[0];
   if (!latest) return line(`${esc(NO_SCORE_YET)} Target ${bold(String(w.targetScore))}.`);
-  const span = Math.max(1, w.targetScore - SAT_MIN);
-  const lower = ((latest.lower - SAT_MIN) / span) * 100;
-  const upper = ((latest.upper - SAT_MIN) / span) * 100;
+  const lower = onTargetScale(latest.lower, w.targetScore) * 100;
+  const upper = onTargetScale(latest.upper, w.targetScore) * 100;
   const label = `Latest score ${bold(latest.range)} (${esc(latest.official ? "official range" : "estimated")}, ${esc(latest.date)}) · Target ${bold(String(w.targetScore))}`;
   const caption = latest.lower >= w.targetScore
     ? "Target reached."
-    : `Bar: from ${SAT_MIN} (the lowest SAT score) to the target; the lighter part is the score range.`;
+    : `Bar: from ${SAT_SCALE_MIN} (the lowest SAT score) to the target; the lighter part is the score range.`;
   return line(label)
     + row(bar([{ pct: lower, color: COLORS.bar }, { pct: upper - lower, color: COLORS.band }]), "padding:6px 0 2px")
     + note(caption);
