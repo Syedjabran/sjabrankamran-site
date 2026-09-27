@@ -217,7 +217,7 @@ export function fallbackInsights(input: InsightsInput): InsightsView {
 
   const summaryParts: string[] = [];
   if (weakest) summaryParts.push(`Your weakest skill right now is ${weakest.label} at ${pct(weakest.mastery)}% mastery.`);
-  if (missed) summaryParts.push(`You missed ${input.week.missed} of ${input.week.scheduled} session${input.week.scheduled === 1 ? "" : "s"} this week -- let's get back on track.`);
+  if (missed) summaryParts.push(`You missed ${input.week.missed} of ${input.week.scheduled} session${input.week.scheduled === 1 ? "" : "s"} this week — let's get back on track.`);
   else if (input.week.scheduled > 0) summaryParts.push(`You've completed ${input.week.done} of ${input.week.scheduled} sessions this week.`);
   else if (!weakest) summaryParts.push("Finish a session or two and your weekly picture shows up here.");
   const summary = summaryParts.slice(0, MAX_SUMMARY_SENTENCES).join(" ").slice(0, MAX_SUMMARY);
@@ -232,27 +232,27 @@ export function fallbackInsights(input: InsightsInput): InsightsView {
   if (weakest) {
     tips.push({
       title: `Drill ${weakest.label}`,
-      body: `Spend today's session on ${weakest.label} -- it's your lowest mastery skill right now.`,
+      body: `Spend today's session on ${weakest.label} — it's your lowest mastery skill right now.`,
       skill: weakest.label,
     });
   }
   if (pacing) {
     tips.push({
       title: "Watch your pace",
-      body: `You're averaging ${Math.round(pacing.medianSec)}s on ${pacing.label} -- practice a few questions against a visible clock.`,
+      body: `You're averaging ${Math.round(pacing.medianSec)}s on ${pacing.label} — practice a few questions against a visible clock.`,
       skill: pacing.label,
     });
   }
   if (missed) {
     tips.push({
       title: "Catch up this week",
-      body: `You missed ${input.week.missed} session${input.week.missed === 1 ? "" : "s"} this week -- a short session today keeps your streak alive.`,
+      body: `You missed ${input.week.missed} session${input.week.missed === 1 ? "" : "s"} this week — your next session done on its day starts a new streak.`,
     });
   }
 
   return {
     headline: headline.slice(0, MAX_HEADLINE),
-    summary: summary || "Keep practising -- your weekly summary appears here once you've finished a session.",
+    summary: summary || "Keep practising — your weekly summary appears here once you've finished a session.",
     tips: tips.slice(0, MAX_TIPS),
     source: "rules",
     generatedAt: new Date().toISOString(),

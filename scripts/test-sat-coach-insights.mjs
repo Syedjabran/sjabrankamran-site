@@ -205,4 +205,23 @@ function validInsights() {
   assert.equal(insightsCacheable({ ok: true, text: "{}", json: {}, provider: "gemini", model: "m", usage: { input: 1, output: 1 } }), true);
 }
 
+// --- 12 (final review M15): the rules copy uses "—", and after a miss says
+// something true about the streak (a miss has already broken it)
+{
+  const views = [
+    fallbackInsights(baseInput()),
+    fallbackInsights(baseInput({ weakSkills: [], pacingFlags: [], week: { scheduled: 0, done: 0, late: 0, missed: 0 }, daysToExam: null })),
+    fallbackInsights(baseInput({ daysToExam: 1 })),
+  ];
+  for (const view of views) {
+    const text = [view.headline, view.summary, ...view.tips.flatMap((t) => [t.title, t.body])].join(" | ");
+    assert.ok(!text.includes("--"), `no " -- " in the rules copy: ${text}`);
+  }
+  const missed = fallbackInsights(baseInput({ weakSkills: [], pacingFlags: [], daysToExam: 30 }));
+  const catchUp = missed.tips.find((t) => t.title === "Catch up this week");
+  assert.equal(catchUp.body, "You missed 2 sessions this week — your next session done on its day starts a new streak.");
+  assert.ok(!/keeps your streak alive/.test(JSON.stringify(missed)));
+  assert.match(missed.summary, /You missed 2 of 5 sessions this week — let's get back on track\./);
+}
+
 console.log("sat-coach-insights tests passed");
