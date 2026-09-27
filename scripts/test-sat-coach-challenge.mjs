@@ -357,6 +357,36 @@ function planItem(overrides) {
   assert.deepEqual(none, [], "no score history -> no score goal");
 }
 
+// --- 14b: exam goal (final review M10): a missed exam and its replacement in
+// the same week -> the goal shows the replacement; a sat exam wins; a
+// missed, unreplaced exam still shows when it is the only one
+{
+  const missedMon = planItem({ id: "m-mon", date: "2026-10-05", kind: "mock", status: "missed", mock: { kind: "practice", testNo: 5 } });
+  const thuReplacement = planItem({ id: "m-thu", date: "2026-10-08", kind: "mock", status: "scheduled", mock: { kind: "practice", testNo: 5 }, replacementFor: "m-mon" });
+  const [goal] = weeklyGoals({ analytics: null, weekItems: [missedMon, thuReplacement], today: "2026-10-07", targetScore: 1400 });
+  assert.equal(goal.kind, "exam");
+  assert.equal(goal.title, "Sit Official Practice Test 5 on Thu 8 Oct", "the replacement, not the missed Monday");
+  assert.equal(goal.progress, 0);
+
+  const doneThu = { ...thuReplacement, status: "done" };
+  assert.equal(weeklyGoals({ analytics: null, weekItems: [missedMon, doneThu], today: "2026-10-09", targetScore: 1400 })[0].progress, 1, "the replacement sat");
+
+  // Exams one day apart (a move): the one already sat wins over one still to come.
+  const doneTue = planItem({ id: "a", date: "2026-10-06", kind: "mock", status: "late", mock: { kind: "adaptive" } });
+  const sunNext = planItem({ id: "b", date: "2026-10-11", kind: "mock", status: "scheduled", mock: { kind: "practice", testNo: 6 } });
+  const [sat] = weeklyGoals({ analytics: null, weekItems: [sunNext, doneTue], today: "2026-10-07", targetScore: 1400 });
+  assert.equal(sat.title, "Sit your Adaptive Mock on Tue 6 Oct");
+  assert.equal(sat.progress, 1);
+
+  // A stale "scheduled" exam before today gives way to the next one from today on.
+  const staleMon = planItem({ id: "c", date: "2026-10-05", kind: "mock", status: "scheduled", mock: { kind: "adaptive" } });
+  assert.equal(weeklyGoals({ analytics: null, weekItems: [staleMon, sunNext], today: "2026-10-07", targetScore: 1400 })[0].title, "Sit Official Practice Test 6 on Sun 11 Oct");
+
+  const [alone] = weeklyGoals({ analytics: null, weekItems: [missedMon], today: "2026-10-07", targetScore: 1400 });
+  assert.equal(alone.title, "Sit Official Practice Test 5 on Mon 5 Oct", "only a missed exam this week -> it still shows, at 0%");
+  assert.equal(alone.progress, 0);
+}
+
 // --- 15: at most 4 goals, in priority order sessions/mastery/exam/pacing/score
 {
   const analytics = emptyAnalytics({

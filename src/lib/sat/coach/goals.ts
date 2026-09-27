@@ -90,9 +90,16 @@ function masteryGoal(analytics: SATAnalytics | null, weakAtWeekStart?: { key: st
   };
 }
 
-/** "exam": this week's full exam, if the plan has one. */
-function examGoal(weekItems: PlanItem[]): WeeklyGoal | null {
-  const mock = weekItems.find((i) => i.kind === "mock");
+/** "exam": this week's full exam, if the plan has one -- one already sat
+ *  (done or late), else the next one still scheduled from today on, else
+ *  (only missed ones left) the first. A missed exam the planner re-placed
+ *  (an item's `replacementFor` points at it) gives way to its replacement. */
+function examGoal(weekItems: PlanItem[], today: string): WeeklyGoal | null {
+  const replaced = new Set(weekItems.flatMap((i) => (i.replacementFor ? [i.replacementFor] : [])));
+  const mocks = weekItems.filter((i) => i.kind === "mock" && !replaced.has(i.id)).sort((a, b) => a.date.localeCompare(b.date));
+  const mock = mocks.find((i) => i.status === "done" || i.status === "late")
+    ?? mocks.find((i) => i.status === "scheduled" && i.date >= today)
+    ?? mocks[0];
   if (!mock) return null;
   const name = mock.mock?.kind === "practice" ? practiceTestTitle(mock.mock.testNo) : "your Adaptive Mock";
   const done = mock.status === "done" || mock.status === "late";
@@ -182,7 +189,7 @@ export function weeklyGoals(input: {
   const goals = [
     sessionsGoal(thisWeek),
     masteryGoal(analytics, weakAtWeekStart),
-    examGoal(thisWeek),
+    examGoal(thisWeek, today),
     pacingGoal(analytics),
     scoreGoal(analytics, targetScore),
   ].filter((g): g is WeeklyGoal => g !== null);
