@@ -102,6 +102,10 @@ Either way, the student sees **SAT Lab** appear in their portal menu, and the ne
 open it (or finish onboarding, if they're brand-new) they're taken straight to the SAT setup
 page — see §6 below.
 
+The same card and the same form also have a **Practical Lab (Physics)** switch, for the 9702
+virtual practicals. It works the same way and is independent of SAT; see
+`docs/PRACTICAL-LAB.md`.
+
 ## 4. Give a student access (the class-based way)
 
 This older method still works — it's unchanged, and it's still how Physics access works —
@@ -420,7 +424,8 @@ From the project's root folder, in order:
    analytics, the planner, the challenge builder and goals, Coach says' insights, the plan
    API and the daily cron's time guard, the tutor, the parent email, and a check that no
    code sent to the browser can reach the answer key. All 29 passed on this checkout.
-2. `npm run test:portal` — general portal rules. Passed.
+2. `npm run test:portal` — general portal rules, plus the Practical Lab checks
+   (`npm run test:practical-lab`, see `docs/PRACTICAL-LAB.md`). Passed.
 3. `npm run test:access` — access-control rules. Passed.
 4. `python -m pytest scripts/exam-lab/ingest-sat/tests -q` — the question-bank pipeline's
    own tests (307 tests). Passed.
