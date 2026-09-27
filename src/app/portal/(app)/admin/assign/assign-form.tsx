@@ -100,7 +100,8 @@ export function AssignForm({ canTest = false, papers = [] }: { canTest?: boolean
   const perQ = useMemo(() => questions.map((q) => q.seconds && q.seconds > 0 ? q.seconds : questionSeconds({ paper: q.paper, difficulty: q.difficulty, marks: q.marks, kind: q.kind })), [questions]);
   const totalSecs = perQ.reduce((s, x) => s + x, 0);
   // Hand-picked Exam Lab sets are timed from the picker's estimate unless staff type a duration.
-  const pickMinutes = useMemo(() => selectionSummary(pickIds, bank).minutes, [pickIds, bank]);
+  // Only a complete estimate (every picked question known): never a partial one.
+  const pickMinutes = useMemo(() => { const s = selectionSummary(pickIds, bank); return s.complete ? s.minutes : 0; }, [pickIds, bank]);
   const exAutoMinutes = exContentType === "custom" && pickMinutes ? pickMinutes : undefined;
 
   async function submit() {

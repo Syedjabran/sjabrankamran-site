@@ -112,9 +112,13 @@ export function ClassDrillAssign({ questions, title, onAssigned }: {
   const toggle = (set: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) =>
     set((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-  const summary = useMemo(() => selectionSummary(ids, bank), [ids, bank]);
+  // Summed from the questions on screen until the staff bank arrives (an
+  // edited paper may hold others): while any is unknown, the estimate is
+  // "…" and nothing can be assigned with a partial duration.
+  const summary = useMemo(() => selectionSummary(ids, bank, questions), [ids, bank, questions]);
   const edited = ids.length !== seedIds.length || ids.some((id, i) => id !== seedIds[i]);
-  const estimate = String(Math.max(1, summary.minutes));
+  const estimating = !summary.complete;
+  const estimate = estimating ? "" : String(Math.max(1, summary.minutes));
   const durationValue = durationInput ?? estimate;
   const durationMin = Number(durationValue);
   const durationOk = durationValue.trim() !== "" && Number.isFinite(durationMin) && durationMin >= 1;
@@ -124,7 +128,7 @@ export function ClassDrillAssign({ questions, title, onAssigned }: {
   const modeOptions = ALLOC_MODES.filter((m) => m.id !== "test" || canTest);
   const modeHint = ALLOC_MODES.find((m) => m.id === allocMode)?.hint ?? "";
 
-  const canAssign = !loading && !busy && ids.length > 0 && durationOk && !scheduleError && (mode === "classes" ? selClasses.size > 0 : selStudents.size > 0);
+  const canAssign = !loading && !busy && ids.length > 0 && (durationInput !== null || !estimating) && durationOk && !scheduleError && (mode === "classes" ? selClasses.size > 0 : selStudents.size > 0);
 
   async function assign() {
     setBusy(true); setError("");
@@ -210,7 +214,7 @@ export function ClassDrillAssign({ questions, title, onAssigned }: {
             <ListChecks size={16} className="shrink-0 text-cyan" />
             <span className="min-w-0 text-sm text-ice">
               {summary.count} {summary.count === 1 ? "question" : "questions"}
-              <span className="text-xs text-dust"> · {summary.marks} {summary.marks === 1 ? "mark" : "marks"} · ~{summary.minutes} min</span>
+              <span className="text-xs text-dust">{estimating ? " · estimating…" : ` · ${summary.marks} ${summary.marks === 1 ? "mark" : "marks"} · ~${summary.minutes} min`}</span>
             </span>
             {edited ? <span className="text-xs text-amber-200">Edited · differs from the paper on screen</span> : null}
             <div className="ml-auto flex items-center gap-2">
@@ -318,9 +322,11 @@ export function ClassDrillAssign({ questions, title, onAssigned }: {
               </div>
               <label className="min-w-0">
                 <span className={LABEL}>Duration (min)</span>
-                <input type="number" inputMode="numeric" min={1} value={durationValue} disabled={busy}
+                <input type="number" inputMode="numeric" min={1} value={durationValue} disabled={busy} placeholder={estimating ? "Estimating…" : undefined}
                   onChange={(e) => setDurationInput(e.target.value)} className={FIELD} />
-                {durationInput !== null && durationInput !== estimate ? (
+                {estimating && durationInput === null ? (
+                  <span className="mt-1 flex items-center gap-1 text-[11px] text-dust"><Loader2 size={11} className="animate-spin" /> Estimating from the questions…</span>
+                ) : durationInput !== null && durationInput !== estimate && !estimating ? (
                   <button type="button" onClick={() => setDurationInput(null)} className="mt-1 text-[11px] text-cyan hover:underline">Use estimate ({estimate})</button>
                 ) : (
                   <span className="mt-1 block text-[11px] text-dust">Estimated from the questions</span>

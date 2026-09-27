@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { requireAdmin, isSuperAdmin } from "@/lib/portal/admin";
 import { SECURE_BANK } from "@/lib/exam-lab/image-bank";
 import { imageUrls } from "@/lib/sat/signed-images";
-import { QuestionImage } from "@/components/sat/question-image";
+import { StaffPaperImage } from "@/components/exam-lab/staff-paper-image";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Test question preview" };
@@ -56,9 +56,7 @@ export default async function TestPreviewPage({ params }: { params: Promise<{ te
                 <span className="rounded-full border border-white/10 px-2 py-1 text-dust">Answer {q.answer}</span>
               </div>
             </div>
-            {urls.get(q.img) ? (
-              <QuestionImage key={q.img} src={urls.get(q.img)} alt={`Question ${index + 1}`} error={null} lazy imgClassName="border border-white/10" />
-            ) : <p className="text-sm text-signal">Question image unavailable.</p>}
+            <StaffPaperImage key={q.img} path={q.img} url={urls.get(q.img)} alt={`Question ${index + 1}`} />
           </article>
         ))}
       </div>

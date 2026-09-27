@@ -18,7 +18,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, GripVertical, ImageOff, Loader2, Plus, RotateCcw, Search, Timer, X } from "lucide-react";
 import type { ExamCourse, SafeQuestion } from "@/lib/exam-lab/paper-meta";
-import { minutesFromSeconds, questionSeconds } from "@/lib/portal/timing";
+import { questionSeconds } from "@/lib/portal/timing";
+import { selectionSummary } from "./selection-summary";
 
 type BankCourse = ExamCourse;
 type Source = BankCourse | "secure";
@@ -96,27 +97,7 @@ export function useExamBank(): { bank: ExamBank | null; failed: boolean; retry: 
   return { bank, failed, retry };
 }
 
-export type SelectionSummary = { count: number; marks: number; minutes: number; mix: string };
-
-/** Totals for an ordered id list: marks, estimated minutes (Σ questionSeconds) and paper mix. */
-export function selectionSummary(ids: string[], bank: ExamBank | null): SelectionSummary {
-  let marks = 0;
-  let seconds = 0;
-  const perPaper: Partial<Record<PaperType, number>> = {};
-  for (const id of ids) {
-    const e = bank?.byId.get(id);
-    if (!e) continue;
-    marks += e.q.marks ?? 0;
-    seconds += e.seconds;
-    perPaper[e.q.paperType] = (perPaper[e.q.paperType] ?? 0) + 1;
-  }
-  return {
-    count: ids.length,
-    marks,
-    minutes: seconds ? minutesFromSeconds(seconds) : 0,
-    mix: PAPERS.filter((p) => perPaper[p]).map((p) => `${p} ×${perPaper[p]}`).join(" · "),
-  };
-}
+export { selectionSummary, type SelectionSummary } from "./selection-summary";
 
 function numberOrNull(s: string): number | null {
   const t = s.trim();
