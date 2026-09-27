@@ -4,6 +4,13 @@ import { generateQuestions, portalBankPool } from "@/lib/exam-lab/generate";
 import { ALL_TOPICS_WITH_OL, type ELQuestion, type ELLevel } from "@/lib/exam-lab/bank";
 import { getPortalUser } from "@/lib/edu/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveCourseAccess } from "@/lib/portal/course-access";
+import { questionKey, takeHit } from "@/lib/exam-lab/answer-rules";
+import { questionById } from "@/lib/exam-lab/bank-all";
+import { examLabKey } from "@/lib/exam-lab/keys";
+import { sealableSet, withoutHeld, withoutKeys } from "@/lib/exam-lab/practice-set";
+import { sealJson } from "@/lib/exam-lab/seal";
+import { heldIds } from "@/lib/exam-lab/sittings";
 
 export const runtime = "nodejs";
 
@@ -23,13 +30,6 @@ const schema = z.object({
 
 // naive per-warm-instance rate limit
 const hits = new Map<string, number[]>();
-function limited(ip: string, max: number) {
-  const now = Date.now();
-  const arr = (hits.get(ip) || []).filter((t) => now - t < 60_000);
-  arr.push(now);
-  hits.set(ip, arr);
-  return arr.length > max;
-}
 
 function shuffle<T>(a: T[]): T[] {
   for (let i = a.length - 1; i > 0; i--) {
@@ -39,7 +39,8 @@ function shuffle<T>(a: T[]): T[] {
   return a;
 }
 
-/** Best-effort read of ingested past-paper questions from the portal bank. */
+/** Best-effort read of ingested past-paper questions from the portal bank
+ *  (service role: the table is closed to anon/authenticated). */
 async function dbPortalPool(
   topics: string[],
   levels: ELLevel[],
@@ -79,6 +80,18 @@ async function dbPortalPool(
   }
 }
 
+/**
+ * The questions go to the browser WITHOUT `ans` / `scheme`; those are sealed
+ * into `set` (practice-set.ts), which /api/exam-lab/submit opens to mark the
+ * whole set and hand the answers and mark schemes back.
+ */
+function issued(mode: "public" | "portal", uid: string | null, questions: ELQuestion[], extra: Record<string, unknown>) {
+  const key = examLabKey("practice-set");
+  if (!key) return NextResponse.json({ error: "Practice is unavailable right now. Please try again later." }, { status: 503 });
+  const set = sealJson(sealableSet(mode, uid, questions, Date.now()), key);
+  return NextResponse.json({ ok: true, ...extra, questions: questions.map(withoutKeys), set }, { status: 200, headers: { "cache-control": "no-store" } });
+}
+
 export async function POST(request: Request) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0] || "unknown";
   let raw: unknown;
@@ -95,18 +108,35 @@ export async function POST(request: Request) {
     // Portal bank is auth-gated (CAIE exact-pattern / real past-paper material).
     const user = await getPortalUser();
     if (!user) return NextResponse.json({ error: "Please sign in to the portal." }, { status: 401 });
-    if (limited("portal:" + ip, 30)) return NextResponse.json({ error: "Slow down a moment." }, { status: 429 });
+    if (!takeHit(hits, "portal:" + user.id, Date.now(), 60_000, 30)) return NextResponse.json({ error: "Slow down a moment." }, { status: 429 });
 
-    const seed = portalBankPool({ topics: d.topics, levels: d.levels, style: d.style, count: 500, course: d.course });
+    // Only a course the student is enrolled in; never a question held back
+    // for them (the text copy of a past-paper question in an open test or
+    // no-help assignment of theirs).
+    let access;
+    try { access = await resolveCourseAccess(user); } catch { return NextResponse.json({ error: "Your access couldn't be checked. Please try again." }, { status: 503 }); }
+    const course = d.course ?? "9702";
+    if (!access.allowed.includes(course)) return NextResponse.json({ error: "You do not have access to this course's papers." }, { status: 403 });
+    let heldKeys = new Set<string>();
+    if (!access.isStaff) {
+      try {
+        const held = await heldIds(user.id, Date.now());
+        heldKeys = new Set([...held].map((id) => questionById(id)).filter((q) => !!q).map((q) => questionKey(q!.code, q!.qnum)));
+      } catch {
+        return NextResponse.json({ error: "Exam Lab is temporarily unavailable. Please retry." }, { status: 503 });
+      }
+    }
+
+    const seed = portalBankPool({ topics: d.topics, levels: d.levels, style: d.style, count: 500, course });
     const db = await dbPortalPool(d.topics, d.levels, d.style);
-    const merged = shuffle([...db, ...seed]); // prefer real past papers first, then shuffle whole pool
+    const merged = withoutHeld(shuffle([...db, ...seed]), heldKeys); // prefer real past papers first, then shuffle whole pool
     const available = merged.length;
     const questions = merged.slice(0, Math.min(d.count, available));
-    return NextResponse.json({ ok: true, source: "portal-bank", available, questions }, { status: 200 });
+    return issued("portal", user.id, questions, { source: "portal-bank", available });
   }
 
   // Public: short, AI-generated (Model B) with graceful seed fallback.
-  if (limited("public:" + ip, 8)) return NextResponse.json({ error: "Too many requests. Please slow down." }, { status: 429 });
+  if (!takeHit(hits, "public:" + ip, Date.now(), 60_000, 8)) return NextResponse.json({ error: "Too many requests. Please slow down." }, { status: 429 });
   const count = Math.min(d.count, 5); // public tests are short
   const ground = process.env.EXAM_LAB_WEB_GROUNDING === "1";
   const res = await generateQuestions(
@@ -115,15 +145,10 @@ export async function POST(request: Request) {
   );
   // Raw provider errors are for local debugging only, never for public callers.
   const diag = process.env.NODE_ENV === "development" && request.headers.get("x-el-diag") === "1";
-  return NextResponse.json(
-    {
-      ok: true,
-      source: res.source,
-      provider: res.provider,
-      available: res.questions.length,
-      questions: res.questions,
-      ...(diag ? { debug: res.error ?? null } : {}),
-    },
-    { status: 200 }
-  );
+  return issued("public", null, res.questions, {
+    source: res.source,
+    provider: res.provider,
+    available: res.questions.length,
+    ...(diag ? { debug: res.error ?? null } : {}),
+  });
 }

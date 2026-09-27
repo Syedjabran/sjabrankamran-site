@@ -10,6 +10,7 @@ import {
 } from "../src/lib/exam-lab/answer-rules.ts";
 import { DAILY_QUESTIONS, MAX_DRILL_QUESTIONS, legacyDrillPick, pickPractice } from "../src/lib/exam-lab/practice-pools.ts";
 import { CANON_9702, buildPaperIndex, chrono9702, countPool, courseOfCode, poolCounts, poolTopics } from "../src/lib/exam-lab/paper-meta.ts";
+import { PRACTICE_SET_MAX_AGE_MS, markSet, practiceSetOk, sealableSet, withoutHeld, withoutKeys } from "../src/lib/exam-lab/practice-set.ts";
 
 const NOW = Date.parse("2026-09-28T09:00:00.000Z");
 const HOUR = 60 * 60_000;
@@ -235,5 +236,33 @@ assert.equal(countPool(pool, "P2", new Set(["Waves"]), new Set(["LOT", "HOT"])),
 assert.deepEqual(poolTopics(pool, "P1"), ["Kinematics", "Waves"]);
 assert.equal(courseOfCode("5054_s24_11"), "5054");
 assert.equal(courseOfCode("9702_ct1_pqu"), "9702");
+
+// --- generated practice sets (M1, M2) ---------------------------------------------------------
+const gen = [
+  { id: "pp-m19-12-q11", t: "Forces", lvl: "LOT", type: "mcq", paper: "P1", cmd: "Identify", marks: 1, stem: "S1", opts: ["a", "b", "c", "d"], ans: 2, scheme: ["correct answer: C"] },
+  { id: "seed-004", t: "Waves", lvl: "HOT", type: "structured", paper: "P2", cmd: "Explain", marks: 3, stem: "S2", scheme: ["point 1", "point 2"] },
+  { id: "ai-x-1", t: "Waves", lvl: "LOT", type: "mcq", paper: "P1", cmd: "State", marks: 1, stem: "S3", opts: ["a", "b", "c", "d"], ans: 0, scheme: ["because"] },
+];
+const shown = gen.map(withoutKeys);
+assert.ok(shown.every((q) => !("ans" in q) && !("scheme" in q)), "the browser gets no answer and no scheme");
+assert.equal(shown[0].stem, "S1");
+assert.deepEqual(shown[0].opts, ["a", "b", "c", "d"], "options stay");
+const portalSet = sealableSet("portal", "u1", gen, NOW);
+assert.equal(practiceSetOk(portalSet, { mode: "portal", uid: "u1", now: NOW + HOUR }), true);
+assert.equal(practiceSetOk(portalSet, { mode: "portal", uid: "u2", now: NOW }), false, "another student's set is refused");
+assert.equal(practiceSetOk(portalSet, { mode: "public", uid: null, now: NOW }), false, "a portal set is not a public set");
+assert.equal(practiceSetOk(sealableSet("public", null, gen, NOW), { mode: "portal", uid: "u1", now: NOW }), false, "nor the other way round");
+assert.equal(practiceSetOk(sealableSet("public", null, gen, NOW), { mode: "portal", uid: null, now: NOW }), false, "the mode itself is checked, not only the student");
+assert.equal(practiceSetOk(portalSet, { mode: "portal", uid: "u1", now: NOW + PRACTICE_SET_MAX_AGE_MS + 1 }), false, "an old set has expired");
+assert.equal(practiceSetOk({ ...portalSet, items: [] }, { mode: "portal", uid: "u1", now: NOW }), false);
+assert.equal(practiceSetOk(null, { mode: "public", uid: null, now: NOW }), false);
+const marked = markSet(portalSet, { "pp-m19-12-q11": 2, "ai-x-1": 3 });
+assert.deepEqual([marked.mcqScore, marked.mcqTotal], [1, 2], "the whole set is marked: one right, one wrong");
+assert.deepEqual(marked.items["pp-m19-12-q11"], { ans: 2, scheme: ["correct answer: C"] });
+assert.deepEqual(marked.items["seed-004"], { scheme: ["point 1", "point 2"] });
+assert.deepEqual(markSet(portalSet, {}).mcqScore, 0, "a blank set scores 0");
+const heldKey = new Set([questionKey("9702_m19_12", 11)]);
+assert.deepEqual(withoutHeld(gen, heldKey).map((q) => q.id), ["seed-004", "ai-x-1"], "the text copy of a held-back past-paper question is left out");
+assert.deepEqual(withoutHeld(gen, new Set()).length, 3);
 
 console.log("exam-lab security tests passed");

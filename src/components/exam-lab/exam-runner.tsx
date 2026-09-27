@@ -9,6 +9,9 @@ import { Zap, Printer, RotateCcw, Loader2, CheckCircle2, Eye, Timer as TimerIcon
 import { TOPICS } from "@/lib/exam-lab/topics";
 import { normalizePhysicsMath } from "@/components/markdown-renderer";
 
+// A generated question as the browser receives it: no answer, no mark
+// scheme. Those come back from /api/exam-lab/submit, for the whole set, once
+// it is submitted (`reveal`).
 type Q = {
   id: string;
   t: string;
@@ -19,9 +22,8 @@ type Q = {
   marks: number;
   stem: string;
   opts?: string[];
-  ans?: number;
-  scheme: string[];
 };
+type Reveal = Record<string, { ans?: number; scheme: string[] }>;
 
 function Tex({ text, block = false }: { text: string; block?: boolean }) {
   return (
@@ -60,6 +62,10 @@ export function ExamRunner({
 
   const [loading, setLoading] = useState(false);
   const [questions, setQuestions] = useState<Q[]>([]);
+  // The sealed set /generate issued: /submit opens it to mark the paper.
+  const [setToken, setSetToken] = useState<string | null>(null);
+  const [reveal, setReveal] = useState<Reveal>({});
+  const [submitting, setSubmitting] = useState(false);
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [submitted, setSubmitted] = useState(false);
   const [revealed, setRevealed] = useState(false);
@@ -122,6 +128,8 @@ export function ExamRunner({
     setRevealed(false);
     setScore(null);
     setAnswers({});
+    setReveal({});
+    setSetToken(null);
     try {
       const res = await fetch("/api/exam-lab/generate", {
         method: "POST",
@@ -143,6 +151,7 @@ export function ExamRunner({
         setQuestions([]);
       } else {
         setQuestions(j.questions || []);
+        setSetToken(typeof j.set === "string" ? j.set : null);
         if (!j.questions?.length) setNote("No questions matched — widen your topics or levels.");
         else if (mode === "public" && j.source === "seed")
           setNote("Served from the practice bank (AI generator busy) — still a valid paper.");
@@ -157,36 +166,36 @@ export function ExamRunner({
     }
   }
 
-  function submit() {
-    let got = 0;
-    let total = 0;
-    let structured = 0;
-    for (const q of questions) {
-      if (q.type === "mcq" && typeof q.ans === "number") {
-        total += 1;
-        if (answers[q.id] === q.ans) got += 1;
-      } else structured += 1;
-    }
-    setScore({ got, total, structured });
-    setSubmitted(true);
-    setRevealed(true);
-    if (mode === "portal") {
-      const mcqAnswers: Record<string, number> = {};
-      questions.forEach((q) => {
-        if (q.type === "mcq" && typeof answers[q.id] === "number") mcqAnswers[q.id] = answers[q.id];
-      });
-      fetch("/api/exam-lab/submit", {
+  // Marking happens on the server: the whole set is submitted, and its
+  // answers and mark schemes come back with the score. Revealing the mark
+  // schemes early is the same step -- the paper is then marked as it stands.
+  async function submit() {
+    if (submitting || submitted) return;
+    if (!setToken) { setNote("This paper can't be marked. Generate a new one."); return; }
+    setSubmitting(true);
+    setNote(null);
+    const mcqAnswers: Record<string, number> = {};
+    questions.forEach((q) => {
+      if (q.type === "mcq" && typeof answers[q.id] === "number") mcqAnswers[q.id] = answers[q.id];
+    });
+    try {
+      const res = await fetch("/api/exam-lab/submit", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          mode,
-          questionIds: questions.map((q) => q.id),
-          answers: mcqAnswers,
-          config: { topics: [...selTopics], levels: [...levels], style },
-        }),
-      }).catch(() => {});
+        body: JSON.stringify({ mode, set: setToken, answers: mcqAnswers, config: { topics: [...selTopics], levels: [...levels], style } }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.ok) { setNote(j?.error || "Could not mark this paper. Please try again."); return; }
+      setReveal(j.items && typeof j.items === "object" ? j.items : {});
+      setScore({ got: j.mcqScore ?? 0, total: j.mcqTotal ?? 0, structured: questions.filter((q) => q.type !== "mcq").length });
+      setSubmitted(true);
+      setRevealed(true);
+      setTimeout(() => paperRef.current?.querySelector(".el-result")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+    } catch {
+      setNote("Network error. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
-    setTimeout(() => paperRef.current?.querySelector(".el-result")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
   }
 
   const totalMarks = useMemo(() => questions.reduce((s, q) => s + q.marks, 0), [questions]);
@@ -367,8 +376,9 @@ export function ExamRunner({
                   {q.type === "mcq" && q.opts ? (
                     <div className="grid gap-2">
                       {q.opts.map((o, k) => {
-                        const isCorrect = submitted && k === q.ans;
-                        const isWrong = submitted && chosen === k && k !== q.ans;
+                        const ans = reveal[q.id]?.ans;
+                        const isCorrect = submitted && k === ans;
+                        const isWrong = submitted && typeof ans === "number" && chosen === k && k !== ans;
                         return (
                           <label
                             key={k}
@@ -392,19 +402,19 @@ export function ExamRunner({
                     />
                   )}
 
-                  {revealed && (
+                  {revealed && reveal[q.id] && (
                     <div className="mt-3 rounded-r-xl border-l-2 border-cyan bg-cyan/5 px-4 py-3 el-scheme">
                       <p className="mb-2 font-mono text-[11px] uppercase tracking-widest text-cyan">Mark scheme{q.type === "structured" ? ` · ${q.marks} marks` : ""}</p>
                       <ul className="space-y-1">
-                        {q.scheme.map((s, si) => (
+                        {reveal[q.id].scheme.map((s, si) => (
                           <li key={si} className="flex gap-2 text-sm text-ice/80">
                             <span className="text-emerald2">✓</span>
                             <span><Tex text={s} /></span>
                           </li>
                         ))}
                       </ul>
-                      {q.type === "mcq" && typeof q.ans === "number" && (
-                        <p className="mt-2 font-mono text-xs text-lime2">Correct answer: {"ABCD"[q.ans]}</p>
+                      {q.type === "mcq" && typeof reveal[q.id].ans === "number" && (
+                        <p className="mt-2 font-mono text-xs text-lime2">Correct answer: {"ABCD"[reveal[q.id].ans!]}</p>
                       )}
                     </div>
                   )}
@@ -416,8 +426,8 @@ export function ExamRunner({
           <div className="el-noprint mt-4 flex flex-wrap justify-center gap-3">
             {!submitted ? (
               <>
-                <button onClick={submit} className="btn-primary"><CheckCircle2 size={16} /> Submit &amp; mark</button>
-                <button onClick={() => setRevealed((v) => !v)} className="btn-ghost"><Eye size={16} /> {revealed ? "Hide" : "Reveal"} mark schemes</button>
+                <button onClick={() => { void submit(); }} disabled={submitting} className="btn-primary disabled:opacity-50">{submitting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} Submit &amp; mark</button>
+                <button onClick={() => { void submit(); }} disabled={submitting} className="btn-ghost disabled:opacity-50" title="Marks the paper as it stands, then shows every mark scheme"><Eye size={16} /> Reveal mark schemes</button>
               </>
             ) : (
               <button onClick={generate} className="btn-primary"><RotateCcw size={16} /> New test</button>
