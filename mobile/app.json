@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "SJ Kamran Portal",
+    "slug": "sjabrankamran-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "sjkportal",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0A1024",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#0A1024",
+      "resizeMode": "contain",
+      "image": "./assets/splash-icon.png"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sjabrankamran.portal"
+    },
+    "android": {
+      "package": "com.sjabrankamran.portal",
+      "edgeToEdgeEnabled": true,
+      "adaptiveIcon": {
+        "backgroundColor": "#0A1024",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0A1024",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 160
+        }
+      ]
+    ]
+  }
+}

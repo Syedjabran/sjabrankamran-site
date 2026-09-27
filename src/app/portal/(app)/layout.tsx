@@ -2,12 +2,13 @@ import { PortalNavigation } from "@/components/portal-navigation";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { Eye, GraduationCap, LockKeyhole, LogOut, Settings } from "lucide-react";
+import { Eye, GraduationCap, LogOut, Settings } from "lucide-react";
 import { getPortalUser, ROLE_LABELS, canConductDrills, isAdmin, isStaff, isRegistrarOnly, isCoordinatorOnly, isExamLabStaff, type EduRole } from "@/lib/edu/auth";
 import { getPortalRestriction } from "@/lib/portal/access-control";
 import { onboardingStatus } from "@/lib/portal/onboarding";
 import { satAccess } from "@/lib/sat/access";
 import { effectiveRoles } from "@/lib/portal/view-as";
+import { isEmbeddedClient } from "@/lib/portal/embed";
 import { AccessLockMonitor } from "./access-lock-monitor";
 import { PresenceBeacon } from "./presence-beacon";
 import { PortalAccessBlocked } from "./portal-access-blocked";
@@ -191,6 +192,10 @@ export default async function PortalLayout({ children }: { children: React.React
     if (!allowed.some((a) => pathname === a || pathname.startsWith(a + "/"))) redirect("/portal/coordinator");
   }
 
+  // Rendered inside the mobile app's WebView, which supplies its own title
+  // bar and full role-aware menu — the portal's own header and sidebar would
+  // just be a second copy of both.
+  const embedded = await isEmbeddedClient();
   const { roles: navRoles, previewing } = await effectiveRoles(user);
   const navSections = navFor(navRoles, satEnabled);
   // Global search is available to every signed-in role; the API only
@@ -203,10 +208,10 @@ export default async function PortalLayout({ children }: { children: React.React
     : "Awaiting role assignment";
 
   return (
-    <div className="container-x py-8">
+    <div className={embedded ? "px-4 py-5" : "container-x py-8"}>
       <AccessLockMonitor />
       <PresenceBeacon />
-      <PwaPortal showInstallCard={!mustOnboard} />
+      <PwaPortal showInstallCard={!mustOnboard && !embedded} />
       {previewing ? (
         <div className="el-noprint mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/30 bg-amber-300/[0.06] px-4 py-2.5">
           <p className="flex items-center gap-2 text-xs text-amber-300">
@@ -215,6 +220,7 @@ export default async function PortalLayout({ children }: { children: React.React
           <RolePreviewSwitcher previewing={previewing} />
         </div>
       ) : null}
+      {embedded ? null : (
       <div className="el-noprint mb-8 flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.06] pb-6">
         <div className="flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-xl border border-cyan/30 text-cyan">
@@ -246,9 +252,10 @@ export default async function PortalLayout({ children }: { children: React.React
           </form>
         </div>
       </div>
+      )}
 
-      <div className={mustOnboard ? "" : "grid gap-8 lg:grid-cols-[13rem_1fr]"}>
-        {!mustOnboard && <PortalNavigation sections={navSections} />}
+      <div className={mustOnboard || embedded ? "" : "grid gap-6 lg:grid-cols-[13rem_1fr] lg:gap-8"}>
+        {embedded || mustOnboard ? null : <PortalNavigation sections={navSections} />}
         <div id="portal-content" tabIndex={-1} className="min-w-0">{children}</div>
       </div>
     </div>
