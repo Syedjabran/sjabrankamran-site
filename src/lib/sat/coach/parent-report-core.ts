@@ -57,8 +57,9 @@ export type SatWeek = {
   minutes: number;
   fullExam: { title: string; score: string | null; status: "done" | "missed" | "none" | "scheduled" };
   streak: number;
-  daysToExam: number | null;
-  examWhen: string | null;    // "7 November 2026", or "December 2026 (not booked yet)"
+  daysToExam: number | null;   // to the SAT date, or to the target month's first day
+  examWhen: string | null;    // "7 November 2026" (booked), or the target month "December 2026"
+  examBooked: boolean;        // examWhen is a booked SAT date (false: a target month, not booked yet)
   targetScore: number;
   scores: SatScoreRow[];      // newest first, at most 5
   estimateBasis: string | null;
@@ -287,14 +288,14 @@ function scoreRows(history: SittingScore[]): { rows: SatScoreRow[]; basis: strin
   };
 }
 
-function examTiming(profile: SatWeekInput["profile"], runDate: string): Pick<SatWeek, "daysToExam" | "examWhen"> {
+function examTiming(profile: SatWeekInput["profile"], runDate: string): Pick<SatWeek, "daysToExam" | "examWhen" | "examBooked"> {
   const end = horizonEnd(profile);
   const daysToExam = end && end >= runDate ? daysBetween(runDate, end) : null;
-  if (profile.examDate) return { daysToExam, examWhen: formatPkDay(profile.examDate, EXAM_DAY_FORMAT) };
+  if (profile.examDate) return { daysToExam, examWhen: formatPkDay(profile.examDate, EXAM_DAY_FORMAT), examBooked: true };
   if (profile.targetMonth) {
-    return { daysToExam, examWhen: `${formatPkDay(`${profile.targetMonth}-01`, { month: "long", year: "numeric" })} (not booked yet)` };
+    return { daysToExam, examWhen: formatPkDay(`${profile.targetMonth}-01`, { month: "long", year: "numeric" }), examBooked: false };
   }
-  return { daysToExam, examWhen: null };
+  return { daysToExam, examWhen: null, examBooked: false };
 }
 
 export type SatWeekInput = {
@@ -486,8 +487,17 @@ function examWhenDetail(daysToExam: number | null): string {
   return daysToExam === 0 ? "today" : `${plural(daysToExam, "day", "days")} to go`;
 }
 
+/** A target month (not booked yet): when it starts, and nothing once it
+ *  has -- never "passed", for an exam that was never booked (as the SAT
+ *  Lab home says: "Your target month is here"). */
+function targetMonthDetail(daysToExam: number | null): string {
+  return daysToExam !== null && daysToExam > 0 ? ` (starts in ${plural(daysToExam, "day", "days")})` : "";
+}
+
 function examLine(w: SatWeek): string {
-  return w.examWhen ? `SAT date: ${w.examWhen} (${examWhenDetail(w.daysToExam)})` : "SAT date: not set yet";
+  if (!w.examWhen) return "SAT date: not set yet";
+  if (!w.examBooked) return `Target month: ${w.examWhen} — not booked yet${targetMonthDetail(w.daysToExam)}`;
+  return `SAT date: ${w.examWhen} (${examWhenDetail(w.daysToExam)})`;
 }
 
 function authority(row: SatScoreRow): string {
@@ -695,6 +705,7 @@ function skillRows(w: SatWeek): string {
 
 function examHtml(w: SatWeek): string {
   if (!w.examWhen) return esc(examLine(w));
+  if (!w.examBooked) return `Target month: ${bold(w.examWhen)} — not booked yet${esc(targetMonthDetail(w.daysToExam))}`;
   return `SAT date: ${bold(w.examWhen)} (${esc(examWhenDetail(w.daysToExam))})`;
 }
 

@@ -318,7 +318,10 @@ red; a softer amber note for a partial miss); this week's numbers (sessions done
 questions answered — blanks don't count as answered — accuracy versus last week, time
 practised, this week's full exam result or "missed"/"none this week", and the streak); a
 two-line AI summary (or its rule-based fallback); and a short "progress so far" block (days
-to the SAT and the target, score history, section accuracy, strongest and weakest area).
+to the SAT and the target, score history, section accuracy, strongest and weakest area). For
+a student who hasn't booked, the first line reads "Target month: December 2026 — not booked
+yet (starts in 66 days)", and once that month has started just "Target month: October 2026
+— not booked yet" — never "passed" for an exam that was never booked.
 
 **When it's sent:** once, Saturday 18:00 Pakistan time (cron `0 13 * * 6`). A run that
 reaches its time limit stops taking new students and reports `partial` with how many are

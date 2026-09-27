@@ -27,6 +27,7 @@ function week(overrides = {}) {
     streak: 2,
     daysToExam: 42,
     examWhen: "7 November 2026",
+    examBooked: true,
     targetScore: 1400,
     scores: [
       { label: "Official Practice Test 5", range: "1180–1240", lower: 1180, upper: 1240, date: "26 Sept", official: true },
@@ -362,7 +363,9 @@ const item = (id, date, kind, status, extra = {}) => ({ id, date, kind, status, 
   assert.equal(bare.firstName, "Your child");
   assert.deepEqual([bare.scheduled, bare.answered, bare.accuracy, bare.accuracyPrev, bare.minutes, bare.streak], [0, 0, null, null, 0, 0]);
   assert.equal(bare.daysToExam, 66, "to the target month's first day");
-  assert.ok(bare.examWhen && bare.examWhen.includes("not booked yet"));
+  assert.equal(bare.examWhen, formatPkDay("2026-12-01", { month: "long", year: "numeric" }));
+  assert.equal(bare.examBooked, false);
+  assert.ok(renderSatSectionText(bare).includes(`Target month: ${bare.examWhen} — not booked yet (starts in 66 days)`));
   assert.deepEqual(bare.scores, []);
   assert.equal(bare.estimateBasis, null);
   assert.deepEqual(bare.sections, { rw: null, math: null });
@@ -374,6 +377,33 @@ const item = (id, date, kind, status, extra = {}) => ({ id, date, kind, status, 
     planItems: [], done: {}, analytics: null, summaries: [], items: [],
   });
   assert.equal(passed.daysToExam, null, "a passed SAT has no countdown");
+  assert.equal(passed.examBooked, true);
+  assert.ok(renderSatSectionText(passed).includes(`SAT date: ${passed.examWhen} (passed)`), "a booked SAT that has gone by is 'passed'");
+
+  // Controller follow-up to M7: a not-booked student whose target month has
+  // started is never told the SAT "passed" -- the email says the month is
+  // here and not booked, as the SAT Lab home does.
+  const started = satWeekFrom({
+    fullName: "Ali", runDate: RUN, profile: { examDate: null, targetMonth: "2026-09", targetScore: 1300 },
+    planItems: [], done: {}, analytics: null, summaries: [], items: [],
+  });
+  const month = formatPkDay("2026-09-01", { month: "long", year: "numeric" });
+  assert.equal(started.daysToExam, null);
+  assert.equal(started.examBooked, false);
+  const text = renderSatSectionText(started);
+  const html = renderSatSectionHtml(started);
+  assert.ok(text.includes(`• Target month: ${month} — not booked yet
+`), "no countdown once the month has started");
+  assert.ok(html.includes(`Target month: <b style="color:#111827">${month}</b> — not booked yet`));
+  for (const out of [text, html]) assert.ok(!/passed/.test(out) && !/SAT date:/.test(out), "no '(passed)' and no 'SAT date' for a student who never booked");
+  // On the month's first day there's no "(starts in 0 days)" either.
+  const firstDay = satWeekFrom({
+    fullName: "Ali", runDate: "2026-10-01", profile: { examDate: null, targetMonth: "2026-10", targetScore: 1300 },
+    planItems: [], done: {}, analytics: null, summaries: [], items: [],
+  });
+  assert.equal(firstDay.daysToExam, 0);
+  assert.ok(renderSatSectionText(firstDay).includes(`Target month: ${formatPkDay("2026-10-01", { month: "long", year: "numeric" })} — not booked yet
+`));
 }
 
 // --- 14: composeParentEmail -- Physics unchanged, SAT joined, SAT-only wrapped
