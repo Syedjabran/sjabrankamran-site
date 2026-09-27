@@ -12,7 +12,8 @@ import "server-only";
 import { imageUrls, imagesOf } from "@/lib/sat/signed-images";
 import { formatPk } from "@/lib/portal/pk-time";
 import {
-  LAUNCHABLE_STATUSES, SITTING_MAX_AGE_MS, allocationQuestionIds, hasStarted, inPlayIds, sittingTokenOk, type SittingToken,
+  LAUNCHABLE_STATUSES, SITTING_MAX_AGE_MS, allocationQuestionIds, hasStarted, inPlayIds, pausedPaperTypes, revealScope, sittingTokenOk,
+  type SittingToken,
 } from "./answer-rules";
 import { freezeAllocationIds, getAllocation, listAllocations, withProctorStatus, type AllocContent, type ExamAllocation } from "./allocations";
 import { idsOfPaper, practiceBank, questionById, safeQuestion } from "./bank-all";
@@ -20,6 +21,7 @@ import { IMAGE_BANK, type ImgQuestion } from "./image-bank";
 import { examLabKey } from "./keys";
 import type { ExamCourse, SafeQuestion } from "./paper-meta";
 import { legacyDrillPick, pickPractice, practiceRefusal, type PracticeSpec } from "./practice-pools";
+import { readReveals } from "./reveals";
 import { newSealId, signToken, verifyToken } from "./seal";
 
 export type SitMode = "practice" | "exam" | "test";
@@ -33,6 +35,10 @@ export type SittingOk = {
   images: Record<string, string>;
   /** Allocations only: what was assigned, now that it has opened. */
   content?: AllocContent;
+  /** Help-allowed allocations only: the answers frozen by mark-scheme
+   *  reveals in an earlier opening (qid -> answer), so the runner shows them
+   *  locked again after a reload. */
+  reveals?: Record<string, string>;
 };
 export type Refusal = { ok: false; status: number; error: string };
 export type SittingResult = SittingOk | Refusal;
@@ -57,11 +63,26 @@ export function readSitting(token: unknown, uid: string, now = Date.now(), maxAg
   return sittingTokenOk(t, uid, now, maxAgeMs) ? t : null;
 }
 
-/** Question ids held back from `uid` right now: those of their open or
- *  upcoming tests and no-help assignments (optionally except one). Throws
- *  when the allocations cannot be read -- callers refuse rather than guess. */
+/** Question ids held back from `uid` at `now` (a past moment for a review:
+ *  as of its sitting's opening): those of their open or upcoming tests and
+ *  no-help assignments (optionally except one). Throws when the allocations
+ *  cannot be read -- callers refuse rather than guess. */
 export async function heldIds(uid: string, now: number, exceptAllocationId: string | null = null): Promise<Set<string>> {
   return inPlayIds(await listAllocations(uid), now, idsOfPaper, exceptAllocationId);
+}
+
+/** What a new practice sitting must keep from `uid` now: the held question
+ *  ids, and per course the paper types whose whole papers are paused (a
+ *  teacher-set whole-paper test in play). Throws when unreadable. */
+export async function practiceHolds(uid: string, now: number): Promise<{ held: Set<string>; paused: Record<ExamCourse, Set<string>> }> {
+  const allocs = await listAllocations(uid);
+  const held = inPlayIds(allocs, now, idsOfPaper);
+  const paused: Record<ExamCourse, Set<string>> = { "9702": new Set(), "5054": new Set() };
+  for (const key of pausedPaperTypes(allocs, now, idsOfPaper, (id) => questionById(id))) {
+    const [course, type] = key.split("|") as [ExamCourse, string];
+    paused[course]?.add(type);
+  }
+  return { held, paused };
 }
 
 function resolve(ids: string[]): ImgQuestion[] {
@@ -76,15 +97,16 @@ async function opened(questions: ImgQuestion[], token: string | null, content?: 
 
 /**
  * A self-serve practice sitting in `course`. `held` = the student's in-play
- * questions (empty for staff): never drawn into a drill, and while any is of
- * a paper type, every whole paper of that type is paused with one refusal
- * (practice-pools.ts pickPractice). `mode` "test" (a proctored preview) is
- * staff-only.
+ * questions (empty for staff): never drawn into a drill; a whole paper
+ * holding one opens, with those answers withheld. `paused` = this course's
+ * paper types with a teacher-set whole-paper test in play: every whole paper
+ * of such a type is refused with one refusal (practice-pools.ts
+ * pickPractice). `mode` "test" (a proctored preview) is staff-only.
  */
 export async function openPractice(
-  uid: string, course: ExamCourse, spec: PracticeSpec, mode: SitMode, held: ReadonlySet<string>,
+  uid: string, course: ExamCourse, spec: PracticeSpec, mode: SitMode, held: ReadonlySet<string>, paused: ReadonlySet<string> = new Set(),
 ): Promise<SittingResult> {
-  const pick = pickPractice(spec, practiceBank(course), held, Math.random);
+  const pick = pickPractice(spec, practiceBank(course), held, Math.random, paused);
   if (!pick.ok) {
     const r = practiceRefusal(pick.reason, spec.type);
     return refuse(r.status, r.error);
@@ -134,10 +156,17 @@ export async function openAllocation(uid: string, allocationId: string, now = Da
     }
     if (!questions.length) return refuse(404, `The questions for “${alloc.title}” are not available. Contact the teacher.`);
   }
-  const token = issueSitting({
-    uid, ids: questions.map((q) => q.id), alloc: alloc.id, help: alloc.mode === "assignment_help", strict: allocStrict(alloc),
-  });
-  return opened(questions, token, c);
+  const help = alloc.mode === "assignment_help";
+  const token = issueSitting({ uid, ids: questions.map((q) => q.id), alloc: alloc.id, help, strict: allocStrict(alloc) });
+  const result = await opened(questions, token, c);
+  // A help-allowed assignment reopened after a reload: the answers its
+  // earlier reveals froze come back, so the runner shows them locked.
+  if (!result.ok || !help) return result;
+  const scope = revealScope({ sid: "", alloc: alloc.id });
+  const read = await readReveals(uid, scope, questions.filter((q) => q.ms_img).map((q) => q.id));
+  if (read === null) return UNAVAILABLE;
+  const reveals = Object.fromEntries(Object.entries(read).map(([qid, r]) => [qid, r.text]));
+  return Object.keys(reveals).length ? { ...result, reveals } : result;
 }
 
 /** Signed URLs for question images of the sitting's own questions (the

@@ -14,7 +14,9 @@ export type AllocContentView =
   | { type: "custom"; ids: string[] }
   | { type: "drillref"; drillId: string; ref: string; ids: string[]; spec: unknown };
 
-export type Sitting = { token: string; questions: SafeQuestion[]; images: Record<string, string>; content?: AllocContentView };
+/** `reveals`: a reopened help-allowed assignment's answers frozen by earlier
+ *  mark-scheme reveals (qid -> answer), shown locked again. */
+export type Sitting = { token: string; questions: SafeQuestion[]; images: Record<string, string>; content?: AllocContentView; reveals?: Record<string, string> };
 
 export type PracticeRequest =
   | { type: "paper"; code: string }
@@ -40,7 +42,8 @@ export async function openSitting(body: SittingRequest): Promise<{ ok: true; sit
     if (!r.ok) return { ok: false, error: errorOf(j, OPEN_FAILED) };
     const s = j as Partial<Sitting> | null;
     if (!s || typeof s.token !== "string" || !Array.isArray(s.questions) || !s.questions.length) return { ok: false, error: OPEN_FAILED };
-    return { ok: true, sitting: { token: s.token, questions: s.questions, images: s.images && typeof s.images === "object" ? s.images : {}, content: s.content } };
+    const reveals = s.reveals && typeof s.reveals === "object" ? s.reveals : undefined;
+    return { ok: true, sitting: { token: s.token, questions: s.questions, images: s.images && typeof s.images === "object" ? s.images : {}, content: s.content, reveals } };
   } catch {
     return { ok: false, error: OPEN_FAILED };
   }

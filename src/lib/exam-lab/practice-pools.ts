@@ -44,22 +44,23 @@ function shuffled<T>(list: T[], rng: Rng): T[] {
 export type PickResult = { ok: true; ids: string[] } | { ok: false; reason: "empty" | "paused" };
 
 /**
- * `held`: the student's in-play questions (answer-rules.ts inPlayIds).
+ * `held`: the student's in-play questions (answer-rules.ts inPlayIds);
+ * `paused`: the paper types of this course with a teacher-set whole-paper
+ * test in play (answer-rules.ts pausedPaperTypes).
  *
- * WHOLE PAPERS: while any held question is of this course's `paperType`,
- * EVERY whole paper of that type is paused -- the same refusal whichever
- * paper is asked for. Refusing only the papers that hold a held question
- * would point at the upcoming test's exact past paper (its mark scheme is
- * public). Dropping the held questions from the paper would do the same.
+ * WHOLE PAPERS of a paused type are refused, every one, with the same
+ * refusal whichever paper is asked for: refusing only the test's own paper
+ * would name it (its mark scheme is public). Any other whole paper opens,
+ * held questions included -- their answers and mark schemes are withheld
+ * while they are held (/review, /reveal, /mark).
  * DRILLS, the daily challenge and focus drills leave held questions out
- * silently: a random pool gives nothing away.
+ * silently.
  */
-export function pickPractice(spec: PracticeSpec, bank: PoolQuestion[], held: ReadonlySet<string>, rng: Rng): PickResult {
+export function pickPractice(spec: PracticeSpec, bank: PoolQuestion[], held: ReadonlySet<string>, rng: Rng, paused: ReadonlySet<string> = new Set()): PickResult {
   if (spec.type === "paper") {
     const qs = bank.filter((q) => q.code === spec.code).sort((a, b) => a.qnum - b.qnum);
     if (!qs.length) return { ok: false, reason: "empty" };
-    const type = qs[0].paperType;
-    if (held.size && bank.some((q) => q.paperType === type && held.has(q.id))) return { ok: false, reason: "paused" };
+    if (paused.has(qs[0].paperType)) return { ok: false, reason: "paused" };
     return { ok: true, ids: qs.map((q) => q.id) };
   }
   const open = bank.filter((q) => !held.has(q.id));
@@ -84,7 +85,7 @@ export function pickPractice(spec: PracticeSpec, bank: PoolQuestion[], held: Rea
 
 /** The one refusal a whole paper of a paused type gets: the same words and
  *  status for every paper of that type (it must not tell papers apart). */
-export const PAPERS_PAUSED = "Full practice papers of this type are paused until your upcoming test is done. Try a topic drill meanwhile.";
+export const PAPERS_PAUSED = "Full practice papers of this type are paused while you have a test of this type in progress — try a topic drill meanwhile.";
 
 export function practiceRefusal(reason: "empty" | "paused", specType: PracticeSpec["type"]): { status: number; error: string } {
   if (reason === "paused") return { status: 409, error: PAPERS_PAUSED };
@@ -118,14 +119,4 @@ function legacyCount(spec: LegacySpec): number {
  *  the server at the student's first open (sittings.ts openAllocation). */
 export function legacyDrillPick(spec: LegacySpec, bank: PoolQuestion[], rng: Rng): string[] {
   return shuffled(legacyPool(spec, bank), rng).slice(0, legacyCount(spec)).map((q) => q.id);
-}
-
-/** Whether ids a browser chose for a legacy spec it opened BEFORE the server
- *  froze specs (a tab from before the deploy) are ones that browser could
- *  have drawn: distinct, from the spec's own pool, no more than its count.
- *  The attempt route then freezes them, so the allocation takes no other set. */
-export function legacyIdsAcceptable(spec: LegacySpec, ids: string[], bank: PoolQuestion[]): boolean {
-  if (!ids.length || ids.length > legacyCount(spec) || new Set(ids).size !== ids.length) return false;
-  const pool = new Set(legacyPool(spec, bank).map((q) => q.id));
-  return ids.every((id) => pool.has(id));
 }

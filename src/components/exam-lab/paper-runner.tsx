@@ -58,6 +58,7 @@ export function PaperRunner({
   questions,
   token,
   images,
+  reveals = {},
   title,
   subtitle,
   timed = true,
@@ -78,6 +79,7 @@ export function PaperRunner({
   questions: SafeQuestion[];
   token: string;                    // signed sitting token (/api/exam-lab/sitting): every call of this sitting carries it
   images: Record<string, string>;   // signed question-image URLs the sitting opened with
+  reveals?: Record<string, string>; // a reopened assignment's answers frozen by earlier reveals (shown locked)
   title: string;
   subtitle?: string;
   timed?: boolean;
@@ -123,7 +125,9 @@ export function PaperRunner({
   const [loading, setLoading] = useState(() => questions.some((q) => !images[q.img]));
   const [err, setErr] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, number>>({});
-  const [structAnswers, setStructAnswers] = useState<Record<string, string>>({});
+  // A reopened help-allowed assignment starts with the answers its earlier
+  // mark-scheme reveals froze (the server counts only those), locked.
+  const [structAnswers, setStructAnswers] = useState<Record<string, string>>(() => ({ ...reveals }));
   // `answer` = the exact (trimmed) text Maxwell marked; a mark is only ever
   // recorded against that text, so editing afterwards cannot keep a stale mark.
   // `receipt`: the server's signed record of that mark; the attempt route
@@ -145,7 +149,7 @@ export function PaperRunner({
   // or all of them in the finished sitting's review.
   const [ms, setMs] = useState<Record<string, string>>({});
   const [msState, setMsState] = useState<Record<string, { loading?: boolean; error?: string }>>({});
-  const [frozen, setFrozen] = useState<Set<string>>(() => new Set());
+  const [frozen, setFrozen] = useState<Set<string>>(() => new Set(Object.keys(reveals)));
   // The submitted sitting's results, from the server (the browser holds no key).
   const [review, setReview] = useState<Review | null>(null);
   const [reviewState, setReviewState] = useState<"idle" | "loading" | "error">("idle");

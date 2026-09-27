@@ -2,14 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getPortalUser } from "@/lib/edu/auth";
 import { appendAttemptChecked, type Attempt, type AttemptContext, type AttemptQuestion } from "@/lib/exam-lab/attempts";
-import { idsOfPaper, practiceBank, questionById } from "@/lib/exam-lab/bank-all";
-import { freezeAllocationIds, getAllocation, type ExamAllocation } from "@/lib/exam-lab/allocations";
+import { idsOfPaper, questionById } from "@/lib/exam-lab/bank-all";
+import { getAllocation, type ExamAllocation } from "@/lib/exam-lab/allocations";
 import {
   SUBMIT_MAX_AGE_MS, allocationQuestionIds, frozenResponse, hasStarted, receiptMatches, revealScope, sameIdSet, sittingAlreadySubmitted,
   type MarkReceipt, type RevealRecord,
 } from "@/lib/exam-lab/answer-rules";
 import { examLabKey } from "@/lib/exam-lab/keys";
-import { legacyIdsAcceptable } from "@/lib/exam-lab/practice-pools";
 import { readReveals } from "@/lib/exam-lab/reveals";
 import { verifyToken } from "@/lib/exam-lab/seal";
 import { readSitting } from "@/lib/exam-lab/sittings";
@@ -105,7 +104,6 @@ export async function POST(request: Request) {
   let kind: AttemptContext["kind"];
   let help: boolean;
   let alloc: ExamAllocation | null = null;
-  let browserChosenPaper = false;
   const allocationId = sitting ? sitting.alloc : claimedAllocation;
   if (allocationId) {
     // An allocation attempt must be the caller's own allocation, after it
@@ -116,20 +114,12 @@ export async function POST(request: Request) {
     }
     if (!alloc) return NextResponse.json({ error: "This attempt does not belong to one of your assignments." }, { status: 403 });
     if (!hasStarted(alloc, now)) return NextResponse.json({ error: "This activity has not opened yet." }, { status: 403 });
-    let expected = allocationQuestionIds(alloc, idsOfPaper)?.filter((id) => questionById(id)) ?? null;
-    const c = alloc.content;
-    if (!expected && (c.type === "drill" || c.type === "daily") && legacyIdsAcceptable(c, ids, practiceBank("9702"))) {
-      // A legacy randomised spec the browser drew itself (a tab opened before
-      // specs were frozen on the server): questions its own pool could have
-      // given are frozen now, so this allocation takes no other set.
-      try {
-        expected = await freezeAllocationIds(user.id, alloc.id, () => ids);
-      } catch {
-        return NextResponse.json({ error: "Could not verify the assignment. Please retry." }, { status: 503 });
-      }
-      browserChosenPaper = !!expected && sameIdSet(expected, ids);
-    }
-    if (!expected) return NextResponse.json({ error: "Open this assignment from Exam Lab, then submit it." }, { status: 409 });
+    // Only a set the SERVER chose: an allocation's questions are frozen when
+    // it is first opened (/sitting). A submission for one never opened there
+    // (a tab from before the deploy, or a hand-built request picking its own
+    // questions) is refused -- the student reloads and starts again.
+    const expected = allocationQuestionIds(alloc, idsOfPaper)?.filter((id) => questionById(id)) ?? null;
+    if (!expected) return NextResponse.json({ error: "Please reload this page to start again." }, { status: 409 });
     if (!sameIdSet(expected, ids)) return NextResponse.json({ error: "This attempt does not match the assigned paper." }, { status: 400 });
     help = alloc.mode === "assignment_help";
     kind = alloc.mode === "test" ? "test" : "assignment";
@@ -215,7 +205,6 @@ export async function POST(request: Request) {
     context = {
       ...client, kind, help, status,
       allocationId: alloc?.id ?? null,
-      ...(browserChosenPaper ? { browserChosenPaper: true } : {}),
       // A proctored practice preview is proctored whatever the browser says.
       ...(sitting?.strict ? { integrity: "strict" as const, proctored: true } : {}),
       ...(sitting ? { sittingId: sitting.sid } : {}),

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getPortalUser } from "@/lib/edu/auth";
 import { resolveCourseAccess } from "@/lib/portal/course-access";
 import { takeHit } from "@/lib/exam-lab/answer-rules";
-import { heldIds, openAllocation, openPractice, UNAVAILABLE, type SittingResult } from "@/lib/exam-lab/sittings";
+import { openAllocation, openPractice, practiceHolds, UNAVAILABLE, type SittingResult } from "@/lib/exam-lab/sittings";
 
 export const runtime = "nodejs";
 
@@ -46,9 +46,11 @@ export async function POST(request: Request) {
     try { access = await resolveCourseAccess(user); } catch { return NextResponse.json({ error: UNAVAILABLE.error }, { status: 503 }); }
     if (!access.allowed.includes(d.course)) return NextResponse.json({ error: "You do not have access to this course's papers." }, { status: 403 });
     if (d.mode === "test" && !access.isStaff) return NextResponse.json({ error: "Proctored tests are set by your teacher." }, { status: 403 });
-    let held: Set<string>;
-    try { held = access.isStaff ? new Set() : await heldIds(user.id, Date.now()); } catch { return NextResponse.json({ error: UNAVAILABLE.error }, { status: 503 }); }
-    result = await openPractice(user.id, d.course, d.practice, d.mode, held);
+    let holds: { held: Set<string>; paused: Record<"9702" | "5054", Set<string>> };
+    try {
+      holds = access.isStaff ? { held: new Set(), paused: { "9702": new Set(), "5054": new Set() } } : await practiceHolds(user.id, Date.now());
+    } catch { return NextResponse.json({ error: UNAVAILABLE.error }, { status: 503 }); }
+    result = await openPractice(user.id, d.course, d.practice, d.mode, holds.held, holds.paused[d.course]);
   }
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
   const { ok: _ok, ...body } = result;

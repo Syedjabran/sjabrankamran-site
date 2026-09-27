@@ -44,9 +44,9 @@ const TOPICS_AS = ["Physical quantities & units","Kinematics","Dynamics","Forces
 const TOPICS_A2 = ["Circular motion","Gravitational fields","Thermal physics","Ideal gases","Oscillations","Electric fields","Capacitance","Magnetic fields","Alternating currents","Quantum physics","Nuclear physics","Astronomy & cosmology"];
 
 type ActiveMeta = { mode: "paper" | "drill"; code?: string; ref?: string; paperType: "P1" | "P2" | "P4" | "mixed" };
-type Active = { questions: SafeQuestion[]; token: string; images: Record<string, string>; title: string; subtitle?: string; duration: number; timed: boolean; lockOnExpiry?: boolean; logMeta: ActiveMeta; integrity: GuardMode; kind: AttemptKind; help: boolean; attemptId?: string; allocationId?: string | null; daily?: boolean; dueAt?: string | null };
+type Active = { questions: SafeQuestion[]; token: string; images: Record<string, string>; reveals?: Record<string, string>; title: string; subtitle?: string; duration: number; timed: boolean; lockOnExpiry?: boolean; logMeta: ActiveMeta; integrity: GuardMode; kind: AttemptKind; help: boolean; attemptId?: string; allocationId?: string | null; daily?: boolean; dueAt?: string | null };
 /** Builds the runner's sitting from what the server opened, or says why it can't. */
-type Launch = (s: Sitting) => Omit<Active, "questions" | "token" | "images"> | string;
+type Launch = (s: Sitting) => Omit<Active, "questions" | "token" | "images" | "reveals"> | string;
 
 // The student's list carries only what kind of work an allocation is (and a
 // frozen drill's reference): its paper code and question ids arrive with the
@@ -385,7 +385,7 @@ export function PapersHub({ catalog, canTest = false, canPause = false, canCondu
         if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
         return false;
       }
-      enter({ ...built, questions: r.sitting.questions, token: r.sitting.token, images: r.sitting.images });
+      enter({ ...built, questions: r.sitting.questions, token: r.sitting.token, images: r.sitting.images, reveals: r.sitting.reveals });
       return true;
     } finally {
       launchingRef.current = false;

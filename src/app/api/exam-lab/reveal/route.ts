@@ -10,13 +10,15 @@ import { imageUrls } from "@/lib/sat/signed-images";
 
 export const runtime = "nodejs";
 
-// `answer`: the student's answer to this question at the moment of the
-// reveal -- it becomes final. `fresh`: re-sign (the one retry of a scheme
-// image that failed to load); the frozen answer never changes.
+// `answer` (required; "" when blank): the student's answer to this question
+// at the moment of the reveal -- it becomes final. A page from before this
+// rule sends none and gets 400 (the student reloads) rather than freezing a
+// blank. `fresh`: re-sign (the one retry of a scheme image that failed to
+// load); the frozen answer never changes.
 const schema = z.object({
   token: z.string().min(10).max(20000),
   id: z.string().min(1).max(80),
-  answer: z.string().max(12000).optional().default(""),
+  answer: z.string().max(12000),
   fresh: z.boolean().optional(),
 });
 
@@ -36,7 +38,7 @@ export async function POST(request: Request) {
   const user = await getPortalUser();
   if (!user) return NextResponse.json({ error: "Please sign in to the portal." }, { status: 401 });
   const parsed = schema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ error: "Please reload this page to start again." }, { status: 400 });
   const sitting = readSitting(parsed.data.token, user.id);
   if (!sitting) return NextResponse.json({ error: "This sitting has expired. Go back and open it again." }, { status: 403 });
   const id = parsed.data.id;

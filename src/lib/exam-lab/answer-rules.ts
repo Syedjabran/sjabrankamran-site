@@ -33,6 +33,8 @@ export type AllocLike = {
   startedAt?: number | null;
   durationMin?: number | null;
   integrity?: "off" | "standard" | "strict";
+  /** When it was assigned (a hold never starts before it existed). */
+  createdAt?: number;
 };
 
 /** Allocation statuses a student may open (the hub's Start / Resume / Re-sit). */
@@ -70,10 +72,15 @@ export const IN_PLAY_GRACE_MS = 7 * 24 * 60 * 60_000;
 export const UPCOMING_WINDOW_MS = 14 * 24 * 60 * 60_000;
 
 /** A test or no-help assignment that is open, or starts within 14 days: its
- *  questions stay out of the student's practice and are never revealed to
- *  them elsewhere, and whole practice papers of its type are paused. */
-export function isInPlay(a: Pick<AllocLike, "mode" | "status" | "dueAt"> & { startsAt?: string | null }, now: number): boolean {
+ *  questions stay out of the student's drills and generated sets, and their
+ *  answers and mark schemes are never revealed to the student elsewhere
+ *  (whole practice papers of a type are paused only for a teacher-set
+ *  whole-paper test -- pausedPaperTypes). `now` may be a past moment (a
+ *  review judges holds as of its sitting's opening): an allocation assigned
+ *  after that moment held nothing then. */
+export function isInPlay(a: Pick<AllocLike, "mode" | "status" | "dueAt"> & { startsAt?: string | null; createdAt?: number }, now: number): boolean {
   if (a.mode === "assignment_help" || a.status === "submitted") return false;
+  if (typeof a.createdAt === "number" && a.createdAt > now) return false;
   if (a.dueAt) {
     const due = Date.parse(a.dueAt);
     if (Number.isFinite(due) && due + IN_PLAY_GRACE_MS < now) return false;
@@ -94,6 +101,33 @@ export function inPlayIds(
   for (const a of allocs) {
     if (a.id === exceptAllocationId || !isInPlay(a, now)) continue;
     for (const id of allocationQuestionIds(a, idsOfPaper) ?? []) out.add(id);
+  }
+  return out;
+}
+
+/** A test or no-help assignment a TEACHER set (not an automated study-plan
+ *  spec) whose questions cover a whole past paper: while it is in play, every
+ *  whole practice paper of that course + paper type is paused, so the one
+ *  refusal a paused paper gets can't point at the test's own paper. Returns
+ *  "<course>|<paperType>" keys. Automated items and drill-style work pause
+ *  nothing: their questions are only held (left out of drills, answers
+ *  withheld). */
+export function pausedPaperTypes(
+  allocs: AllocLike[], now: number, idsOfPaper: (code: string) => string[],
+  meta: (id: string) => { code: string; paperType: string } | undefined, exceptAllocationId: string | null = null,
+): Set<string> {
+  const out = new Set<string>();
+  for (const a of allocs) {
+    if (a.id === exceptAllocationId || !isInPlay(a, now)) continue;
+    if (a.content.type === "drill" || a.content.type === "daily") continue; // automated study-plan specs
+    const ids = new Set(allocationQuestionIds(a, idsOfPaper) ?? []);
+    const codes = new Set([...ids].map((id) => meta(id)?.code).filter((c): c is string => !!c));
+    for (const code of codes) {
+      const paper = idsOfPaper(code);
+      if (!paper.length || !paper.every((id) => ids.has(id))) continue;
+      const type = meta(paper[0])?.paperType;
+      if (type) out.add(`${code.startsWith("5054_") ? "5054" : "9702"}|${type}`);
+    }
   }
   return out;
 }

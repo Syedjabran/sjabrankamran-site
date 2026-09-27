@@ -47,7 +47,11 @@ export async function POST(request: Request) {
       alloc = await getAllocation(user.id, sitting.alloc);
       if (!alloc || alloc.status !== "submitted") return NextResponse.json({ error: "Submit your answers first." }, { status: 409 });
     }
-    held = isExamLabStaff(user.roles) ? new Set() : await heldIds(user.id, now, sitting.alloc);
+    // Held as of the sitting's opening (not now): when a hold starts is
+    // plannable (a test's start - 14 days), so judging it now would let a
+    // sitting blank-submitted just before and reviewed just after name the
+    // test's questions.
+    held = isExamLabStaff(user.roles) ? new Set() : await heldIds(user.id, sitting.iat, sitting.alloc);
   } catch {
     return NextResponse.json({ error: "Exam Lab is temporarily unavailable. Please retry." }, { status: 503 });
   }
