@@ -16,7 +16,7 @@ import {
   type SittingToken,
 } from "./answer-rules";
 import { freezeAllocationIds, getAllocation, listAllocations, withProctorStatus, type AllocContent, type ExamAllocation } from "./allocations";
-import { idsOfPaper, practiceBank, questionById, safeQuestion } from "./bank-all";
+import { idsOfPaper, isSecureQuestion, practiceBank, questionById, safeQuestion } from "./bank-all";
 import { IMAGE_BANK, type ImgQuestion } from "./image-bank";
 import { examLabKey } from "./keys";
 import type { ExamCourse, SafeQuestion } from "./paper-meta";
@@ -78,7 +78,10 @@ export async function practiceHolds(uid: string, now: number): Promise<{ held: S
   const allocs = await listAllocations(uid);
   const held = inPlayIds(allocs, now, idsOfPaper);
   const paused: Record<ExamCourse, Set<string>> = { "9702": new Set(), "5054": new Set() };
-  for (const key of pausedPaperTypes(allocs, now, idsOfPaper, (id) => questionById(id))) {
+  // Only PAST-paper questions can make a "whole paper": a staff-written
+  // class test (the secure bank) is in no practice paper, so it pauses none.
+  const pastPaper = (id: string) => (isSecureQuestion(id) ? undefined : questionById(id));
+  for (const key of pausedPaperTypes(allocs, now, idsOfPaper, pastPaper)) {
     const [course, type] = key.split("|") as [ExamCourse, string];
     paused[course]?.add(type);
   }

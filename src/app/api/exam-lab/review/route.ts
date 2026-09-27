@@ -58,7 +58,8 @@ export async function POST(request: Request) {
 
   const own = new Set(sitting.ids);
   const mine = attempt.questions.filter((q) => own.has(q.id));
-  const mcqs = mine.filter((q) => q.paperType === "P1");
+  // Questions stored held (see /attempt) carry no result: out of the score.
+  const mcqs = mine.filter((q) => q.paperType === "P1" && !q.held);
   const mcq = { got: mcqs.filter((q) => q.correct === true).length, total: mcqs.length };
   if (!revealAfterSubmit(sitting.strict, alloc?.mode ?? null)) {
     return NextResponse.json({ mcq }, { status: 200, headers: { "cache-control": "no-store" } });
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
   const items: Record<string, Item> = {};
   const msPaths: Record<string, string> = {};
   for (const aq of mine) {
-    if (held.has(aq.id)) { items[aq.id] = { held: true }; continue; }
+    if (aq.held || held.has(aq.id)) { items[aq.id] = { held: true }; continue; }
     const bq = questionById(aq.id);
     if (!bq) continue;
     if (bq.paperType === "P1") items[aq.id] = { answer: bq.answer ?? undefined, correct: aq.correct };

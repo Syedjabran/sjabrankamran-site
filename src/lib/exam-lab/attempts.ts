@@ -18,6 +18,11 @@ export type AttemptQuestion = {
   /** The submitted response, retained so the learner can review this script. */
   response?: string | null;
   feedback?: string | null;
+  /** SERVER-SET: held back when submitted (in one of the student's open
+   *  tests or no-help assignments) -- stored with no answer, no correctness
+   *  and no marks, and left out of every score, record and analytics figure,
+   *  so a practice paper can't be used to check a held question's answer. */
+  held?: true;
 };
 
 /**

@@ -15,6 +15,10 @@
  * held questions are withheld instead (N2); /reveal needs the answer (N3); a
  * reopened assignment gets its frozen answers back (N4); a review judges
  * holds as of its sitting's opening (N5).
+ * Round 3: a held MCQ in a practice paper is stored unscored -- right and
+ * wrong answers give byte-identical results (NB1); a staff-written class
+ * test pauses no practice paper (NB2); the first-open freeze is race-safe
+ * and survives a stale write (NB3); reveals are listed once (NB4).
  */
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -26,6 +30,7 @@ const root = path.resolve(__dirname, "..");
 const files = new Map(); // "<bucket>/<path>" -> JSON text
 let user = { id: "u1", roles: ["student"], fullName: "Student One", email: "s1@example.test" };
 const aiCalls = [];
+const reads = []; // storage paths read, to count reads
 
 // ---- a tiny bank: two MCQs and two structured questions -----------------------
 const bankQs = [
@@ -34,13 +39,18 @@ const bankQs = [
   { id: "m3", paperType: "P1", code: "9702_s18_11", qnum: 3, topic: "Kinematics", level: "LOT", marks: 1, answer: "A", img: "p1/9702_s18_11/q3.jpg", ms_img: null, ref: "r", duration: 75 },
   { id: "s1", paperType: "P2", code: "9702_s18_21", qnum: 1, topic: "Waves", level: "LOT", marks: 4, answer: null, img: "p2/9702_s18_21/q1.jpg", ms_img: "p2/9702_s18_21/q1_ms.jpg", ref: "r", duration: 75 },
   { id: "s2", paperType: "P2", code: "9702_s18_21", qnum: 2, topic: "Waves", level: "HOT", marks: 3, answer: null, img: "p2/9702_s18_21/q2.jpg", ms_img: "p2/9702_s18_21/q2_ms.jpg", ref: "r", duration: 75 },
+  // The staff-written secure bank: a whole "paper" code, in no practice paper.
+  { id: "k1", paperType: "P1", code: "9702_ct1_pqu", qnum: 1, topic: "Units", level: "LOT", marks: 1, answer: "D", img: "custom/9702_ct1_pqu/q01.png", ms_img: null, ref: "ct", duration: 30 },
+  { id: "k2", paperType: "P1", code: "9702_ct1_pqu", qnum: 2, topic: "Units", level: "LOT", marks: 1, answer: "A", img: "custom/9702_ct1_pqu/q02.png", ms_img: null, ref: "ct", duration: 30 },
 ];
+const SECURE = new Set(["k1", "k2"]);
 const byId = new Map(bankQs.map((q) => [q.id, q]));
 const idsOfPaper = (code) => bankQs.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum).map((q) => q.id);
 const bankAll = {
   questionById: (id) => byId.get(id),
   idsOfPaper,
-  practiceBank: () => bankQs,
+  practiceBank: () => bankQs.filter((q) => !SECURE.has(q.id)),
+  isSecureQuestion: (id) => SECURE.has(id),
   safeQuestion: (q) => ({ id: q.id, course: "9702", paperType: q.paperType, code: q.code, qnum: q.qnum, topic: q.topic, level: q.level, marks: q.marks, img: q.img, ref: q.ref, duration: q.duration, hasMs: !!q.ms_img }),
 };
 
@@ -69,8 +79,18 @@ const mocks = {
   "./bank-all": bankAll,
   "./image-bank": { IMAGE_BANK: bankQs },
   "./storage-fresh": {
-    readFreshJson: async (bucket, p) => ({ ok: true, data: files.has(`${bucket}/${p}`) ? JSON.parse(files.get(`${bucket}/${p}`)) : null }),
-    writeFreshJson: async (bucket, p, v) => { files.set(`${bucket}/${p}`, JSON.stringify(v)); return true; },
+    readFreshJson: async (bucket, p) => {
+      reads.push(p);
+      await Promise.resolve();
+      return { ok: true, data: files.has(`${bucket}/${p}`) ? JSON.parse(files.get(`${bucket}/${p}`)) : null };
+    },
+    writeFreshJson: async (bucket, p, v) => { await Promise.resolve(); files.set(`${bucket}/${p}`, JSON.stringify(v)); return true; },
+    createFreshJson: async (bucket, p, v) => {
+      await Promise.resolve();
+      if (files.has(`${bucket}/${p}`)) return false;
+      files.set(`${bucket}/${p}`, JSON.stringify(v));
+      return true;
+    },
   },
   "./proctor": { getSession: async () => null },
   "@/lib/supabase/admin": {
@@ -84,6 +104,10 @@ const mocks = {
             return { error: null };
           },
           download: async () => ({ data: new Blob(["img"]), error: null }),
+          list: async (prefix) => ({
+            data: [...files.keys()].filter((k) => k.startsWith(`${bucket}/${prefix}/`)).map((k) => ({ name: k.slice(bucket.length + prefix.length + 2) })).filter((f) => !f.name.includes("/")),
+            error: null,
+          }),
         }),
       },
     }),
@@ -326,6 +350,84 @@ async function allocate(id, over) {
   assert.equal(r.status, 200);
   r = await open({ allocationId: "help-open" });
   assert.deepEqual(r.body.reveals, { s1: "what I wrote" }, "after a reload the frozen answer comes back, locked");
+
+  // ===== NB1: a held MCQ in a practice paper is stored unscored =====
+  // Held now: "nohelp" (m3, s2) and the frozen "legacy" pair. Paper 9702_s18_11
+  // opens (nothing pauses P1). Answer the held m3 right in one sitting and
+  // wrong in another: byte-identical responses, records and reviews for it.
+  const sitA = await practice9702({ type: "paper", code: "9702_s18_11" });
+  const sitB = await practice9702({ type: "paper", code: "9702_s18_11" });
+  assert.equal(sitA.status, 200);
+  assert.equal(sitB.status, 200);
+  const answersFor = (m3) => [{ id: "m1", response: "B" }, { id: "m2", response: "C" }, { id: "m3", response: m3 }];
+  const resA = await attempt(sitA.body.token, answersFor("A")); // m3's key is A: right
+  const recA = (await lastAttempt()).questions.find((q) => q.id === "m3");
+  const resB = await attempt(sitB.body.token, answersFor("B")); // wrong
+  const recB = (await lastAttempt()).questions.find((q) => q.id === "m3");
+  assert.equal(JSON.stringify(resA), JSON.stringify(resB), "the same response to the submission");
+  assert.equal(JSON.stringify(recA), JSON.stringify(recB), "the same stored record for the held question");
+  assert.deepEqual(recA, { id: "m3", topic: "Kinematics", level: "LOT", paperType: "P1", marks: 1, earned: null, correct: null, spentSec: null, response: null, feedback: null, held: true });
+  const revA = await reviewRoute.POST(req({ token: sitA.body.token }));
+  const revB = await reviewRoute.POST(req({ token: sitB.body.token }));
+  assert.equal(JSON.stringify(revA), JSON.stringify(revB), "the same review, score included");
+  assert.deepEqual(revA.body.items.m3, { held: true });
+  const storedA = (await attempts.getAttemptsStrict("u1")).find((a) => a.context?.sittingId === sidOf(sitA.body.token));
+  assert.equal(storedA.score, 0, "the held questions add nothing to the paper's score");
+  assert.equal(storedA.total, 0);
+  // Once the hold ends, a later sitting scores it as usual.
+  await allocations.markSubmitted("u1", "nohelp", {});
+  const sitC = await practice9702({ type: "paper", code: "9702_s18_11" });
+  await attempt(sitC.body.token, answersFor("A"));
+  const recC = (await lastAttempt()).questions.find((q) => q.id === "m3");
+  assert.equal(recC.correct, true, "no longer held: scored");
+  assert.equal(recC.held, undefined);
+  // Held when submitted, though not when the sitting opened: unscored.
+  const sitD = await practice9702({ type: "paper", code: "9702_s18_11" });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await allocate("late-hold", { mode: "assignment_nohelp", content: { type: "custom", ids: ["m3"] } });
+  await attempt(sitD.body.token, answersFor("A"));
+  assert.equal((await lastAttempt()).questions.find((q) => q.id === "m3").held, true, "a hold that began after opening still counts at submission");
+  await allocations.markSubmitted("u1", "late-hold", {});
+  // Its review keeps what was stored held withheld and out of the score, even
+  // though the hold began after the sitting opened (and has since ended).
+  const revD = await reviewRoute.POST(req({ token: sitD.body.token }));
+  assert.deepEqual(revD.body.items.m3, { held: true }, "stored held: withheld in the review");
+  assert.deepEqual(revD.body.mcq, { got: 0, total: 0 }, "and out of its MCQ total");
+
+  // ===== NB2: a staff-written class test pauses no practice paper =====
+  await allocate("secure-test", { mode: "test", content: { type: "drillref", drillId: "d2", ref: "DR-2", ids: ["k1", "k2"], spec: { type: "custom", ids: ["k1", "k2"] } } });
+  r = await practice9702({ type: "paper", code: "9702_s18_11" });
+  assert.equal(r.status, 200, "a whole secure class test is not a past paper: P1 papers stay open");
+  await allocations.markSubmitted("u1", "secure-test", {});
+
+  // ===== NB3: the first-open freeze is race-safe and survives a stale write =====
+  await allocate("race", { mode: "assignment_nohelp", content: { type: "drill", paperType: "P1", topics: ["Waves"], levels: ["LOT", "HOT"], count: 2 } });
+  const [tabOne, tabTwo] = await Promise.all([
+    allocations.freezeAllocationIds("u1", "race", () => ["m1", "m2"]),
+    allocations.freezeAllocationIds("u1", "race", () => ["m2", "m1"]),
+  ]);
+  assert.deepEqual(tabOne, tabTwo, "two tabs opening at once get the same set");
+  assert.deepEqual((await allocations.getAllocation("u1", "race")).frozenIds, tabOne, "and the allocation records it");
+  // A stale whole-doc write drops frozenIds: the write-once record still decides.
+  const docKey = "portal-data/exam-allocations/u1.json";
+  const doc = JSON.parse(files.get(docKey));
+  doc.items = doc.items.map((it) => (it.id === "race" ? { ...it, frozenIds: undefined } : it));
+  files.set(docKey, JSON.stringify(doc));
+  r = await attempt(sitting({ alloc: "race", ids: tabOne }), tabOne.map((id) => ({ id, response: "B" })));
+  assert.equal(r.status, 200, "the frozen set is still taken");
+  await allocate("race2", { mode: "assignment_nohelp", content: { type: "daily" } });
+  await allocations.freezeAllocationIds("u1", "race2", () => ["m1"]);
+  r = await attempt(null, [{ id: "m2", response: "C" }], { allocationId: "race2", kind: "assignment", help: false });
+  assert.equal(r.status, 400, "and no other set is");
+
+  // ===== NB4: an open lists the scope's reveals once =====
+  await allocate("help-two", { content: { type: "custom", ids: ["s1", "s2"] } });
+  r = await open({ allocationId: "help-two" });
+  await revealRoute.POST(req({ token: r.body.token, id: "s1", answer: "one" }));
+  reads.length = 0;
+  r = await open({ allocationId: "help-two" });
+  assert.deepEqual(r.body.reveals, { s1: "one" });
+  assert.deepEqual(reads.filter((p) => p.startsWith("exam-reveals/")), ["exam-reveals/u1/a-help-two/s1.json"], "one listing, then only the revealed question is read");
 
   // ===== m2: a student signs by path only what their own work references =====
   const sign = async (paths) => (await assetRoute.POST(req({ paths }))).status;

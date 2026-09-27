@@ -279,6 +279,10 @@ assert.deepEqual(pauses({ status: "submitted", content: { type: "paper", code: "
 assert.deepEqual(pauses({ mode: "assignment_help", content: { type: "paper", code: "9702_s18_11" } }), [], "nor help-allowed work");
 assert.deepEqual(pauses({ startsAt: new Date(NOW + UPCOMING_WINDOW_MS + HOUR).toISOString(), content: { type: "paper", code: "9702_s18_11" } }), [], "nor a test weeks away");
 assert.deepEqual([...pausedPaperTypes([alloc({ id: "p", content: { type: "paper", code: "9702_s18_11" } })], NOW, paperOf, meta, "p")], [], "a sitting's own allocation can be left out");
+// NB2 (fix round 3): `meta` answers only for PAST-paper questions, so a whole
+// staff-written class test (the secure bank: in no practice paper) pauses nothing.
+const pastOnly = (id) => (id === "a1" || id === "a2" || id === "a3" ? undefined : meta(id));
+assert.deepEqual([...pausedPaperTypes([alloc({ id: "p", content: { type: "custom", ids: ["a1", "a2", "a3"] } })], NOW, paperOf, pastOnly)], [], "a whole non-past-paper code pauses no type");
 const drill = pickPractice({ type: "drill", paperType: "P1", topics: ["Waves"], levels: ["LOT", "HOT"], count: 10 }, bank, new Set(["c1"]), rng);
 assert.equal(drill.ok, true);
 assert.deepEqual([...drill.ids].sort(), ["a1", "a3"], "a drill never draws an in-play question");

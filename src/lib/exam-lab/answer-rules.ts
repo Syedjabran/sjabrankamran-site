@@ -106,7 +106,9 @@ export function inPlayIds(
 }
 
 /** A test or no-help assignment a TEACHER set (not an automated study-plan
- *  spec) whose questions cover a whole past paper: while it is in play, every
+ *  spec) whose questions cover a whole PAST paper (`meta` answers only for
+ *  past-paper questions -- never the staff-written secure bank, which is in
+ *  no practice paper): while it is in play, every
  *  whole practice paper of that course + paper type is paused, so the one
  *  refusal a paused paper gets can't point at the test's own paper. Returns
  *  "<course>|<paperType>" keys. Automated items and drill-style work pause

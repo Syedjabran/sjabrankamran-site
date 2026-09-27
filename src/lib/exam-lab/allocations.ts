@@ -19,7 +19,7 @@
  * throws instead of reading as empty, so no writer ever replaces a student's
  * allocations with a near-empty list.
  */
-import { readFreshJson, writeFreshJson } from "./storage-fresh";
+import { createFreshJson, readFreshJson, writeFreshJson } from "./storage-fresh";
 import { getSession, type ProctorStatus } from "./proctor";
 
 const DATA = "portal-data";
@@ -186,23 +186,68 @@ export async function markStarted(uid: string, id: string, restart = false): Pro
   return it;
 }
 
+// The set a legacy spec froze at its first open, as a write-once object: the
+// arbiter when two tabs open it at once (the first create wins, the other
+// adopts it), and the record that survives if a stale whole-doc writer
+// drops `frozenIds` from the allocations doc.
+const frozenPath = (uid: string, id: string) => `exam-allocations/frozen/${uid}/${id}.json`;
+const FROZEN_SAFE = /^[A-Za-z0-9_-]{1,120}$/;
+
+/** The write-once frozen set of one allocation: the ids, undefined when none
+ *  was ever frozen, or null when it could not be read. */
+export async function readFrozenIds(uid: string, id: string): Promise<string[] | undefined | null> {
+  if (!FROZEN_SAFE.test(uid) || !FROZEN_SAFE.test(id)) return undefined;
+  const r = await readFreshJson<{ ids?: unknown }>(DATA, frozenPath(uid, id));
+  if (!r.ok) return null;
+  const ids = r.data?.ids;
+  return Array.isArray(ids) && ids.length && ids.every((x) => typeof x === "string") ? (ids as string[]) : undefined;
+}
+
+const sameList = (a: string[] | undefined, b: string[]) => !!a && a.length === b.length && a.every((x, i) => x === b[i]);
+
 /**
  * The ids a legacy randomised allocation (`drill` / `daily`) is sat with:
- * the ones already frozen, or `pick()` frozen now (first open). Returns null
- * when the allocation does not exist; throws on storage failure, so a sitting
- * never opens on ids the attempt route would not recognise.
+ * the ones already frozen, or `pick()` frozen now (first open). Race-safe:
+ * the set is created write-once (the first opener wins and every other tab
+ * adopts it), then copied onto the allocation and read back to verify.
+ * Returns null when the allocation does not exist; THROWS on any storage
+ * failure or an unverifiable write, so a sitting never opens on ids the
+ * attempt route would not recognise (fails closed).
  */
 export async function freezeAllocationIds(uid: string, id: string, pick: () => string[]): Promise<string[] | null> {
-  const s = await read(uid);
-  const it = s.items.find((x) => x.id === id);
+  const first = await read(uid);
+  const it = first.items.find((x) => x.id === id);
   if (!it) return null;
   if (it.frozenIds && it.frozenIds.length) return it.frozenIds;
-  const ids = pick();
-  if (!ids.length) return [];
-  it.frozenIds = ids;
-  it.updatedAt = Date.now();
-  if (!await write(uid, s)) throw new Error("Could not save the paper.");
-  return ids;
+  if (!FROZEN_SAFE.test(uid) || !FROZEN_SAFE.test(id)) throw new Error("Could not save the paper.");
+  let ids = await readFrozenIds(uid, id);
+  if (ids === null) throw new Error("Could not read the paper.");
+  if (!ids) {
+    const mine = pick();
+    if (!mine.length) return [];
+    if (!(await createFreshJson(DATA, frozenPath(uid, id), { ids: mine }))) {
+      // Another opener got there first (or the create failed): adopt what is stored.
+      const theirs = await readFrozenIds(uid, id);
+      if (!theirs) throw new Error("Could not save the paper.");
+      ids = theirs;
+    } else {
+      ids = mine;
+    }
+  }
+  // Copy it onto the allocation (cheap reads for holds and attempts) and
+  // verify it landed: a concurrent whole-doc writer may have dropped it.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const s = await read(uid);
+    const cur = s.items.find((x) => x.id === id);
+    if (!cur) return null;
+    if (sameList(cur.frozenIds, ids)) return ids;
+    cur.frozenIds = ids;
+    cur.updatedAt = Date.now();
+    if (!await write(uid, s)) throw new Error("Could not save the paper.");
+  }
+  const check = (await read(uid)).items.find((x) => x.id === id);
+  if (check && sameList(check.frozenIds, ids)) return ids;
+  throw new Error("Could not save the paper.");
 }
 
 /** The guard mode an allocation runs under (mirrors `allocCfg` in papers-hub). */

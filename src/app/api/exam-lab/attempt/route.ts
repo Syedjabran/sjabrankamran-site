@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getPortalUser } from "@/lib/edu/auth";
+import { getPortalUser, isExamLabStaff } from "@/lib/edu/auth";
 import { appendAttemptChecked, type Attempt, type AttemptContext, type AttemptQuestion } from "@/lib/exam-lab/attempts";
 import { idsOfPaper, questionById } from "@/lib/exam-lab/bank-all";
-import { getAllocation, type ExamAllocation } from "@/lib/exam-lab/allocations";
+import { getAllocation, readFrozenIds, type ExamAllocation } from "@/lib/exam-lab/allocations";
 import {
   SUBMIT_MAX_AGE_MS, allocationQuestionIds, frozenResponse, hasStarted, receiptMatches, revealScope, sameIdSet, sittingAlreadySubmitted,
   type MarkReceipt, type RevealRecord,
@@ -11,7 +11,7 @@ import {
 import { examLabKey } from "@/lib/exam-lab/keys";
 import { readReveals } from "@/lib/exam-lab/reveals";
 import { verifyToken } from "@/lib/exam-lab/seal";
-import { readSitting } from "@/lib/exam-lab/sittings";
+import { heldIds, readSitting } from "@/lib/exam-lab/sittings";
 
 export const runtime = "nodejs";
 
@@ -118,7 +118,14 @@ export async function POST(request: Request) {
     // it is first opened (/sitting). A submission for one never opened there
     // (a tab from before the deploy, or a hand-built request picking its own
     // questions) is refused -- the student reloads and starts again.
-    const expected = allocationQuestionIds(alloc, idsOfPaper)?.filter((id) => questionById(id)) ?? null;
+    let expected = allocationQuestionIds(alloc, idsOfPaper)?.filter((id) => questionById(id)) ?? null;
+    if (!expected && (alloc.content.type === "drill" || alloc.content.type === "daily")) {
+      // The set frozen at the first open, if a stale write dropped it from the
+      // allocations doc (the write-once record is the arbiter).
+      const frozen = await readFrozenIds(user.id, alloc.id);
+      if (frozen === null) return NextResponse.json({ error: "Could not verify the assignment. Please retry." }, { status: 503 });
+      expected = frozen ?? null;
+    }
     if (!expected) return NextResponse.json({ error: "Please reload this page to start again." }, { status: 409 });
     if (!sameIdSet(expected, ids)) return NextResponse.json({ error: "This attempt does not match the assigned paper." }, { status: 400 });
     help = alloc.mode === "assignment_help";
@@ -153,11 +160,33 @@ export async function POST(request: Request) {
     if (read === null) return NextResponse.json({ error: "Your answers couldn't be checked just now. Please retry." }, { status: 503 });
     reveals = read;
   }
+  // A PRACTICE sitting may hold questions held back for the student (an open
+  // test or no-help assignment's, opened in a whole practice paper): those
+  // are stored unscored -- no answer, no correctness, no marks -- so the
+  // score, "My question records" and /review say the same whatever was
+  // answered. Held as of submission (a paper opened before a hold began is no
+  // way round it), or as of the sitting's opening (the same holds /review
+  // withholds, answer-rules.ts isInPlay at the token's iat). An allocation's
+  // own questions are always graded: it is one submission, and its work is
+  // the student's real result.
+  let held = new Set<string>();
+  if (!alloc && sitting && !isExamLabStaff(user.roles)) {
+    try {
+      const [atOpen, atSubmit] = await Promise.all([heldIds(user.id, sitting.iat), heldIds(user.id, now)]);
+      held = new Set([...atOpen, ...atSubmit]);
+    } catch {
+      return NextResponse.json({ error: "Your answers couldn't be checked just now. Please retry." }, { status: 503 });
+    }
+  }
   const questions: AttemptQuestion[] = [];
   for (const q of d.questions) {
     const bq = questionById(q.id);
     if (!bq) return NextResponse.json({ error: "The attempt contains an unknown question." }, { status: 400 });
     const marks = bq.marks || 1;
+    if (held.has(bq.id)) {
+      questions.push({ id: bq.id, topic: bq.topic, level: bq.level, paperType: bq.paperType, marks, earned: null, correct: null, spentSec: null, response: null, feedback: null, held: true });
+      continue;
+    }
     const response = frozenResponse(q.response && q.response.trim() ? q.response : null, reveals[bq.id]);
     let earned: number | null = null;
     let correct: boolean | null = null;

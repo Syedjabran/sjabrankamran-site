@@ -41,6 +41,20 @@ export async function readFreshJson<T>(bucket: string, path: string): Promise<Fr
   }
 }
 
+/** Creates a JSON doc only if none exists yet (no upsert): true when this
+ *  call created it, false when it already existed OR the write failed -- the
+ *  caller then reads what is there (and fails closed when nothing is). The
+ *  first writer wins; a concurrent second one never overwrites it. */
+export async function createFreshJson(bucket: string, path: string, value: unknown): Promise<boolean> {
+  try {
+    const body = new Blob([JSON.stringify(value)], { type: "application/json" });
+    const { error } = await createAdminClient().storage.from(bucket).upload(path, body, { upsert: false, contentType: "application/json", cacheControl: "0" });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
 /** Upsert a JSON doc with cacheControl "0". Returns false on any failure. */
 export async function writeFreshJson(bucket: string, path: string, value: unknown): Promise<boolean> {
   try {

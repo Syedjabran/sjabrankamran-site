@@ -38,11 +38,27 @@ export async function readReveal(uid: string, scope: string, qid: string): Promi
   return r.data === null ? undefined : asRecord(r.data) ?? undefined;
 }
 
+/** The question ids with a reveal in one scope -- one list call -- or null
+ *  when the listing failed. */
+async function revealedIds(uid: string, scope: string): Promise<Set<string> | null> {
+  if (!safe(uid, scope)) return new Set();
+  try {
+    const { data, error } = await createAdminClient().storage.from(DATA).list(`exam-reveals/${uid}/${scope}`, { limit: 1000 });
+    if (error) return null;
+    return new Set((data ?? []).map((f) => f.name).filter((n) => n.endsWith(".json")).map((n) => n.slice(0, -5)));
+  } catch {
+    return null;
+  }
+}
+
 /** The reveals among `qids` of one sitting ({} when none), or null when any
- *  could not be read. */
+ *  could not be read: one listing of the scope, then a read of each question
+ *  that has one (usually none or a few). */
 export async function readReveals(uid: string, scope: string, qids: string[]): Promise<Record<string, RevealRecord> | null> {
   const out: Record<string, RevealRecord> = {};
-  const todo = [...new Set(qids)];
+  const present = await revealedIds(uid, scope);
+  if (present === null) return null;
+  const todo = [...new Set(qids)].filter((q) => present.has(q));
   let failed = false;
   let next = 0;
   const worker = async () => {
