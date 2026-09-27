@@ -108,9 +108,16 @@ async function submitWork(formData: FormData) {
     // The file failed on a first hand-in: keep the typed answer as a draft
     // (status unchanged, nothing submitted) so the student can re-attach.
     if (answerText) {
-      ({ error } = existing
-        ? await admin.from("edu_submissions").update({ answer_text: answerText }).eq("id", existing.id).eq("student_id", student.id)
-        : await admin.from("edu_submissions").insert({ assignment_id: assignmentId, student_id: student.id, status: "assigned", answer_text: answerText, files: [] }));
+      if (existing) {
+        // Only while the submission is still as read: a teacher marking it
+        // meanwhile wins (nothing is written, the student is told it closed).
+        const { data: kept, error: e } = await admin.from("edu_submissions").update({ answer_text: answerText })
+          .eq("id", existing.id).eq("student_id", student.id).eq("status", existing.status).select("id");
+        error = e;
+        if (!e && !kept?.length) back("closed");
+      } else {
+        ({ error } = await admin.from("edu_submissions").insert({ assignment_id: assignmentId, student_id: student.id, status: "assigned", answer_text: answerText, files: [] }));
+      }
       revalidatePath(`/portal/learn/assignments/${assignmentId}`);
     }
     back(fileError, answerText && !error ? "draft" : undefined);
@@ -126,7 +133,9 @@ async function submitWork(formData: FormData) {
 
   if (existing) {
     const merged = [...(((existing.files as unknown) ?? []) as typeof files), ...files];
-    ({ error } = await admin
+    // Only while the submission is still as read above (not marked or
+    // returned meanwhile): the status filter makes the check and the write one.
+    const { data: kept, error: e } = await admin
       .from("edu_submissions")
       .update({
         status,
@@ -135,7 +144,11 @@ async function submitWork(formData: FormData) {
         files: merged,
       })
       .eq("id", existing.id)
-      .eq("student_id", student.id));
+      .eq("student_id", student.id)
+      .eq("status", existing.status)
+      .select("id");
+    error = e;
+    if (!e && !kept?.length) back("closed");
   } else {
     ({ error } = await admin.from("edu_submissions").insert({
       assignment_id: assignmentId,
