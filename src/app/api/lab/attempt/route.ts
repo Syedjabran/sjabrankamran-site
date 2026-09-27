@@ -22,7 +22,7 @@ export async function POST(req: Request) {
   if (n === null) return labJson({ error: "The Practical Lab couldn’t open your attempt just now. Please reload the page.", code: "unavailable" }, 503);
 
   const token = signAttempt(caller.secret, { uid: caller.user.id, experiment: experiment.id, n, issuedAt: Date.now() });
-  const attempt = labAttempt(token, caller.user, caller.secret);
+  const attempt = await labAttempt(token, caller.user, caller.secret);
   if ("refused" in attempt) return attempt.refused;
   try {
     const view = viewAt({ id: attempt.id, params: attempt.params, attemptKey: attempt.attemptKey, settings: defaultSettings(attempt.id) });

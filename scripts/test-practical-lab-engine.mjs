@@ -196,6 +196,36 @@ for (const id of ids) {
       assert.ok(Math.max(...values) - Math.min(...values) > 0.8 * (hi - lo), `${f}.${k} uses its range`);
     }
   }
+  // Values printed on the apparatus stay exactly as printed (controller
+  // ruling): resistor and capacitor labels, supplies and cells, mass labels,
+  // the bridge wire, markers. Only hidden true values vary.
+  const PRINTED = {
+    shorted_resistance_wire: ["Rseries_ohm", "E_V", "wire_length_m"],
+    parallel_wire_voltage_divider: ["Ry_ohm", "E_V"],
+    rc_discharge_parallel: ["C_F", "V0_V"],
+    wire_shunt_equal_resistors: ["R_ohm", "E_V"],
+    parallel_resistor_network: ["E_V"],
+    wire_bridge_null: ["M_ohm", "N_ohm", "E_V", "active_L_m"],
+    folded_wire_series_resistivity: ["R_ohm", "E_V"],
+    meter_bridge_parallel_resistor: ["P_ohm", "Q_ohm", "E_V", "L_m"],
+    wire_voltage_divider_resistivity: ["R_ohm", "E_V"],
+    complementary_series_wires: ["E_V"],
+    led_ldr_photoresistance: ["E"],
+    magnet_coil_cantilever: ["supply_V", "magnet_mass_kg"],
+    counterweighted_compound_pendulum: ["m_lower_kg"],
+    buoyancy_series_springs: ["nut_masses_kg"],
+    loaded_rule_balance: ["M_kg", "heavy_kg"],
+    rod_pulley_equilibrium: ["m_end_kg", "m_hanger_kg"],
+    colliding_pendulum_balls: ["added_mass_kg"],
+    magnetic_inelastic_pickup: ["x0", "masses"],
+    spring_supported_variable_pivot_rod: ["M"],
+    symmetric_movable_pulley: ["M_hanger_kg", "Q_kg"],
+    inclined_rod_lift: ["W_N"],
+  };
+  for (const [f, names] of Object.entries(PRINTED)) {
+    for (const name of names) assert.ok(!(name in P.VARIATION[f]), `${f}.${name} is printed on the apparatus and must not vary`);
+  }
+
   // The readings follow the attempt's values: springs with other constants read other lengths.
   const settings = E.normaliseSettings(id, { load: "M16", medium: "oil" });
   const lengthFor = (params) => E.sampleAt({ id, params, attemptKey: KEY, settings }).l;
@@ -203,18 +233,54 @@ for (const id of ids) {
   assert.ok(lengths.size >= 6, "different attempts measure different spring lengths");
 }
 
-// --- readings: repeatable per setting, independent otherwise, with the old noise ----------
+// --- readings: one value per true value, the old noise, no averaging below the resolution ----
 {
-  const id = "9702_s25_33-q1"; // wire_shunt_equal_resistors: e = readSupply() of a fixed 1.5 V cell, ±0.002 V, 0.001 V
+  const { makeWireShunt } = await import("../src/lib/practical-lab/models/wire_shunt_equal_resistors.mjs");
+  const id = "9702_s25_33-q1"; // wire_shunt_equal_resistors: v across the unshunted 22 ohm (0.001 V), e = the 1.5 V cell
   const settings = E.defaultSettings(id);
   const at = (t, key = KEY) => E.sampleAt({ id, params: {}, attemptKey: key, settings, state: running(t) });
-  assert.deepEqual(at(2), at(2), "the same setting at the same moment reads the same");
-  assert.deepEqual(E.sampleAt({ id, params: {}, attemptKey: KEY, settings }), E.sampleAt({ id, params: {}, attemptKey: KEY, settings }), "resting too");
-  // Server readings: one per distinct moment (each its own stream).
-  const N = 6000;
   const counts = (values) => { const c = new Map(); for (const v of values) c.set(v, (c.get(v) ?? 0) + 1); return c; };
-  const server = counts(Array.from({ length: N }, (_, k) => Math.round((at(k / 30).e - 1.5) * 1000)));
-  // The old room: one seeded stream, read sequentially (adapters.mjs's seededRandom(970234)).
+
+  // The review's probe: one setting of a running circuit read 3,000 times at
+  // different moments. It used to give 60 different reading sets whose mean
+  // V (1.235326) closed in on the ideal (1.235294) below the 0.001 V
+  // resolution. Now every read is the same, so the mean is one reading.
+  const ideal = makeWireShunt().ideal(settings.length).V_V;
+  const reads = Array.from({ length: 3000 }, (_, i) => at(i / 30));
+  assert.equal(new Set(reads.map((r) => JSON.stringify(r))).size, 1, "a running circuit reads the same at every moment");
+  const meanV = reads.reduce((s, r) => s + r.v, 0) / reads.length;
+  assert.ok(Math.abs(meanV / 0.001 - Math.round(meanV / 0.001)) < 1e-6, "the mean of 3,000 reads is still a single 0.001 V reading");
+  assert.ok(Math.abs(meanV - ideal) > 0.0002, `averaging gets no closer to the ideal ${ideal} than one reading (${meanV})`);
+  assert.deepEqual(E.sampleAt({ id, params: {}, attemptKey: KEY, settings }), E.sampleAt({ id, params: {}, attemptKey: KEY, settings }), "resting too");
+  summary.averaging = `3,000 running reads of one setting: 1 reading set, mean V ${meanV} vs ideal ${ideal.toFixed(6)}`;
+
+  // A quantity reads the same at every setting where its true value is the
+  // same: static_spring_rod's hidden unloaded mark C0 over all 488 settings.
+  const rod = "9702_m21_33-q1";
+  const c0 = new Set();
+  for (let x = 0.145; x <= 0.32 + 1e-9; x += 0.025) for (let str = -30; str <= 30; str++) c0.add(E.sampleAt({ id: rod, params: {}, attemptKey: KEY, settings: E.normaliseSettings(rod, { x, str }) }).c0);
+  assert.equal(c0.size, 1, "one C0 reading whatever else is set: irrelevant controls can't re-roll it");
+  // ...and a hidden diameter read during a whole trial (gas_flow_hole's pin).
+  const flow = "9702_m21_33-q2";
+  const pins = new Set(Array.from({ length: 200 }, (_, i) => E.sampleAt({ id: flow, params: {}, attemptKey: KEY, settings: E.defaultSettings(flow), state: running(i / 7) }).d_2));
+  assert.equal(pins.size, 1, "a dimension reads the same at every moment of a trial");
+
+  // Time-varying quantities change only when their true value moves by a
+  // resolution step: the thermal lever's pointer, once settled, holds.
+  const lever = "9702_s23_34-q2";
+  const settledX2 = new Set();
+  for (let t = 120; t <= 600; t += 0.5) settledX2.add(E.sampleAt({ id: lever, params: {}, attemptKey: KEY, settings: E.defaultSettings(lever), state: running(t) }).x2);
+  assert.equal(settledX2.size, 1, "the settled pointer reads the same for eight minutes");
+  const rc = "9702_s22_34-q1";
+  const volts = Array.from({ length: 50 }, (_, i) => E.sampleAt({ id: rc, params: {}, attemptKey: KEY, settings: E.defaultSettings(rc), state: running(i * 0.5) }).v);
+  assert.ok(new Set(volts).size > 10, "a discharging capacitor's voltage changes as it falls");
+  assert.ok(volts.every((v, i) => i === 0 || v <= volts[i - 1] + 0.01), "and falls");
+
+  // The noise itself is the declared one: 6,000 attempts reading the 1.5 V
+  // cell (6,000 independent draws) against the model's distribution and the
+  // old room's sequential stream (adapters.mjs's seededRandom(970234)).
+  const N = 6000;
+  const server = counts(Array.from({ length: N }, (_, k) => Math.round((E.sampleAt({ id, params: {}, attemptKey: Buffer.from(`noise-${k}`), settings }).e - 1.5) * 1000)));
   const random = M.seededRandom(970234);
   const old = counts(Array.from({ length: N }, () => Math.round((M.readInstrument(1.5, { resolution: 0.001, halfWidth: 0.002 }, random) - 1.5) * 1000)));
   // Uniform ±2 mV then rounding to 1 mV: -2 and +2 an eighth each, -1, 0, +1 a quarter each.
@@ -229,10 +295,12 @@ for (const id of ids) {
   summary.noise = `noise chi² server ${chi(server).toFixed(2)}, old room ${chi(old).toFixed(2)}, between ${between.toFixed(2)} (limit 18.47)`;
   const mean = [...server].reduce((s, [k, c]) => s + k * c, 0) / N;
   assert.ok(Math.abs(mean) < 0.05, `no bias (mean error ${mean.toFixed(3)} mV)`);
-  // Different attempts read the same true value with independent noise.
-  const keys = Array.from({ length: 400 }, (_, n) => Buffer.from(`attempt-${n}`));
-  const perAttempt = counts(keys.map((k) => Math.round((E.sampleAt({ id, params: {}, attemptKey: k, settings }).e - 1.5) * 1000)));
-  assert.ok(perAttempt.size >= 4, "attempts don't share one noise pattern");
+  // Different quantities (different true values) get independent errors.
+  const lengths = counts([...Array(131).keys()].map((k) => {
+    const s = E.normaliseSettings(id, { length: 0.3 + k * 0.005 });
+    return Math.round((E.sampleAt({ id, params: {}, attemptKey: KEY, settings: s }).l - s.length) * 1000);
+  }));
+  assert.ok(lengths.size >= 3, "the ruler's error varies from one length to another");
   // The scoped streams are uniform.
   const scope = { key: 0 };
   const draws = [];
@@ -245,7 +313,9 @@ for (const id of ids) {
   const s2 = E.defaultSettings(network);
   const i1 = E.sampleAt({ id: network, params: {}, attemptKey: KEY, settings: s2, state: running(1) }).i;
   const again = Array.from({ length: 30 }, (_, k) => E.sampleAt({ id: network, params: {}, attemptKey: KEY, settings: s2, state: running(1 + k) }).i);
-  assert.ok(again.every((i) => Math.abs(i - i1) <= 0.0002), "the same resistors on every reading of one attempt");
+  assert.ok(again.every((i) => i === i1), "the same resistors (and the same reading) on every read of one attempt");
+  const otherAttempts = new Set(Array.from({ length: 40 }, (_, k) => E.sampleAt({ id: network, params: {}, attemptKey: Buffer.from(`net-${k}`), settings: s2, state: running(1) }).i));
+  assert.ok(otherAttempts.size >= 3, "other attempts have other resistors");
 }
 
 // --- no hidden value reaches what the room gets -----------------------------------------------
@@ -356,6 +426,11 @@ for (const id of ids) {
   assert.equal(A.readAttempt(SECRET, `${v}.${body}.${mac.slice(0, -2)}`), null, "a cut signature");
   for (const bad of [null, 42, "", "v1.x", "v2." + body + "." + mac, "x".repeat(700)]) assert.equal(A.readAttempt(SECRET, bad), null, String(bad).slice(0, 20));
   assert.notDeepEqual(A.attemptKey(SECRET, claims), A.attemptKey(SECRET, { ...claims, n: 4 }));
+  // Tokens expire after 12 hours (the room renews them) and can't be dated ahead.
+  const t0 = 1_800_000_000_000;
+  assert.equal(A.tokenExpired({ ...claims, issuedAt: t0 }, t0 + A.TOKEN_TTL_MS - 1), false);
+  assert.equal(A.tokenExpired({ ...claims, issuedAt: t0 }, t0 + A.TOKEN_TTL_MS + 1), true);
+  assert.equal(A.tokenExpired({ ...claims, issuedAt: t0 + 3_600_000 }, t0), true, "a token from the future");
 
   // The secret: required in production, a fixed one in development.
   const saved = { NODE_ENV: process.env.NODE_ENV, LAB_SECRET: process.env.LAB_SECRET };
@@ -384,20 +459,31 @@ for (const id of ids) {
 const UID = "4f9c2d1e-8b7a-4c3d-9e2f-1a2b3c4d5e6f";
 const OTHER = "11111111-2222-4333-8444-555555555555";
 /** An in-memory portal-data bucket with a log, driven by the stubs. */
-function store(initial = {}, { failRead = false, failWrite = false } = {}) {
+function store(initial = {}, { failRead = false, failWrite = false, afterWrite = null } = {}) {
   const files = new Map(Object.entries(initial));
   const log = [];
+  let writes = 0;
   globalThis.__labApi = {
     ...globalThis.__labApi,
     read: async (bucket, path) => { log.push(`read ${bucket}/${path}`); return failRead ? { ok: false } : { ok: true, data: files.has(path) ? structuredClone(files.get(path)) : null }; },
-    write: async (bucket, path, value) => { log.push(`write ${bucket}/${path}`); if (failWrite) return false; files.set(path, structuredClone(value)); return true; },
+    write: async (bucket, path, value) => {
+      log.push(`write ${bucket}/${path}`);
+      if (failWrite) return false;
+      files.set(path, structuredClone(value));
+      // Another request's write landing right after ours (a race).
+      if (afterWrite) afterWrite(files, path, ++writes);
+      return true;
+    },
   };
   return { files, log };
 }
+const attemptsDoc = (uid, experiments) => ({
+  [`lab-attempts/${uid}.json`]: { version: 1, experiments: Object.fromEntries(Object.entries(experiments).map(([e, n]) => [e, { n, at: "t", id: `seed-${e}-${n}`, history: [] }])) },
+});
 {
   let s = store();
   assert.equal(await A.openAttempt(UID, bridge, false), 1, "a first visit starts attempt 1");
-  assert.deepEqual(s.log, [`read portal-data/lab-attempts/${UID}.json`, `write portal-data/lab-attempts/${UID}.json`]);
+  assert.deepEqual(s.log, [`read portal-data/lab-attempts/${UID}.json`, `write portal-data/lab-attempts/${UID}.json`, `read portal-data/lab-attempts/${UID}.json`], "read, write, then read back to confirm");
   s.log.length = 0;
   assert.equal(await A.openAttempt(UID, bridge, false), 1, "a reload resumes it");
   assert.deepEqual(s.log, [`read portal-data/lab-attempts/${UID}.json`], "resuming writes nothing");
@@ -415,6 +501,37 @@ function store(initial = {}, { failRead = false, failWrite = false } = {}) {
   assert.equal(await A.openAttempt(UID, bridge, false), null, "a doc that isn't an object is unreadable");
   store();
   assert.equal(await A.openAttempt("../../x", bridge, false), null, "an unsafe id opens nothing");
+
+  // Races: another request's write lands on top of ours. We read it back, see
+  // ours is gone and build on theirs.
+  const path = `lab-attempts/${UID}.json`;
+  // Two practicals opened at the same moment: theirs replaced the whole record.
+  s = store({}, { afterWrite: (files, p, count) => { if (count === 1) files.set(p, { version: 1, experiments: { "9702_m21_33-q1": { n: 1, at: "t", id: "theirs", history: [] } } }); } });
+  assert.equal(await A.openAttempt(UID, bridge, false), 1);
+  assert.deepEqual(Object.keys(s.files.get(path).experiments).sort(), ["9702_m21_33-q1", bridge].sort(), "neither practical's attempt is lost");
+  // Two "fresh" clicks at once (two tabs): each still gets its own new attempt.
+  s = store(attemptsDoc(UID, { [bridge]: 1 }), { afterWrite: (files, p, count) => { if (count === 1) files.set(p, { version: 1, experiments: { [bridge]: { n: 2, at: "t", id: "other-tab", history: [] } } }); } });
+  assert.equal(await A.openAttempt(UID, bridge, true), 3, "a fresh that lost the race moves on past the other tab's");
+  assert.equal(s.files.get(path).experiments[bridge].n, 3);
+  // Someone keeps overwriting: after three tries, nothing is opened (fail closed).
+  store({}, { afterWrite: (files, p) => files.set(p, { version: 1, experiments: {} }) });
+  assert.equal(await A.openAttempt(UID, bridge, false), null, "unconfirmed: nothing opened");
+  // A failed read-back refuses too.
+  let reads = 0;
+  s = store();
+  const read = globalThis.__labApi.read;
+  globalThis.__labApi.read = async (b, p) => (++reads === 2 ? { ok: false } : read(b, p));
+  assert.equal(await A.openAttempt(UID, bridge, false), null, "a read-back that fails opens nothing");
+
+  // The current attempt, as the routes check it (cached 30 s per instance).
+  A.resetAttemptCache();
+  store(attemptsDoc(UID, { [bridge]: 4 }));
+  assert.equal(await A.currentAttempt(UID, bridge), 4);
+  assert.equal(await A.currentAttempt(UID, "9702_m21_33-q1"), null, "no attempt yet");
+  A.resetAttemptCache();
+  store({}, { failRead: true });
+  await assert.rejects(A.currentAttempt(UID, bridge), /couldn't be read/, "a failed read throws: the route refuses");
+  A.resetAttemptCache();
 }
 
 // --- the routes -----------------------------------------------------------------------------------
@@ -427,7 +544,8 @@ const asJson = async (res) => ({ status: res.status, body: await res.json(), cac
 
 // Who may use the lab API.
 {
-  const token = A.signAttempt(process.env.LAB_SECRET, { uid: UID, experiment: bridge, n: 1, issuedAt: 1 });
+  const token = A.signAttempt(process.env.LAB_SECRET, { uid: UID, experiment: bridge, n: 1, issuedAt: Date.now() });
+  const ON_ATTEMPT_1 = attemptsDoc(UID, { [bridge]: 1 });
   const bodies = {
     attempt: { experiment: bridge },
     view: { attempt: token, settings: { p: 0.4, q: 0.2 } },
@@ -448,7 +566,7 @@ const asJson = async (res) => ({ status: res.status, body: await res.json(), cac
   for (const [label, who, files, status] of cases) {
     for (const route of Object.keys(bodies)) {
       API.resetLabApiState();
-      store(files);
+      store({ ...files, ...ON_ATTEMPT_1 });
       globalThis.__labApi.user = who;
       const res = await asJson(await post(route, bodies[route]));
       assert.equal(res.status, status, `${label}: ${route}`);
@@ -465,6 +583,22 @@ const asJson = async (res) => ({ status: res.status, body: await res.json(), cac
     assert.equal(res.status, 503, `failed grants read: ${route}`);
     assert.equal(res.body.code, "unavailable");
   }
+  // The attempts record can't be read (staff: no grants read needed): refused.
+  for (const route of ["view", "sample", "trial"]) {
+    API.resetLabApiState();
+    store(ON_ATTEMPT_1, { failRead: true });
+    globalThis.__labApi.user = user(["teacher"]);
+    const res = await asJson(await post(route, bodies[route]));
+    assert.equal(res.status, 503, `failed attempts read: ${route}`);
+  }
+  // An expired token (over 12 hours old): 401 "expired", which the room renews.
+  API.resetLabApiState();
+  store({ ...GRANTED(UID), ...ON_ATTEMPT_1 });
+  globalThis.__labApi.user = user();
+  const old = A.signAttempt(process.env.LAB_SECRET, { uid: UID, experiment: bridge, n: 1, issuedAt: Date.now() - A.TOKEN_TTL_MS - 1000 });
+  const expired = await asJson(await post("sample", { attempt: old, settings: { p: 0.4, q: 0.2 } }));
+  assert.equal(expired.status, 401);
+  assert.equal(expired.body.code, "expired");
   // No LAB_SECRET in production: refused, never run with a guessable secret.
   const saved = { NODE_ENV: process.env.NODE_ENV, LAB_SECRET: process.env.LAB_SECRET };
   process.env.NODE_ENV = "production";
@@ -493,7 +627,7 @@ const asJson = async (res) => ({ status: res.status, body: await res.json(), cac
   assert.deepEqual(opened.controls, E.experimentOf(bridge).controls);
   assert.ok(!/truth|ideal|params/i.test(JSON.stringify(opened)));
   assert.equal((await asJson(await post("attempt", { experiment: bridge }))).body.n, 1, "a reload resumes the attempt");
-  const token = opened.attempt;
+  let token = opened.attempt;
   const settings = { p: 0.4, q: 0.2 };
   res = await asJson(await post("view", { attempt: token, settings }));
   assert.deepEqual(res.body, { view: opened.view }, "the resting view");
@@ -505,13 +639,20 @@ const asJson = async (res) => ({ status: res.status, body: await res.json(), cac
   res = await asJson(await post("trial", { attempt: token, settings, state: { run: 1 } }));
   assert.equal(res.status, 200);
   assert.equal(res.body.track.done, true);
-  // Another attempt reads the same setting differently (its own apparatus).
+  // A fresh attempt reads with its own noise, and closes the old one: the old
+  // token now gets 409 "superseded".
+  const firstReads = await Promise.all(Array.from({ length: 5 }, (_, k) => post("sample", { attempt: token, settings: { p: 0.4, q: 0.05 * k }, state: { active: true, closed: true, t: 1 } }).then((r) => r.json())));
   const fresh = (await asJson(await post("attempt", { experiment: bridge, fresh: true }))).body;
   assert.equal(fresh.n, 2);
   const freshReads = await Promise.all(Array.from({ length: 5 }, (_, k) => post("sample", { attempt: fresh.attempt, settings: { p: 0.4, q: 0.05 * k }, state: { active: true, closed: true, t: 1 } }).then((r) => r.json())));
-  const firstReads = await Promise.all(Array.from({ length: 5 }, (_, k) => post("sample", { attempt: token, settings: { p: 0.4, q: 0.05 * k }, state: { active: true, closed: true, t: 1 } }).then((r) => r.json())));
-  assert.notDeepEqual(freshReads.map((r) => r.readings.v), firstReads.map((r) => r.readings.v), "a fresh attempt is a different apparatus");
+  assert.notDeepEqual(freshReads.map((r) => r.readings), firstReads.map((r) => r.readings), "a fresh attempt reads differently");
   assert.equal(s.files.get(`lab-attempts/${UID}.json`).experiments[bridge].n, 2);
+  for (const route of ["view", "sample", "trial"]) {
+    const stale = await asJson(await post(route, { attempt: token, settings }));
+    assert.equal(stale.status, 409, `a replaced attempt's token: ${route}`);
+    assert.equal(stale.body.code, "superseded");
+  }
+  token = fresh.attempt;
 
   // Bad requests: plain 400s; a setting the apparatus refuses: 422 with its reason.
   const bad = async (route, body, status, code) => {
@@ -555,10 +696,10 @@ const asJson = async (res) => ({ status: res.status, body: await res.json(), cac
 
   // A successful access check is reused briefly; a refusal never is.
   API.resetLabApiState();
-  store({});
+  store(attemptsDoc(UID, { [bridge]: 2 }));
   globalThis.__labApi.user = user();
   assert.equal((await post("view", { attempt: token, settings })).status, 403);
-  store(GRANTED(UID));
+  store({ ...GRANTED(UID), ...attemptsDoc(UID, { [bridge]: 2 }) });
   assert.equal((await post("view", { attempt: token, settings })).status, 200, "switched on: works at once");
   const cached = store({}, { failRead: true });
   assert.equal((await post("view", { attempt: token, settings })).status, 200, "within 30 s the check is reused");
@@ -636,12 +777,95 @@ const asJson = async (res) => ({ status: res.status, body: await res.json(), cac
   for (let i = 0; i < 30; i++) e.advance(1 / 60);
   assert.equal(e.currentView().angle, low, "and back");
 
-  // A fresh attempt: a new apparatus.
+  // Reads wait for adjustments asked for before them and read the new
+  // setting (review Important #2): an Inspect right after a drag.
+  e = await createExperiment(bridge);
+  await e.start();
+  const adjusting = e.set("q", 0.5); // not awaited: the view request is in flight
+  const right = await e.sample();
+  await adjusting;
+  assert.ok(Math.abs(right.q - 0.5) <= 0.0015, `the reading is for the new contact position (q read ${right.q}, not 0.2)`);
+  assert.equal(e.settings.q, 0.5);
+  // ...and many adjustments in a row, then a read: the read is for the last one.
+  const drags = [0.3, 0.35, 0.4, 0.45].map((q) => e.set("q", q));
+  const last = await e.sample();
+  await Promise.all(drags);
+  assert.ok(Math.abs(last.q - 0.45) <= 0.0015, `after a drag, the read is for where it stopped (q ${last.q})`);
+
+  // Reset while a live adjustment is in flight: the reset's resting view
+  // stands (review Minor #3), for the adjusted setting.
+  e = await createExperiment("9702_w22_34-q2");
+  await e.start();
+  assert.equal(e.currentView().powered, true);
+  const liveAdjust = e.set("rheostat", 2);
+  const afterReset = await e.reset();
+  await liveAdjust;
+  assert.equal(afterReset.powered, false, "reset shows the switch open");
+  assert.equal(e.currentView().powered, false, "and the adjustment's running view doesn't come back after it");
+  assert.equal(e.settings.rheostat, 2, "the adjustment itself was kept");
+  assert.equal(e.active, false);
+
+  // A trial chunk that can't load: after three tries (or at once when retrying
+  // can't help), the student gets a plain message instead of a silent freeze.
+  const timers = globalThis.setTimeout;
+  globalThis.setTimeout = (fn) => { fn(); return 0; }; // retries without waiting
+  let failChunks = null;
+  globalThis.fetch = async (url, init) => {
+    const route = String(url).split("/").pop();
+    const body = JSON.parse(init.body);
+    if (route === "trial" && body.chunk > 0 && failChunks) return new Response(JSON.stringify({ error: failChunks.message, code: failChunks.code }), { status: failChunks.status, headers: { "content-type": "application/json" } });
+    return routes[route].POST(new Request(`https://sjabrankamran.com${url}`, init));
+  };
+  for (const [failure, expectMessage] of [
+    [{ status: 500, code: "engine", message: "The lab couldn’t work that out just now. Please try again." }, /couldn’t load the rest of this trial/],
+    [{ status: 401, code: "signed-out", message: "Please sign in to use the Practical Lab." }, /Please sign in/],
+  ]) {
+    e = await createExperiment("9702_m22_33-q2");
+    await e.start();
+    failChunks = failure;
+    let problem = null;
+    for (let i = 0; i < 60 * 25 && !problem; i++) { e.advance(1 / 60); await Promise.resolve(); problem = e.takeProblem(); }
+    for (let i = 0; i < 20 && !problem; i++) { await new Promise((r) => timers(r, 5)); e.advance(1 / 60); problem = e.takeProblem(); }
+    assert.match(problem ?? "", expectMessage, `a ${failure.status} on the next chunk is reported`);
+    assert.equal(e.takeProblem(), null, "once");
+    failChunks = null;
+  }
+  globalThis.setTimeout = timers;
+  globalThis.fetch = async (url, init) => { requests++; return routes[String(url).split("/").pop()].POST(new Request(`https://sjabrankamran.com${url}`, init)); };
+
+  // An expired token is renewed quietly (same attempt) and the read goes through.
   e = await createExperiment("9702_w22_33-q2");
+  const clock = Date.now;
+  const later = clock() + A.TOKEN_TTL_MS + 60_000;
+  Date.now = () => later;
+  try {
+    const renewed = await e.sample();
+    assert.ok(Number.isFinite(renewed.l), "the read goes through after a quiet renewal");
+  } finally {
+    Date.now = clock;
+  }
+
+  // A fresh attempt: a new apparatus; another tab still on the old attempt
+  // is told to reload instead of reading the replaced apparatus.
+  e = await createExperiment("9702_w22_33-q2");
+  const otherTab = await createExperiment("9702_w22_33-q2");
   const n1 = e.attemptNumber;
   await e.fresh();
   assert.equal(e.attemptNumber, n1 + 1);
+  await assert.rejects(otherTab.sample(), (error) => error.code === "superseded" && /Reload the page/.test(error.message));
   globalThis.fetch = realFetch;
+}
+
+// The room waits for pending adjustments before every read and trial action.
+{
+  const room = readFileSync(join(ROOT, "public", "lab", "lab-room", "room.mjs"), "utf8");
+  for (const [name, pattern] of [
+    ["Inspect instruments", /async function observe\(\)\{if\(!ready\(\)\)return;try\{await settled\(\);observations=await engine\.sample\(\)/],
+    ["Open switch", /\$\('open-switch'\)\.onclick=async\(\)=>\{[^\n]*try\{await settled\(\);view=await engine\.view\(\)/],
+    ["Reset / clear bench", /async function resetEngine\(message\)\{try\{await settled\(\);view=await engine\.reset\(\)/],
+    ["Release", /\$\('run'\)\.onclick=async\(\)=>\{[^\n]*await settled\(\);view=await engine\.start\(\)/],
+  ]) assert.match(room, pattern, `${name} waits for pending adjustments`);
+  assert.match(room, /const problem=engine\.takeProblem\(\);if\(problem\)feedback\(problem,true\)/, "the room shows a trial that can't load");
 }
 
 // --- public/lab carries no model code or hidden value -----------------------------------------------
@@ -688,4 +912,4 @@ const asJson = async (res) => ({ status: res.status, body: await res.json(), cac
   assert.ok(statSync(join(ROOT, "src", "lib", "practical-lab", "engine.mjs")).isFile());
 }
 
-console.log(`practical-lab engine tests passed (${summary.sweep}; ${summary.noise}; refused at starting settings: ${refusedAtStart.join(", ") || "none"})`);
+console.log(`practical-lab engine tests passed (${summary.sweep}; ${summary.averaging}; ${summary.noise}; refused at starting settings: ${refusedAtStart.join(", ") || "none"})`);

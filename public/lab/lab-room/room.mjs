@@ -220,7 +220,7 @@ function drawEffects(){
 const pendingSettings=new Map();let settingsBusy=null;
 function updateSetting(c,value){const v=c.type==='range'?Number(value):value,el=$(`setting-${c.key}`);pendingSettings.delete(c.key);pendingSettings.set(c.key,{c,value:v});if(el&&String(el.value)!==String(v))el.value=v;if(!settingsBusy)settingsBusy=pumpSettings();return settingsBusy;}
 async function pumpSettings(){try{while(pendingSettings.size){const[key,{c,value}]=pendingSettings.entries().next().value;pendingSettings.delete(key);await applySetting(c,value);}}finally{settingsBusy=null;}}
-const settled=()=>settingsBusy||Promise.resolve();
+const settled=async()=>{while(settingsBusy)await settingsBusy;await engine.settled();};
 async function applySetting(c,value){const el=$(`setting-${c.key}`);try{view=await engine.set(c.key,value);if(!pendingSettings.has(c.key))el.value=engine.settings[c.key];el.nextElementSibling.textContent=c.type==='select'?c.options.find(o=>String(o.value)===String(engine.settings[c.key]))?.label:engine.settings[c.key];observations={};liveInstrument=false;$('instrument-view').replaceChildren();if(running&&canAdjustLive(c.key)){observations=await engine.sample();liveInstrument=true;if(instrumentKey)renderInstrument();}draw();feedback(view.status||'Adjustment changed. Inspect and remeasure before recording.');}catch(e){if(!pendingSettings.has(c.key))el.value=engine.settings[c.key];feedback(e.message,true);}}
 for(const c of engine.controls){const wrap=document.createElement('div');wrap.innerHTML=`<label for="setting-${c.key}">${escape(c.label)}</label>`;let el;if(c.type==='select'){el=document.createElement('select');el.innerHTML=c.options.map(o=>`<option value="${escape(o.value)}">${escape(o.label)}</option>`).join('');}else{el=document.createElement('input');el.type='range';el.min=c.min;el.max=c.max;el.step=c.step;}el.id=`setting-${c.key}`;el.value=c.value;wrap.append(el);const out=document.createElement('span');out.className='control-value';out.textContent=c.type==='select'?c.options.find(o=>String(o.value)===String(c.value))?.label:String(c.value);wrap.append(out);el.addEventListener(c.type==='range'?'input':'change',()=>updateSetting(c,el.value));$('controls').append(wrap);}
 function formatTime(t){return`${String(Math.floor(t/60)).padStart(2,'0')}:${(t%60).toFixed(2).padStart(5,'0')}`;}
@@ -231,9 +231,9 @@ $('watch-start').onclick=watchStart;$('watch-stop').onclick=watchStop;$('watch-z
 $('tally-plus').onclick=()=>{tally++;draw();};$('tally-minus').onclick=()=>{tally=Math.max(0,tally-1);draw();};
 document.addEventListener('keydown',e=>{if(e.code==='Space'&&!e.target.closest('input,textarea,select,button,[tabindex]')){e.preventDefault();watchRunning?watchStop():watchStart();}});
 $('run').onclick=async()=>{if(!ready()||running||starting)return;starting=true;refresh();feedback('Preparing the trial…');try{await settled();view=await engine.start();running=true;paused=false;lastTime=performance.now();feedback(view.status||'Experiment running. Observe and use the stopwatch manually.');}catch(e){if(e.code!=='superseded')feedback(e.message,true);}finally{starting=false;refresh();}};
-$('open-switch').onclick=async()=>{engine.openSwitch();liveInstrument=false;running=false;observations={};refresh();try{view=await engine.view();feedback('Switch open. Reset before changing the assembly.');}catch(e){feedback(e.message,true);}refresh();};
+$('open-switch').onclick=async()=>{engine.openSwitch();liveInstrument=false;running=false;observations={};refresh();try{await settled();view=await engine.view();feedback('Switch open. Reset before changing the assembly.');}catch(e){feedback(e.message,true);}refresh();};
 $('pause').onclick=()=>{paused=!paused;lastTime=performance.now();refresh();};
-async function resetEngine(message){try{view=await engine.reset();feedback(message);}catch(e){feedback(e.message,true);}refresh();}
+async function resetEngine(message){try{await settled();view=await engine.reset();feedback(message);}catch(e){feedback(e.message,true);}refresh();}
 $('reset-trial').onclick=()=>{running=paused=false;watchRunning=false;liveInstrument=false;observations={};refresh();return resetEngine('Trial reset. Stopwatch reading and notebook retained. Zero the watch when ready.');};
 $('clear-bench').onclick=()=>{assemblyOpened=false;document.querySelector('.setup-card').open=true;running=paused=watchRunning=false;links=[];parts.forEach(p=>{p.node?.remove();p.node=null;p.placed=p.mounted=false;});selected=terminal=pendingPlacement=null;observations={};refresh();return resetEngine('Bench cleared. Notebook retained.');};
 // A fresh attempt: the same practical on a new apparatus (new hidden values).
@@ -246,7 +246,7 @@ function setZoom(delta){zoom=clamp(zoom+delta,1,2);const w=1000/zoom,h=600/zoom;
 $('zoom-in').onclick=()=>setZoom(.2);$('zoom-out').onclick=()=>setZoom(-.2);
 function unit(key){return quantityInfo(engine.family,key).unit;}
 function instrumentKinds(key){return quantityInfo(engine.family,key).instruments;}
-async function observe(){if(!ready())return;try{observations=await engine.sample();const old=instrumentKey;const keys=Object.keys(observations);$('quantity').innerHTML=keys.map(k=>`<option value="${escape(k)}">${escape(quantityInfo(engine.family,k).label)} / ${escape(unit(k))}</option>`).join('');instrumentKey=keys.includes(old)?old:keys[0]||'';$('quantity').value=instrumentKey;liveInstrument=['A','V','Ω','°C','cm³'].includes(unit(instrumentKey));$('align').value=8;renderInstrument();feedback(view.status||'Inspect the scale, then enter your own reading.');}catch(e){feedback(e.message,true);}}
+async function observe(){if(!ready())return;try{await settled();observations=await engine.sample();const old=instrumentKey;const keys=Object.keys(observations);$('quantity').innerHTML=keys.map(k=>`<option value="${escape(k)}">${escape(quantityInfo(engine.family,k).label)} / ${escape(unit(k))}</option>`).join('');instrumentKey=keys.includes(old)?old:keys[0]||'';$('quantity').value=instrumentKey;liveInstrument=['A','V','Ω','°C','cm³'].includes(unit(instrumentKey));$('align').value=8;renderInstrument();feedback(view.status||'Inspect the scale, then enter your own reading.');}catch(e){feedback(e.message,true);}}
 $('observe').onclick=observe;$('quantity').onchange=()=>{instrumentKey=$('quantity').value;liveInstrument=['A','V','Ω','°C','cm³'].includes(unit(instrumentKey));$('align').value=8;renderInstrument();};$('align').oninput=renderInstrument;
 function renderInstrument(){
   const value=observations[instrumentKey],u=unit(instrumentKey),available=parts.filter(p=>p.placed&&instrumentKinds(instrumentKey).includes(p.kind));
@@ -272,6 +272,7 @@ function frame(now){const dt=lastTime===null?0:Math.min(.1,Math.max(0,(now-lastT
   // Live meters change during a trial as the server's track says (it carries
   // their readings on the same timeline); otherwise they hold.
   if(liveInstrument&&ready()&&now-lastSample>200){lastSample=now;const live=engine.liveReadings();if(live){observations=live;renderInstrument();}}
+  const problem=engine.takeProblem();if(problem)feedback(problem,true);
   draw();requestAnimationFrame(frame);
 }
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&(running||watchRunning)){paused=true;feedback('Simulation and stopwatch paused because the tab was hidden. Resume when ready.');refresh();}});

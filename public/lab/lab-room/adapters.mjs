@@ -56,6 +56,33 @@ export async function createExperiment(id) {
   const settings = Object.fromEntries(controls.map((c) => [c.key, c.value]));
   const restViews = new Map([[JSON.stringify(settings), opened.view]]);
   let lastView = { ...opened.view }, elapsed = 0, active = false, closed = false, run = 0, generation = 0, track = null, history = [];
+  let problem = null;
+
+  // Every request that reads or changes the apparatus goes through one queue,
+  // in the order the room asked: a reading asked for right after an
+  // adjustment waits for it and reads the new setting, and a reset never
+  // lands in the middle of an adjustment.
+  let queue = Promise.resolve();
+  function serial(task) {
+    const next = queue.then(task);
+    queue = next.catch(() => {});
+    return next;
+  }
+
+  // An expired token (12 h) is renewed quietly by resuming the same attempt;
+  // if a fresh attempt has replaced it meanwhile, the student is told.
+  const superseded = () => new LabError('This practical was restarted as a fresh attempt (perhaps in another tab). Reload the page to carry on with the new apparatus.', 409, 'superseded');
+  async function call(path, body) {
+    try {
+      return await post(path, { ...body, attempt });
+    } catch (error) {
+      if (error.code !== 'expired') throw error;
+      const again = await post('attempt', { experiment: id });
+      if (again.n !== opened.n) throw superseded();
+      attempt = again.attempt;
+      return post(path, { ...body, attempt });
+    }
+  }
 
   const restKey = () => JSON.stringify(settings);
   // LED only: the light response carries over between live adjustments, so
@@ -71,20 +98,34 @@ export async function createExperiment(id) {
   const state = () => ({ active, closed, t: active ? elapsed : 0, run, ...(family === LED && active ? { history: serverHistory() } : {}) });
 
   function newTrack(first) {
-    return { fps: first.fps, perChunk: timing.timed ? timing.fps * timing.chunkSeconds : 1, chunks: new Map([[0, decodeChunk(first)]]), pending: new Set(), last: first.done ? 0 : null, version: 0 };
+    return { fps: first.fps, perChunk: timing.timed ? timing.fps * timing.chunkSeconds : 1, chunks: new Map([[0, decodeChunk(first)]]), pending: new Set(), failures: new Map(), last: first.done ? 0 : null, version: 0 };
   }
+  // A chunk that fails is asked for again after 3 s, up to three times; then,
+  // or at once when retrying can't help (signed out, no access, a replaced
+  // attempt), the student gets a plain message and the playback holds.
+  const CHUNK_TRIES = 3;
+  const FINAL = new Set([401, 403, 409, 423]);
   function fetchChunk(k) {
     if (!track || !timing.timed || track.chunks.has(k) || track.pending.has(k) || (track.last !== null && k > track.last)) return;
+    if ((track.failures.get(k) ?? 0) >= CHUNK_TRIES) return;
     const mine = track, version = track.version;
     mine.pending.add(k);
-    post('trial', { attempt, settings, state: { run, history: serverHistory() }, chunk: k })
+    call('trial', { settings, state: { run, history: serverHistory() }, chunk: k })
       .then((data) => {
         if (track !== mine || mine.version !== version) return; // superseded (reset, or an LED adjustment)
         mine.pending.delete(k);
+        mine.failures.delete(k);
         mine.chunks.set(k, decodeChunk(data.track));
         if (data.track.done) mine.last = k;
       })
-      .catch(() => { if (mine.version === version) setTimeout(() => mine.pending.delete(k), 3000); }); // asked again a little later
+      .catch((error) => {
+        if (track !== mine || mine.version !== version) return;
+        const failures = (mine.failures.get(k) ?? 0) + 1;
+        mine.failures.set(k, FINAL.has(error.status) ? CHUNK_TRIES : failures);
+        if (FINAL.has(error.status)) problem = error.message;
+        else if (failures >= CHUNK_TRIES) problem = 'The lab couldn’t load the rest of this trial. Reset the trial and release again to carry on.';
+        setTimeout(() => mine.pending.delete(k), 3000);
+      });
   }
   /** Global frame g: from its chunk, or the latest loaded frame before it. */
   function frameAt(g) {
@@ -112,34 +153,35 @@ export async function createExperiment(id) {
   }
 
   /** Release / close the switch: the server sends the first part of the track. */
-  async function start() {
+  const start = () => serial(async () => {
     const gen = ++generation;
     const nextRun = run + 1;
     const startHistory = family === LED ? [{ t: 0, settings: { ...settings } }] : [];
-    const data = await post('trial', { attempt, settings, state: { run: nextRun, ...(family === LED ? { history: startHistory } : {}) }, chunk: 0 });
+    const data = await call('trial', { settings, state: { run: nextRun, ...(family === LED ? { history: startHistory } : {}) }, chunk: 0 });
     if (gen !== generation) throw new LabError('The trial was reset before it started.', 0, 'superseded');
-    run = nextRun; history = startHistory; elapsed = 0; active = true; closed = true;
+    run = nextRun; history = startHistory; elapsed = 0; active = true; closed = true; problem = null;
     track = newTrack(data.track);
     lastView = { ...lastView, ...viewAtElapsed() };
     return lastView;
-  }
-  async function reset() {
-    generation++; elapsed = 0; active = closed = false; track = null; history = [];
+  });
+  const reset = () => serial(async () => {
+    generation++; elapsed = 0; active = closed = false; track = null; history = []; problem = null;
     const key = restKey();
-    const v = restViews.get(key) ?? (await post('view', { attempt, settings })).view;
+    const v = restViews.get(key) ?? (await call('view', { settings })).view;
     restViews.set(key, v);
     lastView = { ...lastView, ...v };
     return lastView;
-  }
+  });
   /** Change a control. Rejects (and changes nothing) when the apparatus
    *  doesn't allow the setting; the message says why. */
-  async function set(key, value) {
+  const set = (key, value) => serial(async () => {
     const next = { ...settings, [key]: value };
-    const running = active, at = elapsed;
-    const body = { attempt, settings: next };
+    const running = active, at = elapsed, gen = generation;
+    const body = { settings: next };
     if (running) body.state = { active, closed, t: elapsed, run };
-    const { view: v } = await post('view', body);
+    const { view: v } = await call('view', body);
     settings[key] = value;
+    if (gen !== generation) return lastView; // a reset or release happened meanwhile: its view stands
     if (!running) restViews.set(restKey(), v);
     // A live adjustment of an untimed rig (a circuit, the rod's pull) is now
     // its running view; the LED's meters are re-fetched from the adjustment on.
@@ -150,6 +192,7 @@ export async function createExperiment(id) {
         const k = Math.floor(at / timing.chunkSeconds);
         track.version++;
         track.pending.clear();
+        track.failures.clear();
         for (const c of [...track.chunks.keys()]) if (c >= k) track.chunks.delete(c);
         track.last = null;
         fetchChunk(k);
@@ -157,7 +200,7 @@ export async function createExperiment(id) {
     }
     lastView = { ...lastView, ...v };
     return lastView;
-  }
+  });
   /** One animation frame: plays the track (no request per frame). */
   function advance(dt) {
     if (!Number.isFinite(dt) || dt < 0 || dt > .25) throw new RangeError('Use a frame step from 0 to 0.25 s');
@@ -169,14 +212,14 @@ export async function createExperiment(id) {
     }
     return lastView;
   }
-  async function view() {
-    const { view: v } = await post('view', { attempt, settings, state: state() });
+  const view = () => serial(async () => {
+    const { view: v } = await call('view', { settings, state: state() });
     lastView = { ...lastView, ...v };
     return lastView;
-  }
-  async function sample() {
-    return (await post('sample', { attempt, settings, state: state() })).readings;
-  }
+  });
+  /** What the instruments show now, for the settings as they are once every
+   *  adjustment asked for before this has been made. */
+  const sample = () => serial(async () => (await call('sample', { settings, state: state() })).readings);
   /** The live meters at this moment of a running trial (from the track), or
    *  null when the track has none for now. */
   function liveReadings() {
@@ -189,19 +232,27 @@ export async function createExperiment(id) {
     return best ? { ...best } : null;
   }
   /** Start a fresh attempt: the same practical on a new apparatus. */
-  async function fresh() {
+  const fresh = () => serial(async () => {
     opened = await post('attempt', { experiment: id, fresh: true });
     attempt = opened.attempt;
     restViews.clear();
-    generation++; elapsed = 0; active = closed = false; track = null; history = [];
-    const { view: v } = await post('view', { attempt, settings });
+    generation++; elapsed = 0; active = closed = false; track = null; history = []; problem = null;
+    const { view: v } = await call('view', { settings });
     restViews.set(restKey(), v);
     lastView = { ...v };
     return lastView;
+  });
+  /** A problem the student should know about (a trial that can't load), once. */
+  function takeProblem() {
+    const message = problem;
+    problem = null;
+    return message;
   }
 
   return {
-    controls, settings, family, start, reset, set, advance, view, sample, liveReadings, fresh,
+    controls, settings, family, start, reset, set, advance, view, sample, liveReadings, fresh, takeProblem,
+    /** Resolves once every request asked for so far has finished. */
+    settled: () => queue,
     currentView: () => lastView,
     openSwitch() { closed = false; },
     get attemptNumber() { return opened.n; },

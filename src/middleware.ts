@@ -419,16 +419,18 @@ export async function middleware(request: NextRequest) {
 
   /**
    * /lab: signed in AND (lab staff OR Practical Lab switched on). Pages (the
-   * 52 HTML entry points, and any name that isn't a sub-asset type) get the
-   * full check. The 70 sub-assets the pages load (.mjs/.css/.json/.pdf) get
-   * the sign-in check only -- the one Auth round-trip every portal request
-   * already makes, instead of four more service-role reads per file. They are
-   * what the lab sends every student who uses it (scripts, styles, the room
-   * settings, the student guides and one question paper), so a signed-in
-   * account without the switch could read one whose address it knows; none
-   * of them is teacher-only (the teacher guide isn't served at all:
-   * src/content/lab), and only a page lets anyone use the lab. Everything
-   * here fails closed, including an Auth lookup that can't answer in time.
+   * two HTML entry points -- the practical list and the lab room -- and any
+   * name that isn't a sub-asset type) get the full check. The dozen
+   * sub-assets the pages load (.mjs/.css/.json/.pdf) get the sign-in check
+   * only -- the one Auth round-trip every portal request already makes,
+   * instead of four more service-role reads per file. They are what the lab
+   * sends every student who uses it (the room's scripts and styles, the
+   * student guides and one question paper), so a signed-in account without
+   * the switch could read one whose address it knows; none of them holds
+   * anything hidden (the physics runs behind /api/lab, which does the full
+   * check; the teacher guide isn't served at all: src/content/lab), and only
+   * a page lets anyone use the lab. Everything here fails closed, including
+   * an Auth lookup that can't answer in time.
    */
   async function labGate(target: LabRequest, who: SessionUser): Promise<NextResponse> {
     if (who === "unavailable") {

@@ -13,7 +13,7 @@ export async function POST(req: Request) {
   if ("refused" in caller) return caller.refused;
   const parsed = await labBody(req, viewBody);
   if ("refused" in parsed) return parsed.refused;
-  const attempt = labAttempt(parsed.body.attempt, caller.user, caller.secret);
+  const attempt = await labAttempt(parsed.body.attempt, caller.user, caller.secret);
   if ("refused" in attempt) return attempt.refused;
   try {
     const settings = normaliseSettings(attempt.id, parsed.body.settings);

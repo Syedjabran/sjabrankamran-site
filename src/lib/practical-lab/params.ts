@@ -10,15 +10,20 @@
  *
  * What varies is what a real bench would differ in and the student works out:
  * spring constants, resistivities, unknown resistances, densities, expansion
- * coefficients, drag/fit coefficients, friction, capacitance. What stays put:
- * physical constants (g, water and air density), values printed on the page
- * as apparatus facts (mass labels, the 0.80 m bridge wire, the 1.5 V cell,
- * marker positions), numerical settings, and lengths the room draws against a
- * fixed reference. Ranges are a few per cent to ±20%, chosen so every setting
+ * coefficients, drag/fit coefficients, friction. What stays exactly as
+ * printed: every labelled value on the apparatus -- resistor and capacitor
+ * labels (18, 10, 22, 33, 100/220, 680/1000 ohm, 47 uF), supply and cell
+ * voltages, mass labels, the 0.80 m bridge wire, marker positions -- plus
+ * physical constants (g, water and air density), numerical settings, and
+ * lengths the room draws against a fixed reference. (Two models keep their
+ * own resistor-tolerance draws around the labels, as before; those now come
+ * per attempt.) Ranges are a few per cent to ±20%, chosen so every setting
  * that worked with the nominal values still works (test-practical-lab-engine
  * sweeps every practical's settings over many attempts to check).
  *
- * Three practicals get no varied value, only per-attempt reading noise:
+ * Four practicals get no varied value here, only per-attempt reading noise:
+ * meter_bridge_parallel_resistor (its only hidden values are the tolerances
+ * of its labelled resistors, which its model draws per attempt), and
  * interrupted_pendulum and interrupted_pendulum_fixed_length hide only g (a
  * constant, and the fixed length is drawn against a fixed reference), and
  * catenary_transverse_pendulum's chain length sets which support separations
@@ -41,15 +46,15 @@ export const VARIATION: Readonly<Record<string, Readonly<Record<string, Variatio
   lens_in_solution: { beta: [0.4, 0.1], f_air_cm: [5, 0.06] },
   compound_t_pendulum: { m_cross_kg: [0.05, 0.08], m_stem_kg: [0.05, 0.08] },
   ladder_static_friction: { mu_s: [0.3, 0.1] },
-  shorted_resistance_wire: { wire_r_ohm_m: [20, 0.08], Rseries_ohm: [18, 0.05], r_internal_ohm: [0.5, 0.2] },
+  shorted_resistance_wire: { wire_r_ohm_m: [20, 0.08], r_internal_ohm: [0.5, 0.2] },
   thermal_pipe_lever: { alpha_K_inv: [0.00015, 0.1], T0_C: [22, 0.08], tau_heat_s: [8, 0.15], tau_cool_s: [400, 0.15] },
   complementary_series_wires: { rA_ohm_m: [25, 0.08], rB_ohm_m: [10, 0.08] },
   spring_torsional_rod: { ks_N_m: [25, 0.1], Mrod_kg: [0.018, 0.1], gamma_s_inv: [0.04, 0.15] },
   catenary_transverse_pendulum: {},
   foam_ring_compression: { Kmat_N: [35, 0.12] },
-  parallel_wire_voltage_divider: { r_ohm_m: [10, 0.08], Ry_ohm: [10, 0.05] },
+  parallel_wire_voltage_divider: { r_ohm_m: [10, 0.08] },
   wrapping_mass_dynamics: { k_fit: [0.9, 0.1] },
-  rc_discharge_parallel: { C_F: [47e-6, 0.1], RF_ohm: [220000, 0.05] },
+  rc_discharge_parallel: { RF_ohm: [220000, 0.05] },
   liquid_adhesion_drainage: { Fcap_N: [0.5, 0.1], gap_m: [0.00025, 0.08], oil_mu: [0.02, 0.1], nozzle_radius_m: [0.00065, 0.04] },
   cylinder_wrapped_pendulum: { radius_m: [0.04, 0.05] },
   lamina_centroid: { h_m: [0.06, 0.05] },
@@ -59,23 +64,23 @@ export const VARIATION: Readonly<Record<string, Readonly<Record<string, Variatio
   rubber_lateral_contraction: { w0_m: [0.005, 0.04], t0_m: [0.001, 0.05] },
   symmetric_movable_pulley: { pulley_mass_kg: [0.01, 0.2] },
   falling_mass_rotating_card: { tau_f_Nm: [2e-5, 0.15], I_spindle: [1e-7, 0.1], Cd: [1.2, 0.08], areal_density_kg_m2: [0.6, 0.08] },
-  wire_shunt_equal_resistors: { r_ohm_m: [20, 0.08], R_ohm: [22, 0.05] },
+  wire_shunt_equal_resistors: { r_ohm_m: [20, 0.08] },
   asymmetric_loaded_chain: { k_fit_s2_m: [4, 0.1], rho_clay: [1600, 0.08] },
   interrupted_pendulum: {},
   confined_ball_settling: { Cd: [0.8, 0.1], D_m: [0.006, 0.03] },
-  parallel_resistor_network: { Z_ohm: [10, 0.1], E_V: [3, 0.03] },
+  parallel_resistor_network: { Z_ohm: [10, 0.1] },
   filter_paper_fall: { Cd: [1.2, 0.08], areal_density_kg_m2: [0.08, 0.05] },
-  wire_bridge_null: { M_ohm: [220, 0.05], N_ohm: [100, 0.05], r_ohm_m: [15, 0.08] },
+  wire_bridge_null: { r_ohm_m: [15, 0.08] },
   suspended_rod_two_modes: { Lrod_m: [0.55, 0.03] },
-  folded_wire_series_resistivity: { r_ohm_m: [15, 0.08], d_m: [0.000315, 0.04], R_ohm: [22, 0.05] },
+  folded_wire_series_resistivity: { r_ohm_m: [15, 0.08], d_m: [0.000315, 0.04] },
   buoyancy_series_springs: { k1: [25, 0.1], k2: [25, 0.1], rho_oil: [910, 0.04], Lfree_m: [0.05, 0.1] },
   cylinder_step_stability: { radius_m: [0.03, 0.05] },
   magnet_coil_cantilever: { force_per_A_N_A: [0.006, 0.1], S_N_m: [0.4, 0.08] },
   interrupted_pendulum_fixed_length: {},
   inclined_rod_lift: { rho_wood: [600, 0.1] },
-  meter_bridge_parallel_resistor: { P_ohm: [680, 0.05], Q_ohm: [1000, 0.05] },
+  meter_bridge_parallel_resistor: {},
   water_jet_ballistics: { Cv: [0.96, 0.03], Cd: [0.62, 0.08], hole_diameter_m: [0.0015, 0.05] },
-  wire_voltage_divider_resistivity: { r_ohm_m: [20, 0.08], d_m: [0.00025, 0.04], R_ohm: [33, 0.05] },
+  wire_voltage_divider_resistivity: { r_ohm_m: [20, 0.08], d_m: [0.00025, 0.04] },
   colliding_pendulum_balls: { e: [0.9, 0.05], eta: [1, [-0.06, 0]], mB_kg: [0.0035, 0.05] },
   syringe_nozzle_drainage: { Cd: [0.75, 0.08], nozzle_diameter_m: [0.002, 0.05] },
   magnetic_inelastic_pickup: { Mrod: [0.025, 0.1], M: [0.031, 0.05] },

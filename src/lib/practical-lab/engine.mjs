@@ -11,11 +11,12 @@
 // (params.ts) and draws its randomness from streams keyed by the attempt:
 //   - apparatus draws (a contact offset, resistor tolerances) come from one
 //     stream per attempt, so the apparatus is the same on every request;
-//   - a reading's noise comes from a stream keyed by the settings, the switch
-//     and run state and the frame time, so the same setting always gives the
-//     same reading (like a real instrument, and averaging a thousand reads of
-//     one setting gets nowhere), while a different setting or moment gives an
-//     independent one -- with exactly the old noise model.
+//   - a reading's noise is fixed by the attempt, the instrument and the true
+//     value it reads (to the instrument's resolution; measurement.mjs), so a
+//     quantity reads the same at every setting and moment where its true
+//     value is the same, however often it is read -- averaging gets nowhere --
+//     and changes only when what it measures changes, with exactly the old
+//     noise model.
 // Motion is precomputed as a track (frames at a fixed rate) that the room
 // plays back, so the animation and the manual stopwatch need no per-frame
 // network call.
@@ -303,7 +304,8 @@ function createSession({ experiment, params = {}, attemptKey, settings, history 
   if (!factory) throw new LabInputError('That practical isn’t in the lab.');
   const { fps } = timingOf(family);
   const frameSeconds = 1 / fps;
-  const scope = { key: streamKey(attemptKey, 'apparatus') };
+  // Apparatus draws per attempt; readings keyed on what they read (measurement.mjs).
+  const scope = { key: streamKey(attemptKey, 'apparatus'), readKey: streamKey(attemptKey, 'read') };
   const inScope = (fn) => inRandomScope(scope, fn);
   const model = inScope(() => factory(params));
   // The room's own instrument draws (adapters.mjs used seededRandom(970234)).
@@ -418,7 +420,9 @@ function createSession({ experiment, params = {}, attemptKey, settings, history 
 
   function sample() {
     return inScope(() => {
-      scope.key = streamKey(attemptKey, `read|${key}|${closed ? 1 : 0}|${active ? 1 : 0}|${frame}`);
+      // No frame time here: a reading's noise depends on the quantity it reads
+      // (valueDraw), not on when or how often it is asked for.
+      scope.key = streamKey(attemptKey, `read|${key}|${closed ? 1 : 0}|${active ? 1 : 0}`);
       const t = elapsed();
       let r = {};
       switch (family) {

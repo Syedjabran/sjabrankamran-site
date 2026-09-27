@@ -68,22 +68,31 @@ answer — runs on the server. The browser sends what the student does (settings
   switch is closed; when something moves, the server sends the motion in advance so the animation
   and the manual stopwatch stay smooth;
 - **what an instrument shows** — each reading made on the server with that instrument's resolution
-  and scatter, exactly as before. The same setting read again shows the same value (like a real
-  ruler or meter), so pressing "Inspect" a thousand times doesn't average the scatter away.
+  and scatter, exactly as before. A quantity reads the same whenever what it measures is the same:
+  the same length, mass or voltage gives the same reading at any setting, at any moment of a
+  trial and however many times "Inspect" is pressed, so repeating or averaging readings can't get
+  below the instrument's resolution. A reading changes only when the thing measured changes (the
+  student moves a contact, or a capacitor discharges, or a pipe warms).
 
 **Every attempt has its own apparatus.** Each student's attempt at a practical gets its own hidden
-values, a few per cent to ±20% around the source values, so a class can't share one answer.
-Physical constants (g, the density of water), values printed on the apparatus (mass labels, the
-0.80 m bridge wire, the 1.5 V cell) and marker positions stay as the question gives them. Three
-practicals whose only hidden quantity is g (the two interrupted pendulums and the chain pendulum)
-vary only in their reading scatter.
+values, a few per cent to ±20% around the source values, so a class can't share one answer. Every
+value printed on the apparatus stays exactly as printed: resistor and capacitor labels (18 Ω, 22 Ω,
+100 Ω and 220 Ω, 47 µF, …), supply and cell voltages, mass labels, the 0.80 m bridge wire and
+marker positions — as do physical constants (g, the density of water). Four practicals have no
+varied value, only their own reading scatter: the two interrupted pendulums (only g is hidden),
+the chain pendulum (its chain length is kept because it decides which support positions work) and
+the meter bridge (its only hidden values are how far its labelled resistors are from their labels,
+which its model draws for each attempt).
 
 **Attempts.** Reloading or reopening a practical — on any device — continues the same attempt, with
 the same apparatus. The notebook's **Fresh attempt** button (click it twice) starts the practical
 again on a new apparatus; the notebook shows which attempt the student is on ("Attempt 2"), and
-earlier rows stay in it. Attempt numbers are kept in storage at
+earlier rows stay in it. A fresh attempt closes the previous one: another tab still open on it
+says "This practical was restarted as a fresh attempt … Reload the page". A lab left open renews
+its session by itself every 12 hours. Attempt numbers are kept in storage at
 `portal-data/lab-attempts/<student id>.json` (which attempt each practical is on, and when each
-started).
+started); each change is read back after it is written, so two tabs or two practicals opened at
+the same moment can't lose one another's attempt.
 
 **What the student guides say.** The student guides give neutral instructions. The mark-scheme
 content that used to be in them — accepted uncertainty ranges, the comparison criteria ("20%
@@ -91,8 +100,10 @@ criterion"), expected trends and the range thresholds — is in the teacher guid
 section).
 
 **Limits that stay.** A student sees what a real observation would show, so they can still time a
-pendulum from the animation, just as they could film a real one. What they can't get any more is
-the exact constants, the formulas, the ideal answers, or a class-wide shared answer.
+pendulum from the animation, just as they could film a real one, and a quantity that changes
+during a trial (a discharging capacitor) gives a new reading each time it has changed by a scale
+step, as a data logger would. What they can't get any more is the exact constants, the formulas,
+the ideal answers, or a class-wide shared answer.
 
 ## Who can open the lab directly
 
@@ -142,7 +153,8 @@ which the website never serves. `npm run test:portal` fails if a teacher-only fi
    has "Practical Lab is open for you". Open a practical, assemble it, release it and take a
    reading.
 4. Reload the practical: the notebook still says the same attempt number and the readings at the
-   same settings are the same. Click **Fresh attempt** twice: the attempt number goes up and the
+   same settings are the same (press **Inspect instruments** again and again: the numbers don't
+   change). Click **Fresh attempt** twice: the attempt number goes up and the
    readings change.
 5. Sign in as a second test student and open the same practical at the same settings: their
    readings differ from the first student's.
@@ -159,9 +171,11 @@ which the website never serves. `npm run test:portal` fails if a teacher-only fi
   switch opens no physics course, and that no teacher-only file is served from `public/lab`.
 - **The engine and its API** (`scripts/test-practical-lab-engine.mjs`): all 50 practicals give a
   view, readings and a trial on the server; nothing the browser receives holds a hidden value;
-  readings keep the old instrument scatter (checked statistically); every attempt gets its own
-  values and keeps them; every setting that worked still works on every attempt; the `/api/lab`
-  routes refuse the wrong people and bad requests; and `public/lab` holds no model code, no
-  `truth`, no `seededRandom(` and no link to `/lab/models/`.
+  readings keep the old instrument scatter (checked statistically) and 3,000 reads of one setting
+  give one reading, so averaging gets nowhere; every attempt gets its own values and keeps them,
+  and printed values never vary; every setting that worked still works on every attempt; the
+  `/api/lab` routes refuse the wrong people, bad requests, expired sessions and replaced attempts;
+  a read made right after an adjustment is for the new setting; and `public/lab` holds no model
+  code, no `truth`, no `seededRandom(` and no link to `/lab/models/`.
 
 `npm run test:sat` includes the subjects registry checks.

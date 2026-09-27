@@ -14,7 +14,7 @@ import { z } from "zod";
 import { getPortalUser, type PortalUser } from "@/lib/edu/auth";
 import { practicalLabAccess } from "@/lib/portal/practical-lab";
 import { LAB_ARCHIVED_MESSAGE } from "@/lib/portal/practical-lab-access";
-import { attemptKey, labSecret, readAttempt } from "@/lib/practical-lab/attempt";
+import { attemptKey, currentAttempt, labSecret, readAttempt, resetAttemptCache, tokenExpired } from "@/lib/practical-lab/attempt";
 import { attemptParams } from "@/lib/practical-lab/params";
 import { LabInputError, experimentOf } from "@/lib/practical-lab/engine.mjs";
 
@@ -46,10 +46,11 @@ function rateLimited(uid: string, route: LabRoute, now: number): boolean {
 const ACCESS_TTL_MS = 30_000;
 const accessUntil = new Map<string, number>();
 
-/** Tests only: forget cached access checks and request counts. */
+/** Tests only: forget cached access checks, attempt numbers and request counts. */
 export function resetLabApiState(): void {
   hits.clear();
   accessUntil.clear();
+  resetAttemptCache();
 }
 
 export function labJson(body: unknown, status = 200): NextResponse {
@@ -89,13 +90,29 @@ export type LabAttempt = {
   attemptKey: Buffer;
 };
 
-/** The attempt a room's token names, for this caller only. */
-export function labAttempt(token: string, user: PortalUser, secret: string): LabAttempt | { refused: NextResponse } {
+/**
+ * The attempt a room's token names, for this caller only, while it is still
+ * their current attempt at that practical and the token is under 12 hours
+ * old. An expired token gets code "expired" (the room renews it, resuming the
+ * same attempt); a token for an attempt that a fresh one has replaced gets
+ * 409 "superseded" (the room says to reload).
+ */
+export async function labAttempt(token: string, user: PortalUser, secret: string): Promise<LabAttempt | { refused: NextResponse }> {
   const claims = readAttempt(secret, token);
-  if (!claims) return refuse(400, "This lab session has expired. Reload the page to carry on.", "attempt");
+  if (!claims) return refuse(400, "This lab session isn’t valid any more. Reload the page to carry on.", "attempt");
   if (claims.uid !== user.id) return refuse(403, "This lab session belongs to another account. Reload the page to carry on.", "attempt");
   const experiment = experimentOf(claims.experiment);
   if (!experiment) return refuse(400, "That practical isn’t in the lab.", "attempt");
+  if (tokenExpired(claims)) return refuse(401, "This lab session has expired. Reconnecting…", "expired");
+  let current: number | null;
+  try {
+    current = await currentAttempt(user.id, experiment.id);
+  } catch {
+    return refuse(503, "The Practical Lab couldn’t check your attempt just now. Please try again.", "unavailable");
+  }
+  if (current !== claims.n) {
+    return refuse(409, "This practical was restarted as a fresh attempt (perhaps in another tab). Reload the page to carry on with the new apparatus.", "superseded");
+  }
   return {
     id: experiment.id,
     family: experiment.family,

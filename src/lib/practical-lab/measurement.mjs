@@ -13,10 +13,20 @@
 //
 // A generator created inside a scope mixes its own seed with the scope's key
 // *at each draw*, so the draws a model makes while it is built (a contact
-// offset, resistor tolerances) come from the attempt's apparatus stream, and
-// the draws a reading makes come from that reading's stream. Everything here
-// is synchronous, so the scope can't leak between requests. Outside a scope a
-// generator behaves exactly as before.
+// offset, resistor tolerances) come from the attempt's apparatus stream.
+//
+// Instrument readings inside a scope that has a `readKey` take their noise
+// from what they read instead of from a stream: the attempt (readKey), the
+// instrument (resolution, half-width, bias) and the true value to the
+// instrument's resolution. So a quantity reads the same whenever its true
+// value is in the same resolution step -- at any setting, at any moment of a
+// trial, however often it is read -- and repeating or averaging readings
+// can't dig below the instrument's resolution. A reading changes only when
+// what it measures moves by a resolution step. The noise distribution is the
+// declared one (uniform over +-halfWidth, then quantised).
+//
+// Everything here is synchronous, so the scope can't leak between requests.
+// Outside a scope a generator and readInstrument behave exactly as before.
 
 function mulberry32(seed) {
   let state = seed >>> 0;
@@ -41,9 +51,23 @@ export function mixSeed(seed, key) {
   return fmix32(fmix32(seed >>> 0) ^ (key >>> 0));
 }
 
+/** A 32-bit hash of a string (FNV-1a, then murmur's finaliser). */
+function hashString(text) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return fmix32(h);
+}
+
+/** The uniform draw behind a reading of `value` by this instrument, under
+ *  the scope's read key. */
+export function valueDraw(readKey, value, { resolution, bias = 0, halfWidth = 0 }) {
+  const step = Math.round(value / resolution);
+  return mulberry32(mixSeed(hashString(`${step}|${resolution}|${halfWidth}|${bias}`), readKey))();
+}
+
 let activeScope = null;
 
-/** Run `fn` with `scope` ({ key: uint32 }) as the random scope. */
+/** Run `fn` with `scope` ({ key: uint32, readKey?: uint32 }) as the random scope. */
 export function inRandomScope(scope, fn) {
   const previous = activeScope;
   activeScope = scope;
@@ -80,6 +104,8 @@ export function quantize(value, resolution) {
 export function readInstrument(value, { resolution, bias = 0, halfWidth = 0 }, random) {
   if (!Number.isFinite(bias) || !Number.isFinite(halfWidth) || halfWidth < 0)
     throw new RangeError('Invalid instrument error parameters');
-  const noise = halfWidth ? (2 * random() - 1) * halfWidth : 0;
+  const readKey = activeScope?.readKey;
+  const u = !halfWidth ? 0 : readKey === undefined ? random() : valueDraw(readKey, value, { resolution, bias, halfWidth });
+  const noise = halfWidth ? (2 * u - 1) * halfWidth : 0;
   return quantize(value + bias + noise, resolution);
 }
