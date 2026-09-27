@@ -47,17 +47,30 @@ too, so a link shared between students doesn't get round the switch:
 - **Signed in, switch off (and not staff):** a short page saying the lab isn't switched on, with a
   link back to the portal.
 - **Account locked** (Admin → Access locks): the lab shows the lock's message, like the portal.
+- **Account suspended** (the older "archived" status the portal also blocks): "Your portal access
+  has been paused."
 - **If the check itself fails** (for example the storage service doesn't answer in time): "The
   Practical Lab couldn't check your access just now. Please reload the page." It never opens the lab
   when it can't check.
 
 How the check works, for the curious: each lab **page** (the 52 HTML files) gets the full check —
-who you are, your roles and your Subjects switch. The other ~70 files the pages load (scripts,
-styles, the practicals' data, the question PDF) only check that you're signed in: they are useless
-without a page, and doing the full check on every one of them would slow every practical down. Only
-those file types get the lighter check; any other address under `/lab`, in any mix of capital
-letters, gets the full one. The one consequence: a lab page a student already has open keeps
-working until they reload or leave it after the switch goes off.
+who you are, your roles, your account status and your Subjects switch. The other 70 files the pages
+load (scripts, styles, the room settings, the student guides and one question paper) only check
+that you're signed in, because doing the full check on every one of them would slow every practical
+down. Only those file types get the lighter check; any other address under `/lab`, in any mix of
+capital letters, gets the full one. Two consequences:
+
+- Those 70 files are exactly what the lab sends every student who uses it, so a signed-in account
+  without the switch (a parent, say) could read one of them if it knew the file's address. It can't
+  use the lab that way — that needs a page — and none of them is teacher-only.
+- A lab page a student already has open keeps working until they reload or leave it after the
+  switch goes off.
+
+**The teacher guide is not on the website.** `teacher-guides.json` (each practical's governing
+model, diagnostic equations, uncertainty analysis and the prompts its authors mark "withhold from
+students") used to sit in `public/lab/content/`, where any signed-in account could fetch it. Nothing
+in the lab loads it, so it now lives in `src/content/lab/teacher-guides.json`, which the website
+never serves. `npm run test:portal` fails if a teacher-only file is put back under `public/lab`.
 
 ## Try it
 
@@ -74,5 +87,6 @@ working until they reload or leave it after the switch goes off.
 
 `npm run test:portal` now also runs `npm run test:practical-lab`: the access rules for every role
 with the switch on, off and unreadable, the gate on real lab addresses (signed out, cookie and app
-sessions, staff, locks, failures), the Subjects switch and its notification, and that the switch
-opens no physics course. `npm run test:sat` includes the subjects registry checks.
+sessions, staff, locks, suspended accounts, failures), the Subjects switch and its notification,
+that the switch opens no physics course, and that no teacher-only file is served from `public/lab`.
+`npm run test:sat` includes the subjects registry checks.

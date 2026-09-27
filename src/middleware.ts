@@ -16,7 +16,8 @@ import {
 import { isSupabaseAuthCookieName, parseBearerToken } from "@/lib/supabase/bearer";
 import { grantsDocPath } from "@/lib/portal/subjects";
 import {
-  grantsReadFrom, labAccess, labRefusalPage, labRequest, type LabDecision, type LabRequest,
+  LAB_ARCHIVED_MESSAGE, archivedFrom, grantsReadFrom, labAccess, labRefusalPage, labRequest,
+  type LabDecision, type LabRequest,
 } from "@/lib/portal/practical-lab-access";
 
 /**
@@ -149,12 +150,26 @@ type AccessGateResult =
   | { decision: "allow" | "unknown"; restriction: null }
   | { decision: "block"; restriction: AccessRestriction };
 
+/** A user's edu_user_roles rows, read with the service role: `ok: false` when
+ *  the request fails, `rows` null when the body isn't JSON. */
+type RolesRead = { ok: false } | { ok: true; rows: Array<{ role?: string }> | null };
+
+async function readRoles(url: string, headers: Record<string, string>, uid: string, signal: AbortSignal): Promise<RolesRead> {
+  const res = await fetch(`${url}/rest/v1/edu_user_roles?user_id=eq.${uid}&select=role`, {
+    headers, signal, cache: "no-store",
+  });
+  if (!res.ok) return { ok: false };
+  return { ok: true, rows: await res.json().catch(() => null) as Array<{ role?: string }> | null };
+}
+
 /**
  * Edge-safe access lookup for API enforcement. The canonical blocked screen is
  * rendered by the portal layout; this gate prevents old tabs or direct HTTP
  * calls from performing portal activity while a restriction is active.
+ * `sharedRoles` is a roles read the caller already started (the /lab gate),
+ * so one request reads the roles once.
  */
-async function portalAccessGate(uid: string): Promise<AccessGateResult> {
+async function portalAccessGate(uid: string, sharedRoles?: Promise<RolesRead>): Promise<AccessGateResult> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return { decision: "unknown", restriction: null };
@@ -163,16 +178,14 @@ async function portalAccessGate(uid: string): Promise<AccessGateResult> {
   const timer = setTimeout(() => ctrl.abort(), ACCESS_TIMEOUT_MS);
   const h = { apikey: key, Authorization: `Bearer ${key}` } as Record<string, string>;
   try {
-    const [rolesResponse, accessResponse] = await Promise.all([
-      fetch(`${url}/rest/v1/edu_user_roles?user_id=eq.${uid}&select=role`, {
-        headers: h, signal: ctrl.signal, cache: "no-store",
-      }),
+    const [rolesRead, accessResponse] = await Promise.all([
+      sharedRoles ?? readRoles(url, h, uid, ctrl.signal),
       fetch(`${url}/storage/v1/object/${ACCESS_CONTROL_BUCKET}/${ACCESS_CONTROL_PATH}`, {
         headers: h, signal: ctrl.signal, cache: "no-store",
       }),
     ]);
-    if (!rolesResponse.ok) return { decision: "unknown", restriction: null };
-    const rolesRows = await rolesResponse.json().catch(() => null) as Array<{ role?: string }> | null;
+    if (!rolesRead.ok) return { decision: "unknown", restriction: null };
+    const rolesRows = rolesRead.rows;
     const roles = Array.isArray(rolesRows) ? rolesRows.map((r) => r.role || "").filter(Boolean) : [];
     if (roles.includes("super_admin")) return { decision: "allow", restriction: null };
 
@@ -286,14 +299,16 @@ async function portalAccessGate(uid: string): Promise<AccessGateResult> {
 }
 
 type LabGateResult =
-  | { decision: LabDecision }
+  | { decision: LabDecision | "archived" }
   | { decision: "locked"; restriction: AccessRestriction };
 
 /**
  * The Practical Lab check for a signed-in user opening a /lab page
- * (practical-lab-access.ts): their roles and their subjects doc, read with the
- * service role, plus the portal's access locks. Fails CLOSED -- a missing env,
- * a timeout or a failed read is "unknown", which /lab refuses -- unlike the
+ * (practical-lab-access.ts): their roles, account status and subjects doc,
+ * read with the service role, plus the portal's access locks (which reuse the
+ * same roles read). Blocked like the portal: an access lock, then the legacy
+ * "archived" status, then the lab rule. Fails CLOSED -- a missing env, a
+ * timeout or a failed read is "unknown", which /lab refuses -- unlike the
  * fail-open gates above: those have the page's own checks behind them, and
  * nothing re-checks a static file. (An access lock that can't be decided
  * stays fail-open here, exactly as it is for every portal request.)
@@ -306,8 +321,10 @@ async function practicalLabGate(uid: string): Promise<LabGateResult> {
   const timer = setTimeout(() => ctrl.abort(), LAB_TIMEOUT_MS);
   const h = { apikey: key, Authorization: `Bearer ${key}` } as Record<string, string>;
   try {
-    const [rolesResponse, grantsResponse, access] = await Promise.all([
-      fetch(`${url}/rest/v1/edu_user_roles?user_id=eq.${uid}&select=role`, {
+    const roles = readRoles(url, h, uid, ctrl.signal);
+    const [rolesRead, profileResponse, grantsResponse, access] = await Promise.all([
+      roles,
+      fetch(`${url}/rest/v1/edu_profiles?id=eq.${uid}&select=status`, {
         headers: h, signal: ctrl.signal, cache: "no-store",
       }),
       // Cache-busted like every grants read (storage-fresh.ts): a plain read
@@ -315,15 +332,16 @@ async function practicalLabGate(uid: string): Promise<LabGateResult> {
       fetch(`${url}/storage/v1/object/${PORTAL_BUCKET}/${grantsDocPath(uid)}?cb=${cacheBuster()}`, {
         headers: h, signal: ctrl.signal, cache: "no-store",
       }),
-      portalAccessGate(uid),
+      portalAccessGate(uid, roles),
     ]);
     if (access.decision === "block") return { decision: "locked", restriction: access.restriction };
-    const rows = rolesResponse.ok
-      ? await rolesResponse.json().catch(() => null) as Array<{ role?: string }> | null
-      : null;
-    const roles = Array.isArray(rows) ? rows.map((r) => r.role || "").filter(Boolean) : null;
+    const archived = archivedFrom(profileResponse.status, await profileResponse.text());
+    if (archived === null) return { decision: "unknown" };
+    if (archived) return { decision: "archived" };
+    const rows = rolesRead.ok ? rolesRead.rows : null;
+    const roleNames = Array.isArray(rows) ? rows.map((r) => r.role || "").filter(Boolean) : null;
     const grants = grantsReadFrom(grantsResponse.status, await grantsResponse.text());
-    return { decision: labAccess(roles, grants) };
+    return { decision: labAccess(roleNames, grants) };
   } catch {
     return { decision: "unknown" };
   } finally {
@@ -400,13 +418,16 @@ export async function middleware(request: NextRequest) {
 
   /**
    * /lab: signed in AND (lab staff OR Practical Lab switched on). Pages (the
-   * HTML entry points, 52 files, and any name that isn't a sub-asset type)
-   * get the full check; the sub-assets a page loads (.mjs/.css/.json/.pdf,
-   * about 70 files) get the sign-in check only -- the one Auth round-trip
-   * every portal request already makes, instead of three more service-role
-   * reads per file. A sub-asset on its own is inert code: every way into the
-   * lab is a page. Everything here fails closed, including an Auth lookup
-   * that can't answer in time.
+   * 52 HTML entry points, and any name that isn't a sub-asset type) get the
+   * full check. The 70 sub-assets the pages load (.mjs/.css/.json/.pdf) get
+   * the sign-in check only -- the one Auth round-trip every portal request
+   * already makes, instead of four more service-role reads per file. They are
+   * what the lab sends every student who uses it (scripts, styles, the room
+   * settings, the student guides and one question paper), so a signed-in
+   * account without the switch could read one whose address it knows; none
+   * of them is teacher-only (the teacher guide isn't served at all:
+   * src/content/lab), and only a page lets anyone use the lab. Everything
+   * here fails closed, including an Auth lookup that can't answer in time.
    */
   async function labGate(target: LabRequest, who: SessionUser): Promise<NextResponse> {
     if (who === "unavailable") {
@@ -423,6 +444,7 @@ export async function middleware(request: NextRequest) {
     if (target.kind === "asset") return response;
     const gate = await practicalLabGate(who.id);
     if (gate.decision === "locked") return labRefusal(target, 423, gate.restriction.message);
+    if (gate.decision === "archived") return labRefusal(target, 403, LAB_ARCHIVED_MESSAGE);
     if (gate.decision === "deny") {
       return labRefusal(target, 403, "Practical Lab isn’t switched on for your account yet. Ask the admin to add Practical Lab to your subjects.");
     }

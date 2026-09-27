@@ -8,7 +8,7 @@ import { getPortalRestriction } from "@/lib/portal/access-control";
 import { onboardingStatus } from "@/lib/portal/onboarding";
 import { satAccess } from "@/lib/sat/access";
 import { practicalLabAccess } from "@/lib/portal/practical-lab";
-import { PRACTICAL_LAB_PAGE } from "@/lib/portal/practical-lab-access";
+import { PRACTICAL_LAB_PAGE, labInLearning } from "@/lib/portal/practical-lab-access";
 import { effectiveRoles } from "@/lib/portal/view-as";
 import { isEmbeddedClient } from "@/lib/portal/embed";
 import { AccessLockMonitor } from "./access-lock-monitor";
@@ -121,7 +121,7 @@ function navFor(roles: EduRole[], switchedOn: SwitchedOn): NavSection[] {
     // private/no-store and remains protected by the portal middleware.
     learnItems.push({ href: "/portal/study-plan", label: "My study plan", hardNavigate: true });
     learnItems.push({ href: "/portal/exam-lab", label: "Exam Lab" });
-    if (switchedOn.practicalLab) learnItems.push(PRACTICAL_LAB_NAV);
+    if (labInLearning(roles, switchedOn.practicalLab)) learnItems.push(PRACTICAL_LAB_NAV);
     if (switchedOn.sat) learnItems.push({ href: "/portal/sat-lab", label: "SAT Lab" });
     learnItems.push({ href: "/portal/exam-lab/review", label: "My answer scripts" });
     learnItems.push({ href: "/portal/learn", label: "My Learning" });

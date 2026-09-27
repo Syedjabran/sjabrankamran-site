@@ -45,8 +45,8 @@ register(stub(hooks));
 globalThis.AsyncLocalStorage ??= AsyncLocalStorage;
 
 const {
-  LAB_STAFF_ROLES, PRACTICAL_LAB, PRACTICAL_LAB_ENTRY, PRACTICAL_LAB_PAGE,
-  grantsReadFrom, isLabStaff, labAccess, labRefusalPage, labRequest,
+  LAB_ARCHIVED_MESSAGE, LAB_STAFF_ROLES, PRACTICAL_LAB, PRACTICAL_LAB_ENTRY, PRACTICAL_LAB_PAGE,
+  archivedFrom, grantsReadFrom, isLabStaff, labAccess, labInLearning, labRefusalPage, labRequest,
 } = await import("../src/lib/portal/practical-lab-access.ts");
 const { EXAM_LAB_STAFF_ROLES } = await import("../src/lib/edu/auth.ts");
 const { practicalLabAccess } = await import("../src/lib/portal/practical-lab.ts");
@@ -89,6 +89,25 @@ for (const roles of NOT_STAFF) {
 assert.equal(labAccess(null, ON), "unknown", "roles that couldn't be read decide nothing");
 assert.equal(labAccess(null, OFF), "unknown");
 assert.equal(labAccess(["student"], { ok: true, grants: { "practical-lab": undefined } }), "deny");
+
+// --- the nav lists the lab once (labInLearning) ----------------------------------
+assert.equal(labInLearning(["student"], true), true, "a switched-on student gets it in Learning");
+assert.equal(labInLearning(["student"], false), false);
+for (const role of STAFF) {
+  assert.equal(labInLearning(["student", role], true), false, `student + ${role}: only the staff entry`);
+}
+assert.equal(labInLearning(["student", "teaching_assistant"], true), true, "a teaching assistant isn't lab staff");
+
+// --- the middleware's raw account-status read (archivedFrom) -------------------
+assert.equal(archivedFrom(200, '[{"status":"archived"}]'), true);
+assert.equal(archivedFrom(200, '[{"status":"active"}]'), false);
+assert.equal(archivedFrom(200, '[{"status":"invited"}]'), false, "only archived is blocked, as in the portal layout");
+assert.equal(archivedFrom(200, "[]"), false, "no profile row reads as active, as getPortalUser reads it");
+assert.equal(archivedFrom(200, "[null]"), false);
+assert.equal(archivedFrom(500, ""), null, "a failed read is unknown");
+assert.equal(archivedFrom(401, "[]"), null);
+assert.equal(archivedFrom(200, "<html>"), null, "a body that isn't JSON is unknown");
+assert.equal(archivedFrom(200, '{"status":"active"}'), null, "a body that isn't a row list is unknown");
 
 // --- the middleware's raw grants read (grantsReadFrom) -------------------------
 const G = { by: "admin-1", at: "2026-09-27T10:00:00.000Z" };
@@ -267,10 +286,14 @@ const LAB_STUDENT = "11111111-1111-4111-8111-111111111111";
 /**
  * One scripted world for the middleware: who Auth says the caller is (a user
  * id, null for no session, or "throw"), their roles, their subjects doc (an
- * object, "missing" or an HTTP status) and the access-control doc. Every
- * Auth call and fetch is logged.
+ * object, "missing" or an HTTP status), their account status (and the HTTP
+ * status of that read) and the access-control doc. Every Auth call and fetch
+ * is logged.
  */
-function world({ uid = LAB_STUDENT, roles = ["student"], grants = "missing", rolesStatus = 200, access = null, fetchThrows = false } = {}) {
+function world({
+  uid = LAB_STUDENT, roles = ["student"], grants = "missing", rolesStatus = 200,
+  accountStatus = "active", profileStatus = 200, access = null, fetchThrows = false,
+} = {}) {
   const log = [];
   globalThis.__lab.supabase = () => ({
     auth: {
@@ -287,6 +310,11 @@ function world({ uid = LAB_STUDENT, roles = ["student"], grants = "missing", rol
     if (fetchThrows) throw new Error("network down");
     if (url.pathname === "/rest/v1/edu_user_roles") {
       return new Response(JSON.stringify(roles.map((role) => ({ role }))), { status: rolesStatus });
+    }
+    if (url.pathname === "/rest/v1/edu_profiles") {
+      assert.equal(url.searchParams.get("id"), `eq.${uid}`);
+      assert.equal(url.searchParams.get("select"), "status");
+      return new Response(JSON.stringify([{ status: accountStatus }]), { status: profileStatus });
     }
     if (url.pathname === `/storage/v1/object/portal-data/subjects/${uid}.json`) {
       assert.ok(url.searchParams.get("cb"), "the grants read is cache-busted");
@@ -337,10 +365,10 @@ log = world({ grants: grantedLab });
 res = await call("/lab/index.html", { cookie: COOKIE });
 assert.ok(passes(res), "granted student opens the lab");
 assert.deepEqual(log.sort(), [
-  "auth cookie", "fetch /rest/v1/edu_user_roles", "fetch /rest/v1/edu_user_roles",
+  "auth cookie", "fetch /rest/v1/edu_user_roles", "fetch /rest/v1/edu_profiles",
   `fetch /storage/v1/object/${ACCESS_CONTROL_BUCKET}/${ACCESS_CONTROL_PATH}`,
   `fetch /storage/v1/object/portal-data/subjects/${LAB_STUDENT}.json`,
-].sort());
+].sort(), "one read each: the roles are read once and shared with the access-lock check");
 res = await call("/lab", { cookie: COOKIE });
 assert.equal(res.status, 307);
 assert.equal(location(res), "/lab/index.html");
@@ -375,6 +403,8 @@ for (const [label, w] of [
   ["grants read 403", { grants: 403 }],
   ["roles read 500", { rolesStatus: 500, grants: grantedLab }],
   ["roles read 500, staff", { roles: ["admin"], rolesStatus: 500 }],
+  ["account status read 500", { grants: grantedLab, profileStatus: 500 }],
+  ["account status read 500, staff", { roles: ["admin"], profileStatus: 500 }],
   ["network down", { grants: grantedLab, fetchThrows: true }],
   ["Auth down", { uid: "throw", grants: grantedLab }],
 ]) {
@@ -425,6 +455,57 @@ world({ grants: grantedLab, access: { version: 1, updatedAt: now, restrictions: 
 res = await call("/lab/index.html", { cookie: COOKIE });
 assert.equal(res.status, 423);
 assert.match(await res.text(), /Fees &lt;due&gt;/);
+world({ grants: grantedLab, accountStatus: "archived", access: { version: 1, updatedAt: now, restrictions: [lock] } });
+assert.equal((await call("/lab/index.html", { cookie: COOKIE })).status, 423, "a lock is reported first, as in the portal layout");
+
+// The legacy "archived" status (the portal layout's "Access suspended"): refused
+// whatever the switch or role says; "invited" is not blocked, as in the layout.
+for (const [label, w] of [
+  ["archived student, switch on", { grants: grantedLab, accountStatus: "archived" }],
+  ["archived teacher", { roles: ["teacher"], accountStatus: "archived" }],
+  ["archived super admin", { roles: ["super_admin"], accountStatus: "archived" }],
+]) {
+  world(w);
+  res = await call("/lab/index.html", { cookie: COOKIE });
+  assert.equal(res.status, 403, label);
+  assert.ok((await res.text()).includes(LAB_ARCHIVED_MESSAGE), label);
+  world(w);
+  assert.equal((await call("/lab/index.html", { authorization: `Bearer ${JWT}` })).status, 403, `${label} (app session)`);
+}
+world({ grants: grantedLab, accountStatus: "invited" });
+assert.ok(passes(await call("/lab/index.html", { cookie: COOKIE })), "an invited account with the switch opens the lab");
+
+// --- nothing teacher-only is served from public/lab ------------------------------
+// public/ is served to anyone the /lab gate lets through, and sub-assets only
+// need a sign-in. The teacher guide (withholdFromStudents content) lives in
+// src/content/lab, which the site never serves; nothing in the lab loads it.
+{
+  const { readdirSync, readFileSync, existsSync } = await import("node:fs");
+  const { join, relative } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const ROOT = fileURLToPath(new URL("..", import.meta.url));
+  const LAB_DIR = join(ROOT, "public", "lab");
+  const files = readdirSync(LAB_DIR, { recursive: true, withFileTypes: true })
+    .filter((d) => d.isFile())
+    .map((d) => join(d.parentPath ?? d.path, d.name));
+  assert.ok(files.length > 100, "the lab is where the test expects it");
+  for (const file of files) {
+    const rel = relative(ROOT, file).replaceAll("\\", "/");
+    assert.ok(!/teacher/i.test(rel), `${rel}: teacher-only files don't belong under public/lab`);
+    if (/\.(?:json|mjs|js|html?|css)$/i.test(file)) {
+      const text = readFileSync(file, "utf8");
+      assert.ok(!text.includes("withholdFromStudents"), `${rel} carries content marked "withhold from students"`);
+      assert.ok(!/"kind"\s*:\s*"teacher-guides"/.test(text), `${rel} is a teacher guide`);
+      assert.ok(!/teacher-guides/.test(text), `${rel} refers to the teacher guide`);
+    }
+  }
+  const moved = join(ROOT, "src", "content", "lab", "teacher-guides.json");
+  assert.ok(existsSync(moved), "the teacher guide is kept, outside public/");
+  const guide = JSON.parse(readFileSync(moved, "utf8"));
+  assert.equal(guide.kind, "teacher-guides");
+  assert.equal(guide.guides.length, 50);
+  assert.ok(guide.guides.every((g) => Array.isArray(g.guidedMode?.withholdFromStudents)), "the moved file is the teacher-only one");
+}
 
 // Nothing else changed: portal pages and APIs behave as before.
 world({ uid: null });

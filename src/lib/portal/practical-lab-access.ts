@@ -25,6 +25,13 @@ export function isLabStaff(roles: readonly string[]): boolean {
   return roles.some((r) => LAB_STAFF_ROLES.includes(r));
 }
 
+/** Whether the portal nav lists Practical Lab among a student's own
+ *  (Learning) entries: when it's open to them, unless they are also lab
+ *  staff -- staff already have it in their own section, so it shows once. */
+export function labInLearning(roles: readonly string[], open: boolean): boolean {
+  return open && !isLabStaff(roles);
+}
+
 /** A student's direct grants as read, or a failed read. */
 export type GrantsRead = { ok: true; grants: Partial<Record<SubjectId, unknown>> } | { ok: false };
 
@@ -57,6 +64,27 @@ export function grantsReadFrom(status: number, body: string): GrantsRead {
   return { ok: true, grants: directGrantsIn((doc as Record<string, unknown>).grants) };
 }
 
+/** What the lab says to an account with the legacy "archived" status, which
+ *  the portal layout blocks as "Access suspended". */
+export const LAB_ARCHIVED_MESSAGE = "Your portal access has been paused. Please contact your teacher if you believe this is a mistake.";
+
+/** Whether the middleware's raw read of the caller's edu_profiles row
+ *  (`?select=status`) says the account is archived. No row is not archived
+ *  (getPortalUser reads a missing status as "active"); a failed read or a body
+ *  that isn't a JSON array is null (unknown -- the lab refuses). */
+export function archivedFrom(status: number, body: string): boolean | null {
+  if (status < 200 || status > 299) return null;
+  let rows: unknown;
+  try {
+    rows = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(rows)) return null;
+  const row: unknown = rows[0];
+  return !!row && typeof row === "object" && (row as { status?: unknown }).status === "archived";
+}
+
 /** A request under /lab: a page (the full check) or a sub-asset (sign-in
  *  only). `opens` is the file a directory-style page request opens -- "/lab"
  *  and "/lab/lab-room/" open their index.html, because Next serves public/
@@ -68,8 +96,10 @@ export type LabRequest = { kind: "page"; opens: string | null } | { kind: "asset
 // covers every case of "/lab" for the same reason.
 const underLab = (path: string) => /^\/lab(?:\/|$)/i.test(path);
 
-/** The sub-asset types the lab's pages load: scripts, styles, data, the
- *  question PDFs, and images or fonts should any be added. */
+/** The sub-asset types the lab's pages load: scripts, styles, the room
+ *  settings and student guides (JSON), the question paper (PDF), and images or
+ *  fonts should any be added. Nothing teacher-only is served from public/lab
+ *  (the teacher guide lives in src/content/lab; test:practical-lab checks). */
 const LAB_ASSET = /\.(?:mjs|js|css|json|pdf|png|jpe?g|svg|webp|woff2?)$/i;
 
 /**
