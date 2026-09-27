@@ -102,8 +102,11 @@ section).
 **Limits that stay.** A student sees what a real observation would show, so they can still time a
 pendulum from the animation, just as they could film a real one, and a quantity that changes
 during a trial (a discharging capacitor) gives a new reading each time it has changed by a scale
-step, as a data logger would. What they can't get any more is the exact constants, the formulas,
-the ideal answers, or a class-wide shared answer.
+step, as a data logger would. The lab only accepts settings its own controls can produce (each
+slider's steps and range, and times on the trial's frame grid), so even a script talking to the
+lab directly can't find the point where a reading changes more finely than one step of a control.
+What they can't get any more is the exact constants, the formulas, the ideal answers, or a
+class-wide shared answer.
 
 ## Who can open the lab directly
 

@@ -75,6 +75,11 @@ assert.deepEqual(E.normaliseSettings("9702_m21_33-q2", { tool: "nail" }), { tool
 assert.throws(() => E.normaliseSettings("9702_m21_33-q2", { tool: "drill" }), E.LabInputError, "a select value must be one of its options");
 assert.deepEqual(E.normaliseState(bridge, {}), { active: false, closed: false, t: 0, run: 0, history: null });
 assert.deepEqual(E.normaliseState(bridge, { active: true, t: 3, run: 2 }), { active: true, closed: true, t: 3, run: 2, history: null });
+assert.equal(E.normaliseState(bridge, { active: true, t: 3.0123 }).t, 3, "a time snaps to the trial's frame grid (1/30 s)");
+assert.equal(E.normaliseState(bridge, { active: true, t: 3.02 }).t, 91 / 30);
+assert.equal(E.normaliseState("9702_m25_33-q2", { active: true, t: 10.3 }).t, 10.5, "thermal practicals: a 0.5 s grid");
+assert.deepEqual(E.normaliseState("9702_w25_33-q2", { active: true, t: 2, history: [{ t: 0, settings: { length: 0.1, angle: 0 } }, { t: 1.01, settings: { length: 0.50037, angle: 3.4 } }] }).history,
+  [{ t: 0, settings: { length: 0.1, angle: 0 } }, { t: 1, settings: { length: 0.5, angle: 3 } }], "history settings snap to the grid, history times to their frame");
 assert.equal(E.normaliseState(bridge, { active: true, t: 1e9 }).t, 600, "time is capped at the family's longest trial");
 assert.equal(E.normaliseState(bridge, { active: false, closed: true, t: 5 }).closed, false, "not running means not closed and t = 0");
 assert.throws(() => E.normaliseState(bridge, { active: true, t: -1 }), E.LabInputError);
@@ -706,6 +711,133 @@ const asJson = async (res) => ({ status: res.status, body: await res.json(), cac
   assert.deepEqual(cached.log, []);
 }
 
+// --- only settings the room's controls can produce (re-review round 2) --------------------------
+// A reading's noise is fixed by the true value's resolution step, so the
+// setting at which a displayed reading flips is a fixed point. The server only
+// accepts settings the room itself can produce (each control's own grid and
+// range; unknown keys refused; times on the frame grid), so bisecting on
+// settings -- by hand or by script -- can't place that flip more finely than
+// one control step.
+{
+  // Every value the room's controls produce passes unchanged, for all 50
+  // practicals: the slider's values (as the browser reports them, and as raw
+  // float sums) and a drag's (the default plus k steps, clamped: room.mjs).
+  let uiValues = 0;
+  for (const id of ids) {
+    const { controls } = E.experimentOf(id);
+    const base = E.defaultSettings(id);
+    for (const c of controls.filter((x) => x.type === "range")) {
+      const count = Math.round((c.max - c.min) / c.step);
+      const k0 = Math.round((c.value - c.min) / c.step);
+      for (let k = 0; k <= count; k++) {
+        const grid = Number((c.min + k * c.step).toPrecision(12));
+        const drag = Math.min(c.max, Math.max(c.min, Number(c.value) + Math.round(k - k0) * c.step));
+        for (const produced of [String(grid), c.min + k * c.step, drag]) {
+          const settings = E.normaliseSettings(id, { ...base, [c.key]: produced });
+          assert.ok(Math.abs(settings[c.key] - grid) < 1e-9, `${id} ${c.key}: the room's value ${produced} is kept as ${grid}`);
+        }
+        try {
+          E.viewAt({ id, params: {}, attemptKey: KEY, settings: E.normaliseSettings(id, { ...base, [c.key]: grid }) });
+        } catch (error) {
+          assert.ok(!(error instanceof E.LabInputError), `${id} ${c.key}=${grid}: a value the room produces is never refused as a bad request`);
+        }
+        uiValues++;
+      }
+    }
+  }
+  assert.ok(uiValues > 10_000, `${uiValues} slider values checked`);
+  summary.grid = `${uiValues} room-producible slider values accepted unchanged`;
+
+  // Off the grid: the nearest grid value, for every range control of every practical.
+  for (const id of ids) {
+    const { controls } = E.experimentOf(id);
+    for (const c of controls.filter((x) => x.type === "range")) {
+      for (let i = 1; i <= 25; i++) {
+        const v = c.min + (c.max - c.min) * ((i * 0.6180339887) % 1);
+        const nearest = Number((c.min + Math.round((v - c.min) / c.step) * c.step).toPrecision(12));
+        assert.equal(E.normaliseSettings(id, { ...E.defaultSettings(id), [c.key]: v })[c.key], nearest, `${id} ${c.key}: ${v} is read as ${nearest}`);
+      }
+    }
+  }
+
+  // Through the routes: off-grid values read as the nearest step; anything
+  // outside the range, an unknown key or a non-number is refused.
+  API.resetLabApiState();
+  store({ ...GRANTED(UID) });
+  globalThis.__labApi.user = user();
+  const openAt = async (experiment) => (await asJson(await post("attempt", { experiment }))).body.attempt;
+  const bridgeToken = await openAt(bridge);
+  const running1 = { active: true, closed: true, t: 1 };
+  const read = async (token, settings, state = running1) => {
+    const res = await post("sample", { attempt: token, settings, state });
+    assert.equal(res.status, 200, JSON.stringify(settings));
+    return (await res.json()).readings;
+  };
+  assert.deepEqual(await read(bridgeToken, { p: 0.4012, q: 0.2 }), await read(bridgeToken, { p: 0.4, q: 0.2 }), "p = 0.4012 is read as 0.400");
+  assert.deepEqual(await read(bridgeToken, { p: 0.4026, q: 0.2 }), await read(bridgeToken, { p: 0.405, q: 0.2 }), "p = 0.4026 is read as 0.405");
+  assert.deepEqual(await read(bridgeToken, { p: 0.4, q: 0.2 }, { ...running1, t: 1.0123 }), await read(bridgeToken, { p: 0.4, q: 0.2 }), "an off-frame time is read at its frame");
+  for (const [settings, why] of [
+    [{ p: 0.9, q: 0.2 }, "above the range"],
+    [{ p: 0.1, q: 0.2 }, "below the range"],
+    [{ p: 0.4, q: 0.2, M_ohm: 1 }, "an unknown key"],
+    [{ p: "0.4x", q: 0.2 }, "not a number"],
+    [{ p: 0.4 }, "a missing control"],
+  ]) {
+    const res = await asJson(await post("view", { attempt: bridgeToken, settings }));
+    assert.equal(res.status, 400, why);
+    assert.equal(res.body.code, "bad-request", why);
+  }
+
+  // Bisection through the sample route: wire_shunt_equal_resistors' voltage
+  // against the wire length (step 0.005 m). Find two neighbouring lengths
+  // that read differently, then bisect between them on off-grid lengths.
+  const shunt = "9702_s25_33-q1";
+  const shuntToken = await openAt(shunt);
+  const step = 0.005;
+  let g0 = null, low = null, high = null;
+  let previous = await read(shuntToken, { length: 0.3 });
+  for (let k = 0; k < 130 && g0 === null; k++) {
+    const next = await read(shuntToken, { length: 0.3 + (k + 1) * step });
+    if (previous.v !== next.v) { g0 = Number((0.3 + k * step).toPrecision(12)); low = previous.v; high = next.v; }
+    previous = next;
+  }
+  assert.ok(g0 !== null, "two neighbouring lengths read differently");
+  API.resetLabApiState(); // a fresh minute of the sample route's allowance for the bisection
+  let lo = g0, hi = g0 + step;
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2;
+    if ((await read(shuntToken, { length: mid })).v === low) lo = mid; else hi = mid;
+  }
+  // The flip the script finds is the midpoint between the two grid lengths --
+  // where the server switches from one step to the next -- not a point the
+  // physics decides: a whole step either side reads exactly as the grid value.
+  assert.ok(Math.abs(lo - (g0 + step / 2)) < 1e-9, `the bisection lands on the grid midpoint ${g0 + step / 2} (found ${lo})`);
+  for (const f of [0.01, 0.2, 0.4, 0.49]) {
+    assert.equal((await read(shuntToken, { length: g0 + f * step })).v, low, `a length ${f} of a step above the grid value reads as the grid value`);
+    assert.equal((await read(shuntToken, { length: g0 + step - f * step })).v, high);
+  }
+  summary.bisection = `route bisection on off-grid lengths stops at the grid midpoint ${(g0 + step / 2).toFixed(4)} m (control step ${step} m)`;
+
+  // The same with time, the other continuous number: a discharging RC
+  // voltage bisected over off-frame times lands on a frame boundary.
+  API.resetLabApiState();
+  const rcId = "9702_s22_34-q1";
+  const rcToken = await openAt(rcId);
+  const rcSettings = E.defaultSettings(rcId);
+  const atTime = async (t) => (await read(rcToken, rcSettings, { active: true, closed: true, t })).v;
+  let tLo = null, vLo = null;
+  let before = await atTime(1);
+  for (let f = 30; f < 120 && tLo === null; f++) {
+    const after = await atTime((f + 1) / 30);
+    if (before !== after) { tLo = f / 30; vLo = before; }
+    before = after;
+  }
+  assert.ok(tLo !== null, "the voltage changes between two frames");
+  let a = tLo, b = tLo + 1 / 30;
+  for (let i = 0; i < 40; i++) { const mid = (a + b) / 2; if ((await atTime(mid)) === vLo) a = mid; else b = mid; }
+  assert.ok(Math.abs(a - (tLo + 1 / 60)) < 1e-9, `a time bisection lands on the frame midpoint (found ${a})`);
+}
+
 // --- the room's client against the real routes ----------------------------------------------------
 {
   API.resetLabApiState();
@@ -912,4 +1044,4 @@ const asJson = async (res) => ({ status: res.status, body: await res.json(), cac
   assert.ok(statSync(join(ROOT, "src", "lib", "practical-lab", "engine.mjs")).isFile());
 }
 
-console.log(`practical-lab engine tests passed (${summary.sweep}; ${summary.averaging}; ${summary.noise}; refused at starting settings: ${refusedAtStart.join(", ") || "none"})`);
+console.log(`practical-lab engine tests passed (${summary.sweep}; ${summary.averaging}; ${summary.noise}; ${summary.grid}; ${summary.bisection}; refused at starting settings: ${refusedAtStart.join(", ") || "none"})`);

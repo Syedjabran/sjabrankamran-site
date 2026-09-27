@@ -228,10 +228,15 @@ export function defaultSettings(id) {
   return Object.fromEntries(experiment.controls.map((c) => [c.key, c.value]));
 }
 
-/** The settings of a request: exactly the practical's controls, a range value
- *  snapped to its control's step (so a request can't ask for a finer setting
- *  than the apparatus offers, or re-roll a reading with a nudge), a select
- *  value one of its options. */
+/** The settings of a request: exactly the practical's controls (an unknown
+ *  key is refused), a range value snapped to the nearest point of its
+ *  control's own grid -- min + k * step, the values the room's slider and a
+ *  drag produce -- and refused outside [min, max], a select value one of its
+ *  options. So no request, UI or scripted, can ask for a setting finer than
+ *  the apparatus offers: bisecting between two settings can't locate where a
+ *  reading changes more finely than one control step (the point it finds is
+ *  the midpoint between two grid values, which says nothing about the
+ *  physics). */
 export function normaliseSettings(id, raw) {
   const experiment = experimentOf(id);
   if (!experiment) throw new LabInputError('That practical isn’t in the lab.');
@@ -263,7 +268,9 @@ const settingsKey = (experiment, settings) => experiment.controls.map((c) => `${
  *  closed / apparatus released), `t` (seconds into the trial), `run` (which
  *  release this is) and, for the LED practical only, `history`: when each
  *  live setting change happened in this trial (its light response carries
- *  over between settings). */
+ *  over between settings). Times are snapped to the trial's frame grid (the
+ *  motion and the meters only exist frame by frame), so a time can't be
+ *  asked for more finely than the room itself can show it either. */
 export function normaliseState(id, raw = {}) {
   const experiment = experimentOf(id);
   if (!experiment) throw new LabInputError('That practical isn’t in the lab.');
@@ -283,10 +290,12 @@ export function normaliseState(id, raw = {}) {
       const at = Number(entry?.t);
       if (!Number.isFinite(at) || at < last || (i === 0 && at !== 0)) throw new LabInputError('The trial history isn’t valid.');
       last = at;
-      return { t: at, settings: normaliseSettings(id, entry?.settings) };
+      // A change applies from the first frame ending after it (ledSettingsAt):
+      // the frame it falls in is all that matters.
+      return { t: Math.floor(Math.min(at, timing.maxSeconds) * timing.fps + 1e-9) / timing.fps, settings: normaliseSettings(id, entry?.settings) };
     });
   }
-  return { active, closed, t: active ? Math.min(t, timing.maxSeconds) : 0, run, history };
+  return { active, closed, t: active ? Math.round(Math.min(t, timing.maxSeconds) * timing.fps) / timing.fps : 0, run, history };
 }
 
 // --- random streams ------------------------------------------------------------
