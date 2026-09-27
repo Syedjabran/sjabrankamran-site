@@ -378,9 +378,13 @@ export function PapersHub({ catalog, canTest = false, canPause = false, canCondu
     setLaunching(true);
     try {
       const r = await openSitting(req);
-      if (!r.ok) { void exitExamFullscreen(); setLaunchError(r.error); return false; }
-      const built = build(r.sitting);
-      if (typeof built === "string") { void exitExamFullscreen(); setLaunchError(built); return false; }
+      const built = r.ok ? build(r.sitting) : r.error;
+      if (!r.ok || typeof built === "string") {
+        void exitExamFullscreen();
+        setLaunchError(typeof built === "string" ? built : "Couldn't open this paper.");
+        if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+        return false;
+      }
       enter({ ...built, questions: r.sitting.questions, token: r.sitting.token, images: r.sitting.images });
       return true;
     } finally {
@@ -554,7 +558,7 @@ export function PapersHub({ catalog, canTest = false, canPause = false, canCondu
 
   return (
     <div>
-      {launching ? <p className="mb-4 flex items-center gap-2 rounded-xl border border-cyan/25 bg-cyan/[0.04] px-4 py-3 text-sm text-fog" role="status"><Loader2 size={15} className="animate-spin text-cyan" /> Opening your paper…</p> : null}
+      {launching ? <p className="fixed bottom-4 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-2 rounded-xl border border-cyan/30 bg-space/95 px-4 py-3 text-sm text-fog shadow-2xl" role="status"><Loader2 size={15} className="animate-spin text-cyan" /> Opening your paper…</p> : null}
       {launchError ? <p className="mb-4 rounded-xl border border-signal/35 bg-signal/[0.06] px-4 py-3 text-sm text-signal">{launchError}</p> : null}
       {allocations.length ? <AssignedBoard allocations={allocations} onStart={startAllocation} /> : null}
 
