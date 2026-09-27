@@ -12,17 +12,13 @@ import "server-only";
 import { readFreshJson, writeFreshJson } from "@/lib/exam-lab/storage-fresh";
 import { complete } from "@/lib/ai/llm";
 import type { InsightsView } from "../client-types.ts";
-import { INSIGHTS_DEADLINE_MS, fallbackInsights, insightsCacheable, insightsFingerprint, insightsPrompt, parseInsights, type InsightsInput } from "./insights-core.ts";
+import { INSIGHTS_DEADLINE_MS, fallbackInsights, insightsCacheable, insightsFingerprint, insightsRequest, parseInsights, type InsightsInput } from "./insights-core.ts";
 
 export type { InsightsInput };
 
 const BUCKET = "portal-data";
 const CACHE_VERSION = 1;
 const SAFE_UID = /^[A-Za-z0-9_-]{6,64}$/;
-// A headline + two-sentence summary + up to 3 short tips comfortably fits
-// well inside this -- generous headroom against a verbose reply, not a
-// budget the student ever notices.
-const MAX_OUTPUT_TOKENS = 700;
 
 const cachePath = (uid: string) => `sat/insights/${uid}.json`;
 
@@ -66,9 +62,8 @@ export async function studentInsights(uid: string, input: InsightsInput, today: 
       if (cached && cached.fingerprint === fingerprint) return cached.view;
     }
 
-    const { system, user } = insightsPrompt(input);
     const result = await complete(
-      { system, messages: [{ role: "user", content: user }], json: true, maxTokens: MAX_OUTPUT_TOKENS },
+      insightsRequest(input),
       "insights",
       uid,
       { deadlineAt },

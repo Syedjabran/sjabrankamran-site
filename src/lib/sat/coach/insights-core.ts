@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { SATScore, SATSection } from "../types.ts";
 import type { InsightsView } from "../client-types.ts";
-import type { LlmResult } from "../../ai/llm-core.ts";
+import type { LlmRequest, LlmResult } from "../../ai/llm-core.ts";
 
 /** The whole "Coach says" LLM call -- retry and fallback model included --
  *  ends within this long (its route runs for at most 60 s). */
@@ -91,6 +91,7 @@ export function insightsPrompt(input: InsightsInput): { system: string; user: st
     "You are a Digital SAT coach writing a short \"Coach says\" note for a self-study student.",
     "Voice: specific and encouraging, plain sentences, no filler and no generic motivational phrases.",
     "Never invent a score -- use only the latest score given, labelled exactly as given (official or estimated).",
+    "Never state a points gap, a score gain or a predicted score (nothing like \"a 200-point gap\" or \"50 more points\").",
     "Reply with ONLY a JSON object, no markdown fences and no prose outside it, exactly this shape: " +
       '{"headline": string, "summary": string, "tips": [{"title": string, "body": string, "skill": string (optional)}]}.',
     "headline is at most 90 characters. summary is at most two sentences and 280 characters. " +
@@ -114,6 +115,18 @@ export function insightsPrompt(input: InsightsInput): { system: string; user: st
   });
 
   return { system, user };
+}
+
+/** A headline + two-sentence summary + up to 3 short tips comfortably fits
+ *  well inside this -- generous headroom against a verbose reply, not a
+ *  budget the student ever notices. */
+export const INSIGHTS_MAX_TOKENS = 700;
+
+/** The "Coach says" call (insights.ts sends it; scripts/smoke-sat-ai.mjs
+ *  sends the very same one live). */
+export function insightsRequest(input: InsightsInput): LlmRequest {
+  const { system, user } = insightsPrompt(input);
+  return { system, messages: [{ role: "user", content: user }], json: true, maxTokens: INSIGHTS_MAX_TOKENS };
 }
 
 // --- parsing / validation -------------------------------------------------------

@@ -4,7 +4,7 @@
 // fingerprint.
 import assert from "node:assert/strict";
 import {
-  MAX_FIRST_NAME_CHARS, fallbackInsights, insightsCacheable, insightsFingerprint, insightsKnownNumbers, insightsPrompt, onlyKnownNumbers, parseInsights,
+  MAX_FIRST_NAME_CHARS, fallbackInsights, insightsCacheable, insightsFingerprint, insightsKnownNumbers, insightsPrompt, insightsRequest, onlyKnownNumbers, parseInsights,
   sanitiseFirstName,
 } from "../src/lib/sat/coach/insights-core.ts";
 
@@ -191,6 +191,15 @@ function validInsights() {
   const slow = baseInput({ pacingFlags: [{ label: "Algebra", medianSec: 215.4, accuracy: 0.4 }] });
   assert.ok(parseInsights(withTip("You average 215 seconds on Algebra."), slow), "a rounded pacing figure the prompt carried passes");
   assert.equal(parseInsights(withTip("You average 250 seconds on Algebra."), slow), null);
+
+  // The prompt asks for no points figures at all (a live Gemini reply wrote
+  // "a 200-point gap", which the guard refused); insightsRequest is the call.
+  assert.match(insightsPrompt(input).system, /Never state a points gap, a score gain or a predicted score/);
+  const req = insightsRequest(input);
+  assert.deepEqual(req.messages, [{ role: "user", content: insightsPrompt(input).user }]);
+  assert.equal(req.json, true);
+  assert.equal(req.maxTokens, 700);
+  assert.equal(parseInsights({ ...validInsights(), headline: "Aisha, let's close the 200-point gap in 37 days." }, input), null, "the live reply the guard caught");
 
   // Known numbers = the prompt's numbers + its fractions as whole percentages.
   const known = insightsKnownNumbers(input);
