@@ -4,7 +4,8 @@
 // fingerprint.
 import assert from "node:assert/strict";
 import {
-  fallbackInsights, insightsCacheable, insightsFingerprint, insightsKnownNumbers, insightsPrompt, onlyKnownNumbers, parseInsights, sanitiseFirstName,
+  MAX_FIRST_NAME_CHARS, fallbackInsights, insightsCacheable, insightsFingerprint, insightsKnownNumbers, insightsPrompt, onlyKnownNumbers, parseInsights,
+  sanitiseFirstName,
 } from "../src/lib/sat/coach/insights-core.ts";
 
 function baseInput(overrides = {}) {
@@ -136,6 +137,22 @@ function validInsights() {
   }
   assert.equal(sanitiseFirstName("Aisha Khan"), "Aisha");
   assert.equal(sanitiseFirstName("   "), "there");
+}
+
+// --- 9a (final review 162a): the first name is capped at 30 characters --
+// a 100-character single token (students edit their own name) is cut
+// between characters, and an "@" anywhere still means no name at all
+{
+  const long = "A".repeat(100);
+  assert.equal(sanitiseFirstName(long), "A".repeat(30));
+  assert.equal(MAX_FIRST_NAME_CHARS, 30);
+  assert.equal(sanitiseFirstName(`${long} Khan`), "A".repeat(30));
+  assert.equal(sanitiseFirstName("Muhammad-Abdullah-Rahman-Siddiqui"), "Muhammad-Abdullah-Rahman-Siddi");
+  assert.equal(sanitiseFirstName("Aisha"), "Aisha", "a normal name is untouched");
+  assert.equal(sanitiseFirstName("😀".repeat(40)), "😀".repeat(30), "never cut inside a character");
+  assert.equal(sanitiseFirstName(`${long}@example.com`), "there");
+  const { user } = insightsPrompt(baseInput({ firstName: long }));
+  assert.ok(user.includes(`"name":"${"A".repeat(30)}"`) && !user.includes("A".repeat(31)), "the prompt carries the capped name");
 }
 
 // --- 9b: prompt sanitises "first word" too (a name with a space, no '@')

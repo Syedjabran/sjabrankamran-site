@@ -152,8 +152,8 @@ export async function runBeforeDeadline<T>(
 
 // --- the week ------------------------------------------------------------------
 
-/** The student's first name for a parent: first word, never an email; "Your
- *  child" when there is none. Unlike the tutor/insights fallback ("there"),
+/** The student's first name for a parent: first word, at most 30 characters
+ *  (sanitiseFirstName), never an email; "Your child" when there is none. Unlike the tutor/insights fallback ("there"),
  *  a parent email never addresses the student as "there" -- any source
  *  containing "@", or a sanitised result of "there", falls back here too. */
 export function parentFirstName(raw: string): string {

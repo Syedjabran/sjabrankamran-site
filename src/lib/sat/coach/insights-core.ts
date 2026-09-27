@@ -53,13 +53,18 @@ const MAX_STRONG_SKILLS = 3;
  *  challenges, so the coach's job in that window is test-day guidance. */
 const TEST_DAY_THRESHOLD = 2;
 const NAME_FALLBACK = "there";
+/** Students edit their own name (up to 100 characters): one crafted "word"
+ *  must not carry sentences into an AI prompt, so a first name is cut here. */
+export const MAX_FIRST_NAME_CHARS = 30;
 
-/** The first word of `raw`, or "there" when `raw` has an "@" anywhere --
- *  an email (or a name field holding one) is never used, not even its
- *  local part, so no email or domain can reach an AI prompt. */
+/** The first word of `raw`, at most 30 characters (cut between characters,
+ *  never inside one), or "there" when `raw` has an "@" anywhere -- an email
+ *  (or a name field holding one) is never used, not even its local part, so
+ *  no email or domain can reach an AI prompt. */
 export function sanitiseFirstName(raw: string): string {
   if (raw.includes("@")) return NAME_FALLBACK;
-  return raw.trim().split(/\s+/)[0] || NAME_FALLBACK;
+  const first = raw.trim().split(/\s+/)[0] ?? "";
+  return Array.from(first).slice(0, MAX_FIRST_NAME_CHARS).join("") || NAME_FALLBACK;
 }
 
 function pct(fraction: number): number {
