@@ -36,7 +36,7 @@ import { formatPk, formatPkDay, pkToday } from "../../portal/pk-time.ts";
 import { addDays, daysBetween, horizonEnd } from "./planner.ts";
 import { SAT_SCALE_MIN, isoWeekRange, onTargetScale } from "./goals.ts";
 import { planStreak, strongSkills } from "./coach-view.ts";
-import { sanitiseFirstName, sentenceCount } from "./insights-core.ts";
+import { onlyKnownNumbers, sanitiseFirstName, sentenceCount } from "./insights-core.ts";
 
 export type SatScoreRow = { label: string; range: string; lower: number; upper: number; date: string; official: boolean };
 
@@ -96,9 +96,6 @@ export const COLORS = {
 const MAX_SCORE_ROWS = 5;
 const SUMMARY_MAX_CHARS = 280;
 const SUMMARY_MAX_SENTENCES = 2;
-/** The lowest SAT section score: any number this big in an AI summary must
- *  be one of the numbers it was given, or it may be an invented score. */
-const SCORE_LIKE_MIN = 200;
 const NAME_FALLBACK = "Your child";
 const FONT = "Arial,Helvetica,sans-serif";
 const EXAM_DAY_FORMAT: Intl.DateTimeFormatOptions = { day: "numeric", month: "long", year: "numeric" };
@@ -420,20 +417,15 @@ function accuracyChange(w: Pick<SatWeek, "accuracy" | "accuracyPrev">): number |
   return w.accuracy !== null && w.accuracyPrev !== null ? w.accuracy - w.accuracyPrev : null;
 }
 
-// "120 points", "50 pts", "7 percentage points": a points figure must be one
-// the AI was given, whatever its size (a score gain is still a score).
-const POINTS = /(\d+)\s*(?:percentage\s+)?(?:points?|pts?)\b/gi;
-
-function onlyKnownNumbers(text: string, w: SatWeek): boolean {
+/** The numbers the summary prompt carried -- all the summary may state at
+ *  score size or as a "points" figure (onlyKnownNumbers, shared with
+ *  "Coach says" in insights-core.ts). */
+function knownWeekNumbers(w: SatWeek): Set<number> {
   const change = accuracyChange(w);
-  const known = new Set(
+  return new Set(
     [w.scheduled, w.done, w.late, w.missed, w.upcoming, w.answered, w.accuracy, w.accuracyPrev, w.minutes, w.streak, w.daysToExam, change === null ? null : Math.abs(change)]
       .filter((n): n is number => typeof n === "number"),
   );
-  const plain = text.replace(/(\d),(?=\d{3}\b)/g, "$1");
-  const numbers = plain.match(/\d+/g) ?? [];
-  const points = [...plain.matchAll(POINTS)].map((m) => Number(m[1]));
-  return numbers.every((n) => Number(n) < SCORE_LIKE_MIN || known.has(Number(n))) && points.every((n) => known.has(n));
 }
 
 /** The AI reply's summary when it is usable: one or two sentences, at most
@@ -445,7 +437,7 @@ export function parseSummary(json: unknown, w: SatWeek): string | null {
   if (typeof raw !== "string") return null;
   const text = raw.replace(/\s+/g, " ").trim();
   if (!text || text.length > SUMMARY_MAX_CHARS || sentenceCount(text) > SUMMARY_MAX_SENTENCES) return null;
-  return onlyKnownNumbers(text, w) ? text : null;
+  return onlyKnownNumbers(text, knownWeekNumbers(w)) ? text : null;
 }
 
 // --- shared wording ----------------------------------------------------------------

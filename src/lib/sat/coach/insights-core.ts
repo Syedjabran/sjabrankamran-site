@@ -128,13 +128,56 @@ const insightsSchema = z.object({
   tips: z.array(tipSchema).max(MAX_TIPS),
 });
 
+// --- the unknown-number guard (no invented scores, spec 3 rule 3) ---------------
+
+/** The lowest SAT section score: any number this big in AI text must be one
+ *  of the numbers it was given, or it may be an invented score. */
+const SCORE_LIKE_MIN = 200;
+// "120 points", "50 pts", "7 percentage points", "a 150-point gain": a points
+// figure must be one the AI was given, whatever its size (a score gain is
+// still a score).
+const POINTS = /(\d+)[\s-]*(?:percentage[\s-]+)?(?:points?|pts?)\b/gi;
+
+/** True when every score-sized number (200 or more) in `text`, and every
+ *  "N points" figure whatever its size, is one of `known` -- the guard both
+ *  AI texts go through ("Coach says" here, the parent email's two-line
+ *  summary in parent-report-core.ts). "1,200" reads as 1200. */
+export function onlyKnownNumbers(text: string, known: ReadonlySet<number>): boolean {
+  const plain = text.replace(/(\d),(?=\d{3}\b)/g, "$1");
+  const numbers = plain.match(/\d+/g) ?? [];
+  const points = [...plain.matchAll(POINTS)].map((m) => Number(m[1]));
+  return numbers.every((n) => Number(n) < SCORE_LIKE_MIN || known.has(Number(n))) && points.every((n) => known.has(n));
+}
+
+/** The numbers a "Coach says" text may state: every number in the prompt
+ *  it was built from (the target, the latest range's bounds, days to go,
+ *  this week's counts, pacing seconds...) and the whole percentages of its
+ *  fractions (section accuracy, mastery, pacing accuracy). */
+export function insightsKnownNumbers(input: InsightsInput): Set<number> {
+  const known = new Set((insightsPrompt(input).user.match(/\d+/g) ?? []).map(Number));
+  const fractions = [
+    input.sections.rw.accuracy, input.sections.math.accuracy,
+    ...input.weakSkills.map((s) => s.mastery), ...input.strongSkills.map((s) => s.mastery), ...input.pacingFlags.map((f) => f.accuracy),
+  ];
+  for (const f of fractions) if (typeof f === "number" && Number.isFinite(f)) known.add(pct(f));
+  for (const f of input.pacingFlags) known.add(Math.round(f.medianSec));
+  known.add(input.targetScore);
+  if (input.latestScore) for (const n of [input.latestScore.lower, input.latestScore.upper]) known.add(n);
+  return known;
+}
+
 /** Validates an AI reply's parsed JSON against the "Coach says" shape:
  *  headline <= 90 chars, summary <= 2 sentences/280 chars, <= 3 tips each
- *  with a body <= 280 chars. Returns null (never throws) on any mismatch,
- *  including non-object input. */
-export function parseInsights(json: unknown): InsightsView | null {
+ *  with a body <= 280 chars -- and no score-sized number or "points" figure
+ *  anywhere in it that `input` (what the prompt carried) doesn't hold. Returns
+ *  null (never throws) on any mismatch, including non-object input, so the
+ *  caller shows the rules view instead. */
+export function parseInsights(json: unknown, input: InsightsInput): InsightsView | null {
   const parsed = insightsSchema.safeParse(json);
   if (!parsed.success) return null;
+  const known = insightsKnownNumbers(input);
+  const texts = [parsed.data.headline, parsed.data.summary, ...parsed.data.tips.flatMap((t) => [t.title, t.body, t.skill ?? ""])];
+  if (!texts.every((text) => onlyKnownNumbers(text, known))) return null;
   return { ...parsed.data, source: "ai", generatedAt: new Date().toISOString() };
 }
 

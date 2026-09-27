@@ -6,7 +6,8 @@
 // insightsFingerprint changes. Storage fails closed (storage-fresh.ts): a
 // failed cache read is never followed by a cache write. `studentInsights`
 // never throws -- any failure (unreadable cache, no AI provider, a spent
-// budget, an unparsable reply) falls back to the deterministic rules view.
+// budget, an unparsable reply, a number the prompt didn't carry) falls back
+// to the deterministic rules view.
 import "server-only";
 import { readFreshJson, writeFreshJson } from "@/lib/exam-lab/storage-fresh";
 import { complete } from "@/lib/ai/llm";
@@ -45,10 +46,10 @@ export async function cachedInsights(uid: string): Promise<InsightsView | null> 
 
 /** The student's "Coach says" view. Fresh cache (fingerprint unchanged) is
  *  served without calling the LLM at all; otherwise it asks the adapter for
- *  a new one and validates the reply, falling back to deterministic rules
- *  on any failure. The cache is only written after a read that itself
- *  succeeded (storage fails closed -- rule 5: never write following a
- *  failed read). Never throws. */
+ *  a new one and validates the reply (shape and the unknown-number guard),
+ *  falling back to deterministic rules on any failure. The cache is only
+ *  written after a read that itself succeeded (storage fails closed -- rule
+ *  5: never write following a failed read). Never throws. */
 export async function studentInsights(uid: string, input: InsightsInput, today: string): Promise<InsightsView> {
   try {
     if (!SAFE_UID.test(uid)) return fallbackInsights(input);
@@ -66,7 +67,7 @@ export async function studentInsights(uid: string, input: InsightsInput, today: 
       "insights",
       uid,
     );
-    const view = (result.ok ? parseInsights(result.json) : null) ?? fallbackInsights(input);
+    const view = (result.ok ? parseInsights(result.json, input) : null) ?? fallbackInsights(input);
 
     if (read.ok) {
       const doc: InsightsCache = { version: CACHE_VERSION, fingerprint, view };

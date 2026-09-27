@@ -3,7 +3,9 @@
 // parsing/validation, the deterministic rules fallback and the inputs
 // fingerprint.
 import assert from "node:assert/strict";
-import { fallbackInsights, insightsFingerprint, insightsPrompt, parseInsights, sanitiseFirstName } from "../src/lib/sat/coach/insights-core.ts";
+import {
+  fallbackInsights, insightsFingerprint, insightsKnownNumbers, insightsPrompt, onlyKnownNumbers, parseInsights, sanitiseFirstName,
+} from "../src/lib/sat/coach/insights-core.ts";
 
 function baseInput(overrides = {}) {
   return {
@@ -37,7 +39,7 @@ function validInsights() {
 
 // --- 1: parseInsights accepts a valid object, filling source/generatedAt
 {
-  const parsed = parseInsights(validInsights());
+  const parsed = parseInsights(validInsights(), baseInput());
   assert.ok(parsed, "a valid object parses");
   assert.equal(parsed.headline, "Push Algebra this week");
   assert.equal(parsed.tips.length, 2);
@@ -54,28 +56,28 @@ function validInsights() {
     { title: "a", body: "a" }, { title: "b", body: "b" },
     { title: "c", body: "c" }, { title: "d", body: "d" },
   ];
-  assert.equal(parseInsights(bad), null, "more than 3 tips is rejected");
+  assert.equal(parseInsights(bad, baseInput()), null, "more than 3 tips is rejected");
 }
 
 // --- 3: parseInsights rejects a 400-char tip body
 {
   const bad = validInsights();
   bad.tips = [{ title: "Too long", body: "x".repeat(400) }];
-  assert.equal(parseInsights(bad), null, "a tip body over 280 chars is rejected");
+  assert.equal(parseInsights(bad, baseInput()), null, "a tip body over 280 chars is rejected");
 }
 
 // --- 4: parseInsights rejects a missing summary
 {
   const bad = validInsights();
   delete bad.summary;
-  assert.equal(parseInsights(bad), null, "a missing summary is rejected");
+  assert.equal(parseInsights(bad, baseInput()), null, "a missing summary is rejected");
 }
 
 // --- 4b: parseInsights rejects non-object / garbage input, never throws
 {
-  assert.equal(parseInsights(null), null);
-  assert.equal(parseInsights("not json"), null);
-  assert.equal(parseInsights({ headline: "x".repeat(200), summary: "s", tips: [] }), null, "a headline over 90 chars is rejected");
+  assert.equal(parseInsights(null, baseInput()), null);
+  assert.equal(parseInsights("not json", baseInput()), null);
+  assert.equal(parseInsights({ headline: "x".repeat(200), summary: "s", tips: [] }, baseInput()), null, "a headline over 90 chars is rejected");
 }
 
 // --- 5: fallbackInsights mentions the weakest skill's label
@@ -149,6 +151,43 @@ function validInsights() {
   assert.ok(/test.?day/i.test(soon.system), "system prompt mentions test-day guidance when the exam is imminent");
   const far = insightsPrompt(baseInput({ daysToExam: 30 }));
   assert.ok(!/test.?day/i.test(far.system), "no test-day instruction when the exam isn't imminent");
+}
+
+// --- 10 (final review M3): the AI text goes through the parent summary's
+// unknown-number guard -- a score-sized number or a "points" figure the
+// prompt didn't carry rejects the reply, and the caller shows the rules view
+{
+  const input = baseInput(); // target 1400, latest official 1180–1210
+  const withTip = (body) => ({ ...validInsights(), tips: [{ title: "Next step", body }] });
+  assert.equal(parseInsights(withTip("You're on track for 1350 by October."), input), null, "an invented score is rejected");
+  assert.equal(parseInsights(withTip("That could add 45 points to your score."), input), null, "an invented gain is rejected");
+  assert.equal(parseInsights(withTip("Aim for a 150-point jump."), input), null, "a hyphenated points figure too");
+  assert.equal(parseInsights(withTip("You could reach 1,450 soon."), input), null, "a comma-grouped score too");
+  assert.equal(parseInsights({ ...validInsights(), headline: "Push for 1500" }, input), null, "in the headline too");
+  assert.equal(parseInsights({ ...validInsights(), summary: "Math is at 60% while your target is 1500." }, input), null, "in the summary too");
+
+  const ok = parseInsights(withTip("Your latest official range is 1180–1210 and your target is 1,400: keep going."), input);
+  assert.ok(ok, "the target and the latest range's bounds are known");
+  assert.equal(ok.source, "ai");
+  assert.ok(parseInsights(withTip("Algebra is at 35% mastery with 30 days to go; you missed 2 of 5 sessions."), input), "small numbers and prompt numbers pass");
+  assert.ok(parseInsights(withTip("Your Algebra answers take 130s on average."), input), "pacing seconds from the prompt pass");
+  const slow = baseInput({ pacingFlags: [{ label: "Algebra", medianSec: 215.4, accuracy: 0.4 }] });
+  assert.ok(parseInsights(withTip("You average 215 seconds on Algebra."), slow), "a rounded pacing figure the prompt carried passes");
+  assert.equal(parseInsights(withTip("You average 250 seconds on Algebra."), slow), null);
+
+  // Known numbers = the prompt's numbers + its fractions as whole percentages.
+  const known = insightsKnownNumbers(input);
+  for (const n of [1400, 1180, 1210, 30, 72, 60, 35, 42, 85, 130, 40]) assert.ok(known.has(n), `${n} is known`);
+  assert.ok(!known.has(1350));
+  const noScore = insightsKnownNumbers(baseInput({ latestScore: null }));
+  assert.ok(!noScore.has(1180) && noScore.has(1400), "no latest score, no range bounds");
+
+  // The shared guard itself (the parent email's summary uses it too).
+  assert.equal(onlyKnownNumbers("Scored 1300.", new Set([1300])), true);
+  assert.equal(onlyKnownNumbers("Scored 1300.", new Set()), false);
+  assert.equal(onlyKnownNumbers("Up 7 percentage points.", new Set()), false, "a points figure of any size must be known");
+  assert.equal(onlyKnownNumbers("Up 7 percentage points.", new Set([7])), true);
+  assert.equal(onlyKnownNumbers("Answered 84 questions in 190 minutes.", new Set()), true, "numbers under 200 that aren't points pass");
 }
 
 console.log("sat-coach-insights tests passed");
