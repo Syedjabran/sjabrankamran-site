@@ -15,7 +15,7 @@ Updated: 2026-09-19 · Lead agent single-scan snapshot (Phase A1). Sources: repo
 | Push | `web-push` (VAPID), self-healing subscriptions (commit `ac1a736`) |
 | Analytics | `@vercel/analytics` only |
 | Validation | `zod` on AI/exam endpoints |
-| Deployment | Vercel, Git auto-deploy from `main`; crons via `vercel.json` (daily-study-plans, saturday-parent-reports) |
+| Deployment | Vercel, Git auto-deploy from `main`; crons via `vercel.json` (daily-study-plans 06:00 PKT, daily-sat-plans 06:15 PKT, saturday-parent-reports Sat 18:00 PKT) |
 | Tests | `scripts/test-access-control.mjs` (`npm run test:access`); Playwright present as devDep but no e2e suite found |
 | Lint | **BROKEN repo-wide**: `next lint` removed in Next 16, no ESLint config. Gate = `tsc --noEmit` + `next build` |
 
