@@ -1,29 +1,7 @@
-// Shared instrument/analysis primitives. No paper answers or model parameters.
-export function seededRandom(seed) {
-  let state = seed >>> 0;
-  return () => {
-    state = (state + 0x6D2B79F5) >>> 0;
-    let t = Math.imul(state ^ (state >>> 15), 1 | state);
-    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-export function quantize(value, resolution) {
-  if (!Number.isFinite(value) || !Number.isFinite(resolution) || resolution <= 0)
-    throw new RangeError('Finite value and positive resolution required');
-  return Number((Math.round(value / resolution) * resolution).toPrecision(14));
-}
-
-// Call once per deliberate instrument reading, never from an animation frame.
-// Half-width is a declared uniform error model, NOT a confidence interval.
-export function readInstrument(value, { resolution, bias = 0, halfWidth = 0 }, random) {
-  if (!Number.isFinite(bias) || !Number.isFinite(halfWidth) || halfWidth < 0)
-    throw new RangeError('Invalid instrument error parameters');
-  const noise = halfWidth ? (2 * random() - 1) * halfWidth : 0;
-  return quantize(value + bias + noise, resolution);
-}
-
+// Analysis helpers for the student's own notebook entries: a least-squares
+// line through the points they type and a CSV of their readings. The
+// instrument primitives (seeded noise, quantising, reading an instrument)
+// run on the server with the physics models (src/lib/practical-lab).
 export function linearFit(points) {
   if (points.length < 2 || points.some(p => p.length !== 2 || p.some(v => !Number.isFinite(v))))
     throw new RangeError('At least two finite x,y readings required');

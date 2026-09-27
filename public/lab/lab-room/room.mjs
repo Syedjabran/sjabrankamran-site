@@ -13,11 +13,14 @@ const svg=(name,attrs={})=>{const e=document.createElementNS(NS,name);for(const[
 const id=new URL(location.href).searchParams.get('experiment')||'9702_m22_33-q2';
 const room=rooms[id];
 if(!room){$('title').textContent='Experiment not found';throw new Error('Unknown experiment');}
-const definitions=await fetch('./settings.json').then(r=>{if(!r.ok)throw new Error('Settings unavailable');return r.json();});
-const engine=await createExperiment(id,definitions[id]);
-const question=questionTasks[id];
 document.title=`${room.title} · 9702 laboratory`;$('title').textContent=room.title;$('paper').textContent=id.replace('9702_','9702 · ').replace('-q',' · Q');
-$('provisional').hidden=!room.provisional;$('source-guide').href=`../practicals/${id}.html`;
+// The physics runs on the server (the lab API): the room opens this student's
+// attempt and from then on sends settings and actions, and gets back only what
+// the apparatus and the instruments show.
+let engine;
+try{engine=await createExperiment(id);}catch(e){$('subtitle').textContent=e.message;$('assembly-count').textContent='Unavailable';document.querySelector('.lab-layout').hidden=true;throw e;}
+const question=questionTasks[id];
+$('provisional').hidden=!room.provisional;
 $('procedure').innerHTML=room.steps.map(s=>`<li>${escape(s)}</li>`).join('');
 $('limits').textContent=(room.cautions||[]).join(' ');
 if(question){
@@ -25,11 +28,13 @@ if(question){
   $('question-sections').innerHTML=question.sections.map(s=>`<article class="question-section"><h3>${escape(s.label)}</h3><p>${escape(s.text)}</p></article>`).join('');
   $('question-checklist').innerHTML=question.checklist.map(s=>`<li>${escape(s)}</li>`).join('');$('original-paper').href=question.pdf;$('question-pdf').src=question.pdf;
 }else $('open-question').hidden=true;
+let guideLoaded=false;
+$('guide-panel').addEventListener('toggle',async()=>{if(!$('guide-panel').open||guideLoaded)return;guideLoaded=true;const host=$('guide');host.textContent='Loading the guide…';try{const r=await fetch('../content/student-guides.json');if(!r.ok)throw new Error();const g=(await r.json()).guides.find(x=>x.id===id);if(!g)throw new Error();host.replaceChildren();const para=(text,cls)=>{if(!text)return;const p=document.createElement('p');if(cls)p.className=cls;p.textContent=text;host.append(p);};para(g.calibrationNotice,'notice');para(g.setup.sourceInteraction);for(const text of[...g.setup.actions,...g.measurement.sequence,g.measurement.rangeAndRepeats,...g.measurement.readings.map(r=>r.instruction),...g.calculations.studentFormulae,...g.calculations.graph.studentActions,...g.evaluationPrompts])para(text);para(g.provenance?.statement,'small');}catch{guideLoaded=false;host.textContent='The guide couldn’t be loaded. Close and reopen it to try again.';}});
 $('open-question').onclick=()=>{$('question-panel').hidden=false;document.body.classList.add('question-open');$('close-question').focus();};
 $('close-question').onclick=()=>{$('question-panel').hidden=true;document.body.classList.remove('question-open');$('open-question').focus();};
 const parts=room.parts.map(p=>({...p,placed:false,mounted:false,px:0,py:0,turn:p.rotation||0,dx:0,dy:0,angle:0}));
 const partMap=new Map(parts.map(p=>[p.id,p]));
-let selected=null,pendingPlacement=null,drag=null,terminal=null,links=[],running=false,paused=false,watchRunning=false,watchTime=0,tally=0,lastTime=null,lastSample=0,view={},observations={},instrumentKey='',liveInstrument=false,zoom=1,feedbackError=false,assemblyOpened=false;
+let selected=null,pendingPlacement=null,drag=null,terminal=null,links=[],running=false,starting=false,paused=false,watchRunning=false,watchTime=0,tally=0,lastTime=null,lastSample=0,view={},observations={},instrumentKey='',liveInstrument=false,zoom=1,feedbackError=false,assemblyOpened=false;
 const noteKey=`9702-room-notebook-v1:${id}`;
 let rows=[];try{const saved=JSON.parse(localStorage.getItem(noteKey)||'null');if(saved){rows=saved.rows||[];$('evaluation').value=saved.evaluation||'';}}catch{}
 function feedback(text,error=false){$('feedback').textContent=text;$('feedback').classList.toggle('error',error);feedbackError=error;}
@@ -62,7 +67,7 @@ $('coach-show').onclick=()=>{const a=nextAction();document.querySelectorAll('.co
 function refresh(){
   let mounted=parts.filter(p=>p.mounted&&!p.optional).length,needed=parts.filter(p=>!p.optional).length;
   $('assembly-count').textContent=`${mounted} / ${needed} parts mounted`;$('tray-count').textContent=parts.filter(p=>!p.placed).length;
-  $('empty-tip').hidden=parts.some(p=>p.placed);$('run').disabled=!ready()||running;
+  $('empty-tip').hidden=parts.some(p=>p.placed);$('run').disabled=!ready()||running||starting;
   $('observe').disabled=!ready();$('return-part').disabled=!selected||!selected.placed||running;
   $('pause').disabled=!running&&!watchRunning;$('pause').textContent=paused?'Resume simulation':'Pause simulation';
   $('open-switch').hidden=!room.category?.includes('circuit')&&!['circuit','circuit-time'].includes(room.category);
@@ -79,7 +84,7 @@ function refresh(){
   for(const field of[$('connect-from'),$('connect-to')]){const prior=field.value;field.innerHTML='<option value="">Choose a terminal</option>'+parts.filter(p=>p.mounted).flatMap(p=>portNames(p).map(name=>`<option value="${escape(p.id+':'+name)}">${escape(p.label+' · '+name)}</option>`)).join('');field.value=prior;}
   $('connect-selected').disabled=running;
   updateCoach();
-  for(const el of document.querySelectorAll('#controls input,#controls select'))el.disabled=running&&!canAdjustLive(el.id.replace('setting-',''));
+  for(const el of document.querySelectorAll('#controls input,#controls select'))el.disabled=starting||running&&!canAdjustLive(el.id.replace('setting-',''));
   renderTerminals();draw();
 }
 function choose(p){selected=p;$('selected-label').textContent=`${p.label} — ${p.purpose||'Drag to position.'}`;refresh();}
@@ -209,7 +214,14 @@ function drawEffects(){
   // Midpoint marker is an observation aid, never an automatic cycle counter.
   if(['swing','spring','collision','pickup'].includes(view.kind)){const p=parts.find(p=>['bob','ball','rod'].includes(p.kind));if(p)layer.append(svg('path',{d:`M${p.x-18} ${p.y}h36`,stroke:'#a6803d','stroke-dasharray':'4 4','stroke-width':1}));}
 }
-function updateSetting(c,value){const el=$(`setting-${c.key}`);try{view=engine.set(c.key,c.type==='range'?Number(value):value);el.value=engine.settings[c.key];el.nextElementSibling.textContent=c.type==='select'?c.options.find(o=>String(o.value)===String(el.value))?.label:el.value;observations={};liveInstrument=false;$('instrument-view').replaceChildren();if(running&&canAdjustLive(c.key)){observations=engine.sample();liveInstrument=true;if(instrumentKey)renderInstrument();}draw();feedback(view.status||'Adjustment changed. Inspect and remeasure before recording.');}catch(e){el.value=engine.settings[c.key];feedback(e.message,true);}}
+// Adjustments go to the lab server one at a time; while one is on its way, a
+// newer value for the same control replaces any still waiting (a drag sends
+// only what it needs). A setting the apparatus rules out is reverted.
+const pendingSettings=new Map();let settingsBusy=null;
+function updateSetting(c,value){const v=c.type==='range'?Number(value):value,el=$(`setting-${c.key}`);pendingSettings.delete(c.key);pendingSettings.set(c.key,{c,value:v});if(el&&String(el.value)!==String(v))el.value=v;if(!settingsBusy)settingsBusy=pumpSettings();return settingsBusy;}
+async function pumpSettings(){try{while(pendingSettings.size){const[key,{c,value}]=pendingSettings.entries().next().value;pendingSettings.delete(key);await applySetting(c,value);}}finally{settingsBusy=null;}}
+const settled=async()=>{while(settingsBusy)await settingsBusy;await engine.settled();};
+async function applySetting(c,value){const el=$(`setting-${c.key}`);try{view=await engine.set(c.key,value);if(!pendingSettings.has(c.key))el.value=engine.settings[c.key];el.nextElementSibling.textContent=c.type==='select'?c.options.find(o=>String(o.value)===String(engine.settings[c.key]))?.label:engine.settings[c.key];observations={};liveInstrument=false;$('instrument-view').replaceChildren();if(running&&canAdjustLive(c.key)){observations=await engine.sample();liveInstrument=true;if(instrumentKey)renderInstrument();}draw();feedback(view.status||'Adjustment changed. Inspect and remeasure before recording.');}catch(e){if(!pendingSettings.has(c.key))el.value=engine.settings[c.key];feedback(e.message,true);}}
 for(const c of engine.controls){const wrap=document.createElement('div');wrap.innerHTML=`<label for="setting-${c.key}">${escape(c.label)}</label>`;let el;if(c.type==='select'){el=document.createElement('select');el.innerHTML=c.options.map(o=>`<option value="${escape(o.value)}">${escape(o.label)}</option>`).join('');}else{el=document.createElement('input');el.type='range';el.min=c.min;el.max=c.max;el.step=c.step;}el.id=`setting-${c.key}`;el.value=c.value;wrap.append(el);const out=document.createElement('span');out.className='control-value';out.textContent=c.type==='select'?c.options.find(o=>String(o.value)===String(c.value))?.label:String(c.value);wrap.append(out);el.addEventListener(c.type==='range'?'input':'change',()=>updateSetting(c,el.value));$('controls').append(wrap);}
 function formatTime(t){return`${String(Math.floor(t/60)).padStart(2,'0')}:${(t%60).toFixed(2).padStart(5,'0')}`;}
 function formatValue(v){return Math.abs(v)>=1000?v.toFixed(0):Math.abs(v)>=1?Number(v.toPrecision(5)).toString():v===0?'0':Number(v.toPrecision(4)).toString();}
@@ -218,18 +230,23 @@ function watchStop(){watchRunning=false;refresh();}
 $('watch-start').onclick=watchStart;$('watch-stop').onclick=watchStop;$('watch-zero').onclick=()=>{watchTime=0;tally=0;draw();};
 $('tally-plus').onclick=()=>{tally++;draw();};$('tally-minus').onclick=()=>{tally=Math.max(0,tally-1);draw();};
 document.addEventListener('keydown',e=>{if(e.code==='Space'&&!e.target.closest('input,textarea,select,button,[tabindex]')){e.preventDefault();watchRunning?watchStop():watchStart();}});
-$('run').onclick=()=>{if(!ready())return;try{view=engine.start();running=true;paused=false;lastTime=performance.now();feedback(view.status||'Experiment running. Observe and use the stopwatch manually.');refresh();}catch(e){feedback(e.message,true);}};
-$('open-switch').onclick=()=>{engine.openSwitch();view=engine.view();liveInstrument=false;running=false;observations={};feedback('Switch open. Reset before changing the assembly.');refresh();};
+$('run').onclick=async()=>{if(!ready()||running||starting)return;starting=true;refresh();feedback('Preparing the trial…');try{await settled();view=await engine.start();running=true;paused=false;lastTime=performance.now();feedback(view.status||'Experiment running. Observe and use the stopwatch manually.');}catch(e){if(e.code!=='superseded')feedback(e.message,true);}finally{starting=false;refresh();}};
+$('open-switch').onclick=async()=>{engine.openSwitch();liveInstrument=false;running=false;observations={};refresh();try{await settled();view=await engine.view();feedback('Switch open. Reset before changing the assembly.');}catch(e){feedback(e.message,true);}refresh();};
 $('pause').onclick=()=>{paused=!paused;lastTime=performance.now();refresh();};
-$('reset-trial').onclick=()=>{running=paused=false;watchRunning=false;view=engine.reset();liveInstrument=false;observations={};feedback('Trial reset. Stopwatch reading and notebook retained. Zero the watch when ready.');refresh();};
-$('clear-bench').onclick=()=>{assemblyOpened=false;document.querySelector('.setup-card').open=true;running=paused=watchRunning=false;view=engine.reset();links=[];parts.forEach(p=>{p.node?.remove();p.node=null;p.placed=p.mounted=false;});selected=terminal=pendingPlacement=null;observations={};feedback('Bench cleared. Notebook retained.');refresh();};
+async function resetEngine(message){try{await settled();view=await engine.reset();feedback(message);}catch(e){feedback(e.message,true);}refresh();}
+$('reset-trial').onclick=()=>{running=paused=false;watchRunning=false;liveInstrument=false;observations={};refresh();return resetEngine('Trial reset. Stopwatch reading and notebook retained. Zero the watch when ready.');};
+$('clear-bench').onclick=()=>{assemblyOpened=false;document.querySelector('.setup-card').open=true;running=paused=watchRunning=false;links=[];parts.forEach(p=>{p.node?.remove();p.node=null;p.placed=p.mounted=false;});selected=terminal=pendingPlacement=null;observations={};refresh();return resetEngine('Bench cleared. Notebook retained.');};
+// A fresh attempt: the same practical on a new apparatus (new hidden values).
+// Two clicks, so a stray click doesn't swap the apparatus under a student's readings.
+let freshArmed=null;const attemptLabel=()=>{$('attempt-label').textContent=`Attempt ${engine.attemptNumber}`;};attemptLabel();
+$('fresh-attempt').onclick=async()=>{if(running||starting)return;if(!freshArmed){$('fresh-attempt').textContent='Click again for new apparatus';freshArmed=setTimeout(()=>{freshArmed=null;$('fresh-attempt').textContent='Fresh attempt';},6000);return;}clearTimeout(freshArmed);freshArmed=null;$('fresh-attempt').textContent='Fresh attempt';$('fresh-attempt').disabled=true;try{await settled();watchRunning=paused=false;liveInstrument=false;observations={};view=await engine.fresh();attemptLabel();feedback('Fresh attempt started: this apparatus has new hidden values. Record new readings for it; earlier rows stay in your notebook.');}catch(e){feedback(e.message,true);}finally{$('fresh-attempt').disabled=false;refresh();}};
 $('return-part').onclick=()=>returnPart(selected);$('rotate-part').onclick=()=>rotate(selected);$('hints').onchange=refresh;$('wire-mode').onchange=()=>{$('connection-picker').hidden=!$('wire-mode').checked;feedback($('wire-mode').checked?'Select two terminals on the bench or in the endpoint selector. Click an existing lead to remove it.':'Drag components; terminal circles remain available for keyboard access.');draw();};
 $('connect-selected').onclick=()=>{const a=$('connect-from').value,b=$('connect-to').value;if(!a||!b||a===b){feedback('Choose two different mounted terminals.',true);return;}const key=connectKey(a,b),valid=(room.connections||[]).some(c=>connectKey(c.from,c.to)===key);if(!links.some(l=>connectKey(l.from,l.to)===key))links.push({from:a,to:b,valid});feedback(valid?'Connection made.':'Incorrect connection. Remove the orange lead before running.',!valid);refresh();};
 function setZoom(delta){zoom=clamp(zoom+delta,1,2);const w=1000/zoom,h=600/zoom;$('bench').setAttribute('viewBox',`${(1000-w)/2} ${(600-h)/2} ${w} ${h}`);}
 $('zoom-in').onclick=()=>setZoom(.2);$('zoom-out').onclick=()=>setZoom(-.2);
 function unit(key){return quantityInfo(engine.family,key).unit;}
 function instrumentKinds(key){return quantityInfo(engine.family,key).instruments;}
-function observe(){if(!ready())return;try{observations=engine.sample();const old=instrumentKey;const keys=Object.keys(observations);$('quantity').innerHTML=keys.map(k=>`<option value="${escape(k)}">${escape(quantityInfo(engine.family,k).label)} / ${escape(unit(k))}</option>`).join('');instrumentKey=keys.includes(old)?old:keys[0]||'';$('quantity').value=instrumentKey;liveInstrument=['A','V','Ω','°C','cm³'].includes(unit(instrumentKey));$('align').value=8;renderInstrument();feedback(view.status||'Inspect the scale, then enter your own reading.');}catch(e){feedback(e.message,true);}}
+async function observe(){if(!ready())return;try{await settled();observations=await engine.sample();const old=instrumentKey;const keys=Object.keys(observations);$('quantity').innerHTML=keys.map(k=>`<option value="${escape(k)}">${escape(quantityInfo(engine.family,k).label)} / ${escape(unit(k))}</option>`).join('');instrumentKey=keys.includes(old)?old:keys[0]||'';$('quantity').value=instrumentKey;liveInstrument=['A','V','Ω','°C','cm³'].includes(unit(instrumentKey));$('align').value=8;renderInstrument();feedback(view.status||'Inspect the scale, then enter your own reading.');}catch(e){feedback(e.message,true);}}
 $('observe').onclick=observe;$('quantity').onchange=()=>{instrumentKey=$('quantity').value;liveInstrument=['A','V','Ω','°C','cm³'].includes(unit(instrumentKey));$('align').value=8;renderInstrument();};$('align').oninput=renderInstrument;
 function renderInstrument(){
   const value=observations[instrumentKey],u=unit(instrumentKey),available=parts.filter(p=>p.placed&&instrumentKinds(instrumentKey).includes(p.kind));
@@ -252,11 +269,14 @@ $('reading-form').onsubmit=e=>{e.preventDefault();const value=Number($('entry-va
 $('evaluation').oninput=save;$('export').onclick=()=>{const columns=['quantity','value','unit','uncertainty','note'].map(key=>({key,label:key}));const blob=new Blob([readingsCSV(columns,rows)],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`${id}-student-notebook.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 $('plot').onclick=()=>{try{const points=$('plot-data').value.trim().split('\n').map(l=>l.trim().split(/[,;\s]+/).map(Number));const fit=linearFit(points);const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]),xmin=Math.min(...xs),xmax=Math.max(...xs),ymin=Math.min(...ys),ymax=Math.max(...ys),X=x=>55+(x-xmin)/(xmax-xmin||1)*480,Y=y=>250-(y-ymin)/(ymax-ymin||1)*210;let markup='<path d="M55 25V250H540" fill="none" stroke="#2c5143"/>';for(let i=0;i<=5;i++){const x=xmin+(xmax-xmin)*i/5,y=ymin+(ymax-ymin)*i/5;markup+=`<text x="${X(x)}" y="271" font-size="11" text-anchor="middle">${x.toPrecision(3)}</text><text x="48" y="${Y(y)+4}" font-size="10" text-anchor="end">${y.toPrecision(3)}</text>`;}markup+=`<path d="M${X(xmin)} ${Y(fit.slope*xmin+fit.intercept)} L${X(xmax)} ${Y(fit.slope*xmax+fit.intercept)}" stroke="#cd8537" fill="none"/>`;markup+=points.map(([x,y])=>`<circle cx="${X(x)}" cy="${Y(y)}" r="4" fill="#217455"/>`).join('');markup+=`<text x="300" y="295" text-anchor="middle" font-size="12">${escape($('x-label').value)}</text><text x="60" y="15" font-size="12">${escape($('y-label').value)}</text>`;$('graph').innerHTML=markup;$('fit').textContent=`Gradient ${fit.slope.toPrecision(4)}; intercept ${fit.intercept.toPrecision(4)}. Fit to your entered observations only.`;}catch(e){$('fit').textContent=e.message;}};
 function frame(now){const dt=lastTime===null?0:Math.min(.1,Math.max(0,(now-lastTime)/1000));lastTime=now;if(!paused){if(watchRunning)watchTime+=dt;if(running&&dt>0){try{view=engine.advance(dt);}catch(e){running=false;feedback(e.message,true);refresh();}}}
-  if(liveInstrument&&ready()&&now-lastSample>200){lastSample=now;try{observations=engine.sample();renderInstrument();}catch(e){liveInstrument=false;feedback(e.message,true);}}
+  // Live meters change during a trial as the server's track says (it carries
+  // their readings on the same timeline); otherwise they hold.
+  if(liveInstrument&&ready()&&now-lastSample>200){lastSample=now;const live=engine.liveReadings();if(live){observations=live;renderInstrument();}}
+  const problem=engine.takeProblem();if(problem)feedback(problem,true);
   draw();requestAnimationFrame(frame);
 }
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&(running||watchRunning)){paused=true;feedback('Simulation and stopwatch paused because the tab was hidden. Resume when ready.');refresh();}});
 const narrow=matchMedia('(max-width:620px)');function arrangeTools(){const host=narrow.matches?document.querySelector('.workspace'):document.querySelector('.instruments'),before=narrow.matches?document.querySelector('.setup-card'):null;for(const cls of['.inspector','.measure-card'])host.insertBefore(document.querySelector(cls),before);}narrow.addEventListener('change',arrangeTools);arrangeTools();
-view=engine.view();renderRows();refresh();requestAnimationFrame(frame);
+view=engine.currentView();renderRows();refresh();requestAnimationFrame(frame);
 // Read-only state for reproducible interaction evidence; no ideal model outputs.
 Object.defineProperty(window,'labRoom',{value:{get state(){return {id,ready:ready(),mounted:parts.filter(p=>p.mounted).length,connections:links.filter(l=>l.valid).length,running,paused,watchRunning,watchTime,tally,rows:rows.length};}},writable:false});

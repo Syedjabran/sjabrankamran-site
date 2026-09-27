@@ -365,7 +365,8 @@ function accessRestrictedResponse(restriction: AccessRestriction) {
 export async function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   const { pathname } = request.nextUrl;
-  const isPortalApi = pathname.startsWith("/api/portal") || pathname.startsWith("/api/exam-lab") || pathname.startsWith("/api/sat");
+  const isPortalApi = pathname.startsWith("/api/portal") || pathname.startsWith("/api/exam-lab") || pathname.startsWith("/api/sat")
+    || pathname.startsWith("/api/lab/"); // Practical Lab API: access locks apply, as for the other portal APIs
   // The Practical Lab's static files (public/lab); null for every other path.
   const lab = labRequest(pathname);
   // Expose the current path to server components (used by the portal layout to
@@ -418,16 +419,18 @@ export async function middleware(request: NextRequest) {
 
   /**
    * /lab: signed in AND (lab staff OR Practical Lab switched on). Pages (the
-   * 52 HTML entry points, and any name that isn't a sub-asset type) get the
-   * full check. The 70 sub-assets the pages load (.mjs/.css/.json/.pdf) get
-   * the sign-in check only -- the one Auth round-trip every portal request
-   * already makes, instead of four more service-role reads per file. They are
-   * what the lab sends every student who uses it (scripts, styles, the room
-   * settings, the student guides and one question paper), so a signed-in
-   * account without the switch could read one whose address it knows; none
-   * of them is teacher-only (the teacher guide isn't served at all:
-   * src/content/lab), and only a page lets anyone use the lab. Everything
-   * here fails closed, including an Auth lookup that can't answer in time.
+   * two HTML entry points -- the practical list and the lab room -- and any
+   * name that isn't a sub-asset type) get the full check. The dozen
+   * sub-assets the pages load (.mjs/.css/.json/.pdf) get the sign-in check
+   * only -- the one Auth round-trip every portal request already makes,
+   * instead of four more service-role reads per file. They are what the lab
+   * sends every student who uses it (the room's scripts and styles, the
+   * student guides and one question paper), so a signed-in account without
+   * the switch could read one whose address it knows; none of them holds
+   * anything hidden (the physics runs behind /api/lab, which does the full
+   * check; the teacher guide isn't served at all: src/content/lab), and only
+   * a page lets anyone use the lab. Everything here fails closed, including
+   * an Auth lookup that can't answer in time.
    */
   async function labGate(target: LabRequest, who: SessionUser): Promise<NextResponse> {
     if (who === "unavailable") {
@@ -559,5 +562,5 @@ export const config = {
   // The last entry is "/lab/:path*" in any letter case: matchers are
   // case-sensitive, but a case-insensitive file system serves public/lab for
   // "/Lab/..." as well (practical-lab-access.ts).
-  matcher: ["/portal/:path*", "/api/portal/:path*", "/api/exam-lab/:path*", "/api/sat/:path*", "/([Ll][Aa][Bb])/:path*"],
+  matcher: ["/portal/:path*", "/api/portal/:path*", "/api/exam-lab/:path*", "/api/sat/:path*", "/([Ll][Aa][Bb])/:path*", "/api/lab/:path*"],
 };

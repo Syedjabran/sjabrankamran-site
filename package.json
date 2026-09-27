@@ -14,7 +14,7 @@
     "test:access": "node --no-warnings --experimental-strip-types scripts/test-access-control.mjs",
     "test:portal": "node --no-warnings --experimental-strip-types scripts/test-portal-rules.mjs && npm run test:exam-lab && npm run test:practical-lab",
     "test:exam-lab": "node --no-warnings --experimental-strip-types scripts/test-exam-lab-security.mjs && node scripts/test-exam-lab-routes.cjs && node scripts/check-exam-lab-client-imports.mjs",
-    "test:practical-lab": "node --no-warnings --experimental-strip-types scripts/test-practical-lab.mjs",
+    "test:practical-lab": "node --no-warnings --experimental-strip-types scripts/test-practical-lab.mjs && node --no-warnings --experimental-strip-types scripts/test-practical-lab-engine.mjs",
     "test:sat-bank": "node --no-warnings --experimental-strip-types scripts/test-sat-bank.mjs",
     "test:sat-forms": "node --no-warnings --experimental-strip-types scripts/test-sat-forms.mjs",
     "test:sat-scoring": "node --no-warnings --experimental-strip-types scripts/test-sat-scoring.mjs",

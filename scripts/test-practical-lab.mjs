@@ -274,7 +274,7 @@ const { middleware, config } = await import("../src/middleware.ts");
     assert.ok(!runsFor(path), `the middleware skips ${path}`);
   }
   // The other gates are unchanged.
-  for (const path of ["/portal", "/portal/practical-lab", "/api/portal/me", "/api/exam-lab/x", "/api/sat/profile"]) {
+  for (const path of ["/portal", "/portal/practical-lab", "/api/portal/me", "/api/exam-lab/x", "/api/sat/profile", "/api/lab/attempt", "/api/lab/view", "/api/lab/sample", "/api/lab/trial"]) {
     assert.ok(runsFor(path), `the middleware still runs for ${path}`);
   }
   assert.ok(!runsFor("/api/cron/daily-sat-plans"), "cron routes stay outside the middleware (their own CRON_SECRET gate)");
@@ -457,6 +457,15 @@ assert.equal(res.status, 423);
 assert.match(await res.text(), /Fees &lt;due&gt;/);
 world({ grants: grantedLab, accountStatus: "archived", access: { version: 1, updatedAt: now, restrictions: [lock] } });
 assert.equal((await call("/lab/index.html", { cookie: COOKIE })).status, 423, "a lock is reported first, as in the portal layout");
+// The lab API (/api/lab) is a portal API in the middleware: a lock refuses it
+// with the portal's JSON; unlocked, the request reaches its route, which does
+// the Practical Lab check itself (test-practical-lab-engine.mjs).
+world({ grants: grantedLab, access: { version: 1, updatedAt: now, restrictions: [lock] } });
+res = await call("/api/lab/sample", { cookie: COOKIE });
+assert.equal(res.status, 423, "access locks apply to the lab API");
+assert.equal((await res.json()).code, "PORTAL_ACCESS_RESTRICTED");
+world({ grants: grantedLab });
+assert.ok(passes(await call("/api/lab/sample", { cookie: COOKIE })), "unlocked: a lab API call reaches its route");
 
 // The legacy "archived" status (the portal layout's "Access suspended"): refused
 // whatever the switch or role says; "invited" is not blocked, as in the layout.
@@ -488,7 +497,7 @@ assert.ok(passes(await call("/lab/index.html", { cookie: COOKIE })), "an invited
   const files = readdirSync(LAB_DIR, { recursive: true, withFileTypes: true })
     .filter((d) => d.isFile())
     .map((d) => join(d.parentPath ?? d.path, d.name));
-  assert.ok(files.length > 100, "the lab is where the test expects it");
+  assert.ok(files.length > 10, "the lab is where the test expects it");
   for (const file of files) {
     const rel = relative(ROOT, file).replaceAll("\\", "/");
     assert.ok(!/teacher/i.test(rel), `${rel}: teacher-only files don't belong under public/lab`);
@@ -514,6 +523,7 @@ assert.equal(location(res), "/portal/login?next=%2Fportal%2Fpractical-lab");
 res = await call("/portal/sat-lab");
 assert.equal(location(res), "/portal/login?next=%2Fportal%2Fsat-lab");
 assert.ok(passes(await call("/api/portal/admin/users")), "a signed-out API call still reaches its route (JSON 401 there)");
+assert.ok(passes(await call("/api/lab/view")), "a signed-out lab API call reaches its route (JSON 401 there)");
 assert.ok(passes(await call("/portal/login")), "the login page stays reachable");
 
 console.log("practical-lab tests passed");

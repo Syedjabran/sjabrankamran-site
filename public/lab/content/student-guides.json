@@ -46,11 +46,6 @@
           "ci": [
             4
           ],
-          "ms": [
-            5,
-            6,
-            7
-          ],
           "rendered_checked": [
             "9702_m21_ci_33.pdf:4"
           ]
@@ -154,8 +149,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six readings; x span >=0.14 m; C0 0.015–0.030 m.",
-        "uncertaintyPrompt": "1 mm scale; two endpoints for C; E subtracts C0 so additive endpoint uncertainty then deltaY/Y≈4 deltaE/E. Misalignment and parallax selectable separately."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -243,7 +238,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: 1 mm scale; two endpoints for C; E subtracts C0 so additive endpoint uncertainty then deltaY/Y≈4 deltaE/E. Misalignment and parallax selectable separately.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -275,10 +270,6 @@
           ],
           "ci": [
             5
-          ],
-          "ms": [
-            7,
-            8
           ]
         }
       },
@@ -383,8 +374,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Two diameters and repeat times; user specifies a sensible k-agreement criterion.",
-        "uncertaintyPrompt": "Micrometer ±0.01 mm accepted by MS; bottle deformation affects D; timing endpoints/reaction and uncertain immersion depth; delta k/k≈delta t/t+2 delta d/d."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -464,7 +455,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: Micrometer ±0.01 mm accepted by MS; bottle deformation affects D; timing endpoints/reaction and uncertain immersion depth; delta k/k≈delta t/t+2 delta d/d.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -497,10 +488,6 @@
           "ci": [
             4,
             5
-          ],
-          "ms": [
-            5,
-            6
           ]
         }
       },
@@ -590,8 +577,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six readings; hmax >=0.18 m; negative y allowed.",
-        "uncertaintyPrompt": "Both a,b have endpoint errors; delta y absolute uncertainties add. Meniscus/parallax and waiting to settle matter."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -670,7 +657,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: Both a,b have endpoint errors; delta y absolute uncertainties add. Meniscus/parallax and waiting to settle matter.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -701,10 +688,6 @@
           ],
           "ci": [
             6
-          ],
-          "ms": [
-            7,
-            8
           ]
         }
       },
@@ -815,8 +798,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "n=1 with whole clay then n=2 with 3/4 clay; repeats of >=5 cycles.",
-        "uncertaintyPrompt": "MS d absolute uncertainty 2–5 mm; cubic propagation; repeated >=5T; diameter anisotropy, oscillation direction, coils covered by clay."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -869,16 +852,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 20,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 20% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: MS d absolute uncertainty 2–5 mm; cubic propagation; repeated >=5T; diameter anisotropy, oscillation direction, coils covered by clay.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -909,10 +892,6 @@
           "ci": [
             4,
             5
-          ],
-          "ms": [
-            5,
-            6
           ],
           "rendered_checked": [
             "9702_m23_ci_33.pdf:4"
@@ -1020,8 +999,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six values; theta_min<=10°, theta_max>=30°; sin to 3sf.",
-        "uncertaintyPrompt": "1° angular scale; delta sin≈cos(theta)*delta theta in radians. Parallax and pulley height misalignment explicit."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -1100,7 +1079,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: 1° angular scale; delta sin≈cos(theta)*delta theta in radians. Parallax and pulley height misalignment explicit.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -1132,10 +1111,6 @@
           ],
           "ci": [
             6
-          ],
-          "ms": [
-            7,
-            8
           ]
         }
       },
@@ -1229,8 +1204,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Find sharp image manually for each solution; no k for C=0.",
-        "uncertaintyPrompt": "MS u uncertainty .5–1 cm despite 1 mm ruler. Finite-focus tolerance; light, alignment, lens centre, solution carryover. Repeat focusing permits range uncertainty."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -1301,16 +1276,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 20,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 20% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: MS u uncertainty .5–1 cm despite 1 mm ruler. Finite-focus tolerance; light, alignment, lens centre, solution carryover. Repeat focusing permits range uncertainty.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -1341,10 +1316,6 @@
           "ci": [
             4,
             5
-          ],
-          "ms": [
-            5,
-            6
           ],
           "rendered_checked": [
             "9702_m24_ci_33.pdf:5"
@@ -1455,8 +1426,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six x; xmin<=.07m, xmax=.19m; repeat >=5T.",
-        "uncertaintyPrompt": "Timing multiple cycles and repeats; x measured pivot to bolt centres; finite amplitude correction T/T0≈1+theta0²/16."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -1526,7 +1497,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: Timing multiple cycles and repeats; x measured pivot to bolt centres; finite amplitude correction T/T0≈1+theta0²/16.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -1558,10 +1529,6 @@
           ],
           "ci": [
             6
-          ],
-          "ms": [
-            7,
-            8
           ]
         }
       },
@@ -1668,8 +1635,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "S=100 g; repeat limiting angle; thetaB>thetaA.",
-        "uncertaintyPrompt": "MS theta uncertainty 2–5°, not scale alone. Stable threshold hysteresis, board tilt, putty mass. FA and FB are dimensionless effective friction coefficients despite force-like symbols."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -1767,16 +1734,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 15,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 15% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: MS theta uncertainty 2–5°, not scale alone. Stable threshold hysteresis, board tilt, putty mass. FA and FB are dimensionless effective friction coefficients despite force-like symbols.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -1805,11 +1772,6 @@
           ],
           "ci": [
             4
-          ],
-          "ms": [
-            5,
-            6,
-            7
           ]
         }
       },
@@ -1857,7 +1819,7 @@
             0.05,
             0.95
           ],
-          "origin": "adaptation consistent with MS span",
+          "origin": "adaptation",
           "instruction": "Choose or vary x only among/within [0.05,0.95] m; keep other required controls fixed for that run."
         },
         {
@@ -1899,8 +1861,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Initial x=.440–.460m; I .0300–.0600A; xmin<=.2,xmax>=.8; negative gradient.",
-        "uncertaintyPrompt": "Contact resistance shared run offset; current range200mA (resolution adapted); stable current needed; heating if left on can be optional nonideal."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -1961,7 +1923,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: Contact resistance shared run offset; current range200mA (resolution adapted); stable current needed; heating if left on can be optional nonideal.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -1993,11 +1955,6 @@
           "ci": [
             5,
             6
-          ],
-          "ms": [
-            8,
-            9,
-            10
           ],
           "rendered_checked": [
             "9702_m25_ci_33.pdf:5"
@@ -2103,8 +2060,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Compare the source-specified conditions using the 30% criterion; the structured spec gives no additional range/repeat statement.",
-        "uncertaintyPrompt": "MS deltaH uncertainty2–4mm; 1°C thermometer; water/pipe thermal lag and temperature gradients. Error sources should affect raw H,T, not post-computed k."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -2211,16 +2168,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 30,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 30% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: MS deltaH uncertainty2–4mm; 1°C thermometer; water/pipe thermal lag and temperature gradients. Error sources should affect raw H,T, not post-computed k.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -2251,11 +2208,6 @@
           "ci": [
             4,
             5
-          ],
-          "ms": [
-            5,
-            6,
-            7
           ]
         }
       },
@@ -2346,8 +2298,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six readings spanning x<=.10 to >=.60m; current falls.",
-        "uncertaintyPrompt": "Digital0.1mA and mm ruler; clip position/contact, unequal x, self-heating."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -2417,7 +2369,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: Digital0.1mA and mm ruler; clip position/contact, unequal x, self-heating.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -2448,11 +2400,6 @@
           ],
           "ci": [
             6
-          ],
-          "ms": [
-            8,
-            9,
-            10
           ]
         }
       },
@@ -2551,8 +2498,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Repeat >=5 cycles; user-defined comparison criterion.",
-        "uncertaintyPrompt": "MS d uncertainty2–6mm; timing and mass-centre/putty effects; b drift alters restoring torque."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -2641,7 +2588,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: MS d uncertainty2–6mm; timing and mass-centre/putty effects; b drift alters restoring torque.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -2671,11 +2618,6 @@
           ],
           "ci": [
             4
-          ],
-          "ms": [
-            5,
-            6,
-            7
           ],
           "rendered_checked": [
             "9702_s21_qp_34.pdf:6"
@@ -2776,8 +2718,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six C; all C>.15m; Cmin<=.18,Cmax>=.35; repeat>=5T.",
-        "uncertaintyPrompt": "Scale readings at lowest chain point; unequal nail height, release plane, discrete clip sag and damping."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -2865,7 +2807,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: Scale readings at lowest chain point; unequal nail height, release plane, discrete clip sag and damping.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -2898,10 +2840,6 @@
           "ci": [
             5,
             6
-          ],
-          "ms": [
-            8,
-            9
           ],
           "rendered_checked": [
             "9702_s21_ci_34.pdf:6"
@@ -3006,8 +2944,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "The structured spec gives no separate range/repeat requirement here; follow its controls, readings and comparison workflow without adding an invented threshold.",
-        "uncertaintyPrompt": "D2 uncertainty2–5mm; small y large fractional error; calipers compress foam and rod angle changes A projection."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -3114,7 +3052,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: D2 uncertainty2–5mm; small y large fractional error; calipers compress foam and rod angle changes A projection.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?",
@@ -3146,11 +3084,6 @@
           "ci": [
             4,
             5
-          ],
-          "ms": [
-            5,
-            6,
-            7
           ],
           "rendered_checked": [
             "9702_s22_qp_33.pdf:3"
@@ -3245,8 +3178,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six values; dmin<=.22,dmax>=.65m; shorter equal wires give more negative slope, smaller intercept.",
-        "uncertaintyPrompt": "mV resolution, clip positions/contact, heating; divider law insensitive to supply only if meters/load negligible."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -3334,7 +3267,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: mV resolution, clip positions/contact, heating; divider law insensitive to supply only if meters/load negligible.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -3366,10 +3299,6 @@
           ],
           "ci": [
             6
-          ],
-          "ms": [
-            8,
-            9
           ]
         }
       },
@@ -3458,8 +3387,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Compare the source-specified conditions using the 20% criterion; the structured spec gives no additional range/repeat statement.",
-        "uncertaintyPrompt": "MS A uncertainty>=3mm; release angle error, string alignment, winding on boss, initial marker selection; repeated endpoint varies by seeded release perturbation."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -3530,16 +3459,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 20,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 20% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: MS A uncertainty>=3mm; release angle error, string alignment, winding on boss, initial marker selection; repeated endpoint varies by seeded release perturbation.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?",
@@ -3570,11 +3499,6 @@
           ],
           "ci": [
             4
-          ],
-          "ms": [
-            5,
-            6,
-            7
           ]
         }
       },
@@ -3670,8 +3594,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six R including22k and470k; manual time until0.8V; recharge/repeat.",
-        "uncertaintyPrompt": "0.01V meter and.1s stopwatch; reaction near rapid low-R decay, capacitor tolerance not random per reading."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -3741,7 +3665,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: 0.01V meter and.1s stopwatch; reaction near rapid low-R decay, capacitor tolerance not random per reading.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -3772,10 +3696,6 @@
           ],
           "ci": [
             5
-          ],
-          "ms": [
-            8,
-            9
           ]
         }
       },
@@ -3873,8 +3793,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Compare the source-specified conditions using the 40% criterion; the structured spec gives no additional range/repeat statement.",
-        "uncertaintyPrompt": "F uncertainty.20–.50N; brief peak, vertical pull, contaminated surfaces; drainage mark judgement. Liquid temperature affects viscosity strongly."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -3936,16 +3856,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 40,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 40% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: F uncertainty.20–.50N; brief peak, vertical pull, contaminated surfaces; drainage mark judgement. Liquid temperature affects viscosity strongly.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?",
@@ -3976,11 +3896,6 @@
           ],
           "ci": [
             4
-          ],
-          "ms": [
-            6,
-            7,
-            8
           ],
           "rendered_checked": [
             "9702_s23_qp_33.pdf:2",
@@ -4074,8 +3989,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six lengths; Lmin<=.30,Lmax>=.55; repeat>=5T.",
-        "uncertaintyPrompt": "L reference attachment to bob centre before wrapping; radius/putty cause systematic shift; repeated timing."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -4154,7 +4069,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: L reference attachment to bob centre before wrapping; radius/putty cause systematic shift; repeated timing.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -4186,10 +4101,6 @@
           ],
           "ci": [
             5
-          ],
-          "ms": [
-            9,
-            10
           ],
           "rendered_checked": [
             "9702_s23_ci_33.pdf:5"
@@ -4280,8 +4191,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Compare the source-specified conditions using the 5% criterion; the structured spec gives no additional range/repeat statement.",
-        "uncertaintyPrompt": "MS c uncertainty2–8mm; finite hole, intersection triangle, nonvertical lines/nonparallel cut. Hide centroid in student mode."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -4352,16 +4263,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 5,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 5% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: MS c uncertainty2–8mm; finite hole, intersection triangle, nonvertical lines/nonparallel cut. Hide centroid in student mode.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -4390,11 +4301,6 @@
           ],
           "ci": [
             4
-          ],
-          "ms": [
-            6,
-            7,
-            8
           ],
           "rendered_checked": [
             "9702_s23_ci_34.pdf:4"
@@ -4495,8 +4401,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six masses; min<=.01kg max>=.07kg; lower .100kg fixed.",
-        "uncertaintyPrompt": "Repeat>=5 cycles, amplitude/nail friction, bolt/rod inertia; inspect graph residuals."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -4575,7 +4481,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: Repeat>=5 cycles, amplitude/nail friction, bolt/rod inertia; inspect graph residuals.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -4607,10 +4513,6 @@
           "ci": [
             5,
             6
-          ],
-          "ms": [
-            9,
-            10
           ]
         }
       },
@@ -4710,8 +4612,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Compare the source-specified conditions using the 20% criterion; the structured spec gives no additional range/repeat statement.",
-        "uncertaintyPrompt": "MS deltaX2–5mm; temperature lag, wet string stretching, curvature; L versus hole spacing listed limitation."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -4791,16 +4693,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 20,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 20% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: MS deltaX2–5mm; temperature lag, wet string stretching, curvature; L versus hole spacing listed limitation.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -4830,10 +4732,6 @@
           ],
           "ci": [
             4
-          ],
-          "ms": [
-            5,
-            6
           ]
         }
       },
@@ -4930,8 +4828,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six nonzero n including1 and7.",
-        "uncertaintyPrompt": "Finite pivot width/friction, centres of stacked masses, nonuniform rule."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -5001,7 +4899,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: Finite pivot width/friction, centres of stacked masses, nonuniform rule.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -5032,11 +4930,6 @@
           ],
           "ci": [
             5
-          ],
-          "ms": [
-            7,
-            8,
-            9
           ]
         }
       },
@@ -5119,7 +5012,7 @@
             ],
             "unit": "m",
             "resolution": 0.00001,
-            "resolutionOrigin": "MS precision; CI micrometer unspecified",
+            "resolutionOrigin": "instrument resolution",
             "instruction": "Read w0, w, t in m; record to the stated 0.00001 m resolution where the source specifies it."
           }
         ],
@@ -5130,8 +5023,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Compare the source-specified conditions using the 25% criterion; the structured spec gives no additional range/repeat statement.",
-        "uncertaintyPrompt": "L0 uncertainty2–10mm; micrometer squeezing, thickness change and creep; subtractive uncertainty."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -5160,7 +5053,7 @@
             "editable": true,
             "source": "measured",
             "resolution": 0.00001,
-            "resolutionOrigin": "MS precision; CI micrometer unspecified",
+            "resolutionOrigin": "instrument resolution",
             "key": "w0"
           },
           {
@@ -5169,7 +5062,7 @@
             "editable": true,
             "source": "measured",
             "resolution": 0.00001,
-            "resolutionOrigin": "MS precision; CI micrometer unspecified",
+            "resolutionOrigin": "instrument resolution",
             "key": "w"
           },
           {
@@ -5178,7 +5071,7 @@
             "editable": true,
             "source": "measured",
             "resolution": 0.00001,
-            "resolutionOrigin": "MS precision; CI micrometer unspecified",
+            "resolutionOrigin": "instrument resolution",
             "key": "t"
           },
           {
@@ -5229,16 +5122,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 25,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 25% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: L0 uncertainty2–10mm; micrometer squeezing, thickness change and creep; subtractive uncertainty.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -5268,10 +5161,6 @@
           ],
           "ci": [
             4
-          ],
-          "ms": [
-            5,
-            6
           ]
         }
       },
@@ -5377,8 +5266,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six masses; xmin<=20g,xmax>=200g.",
-        "uncertaintyPrompt": "Angle1°, residual swing, alignment/friction; secant amplifies error near90°."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -5439,7 +5328,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: Angle1°, residual swing, alignment/friction; secant amplifies error near90°.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -5471,10 +5360,6 @@
           "ci": [
             5,
             6
-          ],
-          "ms": [
-            7,
-            8
           ]
         }
       },
@@ -5565,8 +5450,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Compare the source-specified conditions using the 15% criterion; the structured spec gives no additional range/repeat statement.",
-        "uncertaintyPrompt": "T0 uncertainty.2–.5s; release/end events, card centring, winding radius; baseline repeats."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -5628,16 +5513,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 15,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 15% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: T0 uncertainty.2–.5s; release/end events, card centring, winding radius; baseline repeats.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?",
@@ -5668,11 +5553,6 @@
           ],
           "ci": [
             4
-          ],
-          "ms": [
-            7,
-            8,
-            9
           ]
         }
       },
@@ -5763,8 +5643,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six L; min<=.35,max>=.80m; smallerR gives steeper line with same V-intercept E/2.",
-        "uncertaintyPrompt": "mV and mm scales, contacts; E-V subtraction amplifies error; sharedE fixed each run."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -5834,7 +5714,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: mV and mm scales, contacts; E-V subtraction amplifies error; sharedE fixed each run.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -5866,11 +5746,6 @@
           ],
           "ci": [
             5
-          ],
-          "ms": [
-            10,
-            11,
-            12
           ]
         }
       },
@@ -5958,8 +5833,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Compare the source-specified conditions using the 15% criterion; the structured spec gives no additional range/repeat statement.",
-        "uncertaintyPrompt": "d uncertainty2–5mm; rod flex/slip/othermodes; repeat>=5T; N dimensionless."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -6030,16 +5905,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 15,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 15% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: d uncertainty2–5mm; rod flex/slip/othermodes; repeat>=5T; N dimensionless.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?",
@@ -6070,11 +5945,6 @@
           ],
           "ci": [
             4
-          ],
-          "ms": [
-            8,
-            9,
-            10
           ]
         }
       },
@@ -6173,8 +6043,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six lengths; oneL2<=.06m; repeat>=5T.",
-        "uncertaintyPrompt": "Lengths to bob centre; count full cycle not half swing; repeat timing."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -6253,7 +6123,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: Lengths to bob centre; count full cycle not half swing; repeat timing.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -6284,10 +6154,6 @@
           ],
           "ci": [
             5
-          ],
-          "ms": [
-            11,
-            12
           ]
         }
       },
@@ -6356,7 +6222,7 @@
             ],
             "unit": "m",
             "resolution": 0.0001,
-            "resolutionOrigin": "MS minimum; CI calipers unspecified",
+            "resolutionOrigin": "instrument resolution",
             "instruction": "Read D, d in m; record to the stated 0.0001 m resolution where the source specifies it."
           },
           {
@@ -6376,8 +6242,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Compare the source-specified conditions using the 10% criterion; the structured spec gives no additional range/repeat statement.",
-        "uncertaintyPrompt": "t uncertainty.2–.5s; difference-of-squares amplifies diameter uncertainty; calipers deformPVC; repeat D,t."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -6388,7 +6254,7 @@
             "editable": true,
             "source": "measured",
             "resolution": 0.0001,
-            "resolutionOrigin": "MS minimum; CI calipers unspecified",
+            "resolutionOrigin": "instrument resolution",
             "key": "d"
           },
           {
@@ -6397,7 +6263,7 @@
             "editable": true,
             "source": "measured",
             "resolution": 0.0001,
-            "resolutionOrigin": "MS minimum; CI calipers unspecified",
+            "resolutionOrigin": "instrument resolution",
             "key": "d_2"
           },
           {
@@ -6430,16 +6296,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 10,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 10% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: t uncertainty.2–.5s; difference-of-squares amplifies diameter uncertainty; calipers deformPVC; repeat D,t.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?",
@@ -6469,11 +6335,6 @@
           ],
           "ci": [
             4
-          ],
-          "ms": [
-            5,
-            6,
-            7
           ]
         }
       },
@@ -6556,8 +6417,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six distinct unordered pairs including33/47 and68/82; one of each resistor exists.",
-        "uncertaintyPrompt": "Ammeter0.1mA; resistor nominal/tolerance versus measuredR; keep pair identities distinct."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -6618,7 +6479,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: Ammeter0.1mA; resistor nominal/tolerance versus measuredR; keep pair identities distinct.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -6649,11 +6510,6 @@
           ],
           "ci": [
             5
-          ],
-          "ms": [
-            8,
-            9,
-            10
           ],
           "rendered_checked": [
             "9702_w21_qp_33.pdf:10"
@@ -6759,8 +6615,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "The structured spec gives no separate range/repeat requirement here; follow its controls, readings and comparison workflow without adding an invented threshold.",
-        "uncertaintyPrompt": "Timing uncertainty.2–.5s dominates short fall; release alignment/air currents/stack separation should be controllable biases."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -6831,7 +6687,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: Timing uncertainty.2–.5s dominates short fall; release alignment/air currents/stack separation should be controllable biases.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -6861,11 +6717,6 @@
           ],
           "ci": [
             4
-          ],
-          "ms": [
-            5,
-            6,
-            7
           ],
           "rendered_checked": [
             "9702_w21_qp_34.pdf:2"
@@ -6969,8 +6820,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six p, pmin<=.25,pmax>=.65; null independently found eachtime.",
-        "uncertaintyPrompt": "Null plateau resolution, contacts/ratio tolerances; record userfoundq, never autosnap exactzero."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -7049,7 +6900,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: Null plateau resolution, contacts/ratio tolerances; record userfoundq, never autosnap exactzero.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -7082,10 +6933,6 @@
           "ci": [
             5,
             6
-          ],
-          "ms": [
-            8,
-            9
           ]
         }
       },
@@ -7193,8 +7040,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "The structured spec gives no separate range/repeat requirement here; follow its controls, readings and comparison workflow without adding an invented threshold.",
-        "uncertaintyPrompt": "theta uncertainty2–5°, levelrod/string slip, mixedmodes, >=5cycles repeated; differenceS²-B² magnifies timingerror."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -7283,7 +7130,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: theta uncertainty2–5°, levelrod/string slip, mixedmodes, >=5cycles repeated; differenceS²-B² magnifies timingerror.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -7314,10 +7161,6 @@
           "ci": [
             4,
             5
-          ],
-          "ms": [
-            5,
-            6
           ],
           "rendered_checked": [
             "9702_w22_qp_33.pdf:2"
@@ -7410,7 +7253,7 @@
             ],
             "unit": "m",
             "resolution": 0.00001,
-            "resolutionOrigin": "MS precision; CI micrometer unspecified",
+            "resolutionOrigin": "instrument resolution",
             "instruction": "Read d in m; record to the stated 0.00001 m resolution where the source specifies it."
           }
         ],
@@ -7421,8 +7264,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six x span>=.70m; repeated diameter.",
-        "uncertaintyPrompt": "Diameter uncertainty entersrho twice; repeated different positions; heating/contact and millimetre clip errors."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -7460,7 +7303,7 @@
             "editable": true,
             "source": "measured",
             "resolution": 0.00001,
-            "resolutionOrigin": "MS precision; CI micrometer unspecified",
+            "resolutionOrigin": "instrument resolution",
             "key": "d"
           },
           {
@@ -7501,7 +7344,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: Diameter uncertainty entersrho twice; repeated different positions; heating/contact and millimetre clip errors.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -7534,10 +7377,6 @@
           ],
           "ci": [
             6
-          ],
-          "ms": [
-            7,
-            8
           ]
         }
       },
@@ -7642,8 +7481,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Compare the source-specified conditions using the 5% criterion; the structured spec gives no additional range/repeat statement.",
-        "uncertaintyPrompt": "L1 uncertainty2–6mm; tiny buoyant difference, clipvolume/mass, spring calibration onepoint. Five percent criterion not noise guarantee."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -7741,16 +7580,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 5,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 5% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: L1 uncertainty2–6mm; tiny buoyant difference, clipvolume/mass, spring calibration onepoint. Five percent criterion not noise guarantee.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -7780,11 +7619,6 @@
           ],
           "ci": [
             4
-          ],
-          "ms": [
-            5,
-            6,
-            7
           ]
         }
       },
@@ -7875,8 +7709,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "SixT spanning<=2mm to>=9mm; repeatz.",
-        "uncertaintyPrompt": "Threshold judgement, compressible paper, bottle imperfections, board width/height reference; repeat rolls."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -7955,7 +7789,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: Threshold judgement, compressible paper, bottle imperfections, board width/height reference; repeat rolls.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -7989,10 +7823,6 @@
             5,
             6,
             7
-          ],
-          "ms": [
-            8,
-            9
           ]
         }
       },
@@ -8111,8 +7941,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Compare the source-specified conditions using the 20% criterion; the structured spec gives no additional range/repeat statement.",
-        "uncertaintyPrompt": "dm uncertainty2–8mm; pointer oscillates, coil position/current/heating; magnet must not contact tube."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -8201,16 +8031,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 20,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 20% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: dm uncertainty2–8mm; pointer oscillates, coil position/current/heating; magnet must not contact tube.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?",
@@ -8241,10 +8071,6 @@
           ],
           "ci": [
             4
-          ],
-          "ms": [
-            5,
-            6
           ]
         }
       },
@@ -8342,8 +8168,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six S including<=.10 and>=.40; repeat>=5T.",
-        "uncertaintyPrompt": "mm length, pivot radius/putty centre, repeat timing; B nonzero physical half-period, not forcedzero."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -8422,7 +8248,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: mm length, pivot radius/putty centre, repeat timing; B nonzero physical half-period, not forcedzero.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -8454,10 +8280,6 @@
           ],
           "ci": [
             5
-          ],
-          "ms": [
-            7,
-            8
           ]
         }
       },
@@ -8558,8 +8380,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Compare the source-specified conditions using the 15% criterion; the structured spec gives no additional range/repeat statement.",
-        "uncertaintyPrompt": "F uncertainty.02–.06N; lift threshold, putty mass, end attachment and force direction; dimensions mm."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -8648,16 +8470,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 15,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 15% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: F uncertainty.02–.06N; lift threshold, putty mass, end attachment and force direction; dimensions mm.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -8686,10 +8508,6 @@
           ],
           "ci": [
             4
-          ],
-          "ms": [
-            5,
-            6
           ],
           "rendered_checked": [
             "9702_w23_qp_34.pdf:3"
@@ -8799,8 +8617,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six resistors including220 and4700; user findsnull eachtime.",
-        "uncertaintyPrompt": "mV null plateau and mm endpoints; contact resistance and heating."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -8879,7 +8697,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: mV null plateau and mm endpoints; contact resistance and heating.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -8911,11 +8729,6 @@
           ],
           "ci": [
             5
-          ],
-          "ms": [
-            7,
-            8,
-            9
           ],
           "rendered_checked": [
             "9702_w23_qp_34.pdf:11"
@@ -9014,8 +8827,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Compare the source-specified conditions using the 20% criterion; the structured spec gives no additional range/repeat statement.",
-        "uncertaintyPrompt": "h uncertainty2–8mm; parallax, jetwidth, simultaneous level/rod observation; repeat marks."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -9095,16 +8908,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 20,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 20% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: h uncertainty2–8mm; parallax, jetwidth, simultaneous level/rod observation; repeat marks.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -9133,11 +8946,6 @@
           ],
           "ci": [
             4
-          ],
-          "ms": [
-            5,
-            6,
-            7
           ]
         }
       },
@@ -9226,7 +9034,7 @@
             ],
             "unit": "m",
             "resolution": 0.00001,
-            "resolutionOrigin": "MS precision; CI micrometer unspecified",
+            "resolutionOrigin": "instrument resolution",
             "instruction": "Read d in m; record to the stated 0.00001 m resolution where the source specifies it."
           }
         ],
@@ -9237,8 +9045,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "SixL, min<=.25,max>=.85; repeated diameter.",
-        "uncertaintyPrompt": "mm,mV,diameter10μm; rho uncertainty includes2delta d/d and slope/intercept covariance."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -9267,7 +9075,7 @@
             "editable": true,
             "source": "measured",
             "resolution": 0.00001,
-            "resolutionOrigin": "MS precision; CI micrometer unspecified",
+            "resolutionOrigin": "instrument resolution",
             "key": "d"
           },
           {
@@ -9317,7 +9125,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: mm,mV,diameter10μm; rho uncertainty includes2delta d/d and slope/intercept covariance.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -9349,11 +9157,6 @@
           ],
           "ci": [
             5
-          ],
-          "ms": [
-            8,
-            9,
-            10
           ],
           "rendered_checked": [
             "9702_w24_qp_33.pdf:10"
@@ -9454,8 +9257,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Compare the source-specified conditions using the 15% criterion; the structured spec gives no additional range/repeat statement.",
-        "uncertaintyPrompt": "H uncertainty3–10mm; brief peak, head-on alignment, putty mass and altered COM; repeats."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -9535,16 +9338,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 15,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 15% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: H uncertainty3–10mm; brief peak, head-on alignment, putty mass and altered COM; repeats.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -9574,11 +9377,6 @@
           ],
           "ci": [
             4
-          ],
-          "ms": [
-            5,
-            6,
-            7
           ]
         }
       },
@@ -9674,8 +9472,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Sixheightintervals; span topheight>=.05m; initial30→25cm³.",
-        "uncertaintyPrompt": "mmheight, meniscus/time crossings, reaction and volume graduations; timing repeated."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -9764,7 +9562,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: mmheight, meniscus/time crossings, reaction and volume graduations; timing repeated.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?",
@@ -9798,10 +9596,6 @@
           "ci": [
             5,
             6
-          ],
-          "ms": [
-            8,
-            9
           ]
         }
       },
@@ -9897,8 +9691,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Compare the source-specified conditions using the 15% criterion; the structured spec gives no additional range/repeat statement.",
-        "uncertaintyPrompt": "x uncertainty3–10mm; pickup may fail, reference centre andbrief turning point; repeat."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -9969,16 +9763,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 15,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 15% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: x uncertainty3–10mm; pickup may fail, reference centre andbrief turning point; repeat.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -10008,11 +9802,6 @@
           ],
           "ci": [
             4
-          ],
-          "ms": [
-            7,
-            8,
-            9
           ]
         }
       },
@@ -10101,8 +9890,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six h including<=.15 and>=.33; repeats of>=2 cycles.",
-        "uncertaintyPrompt": "h mm, bob/string reference, rolling friction/board warping; repeated>=2T. Allow pause/slowmotion but stopwatch must use physical time."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -10199,7 +9988,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: h mm, bob/string reference, rolling friction/board warping; repeated>=2T. Allow pause/slowmotion but stopwatch must use physical time.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -10230,10 +10019,6 @@
           ],
           "ci": [
             5
-          ],
-          "ms": [
-            10,
-            11
           ]
         }
       },
@@ -10351,8 +10136,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "R range200–20000ohm; convert kΩ toΩ before Zd/R.",
-        "uncertaintyPrompt": "d uncertainty2–6mm, ambient light/alignment/contact resistance; use10Ω digital resolution; reproducible response lag not per-frame jitter."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -10423,16 +10208,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 5,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 5% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: d uncertainty2–6mm, ambient light/alignment/contact resistance; use10Ω digital resolution; reproducible response lag not per-frame jitter.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?",
@@ -10464,11 +10249,6 @@
           "ci": [
             4,
             5
-          ],
-          "ms": [
-            7,
-            8,
-            9
           ],
           "rendered_checked": [
             "9702_w25_qp_34.pdf:2",
@@ -10560,8 +10340,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Six holes; Wmin<=.28,Wmax>=.45; initialW≈.35.",
-        "uncertaintyPrompt": "millimetre measurement of small coil and both endpoints; horizontal alignment, spring hysteresis and pivotcentre."
+        "rangeAndRepeats": "Spread your settings across the whole range the apparatus allows, take enough sets of readings to draw a reliable graph, and repeat readings where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -10631,7 +10411,7 @@
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: millimetre measurement of small coil and both endpoints; horizontal alignment, spring hysteresis and pivotcentre.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"
@@ -10663,11 +10443,6 @@
           "ci": [
             6,
             7
-          ],
-          "ms": [
-            10,
-            11,
-            12
           ],
           "rendered_checked": [
             "9702_w25_qp_34.pdf:8",
@@ -10768,8 +10543,8 @@
           "Record every raw reading with its unit and stated resolution or justified precision.",
           "Repeat timing, threshold, focus, turning-point or alignment judgements; average only comparable trials."
         ],
-        "rangeAndRepeats": "Compare the source-specified conditions using the 30% criterion; the structured spec gives no additional range/repeat statement.",
-        "uncertaintyPrompt": "h uncertainty1–2mm; timing repeated; d/x large fractional error nearrailgap; bending/sticking/sliding optional non-ideal effects."
+        "rangeAndRepeats": "Take readings for each condition in the question, and repeat them where you can.",
+        "uncertaintyPrompt": "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement."
       },
       "table": {
         "editable": true,
@@ -10840,16 +10615,16 @@
         ],
         "graph": {
           "required": false,
-          "comparisonPercent": 30,
+          "comparisonPercent": null,
           "studentActions": [
             "Calculate the source-specified derived quantity for every condition.",
-            "Use the source-specified 30% comparison criterion.",
+            "State and justify a sensible comparison criterion before judging agreement.",
             "Limit the conclusion to the tested conditions; two values do not establish a universal law."
           ]
         }
       },
       "evaluationPrompts": [
-        "Use this source-aligned uncertainty context: h uncertainty1–2mm; timing repeated; d/x large fractional error nearrailgap; bending/sticking/sliding optional non-ideal effects.",
+        "Estimate the uncertainty in each of your raw readings from the instrument and from how you judged the measurement.",
         "Which raw measurement contributes the greatest uncertainty, and why?",
         "Name an improvement tied to the actual measuring method and explain how it reduces the stated uncertainty.",
         "Does the plotted or paired evidence support the proposed relationship over the tested range only?"

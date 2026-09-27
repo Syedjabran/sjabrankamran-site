@@ -26,6 +26,7 @@
     "readings": "Never encode state by colour or motion alone; expose values, focus state and validation messages as text to assistive technology.",
     "time": "The stopwatch records physical simulation time. Animation speed, pause and reduced-motion settings change presentation only and must not change measured physical time."
   },
+  "markSchemeNote": "The student guides (public/lab/content/student-guides.json) carry neutral prompts only. The mark-scheme-derived content lives here: range and repeat thresholds (sourceAlignedWorkflow.rangeAndRepeats), accepted uncertainties and expected trends (physics.uncertainty, sourceAlignedWorkflow.rangeAndRepeats), comparison criteria (graphCoaching.comparisonPercent and graphCoaching.studentActions).",
   "guides": [
     {
       "id": "9702_m21_33-q1",

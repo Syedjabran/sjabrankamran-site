@@ -10,7 +10,7 @@
  * Measurement targets reference instrument part IDs. Keep timing manual and on the
  * same physical clock as motion; never substitute an inferred period or stop event.
  * Renderer extensions agreed with integrator: balance, newton-meter, ohmmeter.
- * This file contains no calibration constants, model truth or reference answers.
+ * This file contains no calibration constants, hidden model values or reference answers.
  */
 export const rooms = {
   "9702_m21_33-q1": {
