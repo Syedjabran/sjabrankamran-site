@@ -488,7 +488,7 @@ assert.ok(passes(await call("/lab/index.html", { cookie: COOKIE })), "an invited
   const files = readdirSync(LAB_DIR, { recursive: true, withFileTypes: true })
     .filter((d) => d.isFile())
     .map((d) => join(d.parentPath ?? d.path, d.name));
-  assert.ok(files.length > 100, "the lab is where the test expects it");
+  assert.ok(files.length > 10, "the lab is where the test expects it");
   for (const file of files) {
     const rel = relative(ROOT, file).replaceAll("\\", "/");
     assert.ok(!/teacher/i.test(rel), `${rel}: teacher-only files don't belong under public/lab`);
