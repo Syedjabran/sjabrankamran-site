@@ -120,7 +120,14 @@ Enrolment is what decides *whose* SAT work a teacher can actually see and assign
 teacher only sees the students in the SAT-track classes they're themselves enrolled in
 (so enrol a teacher in the same class as the student, the same way you enrolled the
 student above, if you want that teacher to see this student's results). An admin or super
-admin sees every SAT student regardless of their own enrolment.
+admin sees every student in an SAT-track class regardless of their own enrolment.
+
+**Important — SAT results only list SAT-class members.** A student who got SAT through
+the **Subjects** switch (§3) and is not in any SAT-year class does **not** appear in
+**SAT results** or the assign panel, for anyone — admins included. Their SAT Coach (plan,
+progress, tutor, parent email) works normally; the staff results page just doesn't cover
+coach-only students (by design for this round). To see such a student's SAT work there,
+also enrol them in an SAT-year class as above.
 
 ## 5. A 10-minute test script
 
@@ -174,12 +181,16 @@ defaults already filled in:
 5. **How long per session?** 15, 30, 45 or 60 minutes.
 
 A live preview line appears under the form once days are picked (something like "43 days
-to go · 6 full practice exams · 5 sessions a week of ~15 questions"). Saving either starts
-the diagnostic (if that was chosen) or opens the SAT Lab.
+to go · 6 full practice exams · 5 sessions a week of ~15 questions"). The full-exam count
+is the planner's own count for a plan built today; it's left out when there would be none
+(no date yet, or 2 days or fewer to go). Saving either starts the diagnostic (if that was
+chosen) or opens the SAT Lab.
 
 **To change any of this later:** SAT Lab → **Settings** (`/portal/sat-lab/settings` — same
 form, same five blocks). A note under the form warns that changing the date or the practice
-days rebuilds the future plan; anything already done is kept.
+days rebuilds the future plan; anything already done is kept. If a save is refused, the
+reason shows next to the **Save changes** button as well as in its block (so on a phone you
+see it without scrolling back up).
 
 ## 7. The plan
 
@@ -208,7 +219,21 @@ A few rules worth checking by hand:
   weekly parent-email warning).
 - **Passed the exam date without a result?** The plan cards are replaced by a card headed
   "Your SAT date has passed — how did it go?", with **Add your score** and **Set a new
-  date** links (both open Settings, scrolled to the right block).
+  date** links (both open Settings, scrolled to the right block). In Settings the passed
+  date can stay as it is while the student enters their score (block 3, "I have a past SAT
+  or PSAT score") or changes the target, days or minutes — **Save changes** works. Only a
+  date the student *changes* has to be tomorrow or later (a new target month: next month
+  or later), so setting the next SAT date works too, and picking another past date is
+  refused with "Your SAT date must be after today." The same holds on exam day itself.
+- **Not booked yet, and the target month has started?** From the second day of that month
+  the card reads "Your target month is here — book your SAT date or pick a new month.",
+  with one link to the date block in Settings. The started month stays selected there (it
+  isn't blank), so other settings still save while it's kept; a *new* month must be next
+  month or later.
+- **Reminders** — each morning at 06:15 Pakistan time, a student with SAT work due today
+  gets one in-portal notification ("Today's SAT challenge is ready", or the full exam /
+  diagnostic / review). SAT notifications show a graduation-cap icon and appear under the
+  **Reminders** filter on the Notifications page.
 
 ## 8. Progress and Coach says
 
@@ -219,14 +244,26 @@ wrote this text; "Coach" means the rule-based fallback did (see §11). It only r
 when something actually changed (new finished work, a plan change, or a new day) — reloading
 the page a second time in the same state shouldn't visibly change it.
 
-**This week's goals**, just above Coach says, is fully rule-based (never AI-written beyond
-a one-line motivational touch): each goal has a title, a progress bar and a detail line —
-e.g. this week's challenges done, raising the weakest important skill's mastery, this
-week's full exam, a pacing goal (only when pacing is flagged), and the gap to the target
-score.
+Coach says never states a score it wasn't given: an AI reply that mentions a score-sized
+number (200 or more) or a "points" figure that isn't in the student's own numbers (the
+target, the latest score range, days to go…) is thrown away and the rule-based view shows
+instead.
 
-**Progress page** (`/portal/sat-lab/progress`, linked from the SAT Lab): questions answered
-and 7-day accuracy; **Scores** (latest official practice-test range, latest adaptive-mock
+**This week's goals**, just above Coach says, is fully rule-based (no AI text at all):
+each goal has a title, a progress bar and a detail line — e.g. this week's challenges
+done, raising the weakest important skill's mastery, this week's full exam (if a missed
+exam was moved to later in the week, the goal shows the new day), a pacing goal (only
+when pacing is flagged), and the target score. The score goal shows the real latest range
+with its label — e.g. "Latest: 1000–1100 (estimated) · target 1200" (or "official range")
+— never a single made-up number; its title gives the gap as a range ("Reach your 1200
+target — 100–200 points to go"), or says the range already reaches the target. Its bar
+runs from 400 to the target, solid to the bottom of the range and lighter across it (the
+same bar as in the parent email), with no percentage next to it.
+
+**Progress page** (`/portal/sat-lab/progress`, linked from the SAT Lab; before SAT setup
+it sends the student to setup, like the home): questions answered — blanks left in a
+submitted module don't count as answered, though they still count as wrong in the accuracy
+— and 7-day accuracy; **Scores** (latest official practice-test range, latest adaptive-mock
 estimate, and score history — only real scores, nothing invented); **Accuracy by section**;
 **Mastery by domain** (all 8 official SAT domains, recency-weighted — a couple of lucky
 answers won't read as 100%); **Weakest skills** with a **Drill this** button on each, and a
@@ -262,7 +299,10 @@ Things worth trying:
 **The 40-messages-a-day limit:** the composer area shows "N of 40 messages left today"
 (Pakistan time; resets at midnight PKT). At zero, the message box disables with "No messages
 left today — they come back tomorrow." An unanswered or failed turn (including a "brain"
-failure, see §11) is not counted against the limit.
+failure, see §11) is not counted against the limit. If the count itself can't be read for
+a moment (a storage hiccup), the line says "Couldn't check your messages — try again in a
+moment." with a **Check again** link and the message box stays open — it never shows "0
+left" or "come back tomorrow" for that.
 
 **Pausing during a timed module:** while an adaptive mock or a practice test's current
 module is running (or on the inter-section break), the tutor shows an amber notice — "I'm
@@ -275,20 +315,29 @@ The existing Saturday parent-progress email now has a **section per subject** th
 has — a student with SAT but no Physics now gets an email too. The SAT section, top to
 bottom: a warning line (only shown when every session scheduled that week was missed, in
 red; a softer amber note for a partial miss); this week's numbers (sessions done/scheduled,
-questions answered, accuracy versus last week, time practised, this week's full exam result
-or "missed"/"none this week", and the streak); a two-line AI summary (or its rule-based
-fallback); and a short "progress so far" block (days to the SAT and the target, score
-history, section accuracy, strongest and weakest area).
+questions answered — blanks don't count as answered — accuracy versus last week, time
+practised, this week's full exam result or "missed"/"none this week", and the streak); a
+two-line AI summary (or its rule-based fallback); and a short "progress so far" block (days
+to the SAT and the target, score history, section accuracy, strongest and weakest area).
 
-**To preview it without sending anything** (admin only, while signed in as an admin):
+**When it's sent:** Saturday 18:00 Pakistan time (cron `0 13 * * 6`), and again at 18:10
+(`10 13 * * 6`) to pick up anyone a partial first run left. The run records every family
+it has finished in a checkpoint and skips them, so the second call never emails a family
+twice.
+
+**To preview it without sending anything** (admin only, while signed in as an admin), open:
 
 ```
-GET /api/portal/admin/parent-report-preview?uid=<student id>
+/api/portal/admin/parent-report-preview?uid=<student id>
 ```
 
-This renders the email's HTML in the browser; it doesn't send mail. At the time of writing
-this route is being merged in from another branch, so it may not exist on this checkout yet
-— if `/api/portal/admin/parent-report-preview` 404s, that merge hasn't landed.
+It never sends mail and never changes the student's plan. It answers with JSON, not a
+rendered page: `{ "html": …, "text": …, "week": … }` — `html` is the SAT section as a
+SAT-only family would get it this week (paste it into an `.html` file to view it), `text`
+its plain-text version, and `week` the numbers behind it. The Physics part is left out.
+Add `&ai=1` to have the AI write the two-line summary — that spends one of the student's
+two daily "parent" AI calls; without it the preview shows the rule-based summary and costs
+nothing.
 
 ## 11. AI keys
 
@@ -298,6 +347,8 @@ summary, and the tutor's replies — comes from one of two providers, chosen wit
 - `SAT_AI_PROVIDER` — `gemini` or `groq`. Leave unset and it picks Gemini when
   `GEMINI_API_KEY` is set, else Groq when `GROQ_API_KEY` is set, else no provider at all.
 - `GEMINI_API_KEY` — the production provider (the same key used by the Physics tutor).
+- `GEMINI_MODEL` — which Gemini model; the slow "thinking" aliases `gemini-flash-latest`
+  and `gemini-pro-latest` are ignored in favour of `gemini-3.1-flash-lite` (the default).
 - `GROQ_API_KEY` — the testing provider. Groq's free tier is roughly 1,000 requests a day
   and 8,000 tokens a minute, so it's meant for trying things out, not for production load.
 - `GROQ_MODEL` / `GROQ_FALLBACK_MODEL` — optional overrides for which Groq model answers
@@ -311,17 +362,36 @@ text built from the same analytics, and the Digital SAT Tutor answers every mess
 "I can't reach my brain right now — try again in a minute." (that reply doesn't use up one
 of the day's 40 messages).
 
+**Live check of a provider** (sends the three calls the coach really makes — Coach says,
+a tutor turn, and an explanation with a question image — and checks each reply the way the
+app does; it reads the keys from `.env.local` and never prints them):
+
+```
+node --no-warnings --experimental-strip-types scripts/smoke-sat-ai.mjs gemini
+node --no-warnings --experimental-strip-types scripts/smoke-sat-ai.mjs groq
+```
+
+Each prints a small table (HTTP status, finish reason, token counts, whether the JSON
+parsed and passed validation) and ends with exit code 0 when all three passed. The Groq run
+waits 65 seconds between calls (its free tier counts tokens per minute), so it takes a few
+minutes; add `--dry` to check the requests build without calling anyone, or `--only=explain`
+(or `insights`, `tutor`) for one call. On 2026-09-27 the Gemini run passed all three
+(finish reason STOP, no thinking tokens, well under its output limits), and Groq passed
+each call — its image call once sent a minute after the others, which is why the run now
+waits.
+
 ## 12. Run the automated checks
 
 From the project's root folder, in order:
 
-1. `npm run test:sat` — runs 20 test scripts (25 individual test suites, since a few
-   scripts cover more than one): the question bank, adaptive form assembly, scoring,
-   access rules (including what happens when the access check itself can't be read), the
-   subjects registry, grading, sessions, serving, the runner, assignments, the SAT profile,
-   the AI adapter (`llm-core`), analytics, the planner, the challenge builder and goals,
-   Coach says' insights, the plan API, the tutor, and a check that no code sent to the
-   browser can reach the answer key. All 25 passed on this checkout.
+1. `npm run test:sat` — runs 21 test scripts (29 test groups, since several scripts cover
+   more than one): the question bank, adaptive form assembly, scoring, access rules
+   (including what happens when the access check itself can't be read), the subjects
+   registry, grading, sessions, serving (and the session list's size cap), the runner,
+   assignments, the SAT profile, the AI adapter (`llm-core`) and the AI budget rules,
+   analytics, the planner, the challenge builder and goals, Coach says' insights, the plan
+   API and the daily cron's time guard, the tutor, the parent email, and a check that no
+   code sent to the browser can reach the answer key. All 29 passed on this checkout.
 2. `npm run test:portal` — general portal rules. Passed.
 3. `npm run test:access` — access-control rules. Passed.
 4. `python -m pytest scripts/exam-lab/ingest-sat/tests -q` — the question-bank pipeline's
@@ -343,6 +413,13 @@ What's actually left, as of this guide:
 - **Nothing has been pushed or merged yet.** All of this work is on the `feat/sat` branch
   (which itself builds on the earlier `feat/sat-module` work). Merging is the owner's call,
   once testing above looks good.
+- **Scheduled jobs.** `vercel.json` now runs four: the physics study plans daily at 06:00
+  PKT (`/api/cron/daily-study-plans`, unchanged), the SAT plans and reminders daily at
+  06:15 PKT (`/api/cron/daily-sat-plans`, new — it stops taking students after 4 of its 5
+  minutes and reports `partial`), and the Saturday parent email at 18:00 and again at 18:10
+  PKT (`/api/cron/saturday-parent-reports`). Check the Vercel plan's cron rules before
+  launch: on the Hobby plan crons are only accurate to the hour, so the two Saturday calls
+  could land close together or overlap.
 - **Check your Supabase storage plan.** The `exam-assets` bucket now holds the
   question-bank images, the 8 official practice tests, and the worked-answer
   (rationale) images, all uploaded — roughly 1.55 GB in total. That's over the Supabase
