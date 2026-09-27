@@ -365,7 +365,8 @@ function accessRestrictedResponse(restriction: AccessRestriction) {
 export async function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   const { pathname } = request.nextUrl;
-  const isPortalApi = pathname.startsWith("/api/portal") || pathname.startsWith("/api/exam-lab") || pathname.startsWith("/api/sat");
+  const isPortalApi = pathname.startsWith("/api/portal") || pathname.startsWith("/api/exam-lab") || pathname.startsWith("/api/sat")
+    || pathname.startsWith("/api/lab/"); // Practical Lab API: access locks apply, as for the other portal APIs
   // The Practical Lab's static files (public/lab); null for every other path.
   const lab = labRequest(pathname);
   // Expose the current path to server components (used by the portal layout to
@@ -559,5 +560,5 @@ export const config = {
   // The last entry is "/lab/:path*" in any letter case: matchers are
   // case-sensitive, but a case-insensitive file system serves public/lab for
   // "/Lab/..." as well (practical-lab-access.ts).
-  matcher: ["/portal/:path*", "/api/portal/:path*", "/api/exam-lab/:path*", "/api/sat/:path*", "/([Ll][Aa][Bb])/:path*"],
+  matcher: ["/portal/:path*", "/api/portal/:path*", "/api/exam-lab/:path*", "/api/sat/:path*", "/([Ll][Aa][Bb])/:path*", "/api/lab/:path*"],
 };
