@@ -9,7 +9,7 @@ import {
   latestDiagnosticId, nextPlan, planDecision, practiceTakenFrom, snapshotOf, startDecision, weakSnapshot, weekRolled,
 } from "../src/lib/sat/coach/plan-logic.ts";
 import {
-  analyticsSummary, insightsInputOf, normaliseTipSkills, planStreak, planView, reminderFor, todayItems, weekItemsOf, weekTally,
+  analyticsSummary, insightsInputOf, normaliseTipSkills, planStreak, planView, poolBeforeDeadline, reminderFor, todayItems, weekItemsOf, weekTally,
 } from "../src/lib/sat/coach/coach-view.ts";
 import { DIAGNOSTIC_SIZE } from "../src/lib/sat/coach/diagnostic.ts";
 import { formatPkDay } from "../src/lib/portal/pk-time.ts";
@@ -380,5 +380,36 @@ assert.equal(planItemTitle({ kind: "exam" }), "Your SAT");
 
 // --- formatPkDay: shown plan dates go through formatPk
 assert.equal(formatPkDay("2026-10-05"), "Mon 5 Oct");
+
+// --- final review M1: the daily SAT cron's own time guard -- at most 5
+// students in flight, no new student once the deadline has passed (those
+// started finish), `partial` with how many were started
+{
+  let clock = 0;
+  const seen = [];
+  let inFlight = 0;
+  let peak = 0;
+  const handle = async (uid) => {
+    inFlight++;
+    peak = Math.max(peak, inFlight);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    seen.push(uid);
+    clock += 10; // each student takes 10 "seconds"
+    inFlight--;
+  };
+  const uids = Array.from({ length: 40 }, (_, i) => `u${i}`);
+  const run = await poolBeforeDeadline(uids, { concurrency: 5, now: () => clock, deadlineAt: 100, handle });
+  assert.ok(peak <= 5, `never more than 5 at once (${peak})`);
+  assert.equal(run.partial, true, "the deadline stopped it with students left");
+  assert.ok(run.started < 40 && run.started >= 10, `stopped early (${run.started} started)`);
+  assert.equal(seen.length, run.started, "every student started finished");
+  assert.deepEqual(new Set(seen).size, seen.length, "no student twice");
+
+  clock = 0;
+  const all = await poolBeforeDeadline(uids.slice(0, 7), { concurrency: 5, now: () => 0, deadlineAt: 240_000, handle: async () => {} });
+  assert.deepEqual(all, { started: 7, partial: false }, "within the time: everyone, not partial");
+  assert.deepEqual(await poolBeforeDeadline([], { concurrency: 5, now: () => 0, deadlineAt: 1, handle: async () => {} }), { started: 0, partial: false });
+  assert.deepEqual(await poolBeforeDeadline(["a"], { concurrency: 5, now: () => 5, deadlineAt: 1, handle: async () => {} }), { started: 0, partial: true }, "already past: nobody");
+}
 
 console.log("sat-coach-plan tests passed");

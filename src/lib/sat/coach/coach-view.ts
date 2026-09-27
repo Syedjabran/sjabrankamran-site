@@ -160,3 +160,26 @@ export function reminderFor(items: PlanItem[], today: string): { title: string; 
   const picked = "picked for what you need most right now.";
   return { title: `Today's SAT ${noun} is ready`, body: daily.size ? `${daily.size} questions, ${picked}` : `Questions ${picked}` };
 }
+
+/** The daily SAT cron's pass: `handle` over `items`, at most `concurrency`
+ *  in flight, each worker taking a new item only while `now()` is before
+ *  `deadlineAt` (an item already started finishes). `started`: how many
+ *  were taken; `partial`: the deadline stopped it with items left. */
+export async function poolBeforeDeadline<T>(
+  items: readonly T[],
+  opts: { concurrency: number; now: () => number; deadlineAt: number; handle: (item: T) => Promise<void> },
+): Promise<{ started: number; partial: boolean }> {
+  let next = 0;
+  let partial = false;
+  async function worker(): Promise<void> {
+    while (next < items.length) {
+      if (opts.now() >= opts.deadlineAt) {
+        partial = true;
+        return;
+      }
+      await opts.handle(items[next++]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.max(0, Math.min(opts.concurrency, items.length)) }, () => worker()));
+  return { started: next, partial: partial && next < items.length };
+}
