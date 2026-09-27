@@ -150,6 +150,12 @@ function validInsights() {
   assert.match(capped.view.headline, /Boundaries/, "the capped view names the new weakest skill");
   assert.match(capped.view.summary, /31% mastery/, "from the new numbers");
   assert.equal(capped.cacheable, true, "cached under the new fingerprint: the next reload doesn't ask again");
+  // Past the insights share of the site-wide budget (fix round 1, M1): the
+  // rules view from the new numbers, kept for this fingerprint.
+  const shared = insightsFromResult({ ok: false, reason: "budget", scope: "global" }, fresh);
+  assert.equal(shared.view.source, "rules");
+  assert.match(shared.view.headline, /Boundaries/);
+  assert.equal(shared.cacheable, true);
   const timedOut = insightsFromResult({ ok: false, reason: "timeout" }, fresh);
   assert.equal(timedOut.view.source, "rules");
   assert.equal(timedOut.cacheable, false, "a passing failure is retried on the next visit");

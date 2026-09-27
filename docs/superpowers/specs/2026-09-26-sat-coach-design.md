@@ -178,7 +178,7 @@ complete({ system, messages, json: true, images?, maxTokens, temperature, purpos
 - Providers: `gemini` (generativelanguage.googleapis.com, `responseMimeType: application/json`, `inline_data` images; model from the repo's existing `GEMINI_MODEL` convention) and `groq` (`https://api.groq.com/openai/v1/chat/completions`, `response_format: json_object`, `image_url` data URIs; `GROQ_MODEL` default `qwen/qwen3.8-27b`, which accepts images; `GROQ_FALLBACK_MODEL` default `openai/gpt-oss-20b`, text-only).
 - Selection: `SAT_AI_PROVIDER` (`gemini` | `groq`), else Gemini when `GEMINI_API_KEY` is set, else Groq when `GROQ_API_KEY` is set, else none → deterministic fallbacks everywhere.
 - 20 s timeout; one retry with back-off on 429/503, then the fallback model, then `ok: false`. JSON validated with zod; invalid → `ok: false`.
-- Budgets: per-student per-day counters `portal-data/sat/ai-usage/<uid>/<date>.json` (tutor ≤ 40, insights ≤ 16 — raised from 6 on 2026-09-27 so "Coach says" can regenerate after every finished attempt) and a best-effort global daily counter (`SAT_AI_DAILY_BUDGET`, default 800 requests) so the Groq free tier is never exhausted; over budget → deterministic text. Context kept under ~3,000 tokens per call.
+- Budgets: per-student per-day counters `portal-data/sat/ai-usage/<uid>/<date>.json` (tutor ≤ 40, insights ≤ 16 — raised from 6 on 2026-09-27 so "Coach says" can regenerate after every finished attempt) and a best-effort global daily counter (`SAT_AI_DAILY_BUDGET`, default 800 requests) so the Groq free tier is never exhausted — insights may use only 70% of it, so the tutor keeps a share; over budget → deterministic text. Context kept under ~3,000 tokens per call.
 
 ### 8.2 Insights ("Coach says")
 

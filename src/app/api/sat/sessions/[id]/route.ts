@@ -51,9 +51,10 @@ function stateOf(doc: SATSession | SATDrill, now: number) {
  *  already names (its current module's questions, a finished sitting's
  *  review, a drill's checked rationales -- signed-images.ts imagePathsOf),
  *  so they start loading without a second request. Never a rationale the
- *  state itself doesn't hold. */
-async function withImages<T extends ReturnType<typeof stateOf>>(state: T): Promise<T & { images?: Record<string, string> }> {
-  const images = await imagesFor(state);
+ *  state itself doesn't hold. The signing runs alongside the request's own
+ *  work and is waited for at most 2.5 s (imagesFor); without it the page
+ *  signs what is missing itself. */
+function withImages<T extends object>(state: T, images: Record<string, string> | undefined): T & { images?: Record<string, string> } {
   return images ? { ...state, images } : state;
 }
 
@@ -106,6 +107,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       doc = settled;
     }
   }
+  const state = stateOf(doc, now);
+  const signing = imagesFor(state); // alongside the self-healing below
   // Index self-healing: the LAST save of a sitting (the submit that finishes
   // it, or the final drill check) can write the doc but fail the index
   // write, leaving the hub showing it unfinished forever. Owner-only, and
@@ -126,7 +129,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     // so this costs one read on every finished-doc GET and never fails it.
     if (doc.assignmentId) await markAssignment(ownerUid, doc.assignmentId, { status: "done" });
   }
-  return NextResponse.json(await withImages(stateOf(doc, now)));
+  return NextResponse.json(withImages(state, await signing));
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -170,8 +173,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const n = result.drill.questionIds.indexOf(a.questionId) + 1;
     const item = reviewItem(a.questionId, n, result.drill.answers[a.questionId] ?? null);
     // The question is checked now, so its official rationale image may go
-    // out with this response: signed while the save runs, it starts loading
-    // the moment the answer shows (answer key: never before the check).
+    // out with this response: signed while the save runs (waited for at
+    // most 2.5 s), it starts loading the moment the answer shows (answer
+    // key: never before the check, never if the save fails).
     const rationaleUrl = imagesOf(item?.rationaleImg ? [item.rationaleImg] : []);
     // checkDrillAnswer returns the SAME reference when the question was
     // already checked (the first answer is the one that counts) -- nothing
@@ -199,6 +203,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   else if (a.action === "submit") next = finishSession(submitStage(next, a.stage, a.answers, a.flagged, now, answerOf, a.timeMs));
   else if (a.action === "begin") next = beginStage(next, now);
   else return NextResponse.json({ error: "Only drills are checked question by question." }, { status: 400 });
+  // A save leaves the module on screen (its images are already loading); a
+  // submit or begin brings the next module or the finished review, whose
+  // images are signed while the write below runs -- sent only if it lands.
+  const state = sessionState(next, now);
+  const signing = a.action === "save" ? Promise.resolve(undefined) : imagesFor(state);
 
   // A save or submit racing another write to the SAME sitting (two tabs, a
   // retried fetch): re-load the doc fresh immediately before writing. If its
@@ -224,8 +233,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     await markAssignment(user.id, next.assignmentId, { status: "done" });
   }
   if (doc.finishedAt === null) await planHook(user.id, next);
-  // A save leaves the module on screen (its images are already loading);
-  // a submit or begin brings the next module or the finished review.
-  const state = sessionState(next, now);
-  return NextResponse.json(a.action === "save" ? state : await withImages(state));
+  return NextResponse.json(withImages(state, await signing));
 }

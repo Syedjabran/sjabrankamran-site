@@ -148,18 +148,24 @@ function keepFocusInside(e: KeyboardEvent, panel: HTMLElement) {
 }
 
 /** The overlay itself: a modal dialog over the page, the page's scroll
- *  locked (and kept) while it is open, focus inside it, and back on the
- *  button that opened it when it closes. */
+ *  locked (and kept) while it is open, the rest of the page `inert` (no
+ *  focus, clicks or screen-reader reading behind it), focus inside it, and
+ *  back on the button that opened it when it closes. */
 function Sheet({ onClose, returnFocus, context, children }: {
   onClose: () => void; returnFocus: RefObject<HTMLButtonElement | null>; context?: string; children: ReactNode;
 }) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const panel = panelRef.current;
     const opener = returnFocus.current;
     const body = document.body;
+    // Everything else on the page goes inert while the dialog is open (the
+    // dialog is portalled straight into <body>, so that is its siblings).
+    const behind = Array.from(body.children).filter((el) => el !== rootRef.current && !el.hasAttribute("inert"));
+    for (const el of behind) el.setAttribute("inert", "");
     const before = { overflow: body.style.overflow, paddingRight: body.style.paddingRight };
     // The scrollbar goes while the page is locked: pad by its width so the
     // page behind doesn't shift sideways.
@@ -174,6 +180,7 @@ function Sheet({ onClose, returnFocus, context, children }: {
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
+      for (const el of behind) el.removeAttribute("inert"); // before focusing back into the page
       body.style.overflow = before.overflow;
       body.style.paddingRight = before.paddingRight;
       // preventScroll: the page stays exactly where the student left it.
@@ -182,7 +189,7 @@ function Sheet({ onClose, returnFocus, context, children }: {
   }, [onClose, returnFocus]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[120]">
+    <div ref={rootRef} className="fixed inset-0 z-[120]">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" onClick={onClose} aria-hidden />
       <div
         ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}
@@ -198,7 +205,8 @@ function Sheet({ onClose, returnFocus, context, children }: {
             <X size={16} />
           </button>
         </header>
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">{children}</div>
+        {/* polite: the reply is read out when it replaces "thinking" */}
+        <div aria-live="polite" className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">{children}</div>
         <footer className="border-t border-white/10 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 text-xs text-dust sm:px-5">
           <Link href="/portal/sat-lab/tutor" className="text-cyan underline">Open the full tutor</Link> to keep talking — it leaves this page; this explanation is saved there.
         </footer>

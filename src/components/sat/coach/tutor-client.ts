@@ -3,7 +3,7 @@
 // (../explain-button.tsx): one turn (POST /api/sat/tutor), one tapped
 // action (POST /api/sat/tutor/action), and what each action tells the
 // student about where it goes. Type-only imports, so the Node tests can
-// load it (scripts/test-sat-runner-utils.mjs).
+// load it (scripts/test-sat-tutor.mjs).
 import type { TutorAction, TutorTurnResult } from "@/lib/sat/client-types";
 
 // The server answers a turn within ~45 s (its route runs for at most 60).

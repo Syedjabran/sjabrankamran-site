@@ -9,7 +9,7 @@
 // pure, in usage-core.ts.
 import "server-only";
 import { readFreshJson, writeFreshJson } from "@/lib/exam-lab/storage-fresh";
-import { LIMITS, asStudentCounters, checkGlobal, checkStudent, remainingFrom, type BudgetDenial, type Purpose, type StudentCounters } from "./usage-core.ts";
+import { LIMITS, asStudentCounters, checkGlobal, checkStudent, globalCapFor, remainingFrom, type BudgetDenial, type Purpose, type StudentCounters } from "./usage-core.ts";
 
 export { LIMITS };
 
@@ -29,7 +29,8 @@ function globalBudget(): number {
 
 /**
  * Checks and (best-effort) increments today's counters for one AI call.
- * Denies (fails closed) when the global daily budget is spent ("global"),
+ * Denies (fails closed) when the global daily budget is spent ("global" --
+ * for insights already at 70% of it, usage-core.ts globalCapFor),
  * when this student is over their per-purpose limit ("student"), or when a
  * counter can't be read ("unavailable" -- a passing storage failure, not a
  * spent budget). `uid: null` skips the per-student check (global budget
@@ -42,7 +43,8 @@ export async function takeBudget(
 ): Promise<{ ok: true; remaining: number } | { ok: false; reason: BudgetDenial }> {
   if (!SAFE_DATE.test(today)) return { ok: false, reason: "unavailable" };
 
-  const global = checkGlobal(await readFreshJson<unknown>(BUCKET, globalPath(today)), globalBudget());
+  // Insights stop at 70% of the day's budget, so the tutor always has a share left.
+  const global = checkGlobal(await readFreshJson<unknown>(BUCKET, globalPath(today)), globalCapFor(purpose, globalBudget()));
   if (!global.ok) return global;
 
   let student: StudentCounters | null = null;

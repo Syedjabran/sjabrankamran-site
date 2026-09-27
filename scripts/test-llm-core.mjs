@@ -11,7 +11,7 @@ import {
   callLlm,
   selectProvider,
 } from "../src/lib/ai/llm-core.ts";
-import { LIMITS, checkGlobal, checkStudent, remainingFrom } from "../src/lib/ai/usage-core.ts";
+import { INSIGHTS_GLOBAL_SHARE, LIMITS, checkGlobal, checkStudent, globalCapFor, remainingFrom } from "../src/lib/ai/usage-core.ts";
 
 // --- buildGroqBody -----------------------------------------------------------
 
@@ -415,5 +415,16 @@ console.log("llm-core tests passed");
   // attempts plus the first visit) stays AI-written (SAT polish B).
   assert.equal(LIMITS.insights, 16);
   assert.deepEqual(checkStudent({ ok: true, data: { insights: 11 } }, "insights").ok, true, "the 12th regeneration of the day still gets the AI");
+  // SAT polish fix round 1 (M1): insights stop at 70% of the site-wide budget,
+  // so automatic Coach says regenerations can never switch the tutor off.
+  assert.equal(INSIGHTS_GLOBAL_SHARE, 0.7);
+  assert.equal(globalCapFor("insights", 800), 560);
+  assert.equal(globalCapFor("tutor", 800), 800);
+  assert.equal(globalCapFor("parent", 800), 800);
+  assert.equal(globalCapFor("insights", 5), 3, "rounded down");
+  assert.deepEqual(checkGlobal({ ok: true, data: { n: 559 } }, globalCapFor("insights", 800)).ok, true, "insights still under their share");
+  assert.deepEqual(checkGlobal({ ok: true, data: { n: 560 } }, globalCapFor("insights", 800)), { ok: false, reason: "global" }, "insights stop at 70%");
+  assert.deepEqual(checkGlobal({ ok: true, data: { n: 560 } }, globalCapFor("tutor", 800)).ok, true, "... while the tutor keeps working");
+  assert.deepEqual(checkGlobal({ ok: true, data: { n: 800 } }, globalCapFor("tutor", 800)), { ok: false, reason: "global" }, "the tutor stops at the full budget");
   console.log("usage-core tests passed");
 }

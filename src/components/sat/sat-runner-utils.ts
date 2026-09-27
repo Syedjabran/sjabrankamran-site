@@ -241,6 +241,15 @@ export function splitSignedUrls(requested: string[], body: unknown): { urls: Rec
   return { urls, missing };
 }
 
+/** An image that failed to load gets one retry (question-image.tsx): with
+ *  the fresh URL the re-sign returned ("swap": the new src is a new
+ *  request), or -- when it gave the same URL or none (signing down too) --
+ *  by loading the same URL again in a new element ("reload"; a failed
+ *  image load is never reused). */
+export function retryStep(src: string, resigned: string | null): "swap" | "reload" {
+  return resigned && resigned !== src ? "swap" : "reload";
+}
+
 /** The `images` map a state response may carry (signed URLs of the images
  *  that state names): only string URLs under non-empty paths; {} for
  *  anything else. */

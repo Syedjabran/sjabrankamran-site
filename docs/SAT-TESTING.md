@@ -381,6 +381,8 @@ summary, and the tutor's replies — comes from one of two providers, chosen wit
   first, and which one is tried once if that model fails twice.
 - `SAT_AI_DAILY_BUDGET` — a best-effort cap on requests per day, shared across every
   student, so a single busy day can't burn through the Groq free tier (default 800).
+  Coach says may use only 70% of it (560 by default); past that the card is the
+  rule-based view, so the tutor always keeps the last 30%.
 
 **Without any key configured** (or if the configured provider is down), nothing breaks:
 Coach says and the parent email's two-line summary quietly fall back to plain rule-based

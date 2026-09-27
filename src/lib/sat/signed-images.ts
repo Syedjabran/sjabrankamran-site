@@ -5,12 +5,15 @@
 // the storage CDN can cache it). Used by the signing endpoint
 // (/api/exam-lab/asset) and by the SAT responses that already name images
 // -- a drill page, a sitting's state, a checked drill question -- so their
-// images start loading without a second round trip. Callers check access;
-// this only signs.
+// images start loading without a second round trip. Those responses wait
+// at most IMAGES_WAIT_MS for it and go without on a slow signing (the page
+// signs what is missing). Callers check access; this only signs.
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { DrillState, SessionState } from "./client-types.ts";
-import { SIGNED_URL_TTL_S, imagePathsOf, rememberSigned, reuseSigned, type SignedUrlCache } from "./image-urls.ts";
+import {
+  IMAGES_WAIT_MS, SIGNED_URL_REUSE_MS, SIGNED_URL_TTL_S, imagePathsOf, rememberSigned, reuseSigned, settleWithin, type SignedUrlCache,
+} from "./image-urls.ts";
 
 const BUCKET = "exam-assets";
 const SIGN_CHUNK = 100;
@@ -27,14 +30,16 @@ function cache(): SignedUrlCache {
 }
 
 /** URLs for `paths` (a path the bucket has no object for is left out), or
- *  `ok: false` when signing failed. Local development with SAT_LOCAL_CROPS=1
+ *  `ok: false` when signing failed. `fresh`: a new signature for each path
+ *  even if one was handed out within the hour -- the retry of an image that
+ *  failed to load with its URL. Local development with SAT_LOCAL_CROPS=1
  *  points sat/ paths at the dev-only local image route instead. */
-export async function imageUrls(paths: string[]): Promise<{ ok: true; urls: Record<string, string> } | { ok: false }> {
+export async function imageUrls(paths: string[], opts: { fresh?: boolean } = {}): Promise<{ ok: true; urls: Record<string, string> } | { ok: false }> {
   const urls: Record<string, string> = {};
   const localSat = process.env.NODE_ENV === "development" && process.env.SAT_LOCAL_CROPS === "1";
   if (localSat) for (const p of paths) if (p.startsWith("sat/")) urls[p] = `/api/sat/local-image?path=${encodeURIComponent(p)}`;
   const now = Date.now();
-  const { urls: reused, toSign } = reuseSigned(cache(), paths.filter((p) => !urls[p]), now);
+  const { urls: reused, toSign } = reuseSigned(cache(), paths.filter((p) => !urls[p]), now, SIGNED_URL_REUSE_MS, opts.fresh === true);
   Object.assign(urls, reused);
   if (!toSign.length) return { ok: true, urls };
   try {
@@ -58,15 +63,16 @@ export async function imageUrls(paths: string[]): Promise<{ ok: true; urls: Reco
 }
 
 /** The URLs of the images `state` shows (imagePathsOf), for a response
- *  that carries it; undefined when there are none or signing failed (the
- *  page then signs them itself, as before). */
-export async function imagesFor(state: SessionState | DrillState): Promise<Record<string, string> | undefined> {
+ *  that carries it; undefined when there are none, signing failed or took
+ *  longer than IMAGES_WAIT_MS (the page then signs them itself). */
+export function imagesFor(state: SessionState | DrillState): Promise<Record<string, string> | undefined> {
   return imagesOf(imagePathsOf(state));
 }
 
-/** `imageUrls` for a response: the URLs, or undefined on failure / none. */
-export async function imagesOf(paths: string[]): Promise<Record<string, string> | undefined> {
-  if (!paths.length) return undefined;
-  const got = await imageUrls(paths);
-  return got.ok && Object.keys(got.urls).length ? got.urls : undefined;
+/** `imageUrls` for a response, bounded by IMAGES_WAIT_MS: the URLs, or
+ *  undefined on failure, timeout or none. Never rejects. */
+export function imagesOf(paths: string[]): Promise<Record<string, string> | undefined> {
+  if (!paths.length) return Promise.resolve(undefined);
+  const signing = imageUrls(paths).then((got) => (got.ok && Object.keys(got.urls).length ? got.urls : undefined));
+  return settleWithin(signing, IMAGES_WAIT_MS, undefined);
 }

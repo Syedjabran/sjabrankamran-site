@@ -26,7 +26,9 @@ export default async function SatSittingPage({ params }: { params: Promise<{ ses
   const explain = !access.isStaff;
   if (loaded.doc.kind !== "drill") return <SatRunner sessionId={sessionId} explain={explain} />;
   // A drill's images arrive signed with the page (its questions and checked
-  // rationales only), so the first one starts loading at once.
+  // rationales only), so the first one starts loading at once. The page
+  // waits at most 2.5 s for that (imagesFor); without them the drill signs
+  // its images itself.
   const initial = drillState(loaded.doc, Date.now());
   return <SatDrill initial={initial} initialImages={await imagesFor(initial)} explain={explain} />;
 }

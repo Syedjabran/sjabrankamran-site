@@ -12,10 +12,24 @@
  *  covers the day's first visit plus ~15 attempts -- well past a busy study
  *  day -- after which the card is the rule-based view, still rebuilt from
  *  the latest numbers. The whole-site budget (usage.ts, SAT_AI_DAILY_BUDGET,
- *  default 800 of Groq's 1,000 free requests a day) caps the sum. */
+ *  default 800 of Groq's 1,000 free requests a day) caps the sum, and
+ *  insights may use only 70% of it (globalCapFor). */
 export const LIMITS = { tutor: 40, insights: 16, parent: 2 } as const;
 
 export type Purpose = keyof typeof LIMITS;
+
+/** The share of the whole-site daily budget "Coach says" may use. It
+ *  regenerates by itself on home visits, while tutor calls are asked for:
+ *  past 70% of the day's budget insights stop calling the AI (the card is
+ *  the rule-based view, still built from the latest numbers), so the last
+ *  30% stays for the tutor (and the weekly parent summary). */
+export const INSIGHTS_GLOBAL_SHARE = 0.7;
+
+/** How many of the day's `budget` whole-site calls `purpose` may reach:
+ *  all of it for the tutor and the parent summary, 70% for insights. */
+export function globalCapFor(purpose: Purpose, budget: number): number {
+  return purpose === "insights" ? Math.floor(budget * INSIGHTS_GLOBAL_SHARE) : budget;
+}
 /** A counter read: `{ ok: true, data: null }` = no counter yet (nothing used). */
 export type CounterRead = { ok: true; data: unknown } | { ok: false };
 export type StudentCounters = Record<Purpose, number>;

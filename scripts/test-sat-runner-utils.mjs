@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {
   RETRY_CAP_MS, SAVE_DEBOUNCE_MS, answersChangedFor, classifyFailure, createQuestionTimer, flaggedChangedFor, isTimeoutError,
   looksLikeSessionState, mergeAnswers, mergeFlagged, mixedNumberWarning, nextTypedSPR, pickAnswers, pickFlagged, pickImageUrls, preloadOrder, retryDelayMs,
-  reviewPreloadOrder, splitSignedUrls, sprAnswerPreview, stopMessage, stripSPR, haltAfter,
+  retryStep, reviewPreloadOrder, splitSignedUrls, sprAnswerPreview, stopMessage, stripSPR, haltAfter,
 } from "../src/components/sat/sat-runner-utils.ts";
 
 // --- pickAnswers / pickFlagged: a save/submit body carries only the module
@@ -407,6 +407,15 @@ assert.equal(sprAnswerPreview("1.2.3"), null);
   assert.deepEqual(pickImageUrls({ serverNow: 1 }), {}, "no images: nothing");
   assert.deepEqual(pickImageUrls({ images: ["https://x/a"] }), {});
   assert.deepEqual(pickImageUrls(null), {});
+}
+
+// --- retryStep (fix round 1, I1): with stable URLs a re-sign can return the
+// very URL that just failed -- the one retry must still be a real request.
+{
+  assert.equal(retryStep("https://x/a?token=1", "https://x/a?token=2"), "swap", "a fresh URL: the new src is the retry");
+  assert.equal(retryStep("https://x/a?token=1", "https://x/a?token=1"), "reload", "the same URL: load it again in a new element");
+  assert.equal(retryStep("https://x/a?token=1", null), "reload", "re-signing failed too: still retry the URL once");
+  assert.equal(retryStep("https://x/a?token=1", ""), "reload");
 }
 
 console.log("sat-runner-utils tests passed");

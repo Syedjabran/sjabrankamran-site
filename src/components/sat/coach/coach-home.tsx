@@ -75,34 +75,47 @@ export function CoachHome() {
   // Coach says is being fetched again while a view is on screen.
   const [updating, setUpdating] = useState(false);
   const refreshing = useRef(false);
+  // Every load is numbered: only the latest one's answer is shown (an older
+  // one landing late is dropped), and "Updating…" stays until the latest
+  // Coach says request has answered.
+  const coachSeq = useRef(0);
+  const insightsSeq = useRef(0);
 
   // Coach says is optional: a failure hides the card (a view already shown stays).
   async function loadInsights() {
+    const mine = ++insightsSeq.current;
     setUpdating(true);
     try {
       const res = await fetch("/api/sat/coach/insights", { cache: "no-store" });
       if (!res.ok) throw new Error();
-      setInsights(((await res.json()) as CoachInsightsPayload).insights);
+      const view = ((await res.json()) as CoachInsightsPayload).insights;
+      if (mine !== insightsSeq.current) return;
+      setInsights(view);
       setInsightsState("ready");
     } catch {
-      setInsightsState((state) => (state === "ready" ? state : "failed"));
+      if (mine === insightsSeq.current) setInsightsState((state) => (state === "ready" ? state : "failed"));
     } finally {
-      setUpdating(false);
+      if (mine === insightsSeq.current) setUpdating(false);
     }
   }
 
-  async function load() {
+  /** Today, the plan and the goals; then Coach says. Resolves once the plan
+   *  is in (null when it failed or a newer load took over); `insights`
+   *  settles once Coach says has answered too. */
+  async function load(): Promise<{ insights: Promise<void> } | null> {
+    const mine = ++coachSeq.current;
     setLoadError(null);
     try {
       const res = await fetch("/api/sat/coach", { cache: "no-store" });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error || "Your plan couldn't be loaded — retry.");
+      if (mine !== coachSeq.current) return null;
       setData(j as CoachPayload);
     } catch (e) {
-      setLoadError((e as Error).message);
-      return;
+      if (mine === coachSeq.current) setLoadError((e as Error).message);
+      return null;
     }
-    void loadInsights();
+    return { insights: loadInsights() };
   }
   useEffect(() => { void load(); }, []);
 
@@ -113,7 +126,14 @@ export function CoachHome() {
     async function refresh() {
       if (refreshing.current) return;
       refreshing.current = true;
-      try { await load(); } finally { refreshing.current = false; }
+      // Held until Coach says has answered too, so one return to the tab
+      // is one refresh.
+      try {
+        const started = await load();
+        if (started) await started.insights;
+      } finally {
+        refreshing.current = false;
+      }
     }
     let hiddenAt: number | null = document.visibilityState === "hidden" ? Date.now() : null;
     const onVisibility = () => {

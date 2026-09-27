@@ -26,21 +26,37 @@ export const SIGNED_URL_CACHE_MAX = 20_000;
 export type SignedUrlEntry = { url: string; signedAt: number };
 export type SignedUrlCache = Map<string, SignedUrlEntry>;
 
+/** How long a response waits for its images to be signed before going
+ *  without them (the page then signs what is missing itself): a slow
+ *  storage call must never hold up a saved submit or a page. */
+export const IMAGES_WAIT_MS = 2500;
+
 /** The URLs `cache` can hand out again for `paths` at `now` (signed less
  *  than `reuseMs` ago), and the paths that need signing. Duplicates and
- *  empty paths are dropped. */
+ *  empty paths are dropped. `fresh`: reuse nothing -- an image that failed
+ *  to load with its URL gets a new signature (a genuinely new request),
+ *  which then replaces the cached one. */
 export function reuseSigned(
-  cache: SignedUrlCache, paths: string[], now: number, reuseMs: number = SIGNED_URL_REUSE_MS,
+  cache: SignedUrlCache, paths: string[], now: number, reuseMs: number = SIGNED_URL_REUSE_MS, fresh = false,
 ): { urls: Record<string, string>; toSign: string[] } {
   const urls: Record<string, string> = {};
   const toSign: string[] = [];
   for (const path of new Set(paths)) {
     if (!path) continue;
-    const hit = cache.get(path);
+    const hit = fresh ? undefined : cache.get(path);
     if (hit && now >= hit.signedAt && now - hit.signedAt < reuseMs) urls[path] = hit.url;
     else toSign.push(path);
   }
   return { urls, toSign };
+}
+
+/** `task`'s result, or `fallback` if it hasn't settled within `ms` (or it
+ *  failed). The task itself keeps running -- a late signature still lands
+ *  in the cache for the next request. */
+export function settleWithin<T>(task: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<T>((resolve) => { timer = setTimeout(() => resolve(fallback), ms); });
+  return Promise.race([task.catch(() => fallback), late]).finally(() => clearTimeout(timer));
 }
 
 /** Records URLs just signed at `now`. Past `max` entries, the ones no longer

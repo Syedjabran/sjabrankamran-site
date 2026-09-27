@@ -20,9 +20,11 @@ export type SignedImages = {
   /** Requested paths the server answered for without a URL, each with the
    *  message to show where that image would be. */
   missing: Record<string, string>;
-  /** Signs one path again (a signed URL expires, so an <img> left open
-   *  long enough fails to load) and swaps the new URL into `urls`.
-   *  Resolves to that URL, or null when re-signing failed. */
+  /** Signs one path afresh -- a new signature, never the hour's shared
+   *  URL, so the retry of an image that failed to load (an expired URL, a
+   *  network blip, a CDN error) is a genuinely new request -- and swaps the
+   *  new URL into `urls`. Resolves to that URL, or null when re-signing
+   *  failed. */
   resign: (path: string) => Promise<string | null>;
   /** Adds URLs a response already carried (a drill check's rationale, a
    *  sitting's next module): those paths are never signed again. */
@@ -32,11 +34,12 @@ export type SignedImages = {
 type Settled = { key: string; error: string | null; missing: Record<string, string> };
 type Attempt = { ok: true; urls: Record<string, string>; missing: string[] } | { ok: false; message: string };
 
-/** One signing request, bounded by a timeout. */
-async function signBatch(paths: string[]): Promise<Attempt> {
+/** One signing request, bounded by a timeout. `fresh`: a new signature
+ *  rather than the hour's shared URL (the retry of a failed image). */
+async function signBatch(paths: string[], fresh = false): Promise<Attempt> {
   try {
     const res = await fetch("/api/exam-lab/asset", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ paths }),
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(fresh ? { paths, fresh } : { paths }),
       signal: AbortSignal.timeout(SIGN_TIMEOUT_MS),
     });
     const j: unknown = await res.json().catch(() => null);
@@ -102,7 +105,7 @@ export function useSignedImages(paths: string[], initial?: Record<string, string
     return () => { alive = false; clearTimeout(retryTimer); };
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
   const resign = useCallback(async (path: string): Promise<string | null> => {
-    const attempt = await signBatch([path]);
+    const attempt = await signBatch([path], true);
     const url = attempt.ok ? attempt.urls[path] : undefined;
     if (!url) return null;
     seed({ [path]: url });

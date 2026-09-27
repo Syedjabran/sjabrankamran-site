@@ -4,7 +4,7 @@ import { assembleForm } from "../src/lib/sat/forms.ts";
 import { startAdaptive, submitStage, beginStage } from "../src/lib/sat/session.ts";
 import { startDrill, checkDrillAnswer } from "../src/lib/sat/drills.ts";
 import { answerOf, sessionState, drillState, summaryOf, itemsOf, trimIndex, INDEX_CAP } from "../src/lib/sat/serve.ts";
-import { SIGNED_URL_REUSE_MS, SIGNED_URL_TTL_S, imagePathsOf, rememberSigned, reuseSigned } from "../src/lib/sat/image-urls.ts";
+import { IMAGES_WAIT_MS, SIGNED_URL_REUSE_MS, SIGNED_URL_TTL_S, imagePathsOf, rememberSigned, reuseSigned, settleWithin } from "../src/lib/sat/image-urls.ts";
 
 // Deterministic RNG so a run is reproducible and a failure is debuggable.
 function seeded(seed) {
@@ -258,6 +258,24 @@ console.log("sat-serve index-trim tests passed");
   rememberSigned(small, { newer: "u5" }, T0 + 2 * HOUR + 2, 3);
   assert.deepEqual([...small.keys()], ["mid2", "new", "newer"], "then the oldest signed");
   assert.ok(small.size <= 3);
+}
+
+// --- fix round 1: a retry gets a fresh signature (I1); a response waits
+// for its images at most IMAGES_WAIT_MS (M2).
+{
+  const cache = new Map();
+  rememberSigned(cache, { a: "url-a" }, T0);
+  assert.deepEqual(reuseSigned(cache, ["a"], T0 + 1000), { urls: { a: "url-a" }, toSign: [] }, "normally the hour's URL");
+  assert.deepEqual(reuseSigned(cache, ["a", "b"], T0 + 1000, SIGNED_URL_REUSE_MS, true), { urls: {}, toSign: ["a", "b"] }, "fresh: sign again");
+  rememberSigned(cache, { a: "url-a-fresh" }, T0 + 1000);
+  assert.equal(reuseSigned(cache, ["a"], T0 + 2000).urls.a, "url-a-fresh", "the fresh URL is the one handed out next");
+
+  assert.equal(IMAGES_WAIT_MS, 2500);
+  assert.equal(await settleWithin(Promise.resolve({ a: "u" }), 50, undefined).then((v) => v?.a), "u", "in time: the result");
+  const t = Date.now();
+  assert.equal(await settleWithin(new Promise(() => {}), 30, undefined), undefined, "too slow: the fallback");
+  assert.ok(Date.now() - t < 1000, "and promptly");
+  assert.equal(await settleWithin(Promise.reject(new Error("down")), 50, "fallback"), "fallback", "a failure: the fallback, never a rejection");
 }
 
 console.log("sat-serve image-url tests passed");

@@ -7,7 +7,9 @@ import { imageUrls } from "@/lib/sat/signed-images";
 
 export const runtime = "nodejs";
 
-const schema = z.object({ paths: z.array(z.string().min(3).max(200)).min(1).max(80) });
+// `fresh`: sign again rather than hand out the hour's URL -- the one retry
+// of an image that failed to load (a new signature is a genuinely new request).
+const schema = z.object({ paths: z.array(z.string().min(3).max(200)).min(1).max(80), fresh: z.boolean().optional() });
 
 // Returns short-lived signed URLs for private exam-asset images. Portal-only:
 // real past-paper question/mark-scheme images are never publicly reachable.
@@ -46,7 +48,7 @@ export async function POST(request: Request) {
 
   // Local development with SAT_LOCAL_CROPS=1 (the crops on disk, not yet
   // uploaded) points sat/ paths at the dev-only local image route instead.
-  const signed = await imageUrls(parsed.data.paths);
+  const signed = await imageUrls(parsed.data.paths, { fresh: parsed.data.fresh });
   if (!signed.ok) return NextResponse.json({ error: "Could not load images." }, { status: 500 });
   return NextResponse.json({ urls: signed.urls }, { status: 200 });
 }

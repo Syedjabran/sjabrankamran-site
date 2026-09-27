@@ -3,6 +3,7 @@ import { useState } from "react";
 import { CheckCircle2, XCircle, Info } from "lucide-react";
 import { DOMAIN_LABEL, SECTION_LABEL, type SATReport } from "@/lib/sat/client-types";
 import { ExplainButton } from "./explain-button";
+import { QuestionImage } from "./question-image";
 import { useSignedImages } from "./use-signed-images";
 import { useImagePreload } from "./use-image-preload";
 import { reviewPreloadOrder } from "./sat-runner-utils";
@@ -10,12 +11,14 @@ import { reviewPreloadOrder } from "./sat-runner-utils";
 /** `explainFrom`: the sitting's id on the student's own finished report --
  *  wrong answers get an "Explain my mistake" link to the SAT tutor for that
  *  attempt (never on a staff view, which passes nothing). `images`: signed
- *  URLs the sitting's response already carried. The review's images load in
- *  the background -- every wrong answer's rationale and question first --
- *  so a row opens with its images already there. */
+ *  URLs the response that brought this report carried (any path without
+ *  one is signed here). The review's images load in the background -- every
+ *  wrong answer's rationale and question first -- so a row opens with its
+ *  images already there; an image that fails to load retries once with a
+ *  freshly signed URL (QuestionImage). */
 export function ScoreReport({ report, explainFrom, images }: { report: SATReport; explainFrom?: string; images?: Record<string, string> }) {
   const [open, setOpen] = useState<string | null>(null);
-  const { urls, error: imgError, missing: imgMissing } = useSignedImages(report.review.flatMap((r) => [r.img, r.rationaleImg ?? ""]), images);
+  const { urls, error: imgError, missing: imgMissing, resign } = useSignedImages(report.review.flatMap((r) => [r.img, r.rationaleImg ?? ""]), images);
   useImagePreload(undefined, reviewPreloadOrder(report.review).map((path) => urls[path]).filter((url): url is string => !!url));
   const s = report.score;
   return (
@@ -77,10 +80,8 @@ export function ScoreReport({ report, explainFrom, images }: { report: SATReport
               </button>
               {open === r.id ? (
                 <div className="space-y-3 border-t border-white/10 p-3">
-                  {urls[r.img] ? <img src={urls[r.img]} alt={`Question ${r.n}`} decoding="async" className="w-full rounded-lg bg-white" />
-                    : imgMissing[r.img] ? <p className="text-sm text-signal">{imgMissing[r.img]}</p> : null}
-                  {r.rationaleImg && urls[r.rationaleImg] ? <img src={urls[r.rationaleImg]} alt="Official rationale" decoding="async" className="w-full rounded-lg bg-white" />
-                    : r.rationale ? <p className="whitespace-pre-line text-sm text-fog">{r.rationale}</p> : null}
+                  <QuestionImage key={r.img} src={urls[r.img]} alt={`Question ${r.n}`} error={imgMissing[r.img] ?? imgError} resign={() => resign(r.img)} />
+                  <ReviewRationale item={r} src={r.rationaleImg ? urls[r.rationaleImg] : undefined} error={r.rationaleImg ? imgMissing[r.rationaleImg] ?? imgError : null} resign={resign} />
                   {explainFrom && !r.correct ? <ExplainButton questionId={r.id} from={explainFrom} context={`${SECTION_LABEL[r.section]} · Q${r.n}`} /> : null}
                 </div>
               ) : null}
@@ -89,5 +90,23 @@ export function ScoreReport({ report, explainFrom, images }: { report: SATReport
         </ol>
       </section>
     </div>
+  );
+}
+
+/** A review row's official rationale: the image (retried once when it fails
+ *  to load), with the text version under the failure message; the text
+ *  alone when there is no image. */
+function ReviewRationale({ item, src, error, resign }: {
+  item: SATReport["review"][number]; src: string | undefined; error: string | null; resign: (path: string) => Promise<string | null>;
+}) {
+  const text = item.rationale ? <p className="whitespace-pre-line text-sm text-fog">{item.rationale}</p> : null;
+  const path = item.rationaleImg;
+  if (!path) return text;
+  return (
+    <QuestionImage
+      key={path} src={src} alt="Official rationale" error={error} resign={() => resign(path)}
+      failedText={"The official rationale image couldn't be loaded." + (text ? " Its text version is below." : "")}
+      fallback={text}
+    />
   );
 }

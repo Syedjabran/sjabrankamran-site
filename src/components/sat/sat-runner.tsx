@@ -58,6 +58,15 @@ export function SatRunner({ sessionId, explain = false }: { sessionId: string; e
   // only what is missing gets signed.
   const questions = useMemo(() => state?.stage?.questions ?? [], [state]);
   const { urls, error: imgError, missing: imgMissing, resign, seed } = useSignedImages(questions.map((q) => q.img));
+  // The URLs the latest response carried, and only those: what a finished
+  // review starts from. Anything it lacks (the response went without, or an
+  // earlier module's URL that may be hours old) the review signs itself.
+  const [responseImages, setResponseImages] = useState<Record<string, string>>({});
+  const takeImages = useCallback((body: unknown) => {
+    const images = pickImageUrls(body);
+    seed(images);
+    setResponseImages(images);
+  }, [seed]);
   const skew = useRef(0);
   const expiredOnLoad = useRef(false);
   const dirty = useRef(false);
@@ -226,9 +235,9 @@ export function SatRunner({ sessionId, explain = false }: { sessionId: string; e
       return;
     }
     noteSuccess();
-    seed(pickImageUrls(j));
+    takeImages(j);
     apply(j as SessionState); // clears `error` too
-  }, [sessionId, apply, noteSuccess, noteFailure, seed]);
+  }, [sessionId, apply, noteSuccess, noteFailure, takeImages]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
@@ -256,19 +265,19 @@ export function SatRunner({ sessionId, explain = false }: { sessionId: string; e
       });
       const j = await res.json().catch(() => ({}));
       // The module already ended (another tab/device, or a racing request): the server hands back its current state.
-      if (res.status === 409 && j.state && looksLikeSessionState(j.state)) { noteSuccess(); return { kind: "stale", state: j.state as SessionState }; }
+      if (res.status === 409 && j.state && looksLikeSessionState(j.state)) { noteSuccess(); takeImages(null); return { kind: "stale", state: j.state as SessionState }; }
       if (!res.ok) return { kind: "error", message: j.error || "Please try again.", halted: noteFailure(res.status, j.error) };
       // A 2xx whose body doesn't actually parse into a session state (a
       // malformed/empty body) must never be applied -- treat it as a failure.
       if (!looksLikeSessionState(j)) return { kind: "error", message: "Please try again.", halted: noteFailure(null) };
       noteSuccess();
       // A submit or begin brings the next module's (or the review's) image URLs.
-      seed(pickImageUrls(j));
+      takeImages(j);
       return { kind: "ok", state: j as SessionState };
     } catch (e) {
       return { kind: "error", message: isTimeoutError(e) ? timeoutMessage : (e as Error).message || "Please try again.", halted: noteFailure(null) };
     }
-  }, [sessionId, noteSuccess, noteFailure, seed]);
+  }, [sessionId, noteSuccess, noteFailure, takeImages]);
 
   // The actual save network round-trip -- a single attempt, never looping.
   // `editSeq` guards against a subtler case: an edit made after the request
@@ -434,7 +443,7 @@ export function SatRunner({ sessionId, explain = false }: { sessionId: string; e
 
   if (error && !state) return <p className="rounded-2xl border border-signal/30 bg-signal/5 p-5 text-sm text-fog">{error} <button className="ml-2 text-cyan underline" onClick={() => void load()}>Retry</button></p>;
   if (!state) return <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading your sitting…</p>;
-  if (state.status === "finished" && state.report) return <ScoreReport report={state.report} explainFrom={explain ? sessionId : undefined} images={urls} />;
+  if (state.status === "finished" && state.report) return <ScoreReport report={state.report} explainFrom={explain ? sessionId : undefined} images={responseImages} />;
 
   // Why nothing is being saved or reloaded automatically (a 401/403/404/423).
   const haltMessage = halt ? stopMessage(halt.status, { onBreak: state.status === "break", serverMessage: halt.serverMessage }) : null;

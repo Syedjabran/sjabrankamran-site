@@ -1,18 +1,23 @@
 "use client";
 import { useCallback, useRef, useState, type ReactNode } from "react";
+import { retryStep } from "./sat-runner-utils";
 
-/** A question's image, shared by the runner and the drill (and the drill's
- *  official rationale). The pulsing placeholder stays until the signed URL
- *  exists AND the image itself has loaded (an <img> still fetching has no
- *  height, leaving an empty area). If there is no URL and `error` is set
+/** A question's image, shared by the runner, the drill and the score
+ *  report's review (and their official rationales). The pulsing
+ *  placeholder stays until the signed URL exists AND the image itself has
+ *  loaded (an <img> still fetching has no height, leaving an empty area). If there is no URL and `error` is set
  *  (signing failed, or the server has no image for this path), the message
  *  shows in its place instead of a placeholder pulsing forever.
  *
- *  A signed URL expires after an hour, so an image that fails to load asks
- *  `resign` for a fresh URL once before giving up. `failedText` replaces the
- *  default question wording of every failure message, and `fallback` shows
- *  under it (the drill's text rationale). Key it by the image path, so each
- *  image starts from its own state and its own single re-sign. */
+ *  An image that fails to load (an expired URL -- each is handed out with
+ *  at least an hour left, and a page can stay open longer -- a network
+ *  blip, a CDN error) gets one retry before giving up: `resign` asks for a
+ *  freshly signed URL, and when that gives the same URL or none, the same
+ *  URL is loaded again in a new <img> (sat-runner-utils retryStep). Without
+ *  `resign`, the retry is that reload. `failedText` replaces the default
+ *  question wording of every failure message, and `fallback` shows under it
+ *  (the drill's text rationale). Key it by the image path, so each image
+ *  starts from its own state and its own single retry. */
 export function QuestionImage({ src, alt, error, resign, failedText, fallback }: {
   src: string | undefined;
   alt: string;
@@ -22,7 +27,9 @@ export function QuestionImage({ src, alt, error, resign, failedText, fallback }:
   fallback?: ReactNode;
 }) {
   const [status, setStatus] = useState<"loading" | "loaded" | "failed">("loading");
-  const resigned = useRef(false);
+  const retried = useRef(false);
+  // Bumped to load the same URL again in a new <img> element.
+  const [attempt, setAttempt] = useState(0);
   // An image the browser already has (navigating back to a question, or one
   // preloaded while the previous question was open) is complete the moment
   // its element mounts, before any load event. Marking it loaded here,
@@ -31,12 +38,14 @@ export function QuestionImage({ src, alt, error, resign, failedText, fallback }:
     if (el && el.complete && el.naturalWidth > 0) setStatus("loaded");
   }, []);
   const onError = () => {
-    if (resigned.current || !resign) { setStatus("failed"); return; }
-    resigned.current = true;
+    if (retried.current) { setStatus("failed"); return; }
+    retried.current = true;
     setStatus("loading");
-    // A new URL re-renders this <img> with it (load or fail again, for good);
-    // no new URL, or the same one, means there is nothing left to try.
-    void resign().then((url) => { if (!url || url === src) setStatus("failed"); });
+    const failedSrc = src ?? "";
+    if (!resign) { setAttempt((n) => n + 1); return; }
+    // A new URL re-renders this <img> with it; otherwise the same URL is
+    // requested again by a new element. Either way it loads or fails for good.
+    void resign().catch(() => null).then((url) => { if (retryStep(failedSrc, url) === "reload") setAttempt((n) => n + 1); });
   };
   const failure = (message: string) => (
     <>
@@ -51,7 +60,7 @@ export function QuestionImage({ src, alt, error, resign, failedText, fallback }:
       {status === "loading" ? placeholder : null}
       {status === "failed" ? failure("This question's image couldn't be loaded.") : null}
       <img
-        ref={markIfComplete} src={src} alt={alt} onLoad={() => setStatus("loaded")} onError={onError}
+        key={attempt} ref={markIfComplete} src={src} alt={alt} onLoad={() => setStatus("loaded")} onError={onError}
         /* the image on screen outranks the background preloads (use-image-preload.ts) */
         decoding="async" fetchPriority="high"
         className={"w-full rounded-lg bg-white" + (status === "loaded" ? "" : " hidden")}
