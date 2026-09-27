@@ -368,6 +368,11 @@ for (const id of ids) {
   assert.equal(A.labSecret(), null, "production with a short secret: none");
   process.env.LAB_SECRET = "p".repeat(32);
   assert.equal(A.labSecret(), "p".repeat(32));
+  for (const env of ["test", undefined]) {
+    if (env === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = env;
+    delete process.env.LAB_SECRET;
+    assert.equal(A.labSecret(), null, `NODE_ENV=${env}: no secret, no lab (only development has a fallback)`);
+  }
   process.env.NODE_ENV = "development";
   delete process.env.LAB_SECRET;
   assert.ok((A.labSecret() ?? "").length >= 32, "development falls back to a fixed secret");

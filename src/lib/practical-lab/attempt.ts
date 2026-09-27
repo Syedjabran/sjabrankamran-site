@@ -18,14 +18,14 @@ const DEV_SECRET = "practical-lab-development-secret-not-for-production";
 let devSecretWarned = false;
 
 /**
- * LAB_SECRET, or none. In production a missing or short secret means the lab
- * API refuses (fails closed); in development a fixed secret is used so the
- * lab works locally, with a warning.
+ * LAB_SECRET, or none. A missing or short secret means the lab API refuses
+ * (fails closed) -- except under `next dev` (NODE_ENV=development), where a
+ * fixed secret is used so the lab works locally, with a warning.
  */
 export function labSecret(): string | null {
   const secret = process.env.LAB_SECRET?.trim() ?? "";
   if (secret.length >= 32) return secret;
-  if (process.env.NODE_ENV === "production") return null;
+  if (process.env.NODE_ENV !== "development") return null;
   if (!devSecretWarned) {
     devSecretWarned = true;
     console.warn("LAB_SECRET is not set (or shorter than 32 characters): the Practical Lab uses a fixed development secret.");
