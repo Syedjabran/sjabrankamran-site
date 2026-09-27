@@ -400,12 +400,13 @@ export async function middleware(request: NextRequest) {
 
   /**
    * /lab: signed in AND (lab staff OR Practical Lab switched on). Pages (the
-   * HTML entry points, 52 files) get the full check; the sub-assets a page
-   * loads (.mjs/.css/.json/.pdf, about 70 files) get the sign-in check only --
-   * the one Auth round-trip every portal request already makes, instead of
-   * three more service-role reads per file. A sub-asset on its own is inert
-   * code: every way into the lab is a page. Everything here fails closed,
-   * including an Auth lookup that can't answer in time.
+   * HTML entry points, 52 files, and any name that isn't a sub-asset type)
+   * get the full check; the sub-assets a page loads (.mjs/.css/.json/.pdf,
+   * about 70 files) get the sign-in check only -- the one Auth round-trip
+   * every portal request already makes, instead of three more service-role
+   * reads per file. A sub-asset on its own is inert code: every way into the
+   * lab is a page. Everything here fails closed, including an Auth lookup
+   * that can't answer in time.
    */
   async function labGate(target: LabRequest, who: SessionUser): Promise<NextResponse> {
     if (who === "unavailable") {
@@ -533,5 +534,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/portal/:path*", "/api/portal/:path*", "/api/exam-lab/:path*", "/api/sat/:path*", "/lab/:path*"],
+  // The last entry is "/lab/:path*" in any letter case: matchers are
+  // case-sensitive, but a case-insensitive file system serves public/lab for
+  // "/Lab/..." as well (practical-lab-access.ts).
+  matcher: ["/portal/:path*", "/api/portal/:path*", "/api/exam-lab/:path*", "/api/sat/:path*", "/([Ll][Aa][Bb])/:path*"],
 };

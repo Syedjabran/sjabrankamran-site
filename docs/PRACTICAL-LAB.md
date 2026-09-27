@@ -53,9 +53,11 @@ too, so a link shared between students doesn't get round the switch:
 
 How the check works, for the curious: each lab **page** (the 52 HTML files) gets the full check —
 who you are, your roles and your Subjects switch. The other ~70 files the pages load (scripts,
-styles, the practicals' data) only check that you're signed in: they are useless without a page,
-and doing the full check on every one of them would slow every practical down. The one consequence: a lab page
-a student already has open keeps working until they reload or leave it after the switch goes off.
+styles, the practicals' data, the question PDF) only check that you're signed in: they are useless
+without a page, and doing the full check on every one of them would slow every practical down. Only
+those file types get the lighter check; any other address under `/lab`, in any mix of capital
+letters, gets the full one. The one consequence: a lab page a student already has open keeps
+working until they reload or leave it after the switch goes off.
 
 ## Try it
 

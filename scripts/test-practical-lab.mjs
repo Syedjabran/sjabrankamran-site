@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { register } from "node:module";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { createRequire, register } from "node:module";
 
 // Practical Lab (Task 2 of the portal-v2 plan): the pure access rules, the
 // server-side check behind the portal page and nav, the grants store for the
@@ -39,6 +40,9 @@ export async function resolve(specifier, context, next) {
   return next(specifier, context);
 }`;
 register(stub(hooks));
+// Next's own Node runtime provides this global before any Next module loads;
+// its build helpers (used below to compile the middleware matcher) need it.
+globalThis.AsyncLocalStorage ??= AsyncLocalStorage;
 
 const {
   LAB_STAFF_ROLES, PRACTICAL_LAB, PRACTICAL_LAB_ENTRY, PRACTICAL_LAB_PAGE,
@@ -121,7 +125,18 @@ assert.deepEqual(labRequest("/lab/lab-room/room.css"), ASSET);
 assert.deepEqual(labRequest("/lab/lab-room/settings.json"), ASSET);
 assert.deepEqual(labRequest("/lab/content/student-guides.json"), ASSET);
 assert.deepEqual(labRequest("/lab/sources/9702_s21_qp_33.pdf"), ASSET);
-for (const outside of ["/", "/laboratory", "/labs/x.html", "/portal/practical-lab", "/api/lab", "/x/lab/index.html"]) {
+assert.deepEqual(labRequest("/lab/lib/LIVE-BENCH.MJS"), ASSET);
+// Only known sub-asset types get the cheap check: any other name is a page,
+// so a lenient file system can't serve a page under the sign-in-only check.
+for (const odd of ["/lab/index.html.", "/lab/index.html%20", "/lab/index.html;x", "/lab/index.html%00", "/lab/index.html::$DATA", "/lab/notes.txt", "/lab/index.html.bak"]) {
+  assert.deepEqual(labRequest(odd), page(), odd);
+}
+// Any letter case of /lab is the lab (a case-insensitive file system serves it).
+assert.deepEqual(labRequest("/Lab/index.html"), page());
+assert.deepEqual(labRequest("/LAB"), page("/LAB/index.html"));
+assert.deepEqual(labRequest("/%4Cab/lab-room/"), page("/Lab/lab-room/index.html"));
+assert.deepEqual(labRequest("/LAB/lib/live-bench.mjs"), ASSET);
+for (const outside of ["/", "/laboratory", "/labs/x.html", "/LABS/x.html", "/lab.html", "/portal/practical-lab", "/api/lab", "/x/lab/index.html"]) {
   assert.equal(labRequest(outside), null, outside);
 }
 
@@ -225,7 +240,26 @@ process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "service-key";
 const { NextRequest } = await import("next/server.js");
 const { middleware, config } = await import("../src/middleware.ts");
-assert.ok(config.matcher.includes("/lab/:path*"), "the middleware runs for /lab");
+// The matcher compiled exactly as Next compiles it: the middleware runs for
+// /lab and everything under it in any letter case, and for nothing near it.
+{
+  const require = createRequire(import.meta.url);
+  const { getMiddlewareMatchers } = require("next/dist/build/analysis/get-page-static-info.js");
+  const { getMiddlewareRouteMatcher } = require("next/dist/shared/lib/router/utils/middleware-route-matcher.js");
+  const runs = getMiddlewareRouteMatcher(getMiddlewareMatchers(config.matcher, {}));
+  const runsFor = (path) => runs(path, { headers: {} }, {});
+  for (const path of ["/lab", "/lab/", "/lab/index.html", "/lab/lab-room/index.html", "/lab/lib/live-bench.mjs", "/Lab/index.html", "/LAB", "/lAb/lab-room/room.css"]) {
+    assert.ok(runsFor(path), `the middleware runs for ${path}`);
+  }
+  for (const path of ["/laboratory", "/labs/x.html", "/lab.html", "/x/lab/index.html", "/"]) {
+    assert.ok(!runsFor(path), `the middleware skips ${path}`);
+  }
+  // The other gates are unchanged.
+  for (const path of ["/portal", "/portal/practical-lab", "/api/portal/me", "/api/exam-lab/x", "/api/sat/profile"]) {
+    assert.ok(runsFor(path), `the middleware still runs for ${path}`);
+  }
+  assert.ok(!runsFor("/api/cron/daily-sat-plans"), "cron routes stay outside the middleware (their own CRON_SECRET gate)");
+}
 
 const JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1MSJ9.c2lnbmF0dXJl";
 const COOKIE = "sb-stub-auth-token=session";
@@ -289,6 +323,8 @@ assert.equal(location(res), "/portal/login?next=%2Flab%2Flab-room%2Findex.html%3
 res = await call("/lab/lib/live-bench.mjs");
 assert.equal(res.status, 401);
 assert.equal(res.headers.get("cache-control"), "no-store");
+res = await call("/Lab/index.html");
+assert.equal(location(res), "/portal/login?next=%2FLab%2Findex.html", "any letter case of /lab is gated");
 log = world({ uid: null });
 res = await call("/lab/index.html", { authorization: "Bearer garbage-token" });
 assert.equal(location(res), "/portal/login?next=%2Flab%2Findex.html", "a non-JWT bearer is signed out");
@@ -322,6 +358,8 @@ for (const grants of ["missing", { grants: {}, history: [] }, { grants: { sat: G
 world({ grants: { grants: {}, history: [] } });
 assert.equal((await call("/lab/index.htm%6C", { cookie: COOKIE })).status, 403, "an encoded page name gets the full check");
 assert.equal((await call("/lab/practicals/9702_m21_33-q1.html", { cookie: COOKIE })).status, 403, "every HTML page is gated");
+assert.equal((await call("/Lab/index.html", { cookie: COOKIE })).status, 403, "another letter case is gated the same");
+assert.equal((await call("/lab/index.html.", { cookie: COOKIE })).status, 403, "an odd name gets the full check, not the sign-in one");
 
 // Staff always: no grants doc needed.
 for (const role of STAFF) {

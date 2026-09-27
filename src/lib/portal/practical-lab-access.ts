@@ -63,14 +63,24 @@ export function grantsReadFrom(status: number, body: string): GrantsRead {
  *  files only at their exact path -- and null for a request naming its file. */
 export type LabRequest = { kind: "page"; opens: string | null } | { kind: "asset" };
 
-const underLab = (path: string) => path === "/lab" || path.startsWith("/lab/");
+// Case-insensitive: a case-insensitive file system (Windows, macOS) serves
+// public/lab/index.html for "/Lab/index.html" too. The middleware matcher
+// covers every case of "/lab" for the same reason.
+const underLab = (path: string) => /^\/lab(?:\/|$)/i.test(path);
+
+/** The sub-asset types the lab's pages load: scripts, styles, data, the
+ *  question PDFs, and images or fonts should any be added. */
+const LAB_ASSET = /\.(?:mjs|js|css|json|pdf|png|jpe?g|svg|webp|woff2?)$/i;
 
 /**
- * How the middleware treats a path, or null outside /lab. HTML files and
- * directory-style paths (no extension) are pages; everything else (the lab's
- * .mjs/.css/.json/.pdf files) is a sub-asset. The path is percent-decoded
- * first, so an encoded ".html" can't pass as a sub-asset; a path that won't
- * decode is treated as a page (the stricter check).
+ * How the middleware treats a path, or null outside /lab. Only a name ending
+ * in a sub-asset type (the lab's .mjs/.css/.json/.pdf files) is a sub-asset;
+ * directory-style paths (no extension) are pages that open their index.html,
+ * and every other name -- the HTML files, and anything odd such as
+ * "index.html." or "index.html;x" that a lenient file system might still serve
+ * as HTML -- is a page (the stricter check). The path is percent-decoded
+ * first, so an encoded ".html" is judged as ".html"; a path that won't decode
+ * is a page too.
  */
 export function labRequest(pathname: string): LabRequest | null {
   let path: string;
@@ -82,9 +92,8 @@ export function labRequest(pathname: string): LabRequest | null {
   if (!underLab(path)) return null;
   const name = path.slice(path.lastIndexOf("/") + 1);
   if (!name) return { kind: "page", opens: `${path}index.html` };
-  if (/\.html?$/i.test(name)) return { kind: "page", opens: null };
   if (!name.includes(".")) return { kind: "page", opens: `${path}/index.html` };
-  return { kind: "asset" };
+  return LAB_ASSET.test(name) ? { kind: "asset" } : { kind: "page", opens: null };
 }
 
 const HTML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
