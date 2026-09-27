@@ -6,7 +6,7 @@ import { DRILL_TIME_CAP_MS, type DrillState, type ReviewItem } from "@/lib/sat/c
 import { validateSPR } from "@/lib/sat/grade";
 import { SprPad } from "./spr-pad";
 import { QuestionImage } from "./question-image";
-import { ExplainLink } from "./explain-link";
+import { ExplainButton } from "./explain-button";
 import { useSignedImages } from "./use-signed-images";
 import { createQuestionTimer, isTimeoutError } from "./sat-runner-utils";
 
@@ -108,7 +108,7 @@ export function SatDrill({ initial, explain = false }: { initial: DrillState; ex
                 fallback={rationaleText}
               />
             ) : rationaleText}
-            {explain && !done.correct ? <ExplainLink questionId={q.id} from={state.id} /> : null}
+            {explain && !done.correct ? <ExplainButton key={q.id} questionId={q.id} from={state.id} context={`Question ${q.n} of ${state.questions.length}`} /> : null}
           </div>
         ) : q.kind === "mcq" ? (
           <div className="grid grid-cols-4 gap-2">{["A", "B", "C", "D"].map((l) => <button key={l} type="button" disabled={busy} onClick={() => setResponse(l)} className={"rounded-xl border py-3 font-display text-lg disabled:opacity-40 " + (response === l ? "border-cyan bg-cyan/15 text-ice" : "border-white/15 text-fog")}>{l}</button>)}</div>

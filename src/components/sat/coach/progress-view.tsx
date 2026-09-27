@@ -13,7 +13,7 @@ import { ArrowDownRight, ArrowUpRight, Loader2, Minus } from "lucide-react";
 import { DOMAIN_LABEL, DRILL_COUNT_DEFAULT, SECTION_LABEL, type MasteryRow, type SATAnalytics, type TutorMistake } from "@/lib/sat/client-types";
 import type { SATSection } from "@/lib/sat/types";
 import { formatPk } from "@/lib/portal/pk-time";
-import { ExplainLink } from "@/components/sat/explain-link";
+import { ExplainButton } from "@/components/sat/explain-button";
 import { ScoreBadge } from "@/components/sat/score-badge";
 import { Meter } from "./meter";
 
@@ -351,7 +351,7 @@ function MistakesCard({ mistakes }: { mistakes: TutorMistake[] }) {
               <p className="break-words text-ice">{m.label}</p>
               <p className="text-xs text-dust">{day(m.at)}</p>
             </div>
-            <ExplainLink questionId={m.id} label="Explain" />
+            <ExplainButton questionId={m.id} label="Explain" context={m.label} />
           </li>
         ))}
       </ul>

@@ -2,7 +2,8 @@
 // and its knowledge pack (knowledge.ts): action validation (open paths,
 // drill filters and counts, full-exam moves through checkMove), the pause
 // rule, history compaction, the system prompt's contents and size, the
-// explain mode, and the reply contract.
+// explain mode, and the reply contract -- plus the browser-side request
+// body and action wording (src/components/sat/coach/tutor-client.ts).
 import assert from "node:assert/strict";
 import {
   applySummary, budgetRefusal, compactHistory, isPaused, isSatLabHref, markSummarised, parseSummary, parseTutorReply, pauseCandidateIds,
@@ -12,6 +13,7 @@ import { TUTOR_COUNT_UNAVAILABLE, TUTOR_EXPLAIN_MESSAGE, TUTOR_MAX_MESSAGE_CHARS
 import { KNOWLEDGE_SKILLS, knowledgePack } from "../src/lib/sat/coach/knowledge.ts";
 import { modelAcceptsImages } from "../src/lib/ai/llm-core.ts";
 import { loadQuestionBank } from "../src/lib/sat/bank.ts";
+import { actionDestination, satLabPageName, turnBody } from "../src/components/sat/coach/tutor-client.ts";
 
 const TODAY = "2026-09-26";
 const NOW = Date.parse("2026-09-26T10:00:00+05:00");
@@ -392,6 +394,30 @@ const reply = (actions) => ({ reply: "Here's the plan.", actions });
   assert.ok(!/Answered 98/.test(withBlanks));
   const none = tutorSystemPrompt(ctx({ analytics: { ...base, totals: { ...zero(0), last7: zero(0), last30: zero(0) } } }));
   assert.match(none, /No finished work yet/);
+}
+
+// --- the browser side (src/components/sat/coach/tutor-client.ts), shared by
+// the full chat and the in-page Explain overlay ---
+{
+  // A typed message carries no explain fields; `from` rides only with explain.
+  assert.deepEqual(turnBody("hi"), { message: "hi" });
+  assert.deepEqual(turnBody("hi", undefined, "drill123"), { message: "hi" }, "no question, no from");
+  assert.deepEqual(turnBody("", "q1"), { message: "", explainQuestionId: "q1" });
+  assert.deepEqual(turnBody("", "q1", "drill123"), { message: "", explainQuestionId: "q1", explainFrom: "drill123" });
+
+  // Every action says, before the tap, where it goes.
+  assert.equal(satLabPageName("/portal/sat-lab"), "the SAT Lab home");
+  assert.equal(satLabPageName("/portal/sat-lab/"), "the SAT Lab home");
+  assert.equal(satLabPageName("/portal/sat-lab/progress"), "your Progress page");
+  assert.equal(satLabPageName("/portal/sat-lab/settings#sat-when"), "your SAT settings");
+  assert.equal(satLabPageName("/portal/sat-lab/tutor?explain=q1"), "the full tutor");
+  assert.equal(satLabPageName("/portal/sat-lab/AbCdEf123456"), "a SAT Lab page");
+  assert.equal(
+    actionDestination({ id: "a", type: "create_drill", label: "Start", filter: { skill: "Boundaries" }, count: 10 }),
+    "Starts a new 10-question drill on its own page.",
+  );
+  assert.match(actionDestination({ id: "b", type: "move_mock", label: "Move", itemId: "i", date: "2026-10-01" }), /you stay on this page/);
+  assert.equal(actionDestination({ id: "c", type: "open", label: "Open", href: "/portal/sat-lab/progress" }), "Opens your Progress page.");
 }
 
 console.log("sat tutor tests passed");

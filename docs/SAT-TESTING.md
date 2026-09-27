@@ -270,7 +270,7 @@ answers won't read as 100%); **Weakest skills** with a **Drill this** button on 
 separate list of skills with "not enough data yet" (fewer than 3 questions); **Pacing**
 (median seconds per question against the real exam's own pace — about 71s for Reading &
 Writing, 95s for Math — flagging any skill that's both slow and often wrong); and **Recent
-mistakes**, each with an **Explain** link straight into the tutor.
+mistakes**, each with an **Explain** button that opens the tutor's explanation on the page.
 
 ## 9. The Digital SAT Tutor
 
@@ -280,12 +280,18 @@ Things worth trying:
 - **Suggested prompts** (shown before your first message): "What should I work on this
   week?", "Explain my last wrong answer", "Make me a 10-question drill on my weakest
   skill", "How should I pace the Math module?".
-- **Explain** — on a wrong answer (in a score report, a drill review, or the Progress
-  page's Recent mistakes list), tap **Explain** to open the tutor already asking about that
-  question. This only works for questions the student has actually finished; it sends the
-  tutor the official question image, the worked answer, and the student's own answer, and
-  it usually offers a drill button on that skill afterwards (labelled something like "Start
-  10-question drill: Geometry").
+- **Explain** — on a wrong answer (in a drill or daily challenge, the diagnostic, a score
+  report, or the Progress page's Recent mistakes list), tap **Explain my mistake**: the
+  tutor's explanation opens in a panel on the same page (from the right on a laptop, a
+  sheet from the bottom on a phone) — the student never leaves the drill. Close it with the
+  ✕, Esc or a tap outside it and they are back on the same question, answers and scroll
+  position. It costs one of the day's 40 messages (opening it again shows the same reply
+  for free), only works for questions the student has actually finished, and sends the
+  tutor the official question image, the worked answer, and the student's own answer. It
+  usually offers a drill button on that skill (labelled something like "Start 10-question
+  drill: Geometry"); each button says under it where it goes, and nothing runs until it's
+  tapped. **Open the full tutor** at the bottom of the panel continues the conversation
+  there.
 - **"Make me a drill"** — ask in plain words (e.g. "make me a 10-question drill on
   geometry") and the tutor offers a "Start N-question drill: …" button; tapping it creates
   the drill and opens it.

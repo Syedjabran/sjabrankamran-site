@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { CheckCircle2, XCircle, Info } from "lucide-react";
 import { DOMAIN_LABEL, SECTION_LABEL, type SATReport } from "@/lib/sat/client-types";
-import { ExplainLink } from "./explain-link";
+import { ExplainButton } from "./explain-button";
 import { useSignedImages } from "./use-signed-images";
 
 /** `explainFrom`: the sitting's id on the student's own finished report --
@@ -75,7 +75,7 @@ export function ScoreReport({ report, explainFrom }: { report: SATReport; explai
                     : imgMissing[r.img] ? <p className="text-sm text-signal">{imgMissing[r.img]}</p> : null}
                   {r.rationaleImg && urls[r.rationaleImg] ? <img src={urls[r.rationaleImg]} alt="Official rationale" className="w-full rounded-lg bg-white" />
                     : r.rationale ? <p className="whitespace-pre-line text-sm text-fog">{r.rationale}</p> : null}
-                  {explainFrom && !r.correct ? <ExplainLink questionId={r.id} from={explainFrom} /> : null}
+                  {explainFrom && !r.correct ? <ExplainButton questionId={r.id} from={explainFrom} context={`${SECTION_LABEL[r.section]} · Q${r.n}`} /> : null}
                 </div>
               ) : null}
             </li>
