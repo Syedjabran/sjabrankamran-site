@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { ClipboardList, Paperclip, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getPortalUser } from "@/lib/edu/auth";
 import { getMyStudent } from "@/lib/edu/student";
 import { signedAttachments } from "@/lib/portal/attachments";
@@ -42,7 +43,14 @@ async function submitWork(formData: FormData) {
   const back = (notice: string, kept?: "draft" | "edit"): never =>
     redirect(`/portal/learn/assignments/${encodeURIComponent(assignmentId)}?notice=${notice}${kept ? `&kept=${kept}` : ""}`);
 
+  // Reads run as the student (RLS: their own student row, an assignment of a
+  // class they are enrolled in, their own submission). The submission WRITE
+  // runs with the service role, after those checks: a student may not set
+  // `status` / `submitted_at` / marks through PostgREST any more
+  // (supabase/migrations/portal-v2-001-answer-security.sql, audit M6), so the
+  // server decides them here.
   const supabase = await createClient();
+  const admin = createAdminClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -101,8 +109,8 @@ async function submitWork(formData: FormData) {
     // (status unchanged, nothing submitted) so the student can re-attach.
     if (answerText) {
       ({ error } = existing
-        ? await supabase.from("edu_submissions").update({ answer_text: answerText }).eq("id", existing.id)
-        : await supabase.from("edu_submissions").insert({ assignment_id: assignmentId, student_id: student.id, status: "assigned", answer_text: answerText, files: [] }));
+        ? await admin.from("edu_submissions").update({ answer_text: answerText }).eq("id", existing.id).eq("student_id", student.id)
+        : await admin.from("edu_submissions").insert({ assignment_id: assignmentId, student_id: student.id, status: "assigned", answer_text: answerText, files: [] }));
       revalidatePath(`/portal/learn/assignments/${assignmentId}`);
     }
     back(fileError, answerText && !error ? "draft" : undefined);
@@ -118,7 +126,7 @@ async function submitWork(formData: FormData) {
 
   if (existing) {
     const merged = [...(((existing.files as unknown) ?? []) as typeof files), ...files];
-    ({ error } = await supabase
+    ({ error } = await admin
       .from("edu_submissions")
       .update({
         status,
@@ -126,9 +134,10 @@ async function submitWork(formData: FormData) {
         answer_text: answerText || null,
         files: merged,
       })
-      .eq("id", existing.id));
+      .eq("id", existing.id)
+      .eq("student_id", student.id));
   } else {
-    ({ error } = await supabase.from("edu_submissions").insert({
+    ({ error } = await admin.from("edu_submissions").insert({
       assignment_id: assignmentId,
       student_id: student.id,
       status,
