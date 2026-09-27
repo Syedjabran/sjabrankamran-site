@@ -6,7 +6,11 @@ import {
   ShieldAlert, Upload, FileText, ScanText, TimerReset, Timer, Lock, Video, ShieldCheck, Send, Pause, Play,
   Maximize2,
 } from "lucide-react";
-import type { ImgQuestion } from "@/lib/exam-lab/image-bank";
+import type { SafeQuestion } from "@/lib/exam-lab/paper-meta";
+import { QuestionImage } from "@/components/sat/question-image";
+import { useImagePreload } from "@/components/sat/use-image-preload";
+import { preloadOrder } from "@/components/sat/sat-runner-utils";
+import { fetchReview, revealMarkScheme, signSittingImages, type Review } from "./sitting-api";
 import { questionSeconds, formatDuration, splitSeconds } from "@/lib/portal/timing";
 import { formatPk } from "@/lib/portal/pk-time";
 import { expiredOnResume, finishedLate, secondsLeft } from "@/lib/exam-lab/sitting-clock";
@@ -52,6 +56,8 @@ function clearClock(key: string | null) {
 
 export function PaperRunner({
   questions,
+  token,
+  images,
   title,
   subtitle,
   timed = true,
@@ -69,7 +75,9 @@ export function PaperRunner({
   dueAt = null,
   userId = null,
 }: {
-  questions: ImgQuestion[];
+  questions: SafeQuestion[];
+  token: string;                    // signed sitting token (/api/exam-lab/sitting): every call of this sitting carries it
+  images: Record<string, string>;   // signed question-image URLs the sitting opened with
   title: string;
   subtitle?: string;
   timed?: boolean;
@@ -110,15 +118,18 @@ export function PaperRunner({
   const dueMs = dueAt ? Date.parse(dueAt) : NaN;
   const lateByDue = relaxed && Number.isFinite(dueMs);
 
-  const [urls, setUrls] = useState<UrlMap>({});
-  const [loading, setLoading] = useState(true);
+  const [urls, setUrls] = useState<UrlMap>(images);
+  // Only while some question image still has no URL (the sitting usually opens with all of them).
+  const [loading, setLoading] = useState(() => questions.some((q) => !images[q.img]));
   const [err, setErr] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [structAnswers, setStructAnswers] = useState<Record<string, string>>({});
   // `answer` = the exact (trimmed) text Maxwell marked; a mark is only ever
   // recorded against that text, so editing afterwards cannot keep a stale mark.
+  // `receipt`: the server's signed record of that mark; the attempt route
+  // counts a structured mark only with it (the browser's figure never counts).
   const [maxwell, setMaxwell] = useState<
-    Record<string, { loading?: boolean; answer?: string; awarded?: number; outOf?: number; feedback?: string; points?: { earned: boolean; text: string }[]; error?: string }>
+    Record<string, { loading?: boolean; answer?: string; awarded?: number; outOf?: number; feedback?: string; points?: { earned: boolean; text: string }[]; receipt?: string; error?: string }>
   >({});
   const structRef = useRef<Record<string, string>>({});
   useEffect(() => { structRef.current = structAnswers; }, [structAnswers]);
@@ -129,6 +140,17 @@ export function PaperRunner({
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveErr, setSaveErr] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  // Mark-scheme image URLs, handed out by the server only when allowed: one
+  // question while sitting (help-allowed sittings; that answer is then final),
+  // or all of them in the finished sitting's review.
+  const [ms, setMs] = useState<Record<string, string>>({});
+  const [msState, setMsState] = useState<Record<string, { loading?: boolean; error?: string }>>({});
+  const [frozen, setFrozen] = useState<Set<string>>(() => new Set());
+  // The submitted sitting's results, from the server (the browser holds no key).
+  const [review, setReview] = useState<Review | null>(null);
+  const [reviewState, setReviewState] = useState<"idle" | "loading" | "error">("idle");
+  const [reviewErr, setReviewErr] = useState<string | null>(null);
+  const [alreadyNote, setAlreadyNote] = useState(false);
   const topRef = useRef<HTMLDivElement>(null);
 
   // ---- exam clock / integrity ----
@@ -186,7 +208,7 @@ export function PaperRunner({
     });
   }, []);
 
-  const isMcq = (q: ImgQuestion) => q.paperType === "P1";
+  const isMcq = (q: SafeQuestion) => q.paperType === "P1";
   const totalMarks = useMemo(() => questions.reduce((s, q) => s + (q.marks || 0), 0), [questions]);
 
   // Per-question time budget (seconds) — the ONE figure used by the chip, the
@@ -226,30 +248,35 @@ export function PaperRunner({
     return () => { off(); void exitExamFullscreen(); };
   }, []);
 
-  // load exact past-paper images
+  // The sitting opened with its question images signed (stable URLs, cached
+  // for an hour -- src/lib/sat/signed-images.ts); sign any it came back
+  // without. Only question images: a mark scheme is handed out by the server
+  // once it may be shown (toggleReveal, the review), never up front.
+  const imgPaths = useMemo(() => Array.from(new Set(questions.map((q) => q.img))), [questions]);
   useEffect(() => {
     let alive = true;
+    const missing = imgPaths.filter((p) => !images[p]);
+    if (!missing.length) { setLoading(false); return; }
     (async () => {
       setLoading(true);
       setErr(null);
-      const paths = Array.from(new Set(questions.flatMap((q) => [q.img, q.ms_img].filter(Boolean) as string[])));
-      try {
-        const res = await fetch("/api/exam-lab/asset", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ paths }),
-        });
-        const j = await res.json();
-        if (!res.ok) throw new Error(j.error || "load failed");
-        if (alive) setUrls(j.urls || {});
-      } catch (e) {
-        if (alive) setErr((e as Error).message);
-      } finally {
-        if (alive) setLoading(false);
-      }
+      const signed = await signSittingImages(token, missing);
+      if (!alive) return;
+      if (signed) setUrls((u) => ({ ...u, ...signed }));
+      else if (missing.length === imgPaths.length) setErr("the connection failed");
+      setLoading(false);
     })();
     return () => { alive = false; };
-  }, [questions]);
+  }, [imgPaths, images, token]);
+
+  // One retry of an image that failed to load, with a fresh signature.
+  const resign = useCallback(async (path: string): Promise<string | null> => {
+    const signed = await signSittingImages(token, [path], true);
+    const url = signed?.[path];
+    if (!url) return null;
+    setUrls((u) => ({ ...u, [path]: url }));
+    return url;
+  }, [token]);
 
   // The script-upload window is wall-clock (startedAt + duration + grace), so
   // every millisecond the countdown spends frozen by a pause must be credited
@@ -350,21 +377,20 @@ export function PaperRunner({
   }, []);
 
   const buildQLog = useCallback(() => questions.map((q) => {
-    const ai = q.answer ? "ABCD".indexOf(q.answer) : -1;
     const mcq = isMcq(q);
     const chosen = answers[q.id];
     // A Maxwell mark counts only where help is allowed, and only for the exact
-    // text it marked (the server re-applies both rules).
+    // text it marked -- the server re-applies both rules, and counts it only
+    // with Maxwell's signed receipt. MCQs are marked on the server.
     const mx = maxwell[q.id];
     const marked = !mcq && help && mx?.awarded != null && mx.answer === (structAnswers[q.id] || "").trim() ? mx : null;
-    const earned = mcq ? (chosen === ai ? q.marks || 1 : 0) : (marked?.awarded ?? null);
     return {
       id: q.id, topic: q.topic, level: q.level, paperType: q.paperType, marks: q.marks || 1,
-      // A blank MCQ is NOT attempted (null), it is not a wrong answer (false).
-      earned: earned as number | null, correct: mcq ? (chosen == null ? null : chosen === ai) : null,
+      earned: mcq ? null : (marked?.awarded ?? null), correct: null,
       spentSec: perQ[q.id] == null ? null : Math.round(perQ[q.id]), expectedSec: qBudget[q.id],
       response: mcq ? (chosen == null ? null : "ABCD"[chosen]) : (structAnswers[q.id] || null),
       feedback: marked?.feedback || null,
+      receipt: marked?.receipt ?? null,
     };
     // structAnswers MUST stay in the dep list: without it the closure captured a
     // stale (often empty) answer map, so typed self-test / proctored responses
@@ -376,18 +402,16 @@ export function PaperRunner({
     if (!logMeta || attemptPostedRef.current) return Promise.resolve(true);
     if (attemptInFlightRef.current) return attemptInFlightRef.current;
     const qlog = buildQLog();
-    const scored = qlog.filter((q) => q.earned !== null);
-    const score = scored.reduce((s, q) => s + (q.earned || 0), 0);
-    const totalScored = scored.reduce((s, q) => s + q.marks, 0);
     const p = fetch("/api/exam-lab/attempt", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({
         mode: logMeta.mode, paperType: logMeta.paperType, code: logMeta.code, ref: logMeta.ref,
-        score, total: totalScored, qCount: questions.length, scoredCount: scored.length,
+        qCount: questions.length,
         durationSec: startedAt ? Math.max(0, Math.round((Date.now() - startedAt) / 1000)) : undefined, questions: qlog,
         context: {
           integrity, kind, help, revealsUsed: revealsRef.current, proctored: strict, cancelled, lockedReason, flags: flagsRef.current, allocationId, attemptId: attemptIdRef.current,
           submissionId: submissionIdRef.current,
+          sitting: token,
           // Scoring integrity + staff audit trail (owner rules):
           //  - late: finished past the countdown (practice "late attempt" /
           //    daily task "late submission"). Never blocks the student.
@@ -400,7 +424,11 @@ export function PaperRunner({
       }),
     })
       .then(async (r) => {
-        const ok = r.ok && (await r.json().catch(() => null))?.ok === true;
+        const j = (await r.json().catch(() => null)) as { ok?: boolean; alreadySubmitted?: boolean } | null;
+        // Already recorded (this sitting's answers were stored before, e.g. a
+        // reopened assignment): the stored answers stand; nothing to retry.
+        if (r.status === 409 && j?.alreadySubmitted) { setAlreadyNote(true); attemptPostedRef.current = true; return true; }
+        const ok = r.ok && j?.ok === true;
         if (ok) attemptPostedRef.current = true;
         return ok;
       })
@@ -408,7 +436,7 @@ export function PaperRunner({
       .finally(() => { attemptInFlightRef.current = null; });
     attemptInFlightRef.current = p;
     return p;
-  }, [logMeta, buildQLog, questions.length, startedAt, integrity, kind, help, strict, allocationId, lateKind, pausedMs]);
+  }, [logMeta, buildQLog, questions.length, startedAt, integrity, kind, help, strict, allocationId, lateKind, pausedMs, token]);
 
   const seize = useCallback((reason: string) => {
     if (voidedRef.current) return;
@@ -452,6 +480,21 @@ export function PaperRunner({
     if (strict) postProctor({ action: "end", status: "task_completed" });
   }, [taskCompleted, submitted, voided, postAttempt, postProctor, strict]);
 
+  // The finished sitting's results come from the server, which marked the
+  // stored attempt: the MCQ score, and -- except in a proctored test -- each
+  // correct letter and the official mark schemes.
+  const loadReview = useCallback(async () => {
+    setReviewState("loading");
+    setReviewErr(null);
+    const r = await fetchReview(token);
+    if (!r.ok) { setReviewState("error"); setReviewErr(r.error); return; }
+    setReview(r.review);
+    const shown: Record<string, string> = {};
+    for (const [id, item] of Object.entries(r.review.items ?? {})) if (item.ms) shown[id] = item.ms;
+    setMs((m) => ({ ...m, ...shown }));
+    setReviewState("idle");
+  }, [token]);
+
   // Store the attempt FIRST and only then mark the allocation submitted: the
   // allocation handler reads the stored attempt to flag late / unattempted,
   // and firing both at once let it read the previous sitting (or nothing).
@@ -475,7 +518,8 @@ export function PaperRunner({
     }
     clearClock(clockCacheKey);
     setSaveState("saved");
-  }, [postAttempt, allocationId, clockCacheKey]);
+    void loadReview();
+  }, [postAttempt, allocationId, clockCacheKey, loadReview]);
 
   const submit = useCallback((timeUp = false) => {
     setSubmitted(true);
@@ -645,41 +689,49 @@ export function PaperRunner({
     if (answer.length < 3) { setMaxwell((m) => ({ ...m, [id]: { error: "Write your answer first." } })); return; }
     setMaxwell((m) => ({ ...m, [id]: { loading: true, answer } }));
     try {
-      const res = await fetch("/api/exam-lab/mark", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, answer }) });
+      const res = await fetch("/api/exam-lab/mark", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token, id, answer }) });
       const j = await res.json();
       // Edited while Maxwell was marking: that mark is for text that is gone.
       if ((structRef.current[id] || "").trim() !== answer) { setMaxwell((m) => dropKey(m, id)); return; }
       if (!res.ok) setMaxwell((m) => ({ ...m, [id]: { error: j.error || "Marking failed." } }));
-      else setMaxwell((m) => ({ ...m, [id]: { answer, awarded: j.awarded, outOf: j.outOf, feedback: j.feedback, points: j.points } }));
+      else setMaxwell((m) => ({ ...m, [id]: { answer, awarded: j.awarded, outOf: j.outOf, feedback: j.feedback, points: j.points, receipt: typeof j.receipt === "string" ? j.receipt : undefined } }));
     } catch { setMaxwell((m) => ({ ...m, [id]: { error: "Network error." } })); }
   }
 
   function onStructChange(id: string, v: string) {
+    if (frozen.has(id)) return; // its mark scheme was shown: the answer is final
     setStructAnswers((s) => ({ ...s, [id]: v }));
     // A Maxwell mark belongs to the exact text it marked: editing drops it.
     setMaxwell((m) => (m[id] && !m[id].loading ? dropKey(m, id) : m));
   }
 
-  function toggleReveal(id: string) {
+  // Help-allowed sittings only (practice, help-allowed assignments): the
+  // server hands out this one question's scheme, and the answer to it is then
+  // final -- the student has submitted that item. Tests and no-help
+  // assignments get their schemes in the review, after submission.
+  async function toggleReveal(id: string) {
     if (strict) return; // mark-scheme reveal is locked in a proctored test
-    setRevealed((r) => {
-      const turningOn = !r[id];
-      if (turningOn) {
-        revealsRef.current += 1;
-        if (!help) flagsRef.current += 1; // used help in a no-help assignment
-        if (startedAt !== null && (strict || kind !== "practice")) {
-          postProctor({ action: "event", events: [{ type: "reveal_ms", reason: "Revealed the mark scheme.", terminal: false, source: "system" }] });
-        }
-      }
-      return { ...r, [id]: !r[id] };
-    });
+    if (ms[id]) { setRevealed((r) => ({ ...r, [id]: !r[id] })); return; }
+    if (submitted || !help || msState[id]?.loading) return;
+    setMsState((m) => ({ ...m, [id]: { loading: true } }));
+    const r = await revealMarkScheme(token, id);
+    if (!r.ok) { setMsState((m) => ({ ...m, [id]: { error: r.error } })); return; }
+    setMsState((m) => ({ ...m, [id]: {} }));
+    setMs((m) => ({ ...m, [id]: r.url }));
+    setFrozen((f) => new Set(f).add(id));
+    setRevealed((rv) => ({ ...rv, [id]: true }));
+    revealsRef.current += 1;
+    if (startedAt !== null && kind !== "practice") {
+      postProctor({ action: "event", events: [{ type: "reveal_ms", reason: "Revealed the mark scheme.", terminal: false, source: "system" }] });
+    }
   }
 
   const mcqs = questions.filter(isMcq);
-  const got = mcqs.reduce((s, q) => s + (submitted && q.answer && answers[q.id] === "ABCD".indexOf(q.answer) ? 1 : 0), 0);
+  const got = review?.mcq.got ?? 0;
   const structCount = questions.length - mcqs.length;
   const structMarks = questions.filter((q) => !isMcq(q)).reduce((s, q) => s + (q.marks || 0), 0);
-  const pct = mcqs.length ? Math.round((got / mcqs.length) * 100) : 0;
+  const mcqTotal = review?.mcq.total ?? mcqs.length;
+  const pct = mcqTotal ? Math.round((got / mcqTotal) * 100) : 0;
   // The countdown turns red for the last quarter (1–15 min), not from the
   // first second of every drill of 15 minutes or less.
   const warnAt = Math.min(900, Math.max(60, totalSec * 0.25));
@@ -689,6 +741,20 @@ export function PaperRunner({
     const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='360' height='200'><text x='10' y='120' transform='rotate(-22 180 100)' font-family='monospace' font-size='15' fill='%23ffffff'>${encodeURIComponent(txt).replace(/'/g, "%27")}</text></svg>`;
     return `url("data:image/svg+xml,${svg}")`;
   }, []);
+
+  // Warm the images of THIS sitting ahead of the student: the question on
+  // screen first, then the next ones (sat-runner-utils preloadOrder), two at
+  // a time at low priority; after submission, the mark schemes it revealed.
+  // Only URLs the server already handed out are ever passed in.
+  const activeIdx = Math.max(0, questions.findIndex((q) => q.id === activeId));
+  const currentUrl = loading ? undefined : urls[questions[activeIdx]?.img ?? ""];
+  const upcomingUrls = useMemo(() => {
+    if (loading) return [];
+    const order = preloadOrder(questions.map((q) => q.img), activeIdx).map((p) => urls[p]).filter((u): u is string => !!u);
+    const schemes = submitted ? questions.map((q) => ms[q.id]).filter((u): u is string => !!u) : [];
+    return [...order, ...schemes];
+  }, [loading, questions, activeIdx, urls, submitted, ms]);
+  useImagePreload(currentUrl, upcomingUrls);
 
   const camPhase: "preview" | "live" | "off" = !strict ? "off" : voided || submitted || taskCompleted ? "off" : begun ? "live" : "preview";
 
@@ -838,21 +904,30 @@ export function PaperRunner({
       {submitted && (
         <div className="pr-result mb-5 flex flex-wrap items-center gap-5 rounded-2xl border border-white/15 bg-gradient-to-r from-cyan/10 to-violet2/10 p-5">
           {mcqs.length > 0 && (
-            <div className="grid h-24 w-24 flex-none place-items-center rounded-full" style={{ background: `conic-gradient(#3DE1F0 ${pct}%, rgba(255,255,255,.08) 0)` }}>
+            <div className="grid h-24 w-24 flex-none place-items-center rounded-full" style={{ background: `conic-gradient(#3DE1F0 ${review ? pct : 0}%, rgba(255,255,255,.08) 0)` }}>
               <div className="grid h-[76px] w-[76px] place-items-center rounded-full bg-abyss text-center">
-                <div><b className="font-display text-xl text-ice">{pct}%</b><span className="block font-mono text-[9px] text-dust">MCQ</span></div>
+                <div>{review ? <b className="font-display text-xl text-ice">{pct}%</b> : <Loader2 size={18} className="mx-auto animate-spin text-cyan" />}<span className="block font-mono text-[9px] text-dust">MCQ</span></div>
               </div>
             </div>
           )}
           <div>
             <h4 className="flex items-center gap-2 font-display text-lg"><CheckCircle2 size={18} className="text-emerald2" /> Submitted</h4>
             <p className="mt-1 text-sm text-fog">
-              {mcqs.length > 0 && <>Multiple choice: <b className="text-ice">{got} / {mcqs.length}</b>.</>}
+              {mcqs.length > 0 && <>Multiple choice: <b className="text-ice">{review ? `${got} / ${mcqTotal}` : "marking…"}</b>.</>}
               {structCount > 0 && <> &nbsp;{structCount} structured ({structMarks} marks){strict ? " — your teacher will mark these." : " — mark yourself against the official mark schemes shown under each."}</>}
             </p>
             {late && (
               <p className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-signal/40 bg-signal/[0.08] px-2.5 py-1 font-mono text-[11px] text-signal">
                 <Timer size={12} /> Recorded as a {lateKind} — finished past {latePast}.
+              </p>
+            )}
+            {alreadyNote && (
+              <p className="mt-2 text-xs text-amber-200">Your answers for this activity were already recorded earlier, so this sitting&rsquo;s answers were not saved again.</p>
+            )}
+            {reviewState === "error" && (
+              <p className="el-noprint mt-2 flex flex-wrap items-center gap-2 text-xs text-signal">
+                {reviewErr || "Couldn't load your results."}
+                <button onClick={() => { void loadReview(); }} className="btn-ghost !px-2.5 !py-1 text-xs"><RotateCcw size={12} /> Retry</button>
               </p>
             )}
           </div>
@@ -884,7 +959,9 @@ export function PaperRunner({
       <ol className="space-y-8">
         {questions.map((q, i) => {
           const chosen = answers[q.id];
-          const ai = q.answer ? "ABCD".indexOf(q.answer) : -1;
+          const item = review?.items?.[q.id];
+          const ai = item?.answer ? "ABCD".indexOf(item.answer) : -1;
+          const isFrozen = frozen.has(q.id);
           const expSec = qBudget[q.id] || 90;
           const spentSec = perQ[q.id] || 0;
           const locked = qLocked(q.id);
@@ -921,15 +998,14 @@ export function PaperRunner({
               </div>
 
               {isMcq(q) || answerMode[q.id] !== "write" ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={urls[q.img]} alt={`Question ${q.qnum}`} className="w-full rounded-lg border border-white/10 bg-white" loading="lazy" draggable={false} />
+                <QuestionImage key={q.img} src={urls[q.img]} alt={`Question ${q.qnum}`} error={!loading && !urls[q.img] ? "This question's image couldn't be loaded." : null} resign={() => resign(q.img)} lazy imgClassName="border border-white/10" />
               ) : null}
 
               {isMcq(q) ? (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {["A", "B", "C", "D"].map((L, k) => {
                     const isCorrect = submitted && !strict && k === ai;
-                    const isWrong = submitted && !strict && chosen === k && k !== ai;
+                    const isWrong = submitted && !strict && ai >= 0 && chosen === k && k !== ai;
                     return (
                       <button
                         key={L}
@@ -946,19 +1022,22 @@ export function PaperRunner({
                       </button>
                     );
                   })}
-                  {submitted && !strict && q.answer && (
-                    <span className="ml-2 self-center font-mono text-xs text-lime2">Answer: {q.answer}</span>
+                  {submitted && !strict && item?.answer && (
+                    <span className="ml-2 self-center font-mono text-xs text-lime2">Answer: {item.answer}</span>
+                  )}
+                  {submitted && item?.held && (
+                    <span className="ml-2 self-center text-xs text-dust">The answer isn&rsquo;t available right now.</span>
                   )}
                 </div>
               ) : (
                 <div className="mt-3">
                   <AnswerPad
                     value={structAnswers[q.id] || ""}
-                    onChange={(v) => { if (!locked) onStructChange(q.id, v); }}
+                    onChange={(v) => { if (!locked && !isFrozen) onStructChange(q.id, v); }}
                     imageUrl={urls[q.img]}
                     qid={q.id}
                     code={logMeta?.code || logMeta?.ref || "exam"}
-                    disabled={submitted || taskCompleted || locked}
+                    disabled={submitted || taskCompleted || locked || isFrozen}
                     onModeChange={(m) => setAnswerMode((s) => ({ ...s, [q.id]: m }))}
                   />
                   {locked && !submitted && (
@@ -973,10 +1052,19 @@ export function PaperRunner({
                           {maxwell[q.id]?.loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} Mark with Maxwell
                         </button>
                       )}
-                      <button onClick={() => toggleReveal(q.id)} className="btn-ghost !px-3 !py-1.5 text-xs">
-                        <Eye size={13} /> {revealed[q.id] ? "Hide" : "Reveal"} mark scheme
-                      </button>
+                      {(ms[q.id] || (help && !submitted && q.hasMs)) && (
+                        <button onClick={() => { void toggleReveal(q.id); }} disabled={msState[q.id]?.loading} className="btn-ghost !px-3 !py-1.5 text-xs disabled:opacity-50">
+                          {msState[q.id]?.loading ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />} {revealed[q.id] && ms[q.id] ? "Hide" : "Reveal"} mark scheme
+                        </button>
+                      )}
+                      {!help && !submitted && q.hasMs && (
+                        <span className="self-center text-xs text-dust">The mark scheme opens after you submit.</span>
+                      )}
                     </div>
+                  )}
+                  {!strict && msState[q.id]?.error && <p className="mt-2 text-xs text-signal">{msState[q.id]?.error}</p>}
+                  {isFrozen && !submitted && (
+                    <p className="mt-2 flex items-center gap-1.5 text-xs text-dust el-noprint"><Lock size={12} /> You&rsquo;ve seen the mark scheme, so this answer is now final.</p>
                   )}
                   {!strict && maxwell[q.id]?.error && <p className="mt-2 text-xs text-signal">{maxwell[q.id]?.error}</p>}
                   {!strict && maxwell[q.id]?.awarded != null && (
@@ -997,11 +1085,10 @@ export function PaperRunner({
                       )}
                     </div>
                   )}
-                  {!strict && revealed[q.id] && q.ms_img && urls[q.ms_img] && (
+                  {!strict && revealed[q.id] && ms[q.id] && (
                     <div className="mt-3">
                       <p className="mb-1 font-mono text-[11px] uppercase tracking-widest text-cyan">Official mark scheme</p>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={urls[q.ms_img]} alt={`Mark scheme ${q.qnum}`} className="w-full rounded-lg border border-cyan/30 bg-white" loading="lazy" draggable={false} />
+                      <QuestionImage key={ms[q.id]} src={ms[q.id]} alt={`Mark scheme ${q.qnum}`} error={null} lazy imgClassName="border border-cyan/30" failedText="This mark scheme couldn't be loaded. Reload the page to try again." />
                     </div>
                   )}
                 </div>

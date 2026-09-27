@@ -1,19 +1,20 @@
 // AUTO-GENERATED wrapper. Data in image-bank.json (exact CAIE past-paper images
 // in the private 'exam-assets' Supabase bucket). PORTAL-ONLY. Regenerate via
 // tmp/exam-lab/ingest/extract_all.py + build_image_bank.py.
+//
+// SERVER-ONLY: every entry carries its MCQ answer and mark-scheme path, and
+// the secure bank's are the staff-written class tests. A browser receives
+// questions only through /api/exam-lab/sitting (SafeQuestion, paper-meta.ts);
+// scripts/check-exam-lab-client-imports.mjs fails if any "use client" module
+// can reach this file.
+import "server-only";
 import rawData from "./image-bank.json";
+import { CANON_9702, buildPaperIndex, chrono9702 } from "./paper-meta";
 
 export type ImgQuestion = {
   id: string; paperType: "P1" | "P2" | "P4"; code: string; qnum: number;
   topic: string | null; level: "LOT" | "HOT"; marks: number | null;
   answer: string | null; img: string; ms_img: string | null; ref: string; duration: number;
-};
-
-// Canonical Cambridge 9702 paper facts.
-const CANON: Record<string, { marks: number; duration: number; name: string }> = {
-  P1: { marks: 40, duration: 75, name: "Paper 1 · Multiple Choice" },
-  P2: { marks: 60, duration: 75, name: "Paper 2 · AS Structured" },
-  P4: { marks: 100, duration: 120, name: "Paper 4 · A2 Structured" },
 };
 
 // 2529 questions across 130 papers.
@@ -25,19 +26,6 @@ import secureData from "./secure-bank.json";
 export const SECURE_BANK = secureData as ImgQuestion[];
 export const FULL_BANK: ImgQuestion[] = [...IMAGE_BANK, ...SECURE_BANK];
 
-const SESSORD: Record<string, number> = { m: 0, s: 1, w: 2 };
-function chrono(code: string): number {
-  const m = code.match(/9702_([smw])(\d\d)_(\d\d)/);
-  if (!m) return 9e9;
-  return parseInt(m[2]) * 1000 + (SESSORD[m[1]] ?? 9) * 100 + parseInt(m[3]);
-}
-export const IMAGE_PAPERS = Array.from(new Set(IMAGE_BANK.map((q) => q.code)))
-  .map((code) => {
-    const qs = IMAGE_BANK.filter((q) => q.code === code);
-    const pt = qs[0].paperType;
-    return { code, paperType: pt, count: qs.length, marks: CANON[pt].marks,
-      duration: CANON[pt].duration, ref: qs[0].ref.replace(/ Q.*$/, ""), chrono: chrono(code) };
-  })
-  .sort((a, b) => a.chrono - b.chrono);
+export const IMAGE_PAPERS = buildPaperIndex(IMAGE_BANK, CANON_9702, chrono9702);
 
-export const PAPER_NAMES = CANON;
+export const PAPER_NAMES = CANON_9702;

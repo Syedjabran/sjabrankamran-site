@@ -4,6 +4,7 @@
 // No past-paper reproduction; no outcome/affiliation claims. Cambridge names are
 // used only to identify the qualification; this site is independent of Cambridge.
 
+import "server-only";
 import type { ELQuestion } from "./bank";
 
 // Every entry is tagged course:"5054" and uses the distinct O-Level topic tags

@@ -4,13 +4,14 @@ import Link from "next/link";
 import { FlaskConical, ShieldCheck } from "lucide-react";
 import { getPortalUser, isExamLabStaff } from "@/lib/edu/auth";
 import { resolveCourseAccess, COURSE_LABEL } from "@/lib/portal/course-access";
+import { examLabCatalog } from "@/lib/exam-lab/catalog";
 import { redirect } from "next/navigation";
 
-// The hub bundles the full 646 KB question bank (2,529 exact past-paper
-// questions) plus the paper runner and proctor camera. Code-splitting it keeps
+// The hub bundles the paper runner and proctor camera; code-splitting it keeps
 // that payload out of the route's critical JS so tab-to-tab navigation paints
-// instantly and the bank chunk streams in parallel, cached long-term by the
-// browser (immutable content hash).
+// instantly. The question bank is NOT in it any more: the hub lists papers
+// from `catalog` (built here, on the server, with no questions or answers)
+// and the server opens each sitting (/api/exam-lab/sitting).
 const PapersHub = dynamic(() => import("@/components/exam-lab/papers-hub").then((m) => m.PapersHub), {
   loading: () => <PapersHubSkeleton />,
 });
@@ -121,7 +122,7 @@ export default async function PortalExamLabPage() {
       </div>
 
       <Suspense fallback={<div className="text-sm text-dust">Loading Exam Lab…</div>}>
-        <PapersHub canConduct={canConduct} canTest={canTest} canPause={canPause} allowedCourses={physicsCourses} initialCourse={physicsPrimary} userId={user.id} />
+        <PapersHub catalog={examLabCatalog()} canConduct={canConduct} canTest={canTest} canPause={canPause} allowedCourses={physicsCourses} initialCourse={physicsPrimary} userId={user.id} />
       </Suspense>
     </div>
   );

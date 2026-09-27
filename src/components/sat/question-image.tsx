@@ -17,14 +17,23 @@ import { retryStep } from "./sat-runner-utils";
  *  `resign`, the retry is that reload. `failedText` replaces the default
  *  question wording of every failure message, and `fallback` shows under it
  *  (the drill's text rationale). Key it by the image path, so each image
- *  starts from its own state and its own single retry. */
-export function QuestionImage({ src, alt, error, resign, failedText, fallback }: {
+ *  starts from its own state and its own single retry.
+ *
+ *  Also the Exam Lab paper runner's image, which lists a whole paper at once:
+ *  `lazy` lets an image below the fold wait until it is near the viewport
+ *  (use-image-preload.ts warms the upcoming ones meanwhile) -- such an image
+ *  stays in the layout while it loads (a display:none image is never "near
+ *  the viewport", so it would never load) -- and `imgClassName` adds classes
+ *  to the image. */
+export function QuestionImage({ src, alt, error, resign, failedText, fallback, lazy = false, imgClassName = "" }: {
   src: string | undefined;
   alt: string;
   error: string | null;
   resign?: () => Promise<string | null>;
   failedText?: string;
   fallback?: ReactNode;
+  lazy?: boolean;
+  imgClassName?: string;
 }) {
   const [status, setStatus] = useState<"loading" | "loaded" | "failed">("loading");
   const retried = useRef(false);
@@ -57,13 +66,13 @@ export function QuestionImage({ src, alt, error, resign, failedText, fallback }:
   if (!src) return error ? failure(error) : placeholder;
   return (
     <>
-      {status === "loading" ? placeholder : null}
+      {status === "loading" && !lazy ? placeholder : null}
       {status === "failed" ? failure("This question's image couldn't be loaded.") : null}
       <img
         key={attempt} ref={markIfComplete} src={src} alt={alt} onLoad={() => setStatus("loaded")} onError={onError}
         /* the image on screen outranks the background preloads (use-image-preload.ts) */
-        decoding="async" fetchPriority="high"
-        className={"w-full rounded-lg bg-white" + (status === "loaded" ? "" : " hidden")}
+        decoding="async" fetchPriority="high" loading={lazy ? "lazy" : undefined} draggable={lazy ? false : undefined}
+        className={"w-full rounded-lg bg-white" + (imgClassName ? ` ${imgClassName}` : "") + (status === "loaded" || (lazy && status === "loading") ? "" : " hidden")}
       />
     </>
   );

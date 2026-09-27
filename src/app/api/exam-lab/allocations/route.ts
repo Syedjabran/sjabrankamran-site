@@ -3,13 +3,19 @@ import { getPortalUser } from "@/lib/edu/auth";
 import { listAllocations, getAllocation, markSubmitted, markStarted, withProctorStatus } from "@/lib/exam-lab/allocations";
 import { getAttemptsStrict } from "@/lib/exam-lab/attempts";
 import { getSession, requestUnlock } from "@/lib/exam-lab/proctor";
+import { hasStarted, publicAllocation } from "@/lib/exam-lab/answer-rules";
 import { completeTaskBySource } from "@/lib/portal/tasks";
 
 export const runtime = "nodejs";
 
 const UNAVAILABLE = () => NextResponse.json({ error: "Exam Lab is temporarily unavailable. Please retry." }, { status: 503 });
 
-/** GET — the signed-in student's Exam Lab allocations (test status reconciled). */
+/**
+ * GET — the signed-in student's Exam Lab allocations (test status
+ * reconciled). Never the paper code or question ids: a sitting's questions
+ * reach the browser only when it opens (/api/exam-lab/sitting), and not
+ * before its start time.
+ */
 export async function GET() {
   const user = await getPortalUser();
   if (!user) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
@@ -18,7 +24,7 @@ export async function GET() {
 
   // For strict tests the proctor session is the source of truth for lock state.
   const out = await Promise.all(items.map((it) => withProctorStatus(user.id, it)));
-  return NextResponse.json({ items: out }, { status: 200 });
+  return NextResponse.json({ items: out.map(publicAllocation) }, { status: 200, headers: { "cache-control": "no-store" } });
 }
 
 /** POST — student updates their own allocation. */
@@ -36,6 +42,7 @@ export async function POST(req: Request) {
     try {
       const alloc = await getAllocation(user.id, b.id);
       if (!alloc) return NextResponse.json({ error: "Not found." }, { status: 404 });
+      if (!hasStarted(alloc, Date.now())) return NextResponse.json({ error: "This activity has not opened yet." }, { status: 403 });
       // A super-admin unlock grants ONE fresh sitting: the proctor session is
       // then "unlocked", or already re-opened (its start is newer than ours).
       let restart = false;

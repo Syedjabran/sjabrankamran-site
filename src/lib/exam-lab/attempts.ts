@@ -51,6 +51,9 @@ export type AttemptContext = {
   status?: string;
   /** Client nonce for one submission; a retried POST with the same value is stored once. */
   submissionId?: string;
+  /** SERVER-SET: the sitting (answer-rules.ts SittingToken.sid) this attempt
+   *  submitted -- what /api/exam-lab/review finds it by. */
+  sittingId?: string;
 };
 
 export type Attempt = {
@@ -105,17 +108,31 @@ export async function getAttempts(userId: string): Promise<Attempt[]> {
 }
 
 export async function appendAttempt(userId: string, attempt: Attempt): Promise<boolean> {
+  const r = await appendAttemptChecked(userId, attempt, () => false);
+  return r === "stored" || r === "duplicate";
+}
+
+/**
+ * Stores `attempt` unless it is a retry of one already stored ("duplicate",
+ * same submission nonce) or `refuse(existing)` says the sitting it belongs to
+ * already has its submission ("refused"). "failed": the history could not be
+ * read or written -- nothing was changed.
+ */
+export async function appendAttemptChecked(
+  userId: string, attempt: Attempt, refuse: (existing: Attempt[]) => boolean,
+): Promise<"stored" | "duplicate" | "refused" | "failed"> {
   let existing: Attempt[];
   try {
     existing = await getAttemptsStrict(userId);
   } catch {
     // Never write after a failed read — that would replace the student's whole
     // history with this one attempt. The runner keeps it and offers a retry.
-    return false;
+    return "failed";
   }
   const nonce = attempt.context?.submissionId;
-  if (nonce && existing.some((a) => a.context?.submissionId === nonce)) return true; // retried POST
+  if (nonce && existing.some((a) => a.context?.submissionId === nonce)) return "duplicate"; // retried POST
+  if (refuse(existing)) return "refused";
   existing.push(attempt);
   // keep the most recent 800 attempts
-  return writeFreshJson(BUCKET, docPath(userId), { attempts: existing.slice(-800) });
+  return (await writeFreshJson(BUCKET, docPath(userId), { attempts: existing.slice(-800) })) ? "stored" : "failed";
 }

@@ -2,6 +2,8 @@
 // practice questions authored by the site owner. Serves as the public AI fallback
 // pool AND the portal "exact-pattern" starter bank until real past papers are ingested.
 
+import "server-only";
+
 export type ELLevel = "LOT" | "HOT";
 export type ELType = "mcq" | "structured";
 export type ELCourse = "9702" | "5054" | "IB";
@@ -27,28 +29,8 @@ export function courseOf(q: ELQuestion): ELCourse {
   return q.course ?? "9702";
 }
 
-export const TOPICS = {
-  AS: [
-    "Physical quantities & units","Kinematics","Dynamics","Forces, density & pressure",
-    "Work, energy & power","Deformation of solids","Waves","Superposition",
-    "Electricity","D.C. circuits","Particle physics"
-  ],
-  A2: [
-    "Circular motion","Gravitational fields","Thermal physics","Ideal gases",
-    "Oscillations","Electric fields","Capacitance","Magnetic fields",
-    "Alternating currents","Quantum physics","Nuclear physics","Astronomy & cosmology"
-  ],
-  // Cambridge O Level Physics (5054) — public syllabus structure. Distinct topic
-  // tags keep O-Level drills fully separate from 9702 drawing (topic-based pool).
-  OL: [
-    "Measurements & units","Kinematics","Dynamics & forces","Mass, weight & density",
-    "Turning effects & pressure","Energy, work & power","Momentum",
-    "Kinetic model & thermal properties","Transfer of thermal energy",
-    "General wave properties","Light & optics","Electromagnetic spectrum & sound",
-    "Magnetism","Electrical quantities & circuits","Practical electricity & safety",
-    "Electromagnetic effects","Radioactivity & the nuclear atom"
-  ]
-};
+export { TOPICS } from "./topics";
+import { TOPICS } from "./topics";
 
 const RAW: Omit<ELQuestion,"id">[] = [
   // ---------- Physical quantities & units ----------

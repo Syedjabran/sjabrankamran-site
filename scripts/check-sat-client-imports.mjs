@@ -28,7 +28,7 @@ import ts from "typescript";
 // Paths relative to src/lib/sat/.
 const FORBIDDEN = new Set([
   "bank.ts", "serve.ts", "session.ts", "forms.ts", "adaptive.ts", "scoring.ts", "drills.ts", "store.ts",
-  "analytics-data.ts", "drill-start.ts", "signed-images.ts",
+  "analytics-data.ts", "drill-start.ts", "signed-images.ts", "image-access.ts",
   "coach/profile-store.ts", "coach/diagnostic-drill.ts", "coach/insights.ts",
   "coach/plan-store.ts", "coach/student-guard.ts", "coach/tutor.ts", "coach/parent-report.ts",
 ]);
@@ -110,6 +110,12 @@ function runtimeImports(sf) {
 
 /** [clientFile, ...path, forbiddenFile] for every forbidden module reachable from a client file. */
 export function findViolations(srcDir) {
+  return walkClientImports(srcDir, isForbidden);
+}
+
+/** The same walk for another answer key (scripts/check-exam-lab-client-imports.mjs):
+ *  `forbidden(file, srcDir)` names the modules no client file may reach. */
+export function walkClientImports(srcDir, forbidden) {
   parsed.clear();
   const violations = [];
   const clients = listFiles(srcDir).filter((f) => directives(parse(f)).has("use client"));
@@ -118,7 +124,7 @@ export function findViolations(srcDir) {
     const queue = [client];
     while (queue.length) {
       const file = queue.shift();
-      if (isForbidden(file, srcDir)) {
+      if (forbidden(file, srcDir)) {
         const chain = [];
         for (let f = file; f; f = via.get(f)) chain.unshift(path.relative(srcDir, f).split(path.sep).join("/"));
         violations.push(chain);

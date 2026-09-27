@@ -5,22 +5,27 @@
  *
  * Controlled: `value` is the ordered id list the allocate route freezes as the
  * drill's paper, so the order in the Selected tray is the order students sit
- * it in. Browses every bank through bank-all (9702 past papers, O Level 5054
- * and, when `allowSecure`, the staff-written class-test bank) and never mixes
- * courses, because every student is locked to one course.
+ * it in. Browses every bank (9702 past papers, O Level 5054 and, when
+ * `allowSecure`, the staff-written class-test bank) and never mixes courses,
+ * because every student is locked to one course.
+ *
+ * The bank comes from the staff-only /api/exam-lab/bank, WITHOUT answers or
+ * mark-scheme paths: this staff UI ships in chunks any student can download,
+ * so it must never import the bank modules (see
+ * scripts/check-exam-lab-client-imports.mjs).
  */
 
-import { useCallback, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, GripVertical, ImageOff, Loader2, Plus, RotateCcw, Search, Timer, X } from "lucide-react";
-import { ALL_QUESTIONS, courseOfQuestion, type BankCourse } from "@/lib/exam-lab/bank-all";
-import { SECURE_BANK, type ImgQuestion } from "@/lib/exam-lab/image-bank";
+import type { ExamCourse, SafeQuestion } from "@/lib/exam-lab/paper-meta";
 import { minutesFromSeconds, questionSeconds } from "@/lib/portal/timing";
 
+type BankCourse = ExamCourse;
 type Source = BankCourse | "secure";
-type PaperType = ImgQuestion["paperType"];
-type Level = ImgQuestion["level"];
+type PaperType = SafeQuestion["paperType"];
+type Level = SafeQuestion["level"];
 type Filters = { source: Source; paper: PaperType | ""; topic: string; level: Level | ""; session: string; minMarks: string; maxMarks: string; text: string };
-type Entry = { q: ImgQuestion; source: Source; sessionKey: string | null; sessionLabel: string; sessionRank: number; haystack: string; seconds: number };
+type Entry = { q: SafeQuestion; source: Source; sessionKey: string | null; sessionLabel: string; sessionRank: number; haystack: string; seconds: number };
 
 const PAGE_SIZE = 30;
 const SIGN_BATCH = 80; // /api/exam-lab/asset signs at most 80 keys per call
@@ -37,14 +42,12 @@ const FIELD = "w-full min-w-0 rounded-lg border border-white/10 bg-abyss/60 px-3
 const HINT = "rounded-lg border border-amber-400/30 bg-amber-400/[0.06] px-3 py-2 text-xs text-amber-200";
 const LABEL = "text-[11px] font-medium uppercase tracking-wide text-dust";
 
-const SECURE_IDS = new Set(SECURE_BANK.map((q) => q.id));
-
-function toEntry(q: ImgQuestion): Entry {
+function toEntry(q: SafeQuestion, secureIds: ReadonlySet<string>): Entry {
   const m = q.code.match(SESSION_RE);
   const year = m ? 2000 + Number(m[2]) : 0;
   return {
     q,
-    source: courseOfQuestion(q.id) === "5054" ? "5054" : SECURE_IDS.has(q.id) ? "secure" : "9702",
+    source: q.course === "5054" ? "5054" : secureIds.has(q.id) ? "secure" : "9702",
     sessionKey: m ? `${year}${m[1]}` : null,
     sessionLabel: m ? `${year} ${SESSION_NAME[m[1]] ?? m[1]}` : "",
     sessionRank: m ? year * 10 + (SESSION_ORDER[m[1]] ?? 0) : 0,
@@ -53,18 +56,55 @@ function toEntry(q: ImgQuestion): Entry {
   };
 }
 
-const ENTRIES: Entry[] = ALL_QUESTIONS.map(toEntry);
-const ENTRY_BY_ID = new Map(ENTRIES.map((e) => [e.q.id, e] as const));
+export type ExamBank = { entries: Entry[]; byId: Map<string, Entry> };
+
+// One load per page, shared by every picker and summary on it.
+let bankCache: ExamBank | null = null;
+let bankLoading: Promise<ExamBank | null> | null = null;
+
+function loadBank(): Promise<ExamBank | null> {
+  if (bankCache) return Promise.resolve(bankCache);
+  if (!bankLoading) {
+    bankLoading = fetch("/api/exam-lab/bank")
+      .then(async (r) => {
+        const j = (await r.json().catch(() => null)) as { questions?: SafeQuestion[]; secureIds?: string[] } | null;
+        if (!r.ok || !Array.isArray(j?.questions)) return null;
+        const secure = new Set(j.secureIds ?? []);
+        const entries = j.questions.map((q) => toEntry(q, secure));
+        bankCache = { entries, byId: new Map(entries.map((e) => [e.q.id, e] as const)) };
+        return bankCache;
+      })
+      .catch(() => null)
+      .finally(() => { bankLoading = null; });
+  }
+  return bankLoading;
+}
+
+/** The staff question bank (no answers), loaded once per page; `retry` after a failure. */
+export function useExamBank(): { bank: ExamBank | null; failed: boolean; retry: () => void } {
+  const [bank, setBank] = useState<ExamBank | null>(bankCache);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (bank) return;
+    let alive = true;
+    setFailed(false);
+    void loadBank().then((b) => { if (!alive) return; if (b) setBank(b); else setFailed(true); });
+    return () => { alive = false; };
+  }, [bank, attempt]);
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+  return { bank, failed, retry };
+}
 
 export type SelectionSummary = { count: number; marks: number; minutes: number; mix: string };
 
 /** Totals for an ordered id list: marks, estimated minutes (Σ questionSeconds) and paper mix. */
-export function selectionSummary(ids: string[]): SelectionSummary {
+export function selectionSummary(ids: string[], bank: ExamBank | null): SelectionSummary {
   let marks = 0;
   let seconds = 0;
   const perPaper: Partial<Record<PaperType, number>> = {};
   for (const id of ids) {
-    const e = ENTRY_BY_ID.get(id);
+    const e = bank?.byId.get(id);
     if (!e) continue;
     marks += e.q.marks ?? 0;
     seconds += e.seconds;
@@ -127,16 +167,34 @@ function useSignedImages() {
 }
 type SignedImages = ReturnType<typeof useSignedImages>;
 
-export function QuestionPicker({ value, onChange, course = "all", allowSecure = false, max = 500 }: {
+type PickerProps = {
   value: string[];
   onChange: (ids: string[]) => void;
   course?: "9702" | "5054" | "all";
   allowSecure?: boolean;
   max?: number;
-}) {
+};
+
+export function QuestionPicker(props: PickerProps) {
+  const { bank, failed, retry } = useExamBank();
+  if (bank) return <PickerBody {...props} bank={bank} />;
+  return (
+    <div className="min-w-0 rounded-xl border border-white/10 bg-abyss/40 p-4 text-xs text-dust">
+      {failed ? (
+        <p className="flex flex-wrap items-center gap-2">The question bank couldn&rsquo;t be loaded.
+          <button type="button" onClick={retry} className="inline-flex items-center gap-1 text-cyan hover:underline"><RotateCcw size={12} /> Retry</button>
+        </p>
+      ) : (
+        <p className="flex items-center gap-2"><Loader2 size={13} className="animate-spin" /> Loading the question bank…</p>
+      )}
+    </div>
+  );
+}
+
+function PickerBody({ value, onChange, course = "all", allowSecure = false, max = 500, bank }: PickerProps & { bank: ExamBank }) {
   const sources = useMemo(() => sourcesFor(course, allowSecure), [course, allowSecure]);
   const [filters, setFilters] = useState<Filters>(() => {
-    const first = value.map((id) => ENTRY_BY_ID.get(id)).find((e): e is Entry => !!e);
+    const first = value.map((id) => bank.byId.get(id)).find((e): e is Entry => !!e);
     return { ...EMPTY_FILTERS, source: first && sources.includes(first.source) ? first.source : sources[0], paper: first?.q.paperType ?? "" };
   });
   const [page, setPage] = useState(0);
@@ -147,7 +205,7 @@ export function QuestionPicker({ value, onChange, course = "all", allowSecure = 
   // Every filter value is re-validated against the options it came from, so
   // switching course or paper never leaves a stale topic silently applied.
   const source = sources.includes(filters.source) ? filters.source : sources[0];
-  const inSource = useMemo(() => ENTRIES.filter((e) => e.source === source), [source]);
+  const inSource = useMemo(() => bank.entries.filter((e) => e.source === source), [bank, source]);
   const papers = useMemo(() => PAPERS.filter((p) => inSource.some((e) => e.q.paperType === p)), [inSource]);
   const paper = filters.paper && papers.includes(filters.paper) ? filters.paper : "";
   const scoped = useMemo(() => (paper ? inSource.filter((e) => e.q.paperType === paper) : inSource), [inSource, paper]);
@@ -194,9 +252,9 @@ export function QuestionPicker({ value, onChange, course = "all", allowSecure = 
 
   const position = useMemo(() => new Map(value.map((id, i) => [id, i] as const)), [value]);
   const lockedCourse = useMemo<BankCourse | null>(() => {
-    for (const id of value) { const c = courseOfQuestion(id); if (c) return c; }
+    for (const id of value) { const c = bank.byId.get(id)?.q.course; if (c) return c; }
     return null;
-  }, [value]);
+  }, [value, bank]);
   const sourceCourse: BankCourse = source === "5054" ? "5054" : "9702";
   const courseBlocked = lockedCourse !== null && lockedCourse !== sourceCourse;
   const full = value.length >= max;
@@ -225,7 +283,7 @@ export function QuestionPicker({ value, onChange, course = "all", allowSecure = 
 
   return (
     <div className="min-w-0 space-y-4 rounded-xl border border-white/10 bg-abyss/40 p-3">
-      <SelectedTray value={value} onChange={onChange} images={images} />
+      <SelectedTray value={value} onChange={onChange} images={images} bank={bank} />
 
       <div className="space-y-2.5 border-t border-white/10 pt-3">
         <div className={LABEL}>Add questions</div>
@@ -314,8 +372,8 @@ export function QuestionPicker({ value, onChange, course = "all", allowSecure = 
   );
 }
 
-function SelectedTray({ value, onChange, images }: { value: string[]; onChange: (ids: string[]) => void; images: SignedImages }) {
-  const summary = useMemo(() => selectionSummary(value), [value]);
+function SelectedTray({ value, onChange, images, bank }: { value: string[]; onChange: (ids: string[]) => void; images: SignedImages; bank: ExamBank }) {
+  const summary = useMemo(() => selectionSummary(value, bank), [value, bank]);
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
   const [dragFrom, setDragFrom] = useState<number | null>(null);
 
@@ -350,7 +408,7 @@ function SelectedTray({ value, onChange, images }: { value: string[]; onChange: 
       {value.length ? (
         <ol className="max-h-72 divide-y divide-white/[0.06] overflow-y-auto rounded-xl border border-white/10">
           {value.map((id, i) => {
-            const q = ENTRY_BY_ID.get(id)?.q;
+            const q = bank.byId.get(id)?.q;
             return (
               <li key={id} draggable
                 onDragStart={(e: DragEvent<HTMLLIElement>) => { setDragFrom(i); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", id); }}

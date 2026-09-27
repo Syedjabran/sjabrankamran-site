@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { ClipboardList, FlaskConical, Plus, Trash2, Paperclip, Timer, Upload, X, FileText, Video, Layers, Sparkles, Loader2, Wand2 } from "lucide-react";
 import { questionSeconds, formatDuration, minutesFromSeconds } from "@/lib/portal/timing";
-import { IMAGE_PAPERS } from "@/lib/exam-lab/image-bank";
+import type { PaperMeta } from "@/lib/exam-lab/paper-meta";
 import { pkDateTimeToIso } from "@/lib/portal/pk-time";
-import { QuestionPicker, selectionSummary } from "@/components/exam-lab/question-picker";
+import { QuestionPicker, selectionSummary, useExamBank } from "@/components/exam-lab/question-picker";
 
 const EX_TOPICS_AS = ["Physical quantities & units", "Kinematics", "Dynamics", "Forces, density & pressure", "Work, energy & power", "Deformation of solids", "Waves", "Superposition", "Electricity", "D.C. circuits", "Particle physics"];
 const EX_TOPICS_A2 = ["Circular motion", "Gravitational fields", "Thermal physics", "Ideal gases", "Oscillations", "Electric fields", "Capacitance", "Magnetic fields", "Alternating currents", "Quantum physics", "Nuclear physics", "Astronomy & cosmology"];
@@ -28,7 +28,10 @@ async function api(url: string, opts?: RequestInit) {
   return j;
 }
 
-export function AssignForm({ canTest = false }: { canTest?: boolean }) {
+/** `papers`: the 9702 paper list, from the server page (the bank modules
+ *  never reach a client bundle -- scripts/check-exam-lab-client-imports.mjs). */
+export function AssignForm({ canTest = false, papers = [] }: { canTest?: boolean; papers?: PaperMeta[] }) {
+  const { bank } = useExamBank();
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [tab, setTab] = useState<"compose" | "attachments">("compose");
   const [type, setType] = useState<"assignment" | "test" | "examlab">("assignment");
@@ -97,7 +100,7 @@ export function AssignForm({ canTest = false }: { canTest?: boolean }) {
   const perQ = useMemo(() => questions.map((q) => q.seconds && q.seconds > 0 ? q.seconds : questionSeconds({ paper: q.paper, difficulty: q.difficulty, marks: q.marks, kind: q.kind })), [questions]);
   const totalSecs = perQ.reduce((s, x) => s + x, 0);
   // Hand-picked Exam Lab sets are timed from the picker's estimate unless staff type a duration.
-  const pickMinutes = useMemo(() => selectionSummary(pickIds).minutes, [pickIds]);
+  const pickMinutes = useMemo(() => selectionSummary(pickIds, bank).minutes, [pickIds, bank]);
   const exAutoMinutes = exContentType === "custom" && pickMinutes ? pickMinutes : undefined;
 
   async function submit() {
@@ -237,7 +240,7 @@ export function AssignForm({ canTest = false }: { canTest?: boolean }) {
                   <button key={m.id} onClick={() => setExMode(m.id as typeof exMode)} className={"rounded-xl border px-3 py-1.5 text-xs " + (exMode === m.id ? (m.id === "test" ? "border-red-400/60 bg-red-400/10 text-red-200" : m.id === "assignment_nohelp" ? "border-amber-400/60 bg-amber-400/10 text-amber-200" : "border-emerald2/60 bg-emerald2/10 text-emerald2") : "border-white/10 text-dust hover:text-ice")}>{m.label}</button>
                 ))}
               </div>
-              <p className="mt-1 text-[11px] text-dust">{exMode === "test" ? "Strict: student must switch on camera; violations lock the test (super-admin unlock)." : exMode === "assignment_nohelp" ? "Guarded like a mini-exam; mark-scheme reveals are logged." : "Open practice; students may use the mark scheme freely (logged)."}</p>
+              <p className="mt-1 text-[11px] text-dust">{exMode === "test" ? "Strict: student must switch on camera; violations lock the test (super-admin unlock)." : exMode === "assignment_nohelp" ? "Guarded like a mini-exam; answers and mark schemes open after submission." : "Open practice; students may reveal a question's mark scheme (logged; that answer is then final)."}</p>
             </div>
 
             {/* AI designer */}
@@ -273,7 +276,7 @@ export function AssignForm({ canTest = false }: { canTest?: boolean }) {
                 <option value="">Choose a past paper…</option>
                 {(["P1", "P2", "P4"] as const).map((pt) => (
                   <optgroup key={pt} label={EX_PAPER_LABEL[pt]}>
-                    {IMAGE_PAPERS.filter((p) => p.paperType === pt).map((p) => <option key={p.code} value={p.code}>{EX_PAPER_LABEL[pt]} · {exPaperName(p.code)} · {p.count} Q</option>)}
+                    {papers.filter((p) => p.paperType === pt).map((p) => <option key={p.code} value={p.code}>{EX_PAPER_LABEL[pt]} · {exPaperName(p.code)} · {p.count} Q</option>)}
                   </optgroup>
                 ))}
               </select>

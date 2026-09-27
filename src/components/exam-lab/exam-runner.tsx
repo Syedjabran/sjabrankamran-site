@@ -6,7 +6,7 @@ import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { Zap, Printer, RotateCcw, Loader2, CheckCircle2, Eye, Timer as TimerIcon } from "lucide-react";
-import { TOPICS } from "@/lib/exam-lab/bank";
+import { TOPICS } from "@/lib/exam-lab/topics";
 import { normalizePhysicsMath } from "@/components/markdown-renderer";
 
 type Q = {

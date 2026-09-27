@@ -10,6 +10,7 @@
  * asked for a simple line-delimited format that needs NO escaping. Falls back to
  * the authored seed bank if the model is unavailable or returns nothing usable.
  */
+import "server-only";
 import { BANK, ALL_TOPICS_WITH_OL, TOPICS, courseOf, type ELQuestion, type ELLevel, type ELType } from "./bank";
 import { PASTPAPER_BANK } from "./pastpaper-bank";
 import { groundingContext } from "@/lib/ai/web-search";

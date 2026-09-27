@@ -1,0 +1,98 @@
+// src/components/exam-lab/sitting-api.ts
+//
+// The browser's side of an Exam Lab sitting (client-safe: no answers). The
+// hub asks the server to open a sitting and gets its questions, their signed
+// images and the signed sitting token; the runner uses the token for the
+// sitting's images, mark schemes, Maxwell, the attempt and the review.
+import type { SafeQuestion } from "@/lib/exam-lab/paper-meta";
+
+type DrillSpecView = { type: "drill"; paperType: "P1" | "P2" | "P4"; topics: string[]; levels: ("LOT" | "HOT")[]; count: number } | { type: "daily" };
+/** What an allocation assigned, returned once its sitting has opened. */
+export type AllocContentView =
+  | { type: "paper"; code: string }
+  | DrillSpecView
+  | { type: "custom"; ids: string[] }
+  | { type: "drillref"; drillId: string; ref: string; ids: string[]; spec: unknown };
+
+export type Sitting = { token: string; questions: SafeQuestion[]; images: Record<string, string>; content?: AllocContentView };
+
+export type PracticeRequest =
+  | { type: "paper"; code: string }
+  | { type: "drill"; paperType: "P1" | "P2" | "P4"; topics: string[]; levels: ("LOT" | "HOT")[]; count: number }
+  | { type: "daily" }
+  | { type: "focus"; topics: string[] };
+
+export type SittingRequest =
+  | { allocationId: string }
+  | { practice: PracticeRequest; course: "9702" | "5054"; mode: "practice" | "exam" | "test" };
+
+const OPEN_FAILED = "Couldn't open this paper. Check your connection and try again.";
+
+function errorOf(j: unknown, fallback: string): string {
+  const e = (j as { error?: unknown } | null)?.error;
+  return typeof e === "string" && e ? e : fallback;
+}
+
+export async function openSitting(body: SittingRequest): Promise<{ ok: true; sitting: Sitting } | { ok: false; error: string }> {
+  try {
+    const r = await fetch("/api/exam-lab/sitting", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
+    const j: unknown = await r.json().catch(() => null);
+    if (!r.ok) return { ok: false, error: errorOf(j, OPEN_FAILED) };
+    const s = j as Partial<Sitting> | null;
+    if (!s || typeof s.token !== "string" || !Array.isArray(s.questions) || !s.questions.length) return { ok: false, error: OPEN_FAILED };
+    return { ok: true, sitting: { token: s.token, questions: s.questions, images: s.images && typeof s.images === "object" ? s.images : {}, content: s.content } };
+  } catch {
+    return { ok: false, error: OPEN_FAILED };
+  }
+}
+
+/** Signed URLs for the sitting's own question images; `fresh` re-signs (the
+ *  one retry of an image that failed to load). null when signing failed. */
+export async function signSittingImages(token: string, paths: string[], fresh = false): Promise<Record<string, string> | null> {
+  const out: Record<string, string> = {};
+  for (let i = 0; i < paths.length; i += 80) {
+    try {
+      const r = await fetch("/api/exam-lab/images", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token, paths: paths.slice(i, i + 80), ...(fresh ? { fresh } : {}) }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      const j = (await r.json().catch(() => null)) as { urls?: Record<string, string> } | null;
+      if (!r.ok || !j?.urls) return null;
+      Object.assign(out, j.urls);
+    } catch {
+      return null;
+    }
+  }
+  return out;
+}
+
+export type ReviewItem = { answer?: string; correct?: boolean | null; ms?: string; held?: true };
+export type Review = { mcq: { got: number; total: number }; items?: Record<string, ReviewItem> };
+
+/** A submitted sitting's results (answers and mark schemes where allowed). */
+export async function fetchReview(token: string): Promise<{ ok: true; review: Review } | { ok: false; error: string }> {
+  try {
+    const r = await fetch("/api/exam-lab/review", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }), cache: "no-store" });
+    const j: unknown = await r.json().catch(() => null);
+    if (!r.ok) return { ok: false, error: errorOf(j, "Couldn't load your results.") };
+    const v = j as Partial<Review> | null;
+    if (!v?.mcq) return { ok: false, error: "Couldn't load your results." };
+    return { ok: true, review: { mcq: v.mcq, items: v.items } };
+  } catch {
+    return { ok: false, error: "Couldn't load your results. Check your connection." };
+  }
+}
+
+/** One question's mark scheme while sitting (help-allowed sittings only). */
+export async function revealMarkScheme(token: string, id: string): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  try {
+    const r = await fetch("/api/exam-lab/reveal", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token, id }), cache: "no-store" });
+    const j: unknown = await r.json().catch(() => null);
+    const url = (j as { url?: unknown } | null)?.url;
+    if (!r.ok || typeof url !== "string") return { ok: false, error: errorOf(j, "Couldn't load the mark scheme.") };
+    return { ok: true, url };
+  } catch {
+    return { ok: false, error: "Couldn't load the mark scheme. Check your connection." };
+  }
+}

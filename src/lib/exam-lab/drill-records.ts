@@ -17,6 +17,7 @@
  * The index keeps lightweight rows for fast listing; the per-drill file holds
  * the resolved question snapshot so a heavy paper never bloats the index.
  */
+import "server-only";
 import { FULL_BANK, type ImgQuestion } from "@/lib/exam-lab/image-bank";
 import { ALL_QUESTIONS, questionById } from "@/lib/exam-lab/bank-all";
 import type { AllocContent, AllocMode } from "@/lib/exam-lab/allocations";

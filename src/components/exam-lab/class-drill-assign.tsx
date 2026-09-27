@@ -3,10 +3,9 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Users, User, Search, Check, Loader2, Send, Printer, GraduationCap, ListChecks, RotateCcw } from "lucide-react";
-import type { ImgQuestion } from "@/lib/exam-lab/image-bank";
-import { courseOfQuestion } from "@/lib/exam-lab/bank-all";
+import type { SafeQuestion } from "@/lib/exam-lab/paper-meta";
 import { pkDateTimeToIso } from "@/lib/portal/pk-time";
-import { QuestionPicker, selectionSummary } from "./question-picker";
+import { QuestionPicker, selectionSummary, useExamBank } from "./question-picker";
 
 type ClassChoice = { id: string; name: string; school: string; section?: string | null; students?: number; active: boolean };
 type StudentChoice = { id: string; name: string; email: string; classes: string[] };
@@ -16,8 +15,8 @@ type AllocMode = "assignment_help" | "assignment_nohelp" | "test";
 // Mirrors the allocate route: only these roles may set a proctored test.
 const TEST_ROLES = ["super_admin", "admin", "teaching_assistant"];
 const ALLOC_MODES: { id: AllocMode; label: string; hint: string; on: string }[] = [
-  { id: "assignment_help", label: "Assignment · help allowed", hint: "Open practice; students may use the mark scheme freely (logged).", on: "border-emerald2/60 bg-emerald2/10 text-emerald2" },
-  { id: "assignment_nohelp", label: "Assignment · no help", hint: "Guarded like a mini-exam; mark-scheme reveals are logged.", on: "border-amber-400/60 bg-amber-400/10 text-amber-200" },
+  { id: "assignment_help", label: "Assignment · help allowed", hint: "Open practice; students may reveal a question's mark scheme (logged; that answer is then final).", on: "border-emerald2/60 bg-emerald2/10 text-emerald2" },
+  { id: "assignment_nohelp", label: "Assignment · no help", hint: "Guarded like a mini-exam; answers and mark schemes open after submission.", on: "border-amber-400/60 bg-amber-400/10 text-amber-200" },
   { id: "test", label: "Proctored test", hint: "Strict: students must switch on the camera; violations lock the test (super-admin unlock).", on: "border-red-400/60 bg-red-400/10 text-red-200" },
 ];
 const FIELD = "w-full min-w-0 rounded-xl border border-white/10 bg-abyss/60 px-3 py-2 text-sm text-ice placeholder:text-dust/70 outline-none focus:border-cyan/50";
@@ -29,11 +28,12 @@ const LABEL = "mb-1.5 block text-[11px] font-medium uppercase tracking-wide text
  * no longer used, as the editable duration defaults to the picker's estimate.
  */
 export function ClassDrillAssign({ questions, title, onAssigned }: {
-  questions: ImgQuestion[]; title: string; duration?: number; onAssigned: (ref: string) => void;
+  questions: SafeQuestion[]; title: string; duration?: number; onAssigned: (ref: string) => void;
 }) {
   const preferredClass = useSearchParams().get("class");
   const seedIds = useMemo(() => questions.map((x) => x.id), [questions]);
-  const course = courseOfQuestion(seedIds[0] ?? "") ?? "all";
+  const course = questions[0]?.course ?? "all";
+  const { bank } = useExamBank();
   const [ids, setIds] = useState<string[]>(seedIds);
   const [editing, setEditing] = useState(false);
   const [allocMode, setAllocMode] = useState<AllocMode>("assignment_help");
@@ -112,7 +112,7 @@ export function ClassDrillAssign({ questions, title, onAssigned }: {
   const toggle = (set: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) =>
     set((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-  const summary = useMemo(() => selectionSummary(ids), [ids]);
+  const summary = useMemo(() => selectionSummary(ids, bank), [ids, bank]);
   const edited = ids.length !== seedIds.length || ids.some((id, i) => id !== seedIds[i]);
   const estimate = String(Math.max(1, summary.minutes));
   const durationValue = durationInput ?? estimate;

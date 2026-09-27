@@ -2,6 +2,7 @@
 // CAIE 9702 questions extracted from published past papers, text-cleaned +
 // topic/LOT-HOT classified. PORTAL-ONLY (auth-gated) per copyright.
 // Regenerate via tmp/exam-lab/ingest/ (batch.sh + build_bank.py).
+import "server-only";
 import type { ELQuestion } from "./bank";
 
 // 966 questions: 687 Paper-1 MCQ + 279 Paper-2 structured, across 88 papers.

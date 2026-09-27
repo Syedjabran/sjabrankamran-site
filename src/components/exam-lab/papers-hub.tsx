@@ -3,13 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FileText, Layers, Play, Zap, Library, Coffee, ShieldAlert, Video, ClipboardList, Lock, CheckCircle2, Send, Loader2, Clock, Sparkles } from "lucide-react";
-import { IMAGE_BANK, IMAGE_PAPERS, type ImgQuestion } from "@/lib/exam-lab/image-bank";
-import { OLEVEL_IMAGE_BANK, OLEVEL_IMAGE_PAPERS, OLEVEL_PAPER_NAMES, olevelTopics } from "@/lib/exam-lab/image-bank-olevel";
-import { ALL_QUESTIONS, questionById } from "@/lib/exam-lab/bank-all";
+import { CANON_5054, courseOfCode, countPool, poolTopics, type ExamLabCatalog, type SafeQuestion } from "@/lib/exam-lab/paper-meta";
 import { PaperRunner, type AttemptKind } from "./paper-runner";
 import { ExamRunner } from "./exam-runner";
-import { requestExamFullscreen } from "@/lib/exam-lab/fullscreen";
+import { exitExamFullscreen, requestExamFullscreen } from "@/lib/exam-lab/fullscreen";
 import { ClassDrillAssign } from "./class-drill-assign";
+import { openSitting, type Sitting, type SittingRequest } from "./sitting-api";
 import type { GuardMode } from "./use-exam-guard";
 
 const SESS: Record<string, string> = { s: "May/June", w: "Oct/Nov", m: "Feb/March" };
@@ -33,7 +32,6 @@ function label(code: string) {
 // (May/June 2024 variant 1) or `5054_sp23_02` (2023 specimen Paper 2).
 const OL_SESS: Record<string, string> = { s: "May/June", w: "Oct/Nov", m: "Feb/March" };
 function olYearOf(code: string) { const m = code.match(/5054_[a-z]+(\d\d)_/); return m ? 2000 + parseInt(m[1]) : 0; }
-function olShuffle<T>(a: T[]): T[] { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 function olLabel(code: string) {
   const m = code.match(/5054_([a-z]+)(\d\d)_(\d\d)/);
   if (!m) return code;
@@ -46,14 +44,14 @@ const TOPICS_AS = ["Physical quantities & units","Kinematics","Dynamics","Forces
 const TOPICS_A2 = ["Circular motion","Gravitational fields","Thermal physics","Ideal gases","Oscillations","Electric fields","Capacitance","Magnetic fields","Alternating currents","Quantum physics","Nuclear physics","Astronomy & cosmology"];
 
 type ActiveMeta = { mode: "paper" | "drill"; code?: string; ref?: string; paperType: "P1" | "P2" | "P4" | "mixed" };
-type Active = { questions: ImgQuestion[]; title: string; subtitle?: string; duration: number; timed: boolean; lockOnExpiry?: boolean; logMeta: ActiveMeta; integrity: GuardMode; kind: AttemptKind; help: boolean; attemptId?: string; allocationId?: string | null; daily?: boolean; dueAt?: string | null };
+type Active = { questions: SafeQuestion[]; token: string; images: Record<string, string>; title: string; subtitle?: string; duration: number; timed: boolean; lockOnExpiry?: boolean; logMeta: ActiveMeta; integrity: GuardMode; kind: AttemptKind; help: boolean; attemptId?: string; allocationId?: string | null; daily?: boolean; dueAt?: string | null };
+/** Builds the runner's sitting from what the server opened, or says why it can't. */
+type Launch = (s: Sitting) => Omit<Active, "questions" | "token" | "images"> | string;
 
-type DrillSpec = { type: "drill"; paperType: "P1" | "P2" | "P4"; topics: string[]; levels: ("LOT" | "HOT")[]; count: number } | { type: "daily" };
-// `drillref` = a drill whose paper was frozen at allocation time. `drill` and
-// `daily` are the legacy randomised specs still carried by allocations saved
-// before freezing existed; they keep their original per-sitting behaviour.
-type AllocContent = { type: "paper"; code: string } | DrillSpec | { type: "custom"; ids: string[] } | { type: "drillref"; drillId: string; ref: string; ids: string[]; spec: DrillSpec | { type: "paper"; code: string } | { type: "custom"; ids: string[] } };
-type Allocation = { id: string; attemptId: string; mode: "assignment_help" | "assignment_nohelp" | "test"; content: AllocContent; title: string; instructions: string | null; durationMin: number | null; lockOnExpiry?: boolean; integrity?: GuardMode; dueAt: string | null; startsAt: string | null; className: string | null; status: string; daily?: boolean; lateSubmission?: boolean; unattempted?: boolean };
+// The student's list carries only what kind of work an allocation is (and a
+// frozen drill's reference): its paper code and question ids arrive with the
+// sitting, once it has opened (/api/exam-lab/sitting).
+type Allocation = { id: string; attemptId: string; mode: "assignment_help" | "assignment_nohelp" | "test"; content: { type: "paper" | "drill" | "daily" | "custom" | "drillref"; ref?: string }; title: string; instructions: string | null; durationMin: number | null; lockOnExpiry?: boolean; integrity?: GuardMode; dueAt: string | null; startsAt: string | null; className: string | null; status: string; daily?: boolean; lateSubmission?: boolean; unattempted?: boolean };
 function allocCfg(mode: Allocation["mode"]): { integrity: GuardMode; kind: AttemptKind; help: boolean } {
   if (mode === "test") return { integrity: "strict", kind: "test", help: false };
   if (mode === "assignment_nohelp") return { integrity: "standard", kind: "assignment", help: false };
@@ -109,8 +107,8 @@ function AssignedBoard({ allocations, onStart }: { allocations: Allocation[]; on
               {al.status === "submitted" ? (
                 <span className="inline-flex flex-wrap items-center gap-1.5 text-xs text-emerald2">
                   <CheckCircle2 size={14} /> Submitted
-                  {(al as { lateSubmission?: boolean }).lateSubmission ? <span className="rounded-full border border-signal/50 px-2 py-0.5 font-mono text-[10px] text-signal">Late submission</span> : null}
-                  {(al as { unattempted?: boolean }).unattempted ? <span className="rounded-full border border-amber-400/50 px-2 py-0.5 font-mono text-[10px] text-amber-300" title="No answers were attempted in the submission">Unattempted</span> : null}
+                  {al.lateSubmission ? <span className="rounded-full border border-signal/50 px-2 py-0.5 font-mono text-[10px] text-signal">Late submission</span> : null}
+                  {al.unattempted ? <span className="rounded-full border border-amber-400/50 px-2 py-0.5 font-mono text-[10px] text-amber-300" title="No answers were attempted in the submission">Unattempted</span> : null}
                 </span>
               ) : al.status === "locked" ? (
                 sent[al.id] ? <span className="inline-flex items-center gap-1 text-xs text-amber-300"><Lock size={13} /> Review requested</span>
@@ -134,10 +132,12 @@ function AssignedBoard({ allocations, onStart }: { allocations: Allocation[]; on
  * O Level 5054 track — the same three things the A Level track offers, built on
  * the real 5054 past-paper image bank: sit a whole paper, drill a topic, and
  * (as a fallback only) generate AI practice from the authored 5054 seed bank.
- * Deliberately self-contained: it shares `enter` and the sit-mode semantics
+ * Deliberately self-contained: it shares `launch` and the sit-mode semantics
  * with the 9702 track but none of its state, so the A Level path is unchanged.
+ * The server picks the questions (/api/exam-lab/sitting); this only lists
+ * papers and counts pools from the catalog.
  */
-function OLevelHub({ canTest, onStart }: { canTest: boolean; onStart: (a: Active) => void }) {
+function OLevelHub({ canTest, catalog, onLaunch }: { canTest: boolean; catalog: ExamLabCatalog["5054"]; onLaunch: (req: SittingRequest, build: Launch) => void }) {
   const [tab, setTab] = useState<"papers" | "drill" | "ai">("papers");
   const [sitMode, setSitMode] = useState<SitMode>("practice");
   const [pType, setPType] = useState<"P1" | "P2" | "P4">("P1");
@@ -146,37 +146,34 @@ function OLevelHub({ canTest, onStart }: { canTest: boolean; onStart: (a: Active
   const [count, setCount] = useState(8);
 
   const grouped = useMemo(() => {
-    const g: Record<string, typeof OLEVEL_IMAGE_PAPERS> = { P1: [], P2: [], P4: [] };
-    OLEVEL_IMAGE_PAPERS.forEach((p) => g[p.paperType]?.push(p));
+    const g: Record<string, ExamLabCatalog["5054"]["papers"]> = { P1: [], P2: [], P4: [] };
+    catalog.papers.forEach((p) => g[p.paperType]?.push(p));
     return g;
-  }, []);
+  }, [catalog]);
   const stats = useMemo(() => ({
-    papers: OLEVEL_IMAGE_PAPERS.length,
-    questions: OLEVEL_IMAGE_BANK.length,
-    sessions: new Set(OLEVEL_IMAGE_PAPERS.map((p) => p.code.replace(/_\d+$/, ""))).size,
-  }), []);
-  const availTopics = useMemo(() => olevelTopics(pType), [pType]);
-  const drillPool = useMemo(
-    () => OLEVEL_IMAGE_BANK.filter((q) => q.paperType === pType && (!topics.size || (q.topic && topics.has(q.topic))) && levels.has(q.level)),
-    [pType, topics, levels]);
+    papers: catalog.papers.length,
+    questions: catalog.questions,
+    sessions: new Set(catalog.papers.map((p) => p.code.replace(/_\d+$/, ""))).size,
+  }), [catalog]);
+  const availTopics = useMemo(() => poolTopics(catalog.pool, pType), [catalog, pType]);
+  const poolSize = useMemo(() => countPool(catalog.pool, pType, topics, levels), [catalog, pType, topics, levels]);
 
   function startPaper(code: string) {
-    const qs = OLEVEL_IMAGE_BANK.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
-    const meta = OLEVEL_IMAGE_PAPERS.find((p) => p.code === code)!;
-    onStart({ questions: qs, title: OLEVEL_PAPER_NAMES[meta.paperType].name, subtitle: `${meta.ref} · ${olLabel(code)}`, duration: meta.duration, timed: true, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType }, ...modeCfg(sitMode) });
+    const meta = catalog.papers.find((p) => p.code === code)!;
+    onLaunch({ practice: { type: "paper", code }, course: "5054", mode: sitMode }, () => ({ title: CANON_5054[meta.paperType].name, subtitle: `${meta.ref} · ${olLabel(code)}`, duration: meta.duration, timed: true, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType }, ...modeCfg(sitMode) }));
   }
 
   function startDrill() {
-    const qs = olShuffle([...drillPool]).slice(0, Math.min(count, drillPool.length));
-    // Paper 1 is 40 marks in 60 min (1.5 min/Q); the structured 5054 papers run
-    // at roughly 1.3 min per mark, so a whole question is budgeted by its marks.
-    const mins = Math.max(5, Math.round(pType === "P1" ? qs.length * 1.5 : qs.reduce((s, q) => s + (q.marks ?? 8) * 1.3, 0)));
-    onStart({ questions: qs, title: `Topic drill · ${OLEVEL_PAPER_NAMES[pType].name.split(" · ")[0]}`, subtitle: `${plural(qs.length, "question")} · ${mins} min`, duration: mins, timed: true, logMeta: { mode: "drill", paperType: pType }, ...modeCfg(sitMode) });
+    onLaunch({ practice: { type: "drill", paperType: pType, topics: [...topics], levels: [...levels], count: Math.max(1, Math.min(count, poolSize, 40)) }, course: "5054", mode: sitMode }, ({ questions: qs }) => {
+      // Paper 1 is 40 marks in 60 min (1.5 min/Q); the structured 5054 papers run
+      // at roughly 1.3 min per mark, so a whole question is budgeted by its marks.
+      const mins = Math.max(5, Math.round(pType === "P1" ? qs.length * 1.5 : qs.reduce((s, q) => s + (q.marks ?? 8) * 1.3, 0)));
+      return { title: `Topic drill · ${CANON_5054[pType].name.split(" · ")[0]}`, subtitle: `${plural(qs.length, "question")} · ${mins} min`, duration: mins, timed: true, logMeta: { mode: "drill", paperType: pType }, ...modeCfg(sitMode) };
+    });
   }
 
   function dailyChallenge() {
-    const p1 = olShuffle(OLEVEL_IMAGE_BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
-    onStart({ questions: p1, title: "Daily Challenge · O Level", subtitle: "10 mixed Paper-1 questions · 15 min", duration: 15, timed: true, logMeta: { mode: "drill", paperType: "P1" }, daily: true, ...modeCfg(sitMode) });
+    onLaunch({ practice: { type: "daily" }, course: "5054", mode: sitMode }, () => ({ title: "Daily Challenge · O Level", subtitle: "10 mixed Paper-1 questions · 15 min", duration: 15, timed: true, logMeta: { mode: "drill", paperType: "P1" }, daily: true, ...modeCfg(sitMode) }));
   }
 
   const modeOpts: { id: SitMode; label: string; icon: typeof Coffee; hint: string }[] = [
@@ -185,6 +182,7 @@ function OLevelHub({ canTest, onStart }: { canTest: boolean; onStart: (a: Active
     ...(canTest ? [{ id: "test" as SitMode, label: "Proctored test", icon: Video, hint: "Strict: camera on + AI proctor. Violations lock the test (super-admin unlock). Staff preview." }] : []),
   ];
   const activeHint = modeOpts.find((o) => o.id === sitMode)?.hint || "";
+  const shown = Math.min(count, Math.max(1, poolSize));
 
   return (
     <div>
@@ -232,7 +230,7 @@ function OLevelHub({ canTest, onStart }: { canTest: boolean; onStart: (a: Active
               <div key={pt}>
                 <div className="mb-3 flex items-center gap-2">
                   <span className="h-4 w-1 rounded-full" style={{ background: PT_ACCENT[pt] }} />
-                  <p className="font-display text-sm text-ice">{OLEVEL_PAPER_NAMES[pt].name}</p>
+                  <p className="font-display text-sm text-ice">{CANON_5054[pt].name}</p>
                   <span className="font-mono text-[11px] text-dust">· {papers.length} paper{papers.length === 1 ? "" : "s"}</span>
                 </div>
                 {papers.length === 0 ? (
@@ -267,7 +265,7 @@ function OLevelHub({ canTest, onStart }: { canTest: boolean; onStart: (a: Active
       ) : tab === "drill" ? (
         <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
           <div className="grid gap-5 md:grid-cols-2">
-            <div>
+            <div className="min-w-0">
               <p className="mb-2 font-mono text-[11px] uppercase tracking-widest text-fog">Paper</p>
               <div className="flex gap-2">
                 {(["P1", "P2", "P4"] as const).map((pt) => (
@@ -282,7 +280,7 @@ function OLevelHub({ canTest, onStart }: { canTest: boolean; onStart: (a: Active
                 })}
               </div>
             </div>
-            <div className="space-y-5">
+            <div className="min-w-0 space-y-5">
               <div>
                 <p className="mb-2 font-mono text-[11px] uppercase tracking-widest text-fog">Thinking level</p>
                 <div className="flex gap-2">
@@ -294,12 +292,12 @@ function OLevelHub({ canTest, onStart }: { canTest: boolean; onStart: (a: Active
               <div>
                 <p className="mb-2 font-mono text-[11px] uppercase tracking-widest text-fog">Number of questions</p>
                 <div className="flex items-center gap-4">
-                  <input type="range" min={1} max={Math.max(1, Math.min(40, drillPool.length))} value={Math.min(count, Math.max(1, drillPool.length))} onChange={(e) => setCount(+e.target.value)} className="flex-1 accent-cyan" />
-                  <span className="w-10 text-center font-display text-2xl text-cyan">{Math.min(count, Math.max(1, drillPool.length))}</span>
+                  <input type="range" min={1} max={Math.max(1, Math.min(40, poolSize))} value={shown} onChange={(e) => setCount(+e.target.value)} className="flex-1 accent-cyan" />
+                  <span className="w-10 text-center font-display text-2xl text-cyan">{shown}</span>
                 </div>
-                <p className="mt-1 text-xs text-dust">{drillPool.length} matching questions in the bank</p>
+                <p className="mt-1 text-xs text-dust">{poolSize} matching questions in the bank</p>
               </div>
-              <button onClick={startDrill} disabled={drillPool.length === 0} className="btn-primary disabled:opacity-50"><Play size={16} /> Start drill</button>
+              <button onClick={startDrill} disabled={poolSize === 0} className="btn-primary disabled:opacity-50"><Play size={16} /> Start drill</button>
             </div>
           </div>
         </div>
@@ -313,7 +311,7 @@ function OLevelHub({ canTest, onStart }: { canTest: boolean; onStart: (a: Active
   );
 }
 
-export function PapersHub({ canTest = false, canPause = false, canConduct = false, allowedCourses = ["9702", "5054"], initialCourse, userId }: { canTest?: boolean; canPause?: boolean; canConduct?: boolean; allowedCourses?: ("9702" | "5054")[]; initialCourse?: "9702" | "5054"; userId?: string }) {
+export function PapersHub({ catalog, canTest = false, canPause = false, canConduct = false, allowedCourses = ["9702", "5054"], initialCourse, userId }: { catalog: ExamLabCatalog; canTest?: boolean; canPause?: boolean; canConduct?: boolean; allowedCourses?: ("9702" | "5054")[]; initialCourse?: "9702" | "5054"; userId?: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -333,6 +331,8 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
   const [active, setActive] = useState<Active | null>(null);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
   const [launchError, setLaunchError] = useState("");
+  const [launching, setLaunching] = useState(false);
+  const launchingRef = useRef(false);
   const deepLinkHandled = useRef<string | null>(null);
   // Have we actually observed ?run=1 for the current open paper yet? Guards the
   // transient first render (active set, but the pushed ?run=1 hasn't landed) so
@@ -353,19 +353,42 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
   }, [runParam, active, pathname, router]);
 
   function enter(a: Active) {
-    // Full-screen for EVERY attempt — practice drill, daily challenge, paper,
-    // assignment or proctored test. It has to be asked for here, synchronously
-    // inside the click that opens the paper, because a browser only grants
-    // full-screen while a user gesture is live. Deep links (a task
-    // notification, ?allocation=/?focus=) reach `enter` from an effect with no
-    // gesture, so the request is simply refused there; the runner then shows a
-    // one-tap "Full screen" control instead. Nothing blocks on the result.
-    void requestExamFullscreen();
     runObserved.current = false;
     setActive(a);
     router.push(`${pathname}?run=1${searchParams.get("class") ? `&class=${encodeURIComponent(searchParams.get("class")!)}` : ""}`, { scroll: false });
     if (typeof window !== "undefined") window.scrollTo({ top: 0 });
   }
+
+  /**
+   * Opens a sitting: the server picks (or, for an allocation, checks) the
+   * questions and returns them with no answers, plus their signed images and
+   * the sitting token. Full-screen for EVERY attempt — practice drill, daily
+   * challenge, paper, assignment or proctored test — is asked for here,
+   * synchronously inside the click that opens the paper, because a browser
+   * only grants it while a user gesture is live. Deep links (a task
+   * notification, ?allocation=/?focus=) reach this from an effect with no
+   * gesture, so the request is simply refused there; the runner then shows a
+   * one-tap "Full screen" control instead. Nothing blocks on the result.
+   */
+  async function launch(req: SittingRequest, build: Launch): Promise<boolean> {
+    if (launchingRef.current) return false;
+    launchingRef.current = true;
+    setLaunchError("");
+    void requestExamFullscreen();
+    setLaunching(true);
+    try {
+      const r = await openSitting(req);
+      if (!r.ok) { void exitExamFullscreen(); setLaunchError(r.error); return false; }
+      const built = build(r.sitting);
+      if (typeof built === "string") { void exitExamFullscreen(); setLaunchError(built); return false; }
+      enter({ ...built, questions: r.sitting.questions, token: r.sitting.token, images: r.sitting.images });
+      return true;
+    } finally {
+      launchingRef.current = false;
+      setLaunching(false);
+    }
+  }
+
   function exit() {
     router.back();
   }
@@ -388,86 +411,55 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
     return () => { alive = false; if (timer) window.clearInterval(timer); window.removeEventListener("focus", refresh); };
   }, [active]);
 
-  // Compatibility for old, spec-only allocations. New papers never use this.
-  function legacyDrillQuestions(spec: DrillSpec): ImgQuestion[] {
-    if (spec.type === "daily") return shuffle(IMAGE_BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
-    const { paperType, topics, levels, count } = spec;
-    const tset = new Set(topics); const lset = new Set(levels);
-    // Old automated allocations may contain a retired topic label or an
-    // over-restrictive level combination. Fall back within the assigned
-    // paper instead of silently doing nothing when Start is pressed.
-    const exact = IMAGE_BANK.filter((q) => q.paperType === paperType && (!tset.size || (q.topic && tset.has(q.topic))) && lset.has(q.level));
-    const topicAnyLevel = IMAGE_BANK.filter((q) => q.paperType === paperType && (!tset.size || (q.topic && tset.has(q.topic))));
-    const paperAndLevel = IMAGE_BANK.filter((q) => q.paperType === paperType && lset.has(q.level));
-    const pool = exact.length ? exact : topicAnyLevel.length ? topicAnyLevel : paperAndLevel.length ? paperAndLevel : IMAGE_BANK.filter((q) => q.paperType === paperType);
-    return shuffle([...pool]).slice(0, count);
-  }
-
   function startAllocation(al: Allocation) {
-    setLaunchError("");
     const cfg = allocCfg(al.mode);
     // Daily tasks (the platform daily challenge, and automated daily study-plan
     // challenges flagged daily) run fully relaxed: no locks, no guard, and
     // overtime is recorded as a "late submission" instead of a cutoff.
-    const isDailyTask = al.content.type === "daily" || (al as { daily?: boolean }).daily === true;
+    const isDailyTask = al.content.type === "daily" || al.daily === true;
     // A lifted time lock keeps the countdown visible but never auto-submits or
     // locks answers. Absent/true => the historical locking behaviour.
     // An allocation may override the proctoring guard ("off" => never cancels on
     // tab-switch/blur). Absent => the mode's default guard.
     // The due time travels with it: a relaxed (daily) run is late only past it.
     const common = { ...cfg, integrity: al.integrity ?? cfg.integrity, timed: true, lockOnExpiry: al.lockOnExpiry !== false, attemptId: al.attemptId, allocationId: al.id, daily: isDailyTask, dueAt: al.dueAt };
-    if (al.content.type === "paper") {
-      // Either course: 9702 and O Level 5054 papers are both assignable.
-      const code = al.content.code;
-      const olevel = code.startsWith("5054_");
-      const qs = ALL_QUESTIONS.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
-      const meta = (olevel ? OLEVEL_IMAGE_PAPERS : IMAGE_PAPERS).find((p) => p.code === code);
-      if (!qs.length || !meta) { setLaunchError(`The paper for “${al.title}” is not available. Contact the teacher.`); return; }
-      const paperTitle = olevel ? OLEVEL_PAPER_NAMES[meta.paperType].name : PAPER_NAME[meta.paperType];
-      enter({ questions: qs, title: al.title || paperTitle, subtitle: `${meta.ref} · ${olevel ? olLabel(code) : label(code)}`, duration: al.durationMin || meta.duration, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType }, ...common });
-    } else if (al.content.type === "drillref") {
-      // DETERMINISTIC DRILL. The paper was frozen once, at allocation time, and
-      // its exact question ids travel with the allocation — so every student in
-      // the class sits the same paper in the same order, and closing and
-      // reopening replays that identical paper instead of reshuffling. Ids
-      // resolve across every course (9702, secure bank, O Level 5054).
-      const { ids, ref } = al.content;
-      const qs = ids.map((qid) => questionById(qid)).filter((q): q is ImgQuestion => !!q);
-      if (!qs.length || qs.length !== ids.length) {
-        setLaunchError("This stored drill has unavailable questions. Contact the teacher; no replacement paper has been generated.");
-        return;
+    void launch({ allocationId: al.id }, ({ questions: qs, content }) => {
+      if (content?.type === "paper") {
+        // Either course: 9702 and O Level 5054 papers are both assignable.
+        const code = content.code;
+        const olevel = courseOfCode(code) === "5054";
+        const meta = catalog[olevel ? "5054" : "9702"].papers.find((p) => p.code === code);
+        if (!meta) return `The paper for “${al.title}” is not available. Contact the teacher.`;
+        const paperTitle = olevel ? CANON_5054[meta.paperType].name : PAPER_NAME[meta.paperType];
+        return { title: al.title || paperTitle, subtitle: `${meta.ref} · ${olevel ? olLabel(code) : label(code)}`, duration: al.durationMin || meta.duration, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType }, ...common };
       }
       const pts = new Set(qs.map((q) => q.paperType));
       const pt: "P1" | "P2" | "P4" | "mixed" = pts.size === 1 ? qs[0].paperType : "mixed";
-      const mins = al.durationMin || Math.max(5, Math.round(qs.length * (pt === "P1" ? 1.5 : 9)));
-      const title = al.title || (pt === "mixed" ? "Drill" : `Topic drill · ${PAPER_NAME[pt].split(" · ")[0]}`);
-      enter({ questions: qs, title, subtitle: `${plural(qs.length, "question")} · ${mins} min${ref ? ` · Ref ${ref}` : ""}`, duration: mins, logMeta: { mode: "drill", ref: ref || undefined, paperType: pt }, ...common });
-    } else if (al.content.type === "drill") {
-      // LEGACY spec-based drill (allocations saved before freezing existed).
-      // Left exactly as it was: re-resolved per sitting.
-      const qs = legacyDrillQuestions(al.content);
-      if (!qs.length) {
-        setLaunchError(`No questions are available for “${al.title}”. The assignment has been reported for repair.`);
-        return;
+      if (content?.type === "drillref") {
+        // DETERMINISTIC DRILL. The paper was frozen once, at allocation time,
+        // and the server returns its exact questions in their exact order — so
+        // every student in the class sits the same paper, and closing and
+        // reopening replays that identical paper instead of reshuffling.
+        const ref = content.ref;
+        const mins = al.durationMin || Math.max(5, Math.round(qs.length * (pt === "P1" ? 1.5 : 9)));
+        const title = al.title || (pt === "mixed" ? "Drill" : `Topic drill · ${PAPER_NAME[pt].split(" · ")[0]}`);
+        return { title, subtitle: `${plural(qs.length, "question")} · ${mins} min${ref ? ` · Ref ${ref}` : ""}`, duration: mins, logMeta: { mode: "drill", ref: ref || undefined, paperType: pt }, ...common };
       }
-      const paperType = al.content.paperType;
-      const mins = al.durationMin || Math.max(5, Math.round(qs.length * (paperType === "P1" ? 1.5 : 9)));
-      enter({ questions: qs, title: al.title || `Topic drill · ${PAPER_NAME[paperType].split(" · ")[0]}`, subtitle: `${plural(qs.length, "question")} · ${mins} min`, duration: mins, logMeta: { mode: "drill", paperType }, ...common });
-    } else if (al.content.type === "custom") {
-      // Custom allocations may reference the secure (allocation-only) bank or
-      // O Level questions. Preserve staff selection order for older custom
-      // allocations too.
-      const qs = al.content.ids.map((id) => questionById(id)).filter((q): q is ImgQuestion => !!q);
-
-      if (!qs.length) { setLaunchError(`The questions for “${al.title}” are not available. Contact the teacher.`); return; }
-      const pts = new Set(qs.map((q) => q.paperType));
-      const pt: "P1" | "P2" | "P4" | "mixed" = pts.size === 1 ? qs[0].paperType : "mixed";
-      const mins = al.durationMin || Math.max(5, Math.round(qs.reduce((s, q) => s + (q.paperType === "P1" ? 1.5 : 9), 0)));
-      enter({ questions: qs, title: al.title || "Selected questions", subtitle: `${qs.length} hand-picked question${qs.length === 1 ? "" : "s"} · ${mins} min`, duration: mins, logMeta: { mode: "drill", paperType: pt }, ...common });
-    } else {
-      const p1 = shuffle(IMAGE_BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
-      enter({ questions: p1, title: al.title || "Daily Challenge", subtitle: "10 mixed Paper-1 questions", duration: al.durationMin || 15, logMeta: { mode: "drill", paperType: "P1" }, ...common });
-    }
+      if (content?.type === "drill") {
+        // LEGACY spec-based drill (allocations saved before freezing existed):
+        // the server froze its questions for this student at the first open.
+        const paperType = content.paperType;
+        const mins = al.durationMin || Math.max(5, Math.round(qs.length * (paperType === "P1" ? 1.5 : 9)));
+        return { title: al.title || `Topic drill · ${PAPER_NAME[paperType].split(" · ")[0]}`, subtitle: `${plural(qs.length, "question")} · ${mins} min`, duration: mins, logMeta: { mode: "drill", paperType }, ...common };
+      }
+      if (content?.type === "custom") {
+        // Custom allocations may reference the secure (allocation-only) bank or
+        // O Level questions, in the staff member's selection order.
+        const mins = al.durationMin || Math.max(5, Math.round(qs.reduce((s, q) => s + (q.paperType === "P1" ? 1.5 : 9), 0)));
+        return { title: al.title || "Selected questions", subtitle: `${qs.length} hand-picked question${qs.length === 1 ? "" : "s"} · ${mins} min`, duration: mins, logMeta: { mode: "drill", paperType: pt }, ...common };
+      }
+      return { title: al.title || "Daily Challenge", subtitle: "10 mixed Paper-1 questions", duration: al.durationMin || 15, logMeta: { mode: "drill", paperType: "P1" }, ...common };
+    });
   }
 
   // A task link opens its exact Exam Lab allocation rather than dropping the
@@ -494,23 +486,20 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
   }, [allocationParam, allocations, active]);
 
   const grouped = useMemo(() => {
-    const g: Record<string, typeof IMAGE_PAPERS> = { P1: [], P2: [], P4: [] };
-    IMAGE_PAPERS.forEach((p) => g[p.paperType]?.push(p));
+    const g: Record<string, ExamLabCatalog["9702"]["papers"]> = { P1: [], P2: [], P4: [] };
+    catalog["9702"].papers.forEach((p) => g[p.paperType]?.push(p));
     return g;
-  }, []);
+  }, [catalog]);
 
   const stats = useMemo(() => ({
-    papers: IMAGE_PAPERS.length,
-    questions: IMAGE_BANK.length,
-    years: new Set(IMAGE_PAPERS.map((p) => yearOf(p.code))).size,
-  }), []);
-
-  function shuffle<T>(a: T[]): T[] { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+    papers: catalog["9702"].papers.length,
+    questions: catalog["9702"].questions,
+    years: new Set(catalog["9702"].papers.map((p) => yearOf(p.code))).size,
+  }), [catalog]);
 
   function startPaper(code: string) {
-    const qs = IMAGE_BANK.filter((q) => q.code === code).sort((a, b) => a.qnum - b.qnum);
-    const meta = IMAGE_PAPERS.find((p) => p.code === code)!;
-    enter({ questions: qs, title: PAPER_NAME[meta.paperType], subtitle: `${meta.ref} · ${label(code)}`, duration: meta.duration, timed: true, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType }, ...modeCfg(sitMode) });
+    const meta = catalog["9702"].papers.find((p) => p.code === code)!;
+    void launch({ practice: { type: "paper", code }, course: "9702", mode: sitMode }, () => ({ title: PAPER_NAME[meta.paperType], subtitle: `${meta.ref} · ${label(code)}`, duration: meta.duration, timed: true, logMeta: { mode: "paper", code, ref: meta.ref, paperType: meta.paperType }, ...modeCfg(sitMode) }));
   }
 
   // Focus Drill deep-link: /portal/exam-lab?focus=<topic,topic> launches a
@@ -519,36 +508,33 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
   useEffect(() => {
     if (!focusParam || active || focusHandled.current === focusParam) return;
     focusHandled.current = focusParam;
-    const want = new Set(focusParam.split(",").map((s) => s.trim()).filter(Boolean));
-    if (!want.size) return;
-    const pool = IMAGE_BANK.filter((q) => q.topic && want.has(q.topic));
-    if (!pool.length) { setLaunchError("No practice questions are available for those topics yet."); router.replace(pathname, { scroll: false }); return; }
-    const qs = shuffle([...pool]).slice(0, 10);
-    const kinds = new Set(qs.map((q) => q.paperType));
-    const pt = (kinds.size === 1 ? [...kinds][0] : "mixed") as ActiveMeta["paperType"];
-    const mins = Math.max(5, Math.round(qs.length * (pt === "P1" ? 1.5 : 6)));
-    const names = [...want];
-    enter({
-      questions: qs,
-      title: "Focus drill · your weak topics",
-      subtitle: `${plural(qs.length, "question")} on ${names.slice(0, 3).join(", ")}${names.length > 3 ? "…" : ""}`,
-      duration: mins, timed: true, logMeta: { mode: "drill", paperType: pt }, ...modeCfg("practice"),
-    });
+    const want = [...new Set(focusParam.split(",").map((s) => s.trim()).filter(Boolean))].slice(0, 20);
+    if (!want.length) return;
+    void launch({ practice: { type: "focus", topics: want }, course, mode: "practice" }, ({ questions: qs }) => {
+      const kinds = new Set(qs.map((q) => q.paperType));
+      const pt = (kinds.size === 1 ? [...kinds][0] : "mixed") as ActiveMeta["paperType"];
+      const mins = Math.max(5, Math.round(qs.length * (pt === "P1" ? 1.5 : 6)));
+      return {
+        title: "Focus drill · your weak topics",
+        subtitle: `${plural(qs.length, "question")} on ${want.slice(0, 3).join(", ")}${want.length > 3 ? "…" : ""}`,
+        duration: mins, timed: true, logMeta: { mode: "drill", paperType: pt }, ...modeCfg("practice"),
+      };
+    }).then((opened) => { if (!opened) router.replace(pathname, { scroll: false }); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusParam, active]);
 
-  const drillPool = useMemo(() => IMAGE_BANK.filter((q) => q.paperType === pType && (!topics.size || (q.topic && topics.has(q.topic))) && levels.has(q.level)), [pType, topics, levels]);
+  const poolSize = useMemo(() => countPool(catalog["9702"].pool, pType, topics, levels), [catalog, pType, topics, levels]);
 
   function startDrill() {
-    const qs = shuffle([...drillPool]).slice(0, count);
-    // Timed drill: P1 ~1.5 min/Q, structured ~1.8 min/mark-weighted question.
-    const mins = Math.max(5, Math.round(qs.length * (pType === "P1" ? 1.5 : 9)));
-    enter({ questions: qs, title: `Topic drill · ${PAPER_NAME[pType].split(" · ")[0]}`, subtitle: `${plural(qs.length, "question")} · ${mins} min`, duration: mins, timed: true, logMeta: { mode: "drill", paperType: pType }, ...modeCfg(sitMode) });
+    void launch({ practice: { type: "drill", paperType: pType, topics: [...topics], levels: [...levels], count: Math.max(1, Math.min(count, poolSize, 40)) }, course: "9702", mode: sitMode }, ({ questions: qs }) => {
+      // Timed drill: P1 ~1.5 min/Q, structured ~1.8 min/mark-weighted question.
+      const mins = Math.max(5, Math.round(qs.length * (pType === "P1" ? 1.5 : 9)));
+      return { title: `Topic drill · ${PAPER_NAME[pType].split(" · ")[0]}`, subtitle: `${plural(qs.length, "question")} · ${mins} min`, duration: mins, timed: true, logMeta: { mode: "drill", paperType: pType }, ...modeCfg(sitMode) };
+    });
   }
 
   function dailyChallenge() {
-    const p1 = shuffle(IMAGE_BANK.filter((q) => q.paperType === "P1")).slice(0, 10);
-    enter({ questions: p1, title: "Daily Challenge", subtitle: "10 mixed Paper-1 questions · 15 min", duration: 15, timed: true, logMeta: { mode: "drill", paperType: "P1" }, daily: true, ...modeCfg(sitMode) });
+    void launch({ practice: { type: "daily" }, course: "9702", mode: sitMode }, () => ({ title: "Daily Challenge", subtitle: "10 mixed Paper-1 questions · 15 min", duration: 15, timed: true, logMeta: { mode: "drill", paperType: "P1" }, daily: true, ...modeCfg(sitMode) }));
   }
 
   if (active) return <>
@@ -564,9 +550,11 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
     ...(canTest ? [{ id: "test" as SitMode, label: "Proctored test", icon: Video, hint: "Strict: camera on + AI proctor. Violations lock the test (super-admin unlock). Staff preview." }] : []),
   ];
   const activeHint = modeOpts.find((o) => o.id === sitMode)?.hint || "";
+  const shown = Math.min(count, Math.max(1, poolSize));
 
   return (
     <div>
+      {launching ? <p className="mb-4 flex items-center gap-2 rounded-xl border border-cyan/25 bg-cyan/[0.04] px-4 py-3 text-sm text-fog" role="status"><Loader2 size={15} className="animate-spin text-cyan" /> Opening your paper…</p> : null}
       {launchError ? <p className="mb-4 rounded-xl border border-signal/35 bg-signal/[0.06] px-4 py-3 text-sm text-signal">{launchError}</p> : null}
       {allocations.length ? <AssignedBoard allocations={allocations} onStart={startAllocation} /> : null}
 
@@ -586,7 +574,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
       ) : null}
 
       {course === "5054" ? (
-        <OLevelHub canTest={canTest} onStart={enter} />
+        <OLevelHub canTest={canTest} catalog={catalog["5054"]} onLaunch={(req, build) => { void launch(req, build); }} />
       ) : (
       <>
       {/* sit-mode selector */}
@@ -663,7 +651,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
       ) : (
         <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
           <div className="grid gap-5 md:grid-cols-2">
-            <div>
+            <div className="min-w-0">
               <p className="mb-2 font-mono text-[11px] uppercase tracking-widest text-fog">Paper</p>
               <div className="flex gap-2">
                 {(["P1", "P2", "P4"] as const).map((pt) => (
@@ -678,7 +666,7 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
                 })}
               </div>
             </div>
-            <div className="space-y-5">
+            <div className="min-w-0 space-y-5">
               <div>
                 <p className="mb-2 font-mono text-[11px] uppercase tracking-widest text-fog">Thinking level</p>
                 <div className="flex gap-2">
@@ -690,12 +678,12 @@ export function PapersHub({ canTest = false, canPause = false, canConduct = fals
               <div>
                 <p className="mb-2 font-mono text-[11px] uppercase tracking-widest text-fog">Number of questions</p>
                 <div className="flex items-center gap-4">
-                  <input type="range" min={1} max={Math.max(1, Math.min(40, drillPool.length))} value={Math.min(count, Math.max(1, drillPool.length))} onChange={(e) => setCount(+e.target.value)} className="flex-1 accent-cyan" />
-                  <span className="w-10 text-center font-display text-2xl text-cyan">{Math.min(count, Math.max(1, drillPool.length))}</span>
+                  <input type="range" min={1} max={Math.max(1, Math.min(40, poolSize))} value={shown} onChange={(e) => setCount(+e.target.value)} className="flex-1 accent-cyan" />
+                  <span className="w-10 text-center font-display text-2xl text-cyan">{shown}</span>
                 </div>
-                <p className="mt-1 text-xs text-dust">{drillPool.length} matching questions in the bank</p>
+                <p className="mt-1 text-xs text-dust">{poolSize} matching questions in the bank</p>
               </div>
-              <button onClick={startDrill} disabled={drillPool.length === 0} className="btn-primary disabled:opacity-50"><Play size={16} /> Start drill</button>
+              <button onClick={startDrill} disabled={poolSize === 0} className="btn-primary disabled:opacity-50"><Play size={16} /> Start drill</button>
             </div>
           </div>
         </div>

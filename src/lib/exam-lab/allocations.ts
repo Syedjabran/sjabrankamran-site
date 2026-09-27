@@ -84,6 +84,14 @@ export type ExamAllocation = {
   unattempted?: boolean;
   /** Automated daily study-plan challenge (relaxed, late-submission recording). */
   daily?: boolean;
+  /**
+   * Legacy randomised specs (`drill` / `daily`) only: the exact question ids
+   * this student sits, frozen on the server when they first open it
+   * (freezeAllocationIds). The attempt route accepts exactly these ids, and
+   * they never reach the student's allocation list (answer-rules.ts
+   * publicAllocation).
+   */
+  frozenIds?: string[];
 };
 
 type Store = { items: ExamAllocation[] };
@@ -176,6 +184,25 @@ export async function markStarted(uid: string, id: string, restart = false): Pro
   it.updatedAt = now;
   if (!await write(uid, s)) throw new Error("Could not record the start.");
   return it;
+}
+
+/**
+ * The ids a legacy randomised allocation (`drill` / `daily`) is sat with:
+ * the ones already frozen, or `pick()` frozen now (first open). Returns null
+ * when the allocation does not exist; throws on storage failure, so a sitting
+ * never opens on ids the attempt route would not recognise.
+ */
+export async function freezeAllocationIds(uid: string, id: string, pick: () => string[]): Promise<string[] | null> {
+  const s = await read(uid);
+  const it = s.items.find((x) => x.id === id);
+  if (!it) return null;
+  if (it.frozenIds && it.frozenIds.length) return it.frozenIds;
+  const ids = pick();
+  if (!ids.length) return [];
+  it.frozenIds = ids;
+  it.updatedAt = Date.now();
+  if (!await write(uid, s)) throw new Error("Could not save the paper.");
+  return ids;
 }
 
 /** The guard mode an allocation runs under (mirrors `allocCfg` in papers-hub). */
