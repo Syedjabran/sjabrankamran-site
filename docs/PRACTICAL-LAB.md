@@ -1,9 +1,23 @@
 # Practical Lab — owner's guide
 
 The **Practical Lab** is the set of 50 virtual Cambridge 9702 practicals (set up the apparatus,
-observe, take your own readings) that lives in `public/lab/`. It is now a subject an admin switches
-on per student, exactly like Digital SAT, and it belongs to **Physics**: later it will appear inside
-the Physics space; for now it is an entry in the portal menu.
+observe, take your own readings). The pages the student sees live in `public/lab/`; the physics
+behind them runs on the server (`src/lib/practical-lab/`). It is a subject an admin switches on per
+student, exactly like Digital SAT, and it belongs to **Physics**: later it will appear inside the
+Physics space; for now it is an entry in the portal menu.
+
+## Set it up once: `LAB_SECRET`
+
+The lab needs one server setting. In Vercel → the project → **Settings → Environment Variables**,
+add `LAB_SECRET` for Production (and Preview if you use it) with a long random value — for example
+the output of `openssl rand -hex 32` (at least 32 characters). Redeploy.
+
+- Every student's hidden apparatus values and every lab session are derived from it, so keep it
+  private and don't change it casually: a new secret gives every student new apparatus values and
+  asks anyone with the lab open to reload.
+- **Without it** the lab pages still open, but every practical says "The Practical Lab isn't set up
+  on the server yet. Please tell your teacher." (it never runs without its secret).
+- On your own computer (`npm run dev`) the lab works without it, using a fixed development secret.
 
 ## Turn it on for a student
 
@@ -37,10 +51,53 @@ A student without the switch doesn't see the menu entry. If they open the page a
 "Practical Lab isn't switched on for your account yet — ask the admin to add Practical Lab to your
 subjects."
 
+Each practical opens in the **lab room**: an empty bench, the equipment tray, the controls, the
+instruments, a stopwatch and the student's own notebook. At the bottom, **Source-aligned procedure
+and analysis guide** opens the practical's student guide in the page. (The 50 older standalone
+practical pages under `/lab/practicals/` have been retired: the lab room covers all 50 practicals,
+and those pages carried the physics code in the browser.)
+
+## How the lab keeps its answers hidden
+
+Everything that decides a result — the physics models, each apparatus's true values (spring
+constants, resistances, densities, expansion coefficients, …) and the helpers that work out an ideal
+answer — runs on the server. The browser sends what the student does (settings, release, reset,
+"Inspect instruments") to the lab's own API, `/api/lab`, and gets back only:
+
+- **what the apparatus looks like** — positions and angles to about a pixel, fill levels, whether a
+  switch is closed; when something moves, the server sends the motion in advance so the animation
+  and the manual stopwatch stay smooth;
+- **what an instrument shows** — each reading made on the server with that instrument's resolution
+  and scatter, exactly as before. The same setting read again shows the same value (like a real
+  ruler or meter), so pressing "Inspect" a thousand times doesn't average the scatter away.
+
+**Every attempt has its own apparatus.** Each student's attempt at a practical gets its own hidden
+values, a few per cent to ±20% around the source values, so a class can't share one answer.
+Physical constants (g, the density of water), values printed on the apparatus (mass labels, the
+0.80 m bridge wire, the 1.5 V cell) and marker positions stay as the question gives them. Three
+practicals whose only hidden quantity is g (the two interrupted pendulums and the chain pendulum)
+vary only in their reading scatter.
+
+**Attempts.** Reloading or reopening a practical — on any device — continues the same attempt, with
+the same apparatus. The notebook's **Fresh attempt** button (click it twice) starts the practical
+again on a new apparatus; the notebook shows which attempt the student is on ("Attempt 2"), and
+earlier rows stay in it. Attempt numbers are kept in storage at
+`portal-data/lab-attempts/<student id>.json` (which attempt each practical is on, and when each
+started).
+
+**What the student guides say.** The student guides give neutral instructions. The mark-scheme
+content that used to be in them — accepted uncertainty ranges, the comparison criteria ("20%
+criterion"), expected trends and the range thresholds — is in the teacher guide only (next
+section).
+
+**Limits that stay.** A student sees what a real observation would show, so they can still time a
+pendulum from the animation, just as they could film a real one. What they can't get any more is
+the exact constants, the formulas, the ideal answers, or a class-wide shared answer.
+
 ## Who can open the lab directly
 
-The lab's own address (`/lab/index.html`, the lab rooms and the 50 practical pages) is protected
-too, so a link shared between students doesn't get round the switch:
+The lab's own address (`/lab/index.html` and the lab room) and its API are protected, so a link
+shared between students doesn't get round the switch:
 
 - **Signed out:** sent to the portal login; after signing in they land back on the same lab page
   (including the practical they picked).
@@ -53,24 +110,27 @@ too, so a link shared between students doesn't get round the switch:
   Practical Lab couldn't check your access just now. Please reload the page." It never opens the lab
   when it can't check.
 
-How the check works, for the curious: each lab **page** (the 52 HTML files) gets the full check —
-who you are, your roles, your account status and your Subjects switch. The other 70 files the pages
-load (scripts, styles, the room settings, the student guides and one question paper) only check
-that you're signed in, because doing the full check on every one of them would slow every practical
-down. Only those file types get the lighter check; any other address under `/lab`, in any mix of
-capital letters, gets the full one. Two consequences:
+How the check works, for the curious: each lab **page** (the two HTML files: the practical list and
+the lab room) gets the full check — who you are, your roles, your account status and your Subjects
+switch. The files the pages load (scripts, styles, the student guides and one question paper) only
+check that you're signed in, because doing the full check on every one of them would slow the lab
+down. None of those files holds anything hidden any more: no physics, no true values, no mark
+scheme. Only those file types get the lighter check; any other address under `/lab`, in any mix of
+capital letters, gets the full one.
 
-- Those 70 files are exactly what the lab sends every student who uses it, so a signed-in account
-  without the switch (a parent, say) could read one of them if it knew the file's address. It can't
-  use the lab that way — that needs a page — and none of them is teacher-only.
-- A lab page a student already has open keeps working until they reload or leave it after the
-  switch goes off.
+Every **lab API request** (each adjustment, reading and release) gets the full check too — signed
+in, not suspended or locked, and the Practical Lab switch on or staff — and refuses when it can't
+check. To
+keep adjustments quick, a successful check is reused for up to 30 seconds, so a lab that is already
+open stops working within half a minute of the switch going off. Each student can make a generous
+but limited number of lab requests a minute (hundreds of adjustments, a few hundred readings);
+past that the lab asks them to wait a moment.
 
 **The teacher guide is not on the website.** `teacher-guides.json` (each practical's governing
-model, diagnostic equations, uncertainty analysis and the prompts its authors mark "withhold from
-students") used to sit in `public/lab/content/`, where any signed-in account could fetch it. Nothing
-in the lab loads it, so it now lives in `src/content/lab/teacher-guides.json`, which the website
-never serves. `npm run test:portal` fails if a teacher-only file is put back under `public/lab`.
+model, diagnostic equations, uncertainty analysis, the mark-scheme thresholds and criteria, and the
+prompts its authors mark "withhold from students") lives in `src/content/lab/teacher-guides.json`,
+which the website never serves. `npm run test:portal` fails if a teacher-only file is put back under
+`public/lab`.
 
 ## Try it
 
@@ -79,14 +139,29 @@ never serves. `npm run test:portal` fails if a teacher-only file is put back und
    Practical Lab in their menu.
 2. As an admin, switch **Practical Lab (Physics)** on for them.
 3. As the student, refresh: **Practical Lab** is in the menu, the page shows the lab, and the bell
-   has "Practical Lab is open for you". Open a practical and take a reading.
-4. Switch it off again and reload the student's lab page — refused again.
-5. Signed out, open `/lab/index.html` — you should be sent to the login page.
+   has "Practical Lab is open for you". Open a practical, assemble it, release it and take a
+   reading.
+4. Reload the practical: the notebook still says the same attempt number and the readings at the
+   same settings are the same. Click **Fresh attempt** twice: the attempt number goes up and the
+   readings change.
+5. Sign in as a second test student and open the same practical at the same settings: their
+   readings differ from the first student's.
+6. Switch the lab off again and reload the student's lab page — refused again.
+7. Signed out, open `/lab/index.html` — you should be sent to the login page.
 
 ## Automated checks
 
-`npm run test:portal` now also runs `npm run test:practical-lab`: the access rules for every role
-with the switch on, off and unreadable, the gate on real lab addresses (signed out, cookie and app
-sessions, staff, locks, suspended accounts, failures), the Subjects switch and its notification,
-that the switch opens no physics course, and that no teacher-only file is served from `public/lab`.
+`npm run test:portal` also runs `npm run test:practical-lab`, which now has two parts:
+
+- **Access** (`scripts/test-practical-lab.mjs`): the access rules for every role with the switch
+  on, off and unreadable, the gate on real lab addresses (signed out, cookie and app sessions,
+  staff, locks, suspended accounts, failures), the Subjects switch and its notification, that the
+  switch opens no physics course, and that no teacher-only file is served from `public/lab`.
+- **The engine and its API** (`scripts/test-practical-lab-engine.mjs`): all 50 practicals give a
+  view, readings and a trial on the server; nothing the browser receives holds a hidden value;
+  readings keep the old instrument scatter (checked statistically); every attempt gets its own
+  values and keeps them; every setting that worked still works on every attempt; the `/api/lab`
+  routes refuse the wrong people and bad requests; and `public/lab` holds no model code, no
+  `truth`, no `seededRandom(` and no link to `/lab/models/`.
+
 `npm run test:sat` includes the subjects registry checks.
