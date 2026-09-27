@@ -23,9 +23,10 @@ export function QuestionImage({ src, alt, error, resign, failedText, fallback }:
 }) {
   const [status, setStatus] = useState<"loading" | "loaded" | "failed">("loading");
   const resigned = useRef(false);
-  // An image the browser already has (navigating back to a question) is
-  // complete the moment its element mounts, before any load event. Marking it
-  // loaded here, during the commit, means the placeholder is never painted.
+  // An image the browser already has (navigating back to a question, or one
+  // preloaded while the previous question was open) is complete the moment
+  // its element mounts, before any load event. Marking it loaded here,
+  // during the commit, means the placeholder is never painted.
   const markIfComplete = useCallback((el: HTMLImageElement | null) => {
     if (el && el.complete && el.naturalWidth > 0) setStatus("loaded");
   }, []);
@@ -51,6 +52,8 @@ export function QuestionImage({ src, alt, error, resign, failedText, fallback }:
       {status === "failed" ? failure("This question's image couldn't be loaded.") : null}
       <img
         ref={markIfComplete} src={src} alt={alt} onLoad={() => setStatus("loaded")} onError={onError}
+        /* the image on screen outranks the background preloads (use-image-preload.ts) */
+        decoding="async" fetchPriority="high"
         className={"w-full rounded-lg bg-white" + (status === "loaded" ? "" : " hidden")}
       />
     </>

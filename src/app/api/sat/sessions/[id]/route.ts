@@ -9,6 +9,7 @@ import { answerOf, drillState, finishSession, reviewItem, sessionState } from "@
 import { inPlayQuestionIds, listSummaries, loadDoc, saveDoc } from "@/lib/sat/store";
 import { markAssignment } from "@/lib/sat/assignments";
 import { recordPlanCompletion } from "@/lib/sat/coach/plan-store";
+import { imagesFor, imagesOf } from "@/lib/sat/signed-images";
 
 export const runtime = "nodejs";
 
@@ -44,6 +45,16 @@ const accessUnavailable = () => NextResponse.json({ error: "Your access couldn't
 
 function stateOf(doc: SATSession | SATDrill, now: number) {
   return doc.kind === "drill" ? drillState(doc, now) : sessionState(doc, now);
+}
+
+/** A state response plus `images`: signed URLs for the images that state
+ *  already names (its current module's questions, a finished sitting's
+ *  review, a drill's checked rationales -- signed-images.ts imagePathsOf),
+ *  so they start loading without a second request. Never a rationale the
+ *  state itself doesn't hold. */
+async function withImages<T extends ReturnType<typeof stateOf>>(state: T): Promise<T & { images?: Record<string, string> }> {
+  const images = await imagesFor(state);
+  return images ? { ...state, images } : state;
 }
 
 /** PLAN HOOK (SAT Coach): the finish of a doc started from the study plan
@@ -115,7 +126,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     // so this costs one read on every finished-doc GET and never fails it.
     if (doc.assignmentId) await markAssignment(ownerUid, doc.assignmentId, { status: "done" });
   }
-  return NextResponse.json(stateOf(doc, now));
+  return NextResponse.json(await withImages(stateOf(doc, now)));
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -156,6 +167,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     } catch (e) {
       return NextResponse.json({ error: (e as Error).message }, { status: 400 });
     }
+    const n = result.drill.questionIds.indexOf(a.questionId) + 1;
+    const item = reviewItem(a.questionId, n, result.drill.answers[a.questionId] ?? null);
+    // The question is checked now, so its official rationale image may go
+    // out with this response: signed while the save runs, it starts loading
+    // the moment the answer shows (answer key: never before the check).
+    const rationaleUrl = imagesOf(item?.rationaleImg ? [item.rationaleImg] : []);
     // checkDrillAnswer returns the SAME reference when the question was
     // already checked (the first answer is the one that counts) -- nothing
     // changed, so there is nothing to write.
@@ -167,8 +184,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       await markAssignment(user.id, result.drill.assignmentId, { status: "done" });
     }
     if (result.drill !== doc) await planHook(user.id, result.drill);
-    const n = result.drill.questionIds.indexOf(a.questionId) + 1;
-    return NextResponse.json({ state: drillState(result.drill, now), item: reviewItem(a.questionId, n, result.drill.answers[a.questionId] ?? null) });
+    const images = await rationaleUrl;
+    return NextResponse.json({ state: drillState(result.drill, now), item, ...(images ? { images } : {}) });
   }
 
   let next: SATSession = settleBreak(doc, now);
@@ -207,5 +224,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     await markAssignment(user.id, next.assignmentId, { status: "done" });
   }
   if (doc.finishedAt === null) await planHook(user.id, next);
-  return NextResponse.json(sessionState(next, now));
+  // A save leaves the module on screen (its images are already loading);
+  // a submit or begin brings the next module or the finished review.
+  const state = sessionState(next, now);
+  return NextResponse.json(a.action === "save" ? state : await withImages(state));
 }

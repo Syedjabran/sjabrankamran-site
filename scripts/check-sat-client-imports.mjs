@@ -3,7 +3,7 @@
 // Walks the import graph from every file under src/ that starts with a
 // "use client" directive and fails if it reaches bank.ts, serve.ts,
 // session.ts, forms.ts, adaptive.ts, scoring.ts, drills.ts, store.ts,
-// analytics-data.ts or drill-start.ts in src/lib/sat/, a server-only SAT Coach module in
+// analytics-data.ts, drill-start.ts or signed-images.ts in src/lib/sat/, a server-only SAT Coach module in
 // src/lib/sat/coach/ (profile-store.ts, diagnostic-drill.ts, insights.ts, plan-store.ts,
 // student-guard.ts, tutor.ts, parent-report.ts),
 // or any src/lib/sat/*.json (the
@@ -28,7 +28,7 @@ import ts from "typescript";
 // Paths relative to src/lib/sat/.
 const FORBIDDEN = new Set([
   "bank.ts", "serve.ts", "session.ts", "forms.ts", "adaptive.ts", "scoring.ts", "drills.ts", "store.ts",
-  "analytics-data.ts", "drill-start.ts",
+  "analytics-data.ts", "drill-start.ts", "signed-images.ts",
   "coach/profile-store.ts", "coach/diagnostic-drill.ts", "coach/insights.ts",
   "coach/plan-store.ts", "coach/student-guard.ts", "coach/tutor.ts", "coach/parent-report.ts",
 ]);

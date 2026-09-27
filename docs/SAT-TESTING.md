@@ -66,6 +66,15 @@ to see what a live visitor actually sees.
 Signed out, `/portal/sat-lab` redirects to the login page; signed in with access, it loads
 the SAT Lab. The public `/sat` page loads for anyone, signed in or not.
 
+**Question images load ahead.** In a drill, daily challenge, the diagnostic, a mock or a
+practice-test module, the rest of the module's question images load in the background
+while the student works on one (the next three first, then outward), so **Next** and
+**Back** show the image at once. A drill's official rationale image starts loading the
+moment **Check** answers (its URL comes with the answer — never before), and a finished
+exam's review loads its wrong answers' images in the background. The same image keeps the
+same address for an hour, so the storage CDN serves repeats in about a tenth of a second
+instead of up to a second or two.
+
 ## 3. Turn SAT on for a student
 
 This is the normal way to give a student the SAT Coach today — simpler than the

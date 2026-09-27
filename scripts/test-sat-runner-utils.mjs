@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import {
   RETRY_CAP_MS, SAVE_DEBOUNCE_MS, answersChangedFor, classifyFailure, createQuestionTimer, flaggedChangedFor, isTimeoutError,
-  looksLikeSessionState, mergeAnswers, mergeFlagged, mixedNumberWarning, nextTypedSPR, pickAnswers, pickFlagged, retryDelayMs,
-  splitSignedUrls, sprAnswerPreview, stopMessage, stripSPR, haltAfter,
+  looksLikeSessionState, mergeAnswers, mergeFlagged, mixedNumberWarning, nextTypedSPR, pickAnswers, pickFlagged, pickImageUrls, preloadOrder, retryDelayMs,
+  reviewPreloadOrder, splitSignedUrls, sprAnswerPreview, stopMessage, stripSPR, haltAfter,
 } from "../src/components/sat/sat-runner-utils.ts";
 
 // --- pickAnswers / pickFlagged: a save/submit body carries only the module
@@ -367,6 +367,46 @@ assert.equal(sprAnswerPreview("1.2.3"), null);
   assert.deepEqual(timer.snapshot(200), {}, "entering a question while still hidden accumulates nothing");
   timer.resume(300);
   assert.deepEqual(timer.snapshot(400), { a: 100 }, "counting starts only once resumed");
+}
+
+// --- preloadOrder (SAT polish C): the next 3 first, then outward by
+// distance, forward before back; never the image on screen; the whole
+// module in the end. ---
+{
+  const p = ["q1", "q2", "q3", "q4", "q5", "q6", "q7", "q8"];
+  assert.deepEqual(preloadOrder(p, 0), ["q2", "q3", "q4", "q5", "q6", "q7", "q8"], "from the first question: straight ahead");
+  assert.deepEqual(preloadOrder(p, 3), ["q5", "q6", "q7", "q3", "q2", "q1", "q8"], "the next 3, then outward by distance");
+  assert.deepEqual(preloadOrder(p, 7), ["q7", "q6", "q5", "q4", "q3", "q2", "q1"], "from the last: backwards, nearest first");
+  assert.deepEqual(preloadOrder(p, 5, 1), ["q7", "q5", "q8", "q4", "q3", "q2", "q1"], "a shorter look-ahead");
+  for (let i = 0; i < p.length; i++) {
+    const order = preloadOrder(p, i);
+    assert.equal(order.length, p.length - 1, "every other question, once");
+    assert.ok(!order.includes(p[i]), "never the image on screen");
+  }
+  assert.deepEqual(preloadOrder(["a", "", "b", "a", "c"], 0), ["b", "c"], "empty paths and repeats are skipped");
+  assert.deepEqual(preloadOrder([], 0), []);
+  assert.deepEqual(preloadOrder(["only"], 0), []);
+}
+
+// --- reviewPreloadOrder: every wrong answer's rationale and question first,
+// then the other rationales; a correct answer's question waits for its row.
+{
+  const review = [
+    { img: "i1", rationaleImg: "r1", correct: true },
+    { img: "i2", rationaleImg: "r2", correct: false },
+    { img: "i3", rationaleImg: null, correct: false },
+    { img: "i4", rationaleImg: "r4", correct: true },
+  ];
+  assert.deepEqual(reviewPreloadOrder(review), ["r2", "i2", "i3", "r1", "r4"]);
+  assert.deepEqual(reviewPreloadOrder([]), []);
+}
+
+// --- pickImageUrls: the `images` a state response may carry. ---
+{
+  assert.deepEqual(pickImageUrls({ state: {}, images: { "sat/rw/a.jpg": "https://x/a", "": "https://x/b", "sat/rw/c.jpg": 5 } }), { "sat/rw/a.jpg": "https://x/a" });
+  assert.deepEqual(pickImageUrls({ serverNow: 1 }), {}, "no images: nothing");
+  assert.deepEqual(pickImageUrls({ images: ["https://x/a"] }), {});
+  assert.deepEqual(pickImageUrls(null), {});
 }
 
 console.log("sat-runner-utils tests passed");

@@ -4,13 +4,19 @@ import { CheckCircle2, XCircle, Info } from "lucide-react";
 import { DOMAIN_LABEL, SECTION_LABEL, type SATReport } from "@/lib/sat/client-types";
 import { ExplainButton } from "./explain-button";
 import { useSignedImages } from "./use-signed-images";
+import { useImagePreload } from "./use-image-preload";
+import { reviewPreloadOrder } from "./sat-runner-utils";
 
 /** `explainFrom`: the sitting's id on the student's own finished report --
  *  wrong answers get an "Explain my mistake" link to the SAT tutor for that
- *  attempt (never on a staff view, which passes nothing). */
-export function ScoreReport({ report, explainFrom }: { report: SATReport; explainFrom?: string }) {
+ *  attempt (never on a staff view, which passes nothing). `images`: signed
+ *  URLs the sitting's response already carried. The review's images load in
+ *  the background -- every wrong answer's rationale and question first --
+ *  so a row opens with its images already there. */
+export function ScoreReport({ report, explainFrom, images }: { report: SATReport; explainFrom?: string; images?: Record<string, string> }) {
   const [open, setOpen] = useState<string | null>(null);
-  const { urls, error: imgError, missing: imgMissing } = useSignedImages(report.review.flatMap((r) => [r.img, r.rationaleImg ?? ""]));
+  const { urls, error: imgError, missing: imgMissing } = useSignedImages(report.review.flatMap((r) => [r.img, r.rationaleImg ?? ""]), images);
+  useImagePreload(undefined, reviewPreloadOrder(report.review).map((path) => urls[path]).filter((url): url is string => !!url));
   const s = report.score;
   return (
     <div className="space-y-6">
@@ -71,9 +77,9 @@ export function ScoreReport({ report, explainFrom }: { report: SATReport; explai
               </button>
               {open === r.id ? (
                 <div className="space-y-3 border-t border-white/10 p-3">
-                  {urls[r.img] ? <img src={urls[r.img]} alt={`Question ${r.n}`} className="w-full rounded-lg bg-white" />
+                  {urls[r.img] ? <img src={urls[r.img]} alt={`Question ${r.n}`} decoding="async" className="w-full rounded-lg bg-white" />
                     : imgMissing[r.img] ? <p className="text-sm text-signal">{imgMissing[r.img]}</p> : null}
-                  {r.rationaleImg && urls[r.rationaleImg] ? <img src={urls[r.rationaleImg]} alt="Official rationale" className="w-full rounded-lg bg-white" />
+                  {r.rationaleImg && urls[r.rationaleImg] ? <img src={urls[r.rationaleImg]} alt="Official rationale" decoding="async" className="w-full rounded-lg bg-white" />
                     : r.rationale ? <p className="whitespace-pre-line text-sm text-fog">{r.rationale}</p> : null}
                   {explainFrom && !r.correct ? <ExplainButton questionId={r.id} from={explainFrom} context={`${SECTION_LABEL[r.section]} · Q${r.n}`} /> : null}
                 </div>

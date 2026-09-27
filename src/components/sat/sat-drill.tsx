@@ -8,13 +8,16 @@ import { SprPad } from "./spr-pad";
 import { QuestionImage } from "./question-image";
 import { ExplainButton } from "./explain-button";
 import { useSignedImages } from "./use-signed-images";
-import { createQuestionTimer, isTimeoutError } from "./sat-runner-utils";
+import { useImagePreload } from "./use-image-preload";
+import { createQuestionTimer, isTimeoutError, pickImageUrls, preloadOrder } from "./sat-runner-utils";
 
 // The same bound the runner puts on its requests: a hung Check must end.
 const CHECK_TIMEOUT_MS = 20_000;
 
-/** `explain`: a checked wrong answer offers "Explain my mistake" (students). */
-export function SatDrill({ initial, explain = false }: { initial: DrillState; explain?: boolean }) {
+/** `explain`: a checked wrong answer offers "Explain my mistake" (students).
+ *  `initialImages`: signed URLs the page already carried for this drill's
+ *  questions and checked rationales. */
+export function SatDrill({ initial, initialImages, explain = false }: { initial: DrillState; initialImages?: Record<string, string>; explain?: boolean }) {
   const [state, setState] = useState(initial);
   const firstOpen = initial.questions.findIndex((q) => !initial.checked[q.id]);
   const [idx, setIdx] = useState(firstOpen === -1 ? 0 : firstOpen);
@@ -23,7 +26,7 @@ export function SatDrill({ initial, explain = false }: { initial: DrillState; ex
   const [error, setError] = useState<string | null>(null);
   // Per-question active time (spec 7.1); a stable instance for the life of this drill.
   const [timer] = useState(() => createQuestionTimer());
-  const { urls, error: imgError, missing: imgMissing, resign } = useSignedImages(state.questions.flatMap((x) => [x.img, state.checked[x.id]?.rationaleImg ?? ""]));
+  const { urls, error: imgError, missing: imgMissing, resign, seed } = useSignedImages(state.questions.flatMap((x) => [x.img, state.checked[x.id]?.rationaleImg ?? ""]), initialImages);
   useEffect(() => setResponse(""), [idx]);
   // The question timer counts only while the tab is visible (spec 7.1).
   // Seeded on mount too -- a page opened in a background tab must never
@@ -40,7 +43,16 @@ export function SatDrill({ initial, explain = false }: { initial: DrillState; ex
   // enter/leave around navigating between questions -- stopped once a
   // question is checked (no more input possible; the rationale isn't "time
   // spent on the question" for pacing purposes).
-  const currentQuestionId = state.questions[Math.min(idx, Math.max(state.questions.length - 1, 0))]?.id ?? null;
+  const shownIdx = Math.min(idx, Math.max(state.questions.length - 1, 0));
+  const currentQuestionId = state.questions[shownIdx]?.id ?? null;
+  // While a question is open, the rest of the drill loads in the background,
+  // nearest first -- each question with its rationale once it is checked
+  // (never before: an unchecked question has none in the state).
+  const rationaleOf = new Map(state.questions.map((x) => [x.img, state.checked[x.id]?.rationaleImg ?? ""]));
+  const upcoming = preloadOrder(state.questions.map((x) => x.img), shownIdx)
+    .flatMap((path) => [urls[path], urls[rationaleOf.get(path) ?? ""]])
+    .filter((url): url is string => !!url);
+  const { warm } = useImagePreload(urls[state.questions[shownIdx]?.img ?? ""], upcoming);
   useEffect(() => {
     if (!currentQuestionId || state.checked[currentQuestionId]) return;
     timer.enter(currentQuestionId, Date.now());
@@ -81,6 +93,11 @@ export function SatDrill({ initial, explain = false }: { initial: DrillState; ex
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.state) throw new Error(j.error || "Please try again.");
+      // The rationale image's URL came with the answer: start loading it now,
+      // before the result renders, so it shows as soon as possible.
+      const images = pickImageUrls(j);
+      seed(images);
+      for (const url of Object.values(images)) warm(url);
       setState(j.state as DrillState);
     } catch (e) {
       setError(isTimeoutError(e) ? "The connection timed out — please check again." : (e as Error).message || "Please try again.");

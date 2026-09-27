@@ -4,6 +4,7 @@ import { assembleForm } from "../src/lib/sat/forms.ts";
 import { startAdaptive, submitStage, beginStage } from "../src/lib/sat/session.ts";
 import { startDrill, checkDrillAnswer } from "../src/lib/sat/drills.ts";
 import { answerOf, sessionState, drillState, summaryOf, itemsOf, trimIndex, INDEX_CAP } from "../src/lib/sat/serve.ts";
+import { SIGNED_URL_REUSE_MS, SIGNED_URL_TTL_S, imagePathsOf, rememberSigned, reuseSigned } from "../src/lib/sat/image-urls.ts";
 
 // Deterministic RNG so a run is reproducible and a failure is debuggable.
 function seeded(seed) {
@@ -192,3 +193,71 @@ console.log("sat-serve drill-state tests passed");
 }
 
 console.log("sat-serve index-trim tests passed");
+
+// --- SAT polish C: which image URLs a state response may carry
+// (image-urls.ts imagePathsOf) -- exactly the images the state already
+// names: never a rationale before its question is checked or its sitting
+// finished, never Module 2 before Module 1 is submitted.
+{
+  const byId = new Map(bank.map((q) => [q.id, q]));
+  const imgOf = (id) => byId.get(id).img;
+  const rationaleOf = (id) => byId.get(id).rationaleImg;
+  const sorted = (xs) => [...xs].sort();
+
+  let sit = startAdaptive(form, { id: "img-session-1", uid: "img-user-1", now: T0 });
+  const m1 = sessionState(sit, T0 + 60_000);
+  assert.deepEqual(sorted(imagePathsOf(m1)), sorted(m1.stage.questions.map((q) => q.img)), "a running module: its own question images only");
+  const m1Ids = new Set(sit.plan["rw.m1"]);
+  const others = bank.filter((q) => !m1Ids.has(q.id)).map((q) => q.img);
+  assert.ok(!imagePathsOf(m1).some((p) => others.includes(p)), "nothing from any other module -- Module 2 isn't even planned yet");
+  assert.ok(!imagePathsOf(m1).some((p) => sit.plan["rw.m1"].map(rationaleOf).includes(p)), "no rationale while the module runs");
+
+  sit = submitStage(sit, "rw.m1", allA(sit.plan["rw.m1"]), [], T0 + 30 * 60_000, answerOf);
+  const m2 = sessionState(sit, T0 + 31 * 60_000);
+  assert.deepEqual(sorted(imagePathsOf(m2)), sorted(sit.plan["rw.m2"].map(imgOf)), "after Module 1 is submitted: Module 2's questions, no Module 1 rationales");
+
+  sit = submitStage(sit, "rw.m2", allA(sit.plan["rw.m2"]), [], T0 + 62 * 60_000, answerOf);
+  assert.deepEqual(imagePathsOf(sessionState(sit, T0 + 63 * 60_000)), [], "a break shows no images");
+
+  const done = sessionState(s, T0 + 91 * 60_000); // the finished sitting above
+  const review = done.report.review;
+  assert.deepEqual(
+    sorted(imagePathsOf(done)),
+    sorted(new Set(review.flatMap((r) => [r.img, r.rationaleImg]).filter(Boolean))),
+    "a finished sitting: its review, rationales included",
+  );
+
+  const fresh = drillState(drill, T0 + 1_000);
+  assert.deepEqual(sorted(imagePathsOf(fresh)), sorted(drill.questionIds.map(imgOf)), "a drill before any check: questions only");
+  const oneChecked = drillState(checkedDrill, T0 + 3_000);
+  const want = [...drill.questionIds.map(imgOf), rationaleOf(firstId)].filter(Boolean);
+  assert.deepEqual(sorted(imagePathsOf(oneChecked)), sorted(new Set(want)), "after one check: plus that question's rationale, and no other");
+}
+
+// --- SAT polish C: stable signed URLs (image-urls.ts reuseSigned /
+// rememberSigned): the same image gets the same URL for an hour, so the
+// browser and the storage CDN can cache it.
+{
+  const HOUR = 60 * 60_000;
+  assert.equal(SIGNED_URL_TTL_S * 1000 - SIGNED_URL_REUSE_MS >= HOUR, true, "every URL handed out still has at least an hour to run");
+  const cache = new Map();
+  assert.deepEqual(reuseSigned(cache, ["a", "b", "a", ""], T0), { urls: {}, toSign: ["a", "b"] }, "nothing cached: sign each path once");
+  rememberSigned(cache, { a: "url-a", b: "url-b" }, T0);
+  assert.deepEqual(reuseSigned(cache, ["a", "b", "c"], T0 + 59 * 60_000), { urls: { a: "url-a", b: "url-b" }, toSign: ["c"] }, "reused within the hour");
+  assert.deepEqual(reuseSigned(cache, ["a"], T0 + HOUR), { urls: {}, toSign: ["a"] }, "re-signed once the hour is up");
+  assert.deepEqual(reuseSigned(cache, ["a"], T0 - 1), { urls: {}, toSign: ["a"] }, "a clock that went backwards never reuses");
+  rememberSigned(cache, { a: "url-a2" }, T0 + HOUR);
+  assert.equal(reuseSigned(cache, ["a"], T0 + HOUR + 1).urls.a, "url-a2", "the new URL replaces the old");
+
+  // Past the cap: entries no longer handed out go first, then the oldest.
+  const small = new Map();
+  rememberSigned(small, { old: "u1" }, T0, 3);
+  rememberSigned(small, { mid: "u2", mid2: "u3" }, T0 + 2 * HOUR, 3);
+  rememberSigned(small, { new: "u4" }, T0 + 2 * HOUR + 1, 3);
+  assert.deepEqual([...small.keys()], ["mid", "mid2", "new"], "the expired entry went first");
+  rememberSigned(small, { newer: "u5" }, T0 + 2 * HOUR + 2, 3);
+  assert.deepEqual([...small.keys()], ["mid2", "new", "newer"], "then the oldest signed");
+  assert.ok(small.size <= 3);
+}
+
+console.log("sat-serve image-url tests passed");

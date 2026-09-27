@@ -6,9 +6,10 @@ import { SprPad } from "./spr-pad";
 import { ScoreReport } from "./score-report";
 import { QuestionImage } from "./question-image";
 import { useSignedImages } from "./use-signed-images";
+import { useImagePreload } from "./use-image-preload";
 import {
   SAVE_DEBOUNCE_MS, answersChangedFor, createQuestionTimer, flaggedChangedFor, isTimeoutError, looksLikeSessionState, mergeAnswers,
-  mergeFlagged, haltAfter, pickAnswers, pickFlagged, retryDelayMs, stopMessage, type Halt,
+  mergeFlagged, haltAfter, pickAnswers, pickFlagged, pickImageUrls, preloadOrder, retryDelayMs, stopMessage, type Halt,
 } from "./sat-runner-utils";
 
 type SaveState = "idle" | "saving" | "saved" | "unsaved" | "failed" | "stopped";
@@ -50,6 +51,13 @@ export function SatRunner({ sessionId, explain = false }: { sessionId: string; e
   // Per-question active time (spec 7.1); a stable instance for the life of
   // this sitting -- see createQuestionTimer's own tests for its behaviour.
   const [timer] = useState(() => createQuestionTimer());
+  // The module on screen and its images. A state response carries the
+  // signed URLs of the images it names (`images`: the current module, or a
+  // finished sitting's review -- never Module 2 before Module 1 is
+  // submitted, since the state doesn't have it); they are seeded here so
+  // only what is missing gets signed.
+  const questions = useMemo(() => state?.stage?.questions ?? [], [state]);
+  const { urls, error: imgError, missing: imgMissing, resign, seed } = useSignedImages(questions.map((q) => q.img));
   const skew = useRef(0);
   const expiredOnLoad = useRef(false);
   const dirty = useRef(false);
@@ -218,8 +226,9 @@ export function SatRunner({ sessionId, explain = false }: { sessionId: string; e
       return;
     }
     noteSuccess();
+    seed(pickImageUrls(j));
     apply(j as SessionState); // clears `error` too
-  }, [sessionId, apply, noteSuccess, noteFailure]);
+  }, [sessionId, apply, noteSuccess, noteFailure, seed]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
@@ -253,11 +262,13 @@ export function SatRunner({ sessionId, explain = false }: { sessionId: string; e
       // malformed/empty body) must never be applied -- treat it as a failure.
       if (!looksLikeSessionState(j)) return { kind: "error", message: "Please try again.", halted: noteFailure(null) };
       noteSuccess();
+      // A submit or begin brings the next module's (or the review's) image URLs.
+      seed(pickImageUrls(j));
       return { kind: "ok", state: j as SessionState };
     } catch (e) {
       return { kind: "error", message: isTimeoutError(e) ? timeoutMessage : (e as Error).message || "Please try again.", halted: noteFailure(null) };
     }
-  }, [sessionId, noteSuccess, noteFailure]);
+  }, [sessionId, noteSuccess, noteFailure, seed]);
 
   // The actual save network round-trip -- a single attempt, never looping.
   // `editSeq` guards against a subtler case: an edit made after the request
@@ -407,11 +418,14 @@ export function SatRunner({ sessionId, explain = false }: { sessionId: string; e
     void enqueue(() => (stateRef.current?.status === "break" ? load() : Promise.resolve()));
   }, [state, now, load, enqueue]);
 
-  const questions = useMemo(() => state?.stage?.questions ?? [], [state]);
-  const { urls, error: imgError, missing: imgMissing, resign } = useSignedImages(questions.map((q) => q.img));
+  // While a question is open, the rest of this module loads in the
+  // background, nearest first; a question already seen stays warm.
+  const shownIdx = Math.min(idx, Math.max(questions.length - 1, 0));
+  const questionPaths = questions.map((x) => x.img);
+  useImagePreload(urls[questionPaths[shownIdx] ?? ""], preloadOrder(questionPaths, shownIdx).map((path) => urls[path]).filter((url): url is string => !!url));
   // enter/leave around navigating between questions (spec 7.1) -- only while
   // a module is actually running (not on the break/finished screens).
-  const currentQuestionId = questions[Math.min(idx, Math.max(questions.length - 1, 0))]?.id ?? null;
+  const currentQuestionId = questions[shownIdx]?.id ?? null;
   useEffect(() => {
     if (state?.status !== "running" || !currentQuestionId) return;
     timer.enter(currentQuestionId, Date.now());
@@ -420,7 +434,7 @@ export function SatRunner({ sessionId, explain = false }: { sessionId: string; e
 
   if (error && !state) return <p className="rounded-2xl border border-signal/30 bg-signal/5 p-5 text-sm text-fog">{error} <button className="ml-2 text-cyan underline" onClick={() => void load()}>Retry</button></p>;
   if (!state) return <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading your sitting…</p>;
-  if (state.status === "finished" && state.report) return <ScoreReport report={state.report} explainFrom={explain ? sessionId : undefined} />;
+  if (state.status === "finished" && state.report) return <ScoreReport report={state.report} explainFrom={explain ? sessionId : undefined} images={urls} />;
 
   // Why nothing is being saved or reloaded automatically (a 401/403/404/423).
   const haltMessage = halt ? stopMessage(halt.status, { onBreak: state.status === "break", serverMessage: halt.serverMessage }) : null;

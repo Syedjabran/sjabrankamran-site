@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import type { DrillState, SessionState } from "@/lib/sat/client-types";
 import { ScoreReport } from "./score-report";
+import { pickImageUrls } from "./sat-runner-utils";
 
 // GET /api/sat/sessions/<id>?uid=<uid> already serves this same union to the
 // owner's own runner (sat-runner.tsx / sat-drill.tsx) -- this is the
@@ -37,7 +38,7 @@ export function SatResultReport({ uid, id }: { uid: string; id: string }) {
   if (!state) return <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading the report…</p>;
 
   if ("status" in state && state.status === "finished" && state.report) {
-    return <ScoreReport report={state.report} />;
+    return <ScoreReport report={state.report} images={pickImageUrls(state)} />;
   }
   // Drills carry no SATReport/status shape at all (only adaptive/practice
   // sittings do) -- a finished one must never fall into the "still in

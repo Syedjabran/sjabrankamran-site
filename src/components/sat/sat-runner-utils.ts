@@ -241,6 +241,54 @@ export function splitSignedUrls(requested: string[], body: unknown): { urls: Rec
   return { urls, missing };
 }
 
+/** The `images` map a state response may carry (signed URLs of the images
+ *  that state names): only string URLs under non-empty paths; {} for
+ *  anything else. */
+export function pickImageUrls(body: unknown): Record<string, string> {
+  const given = body && typeof body === "object" ? (body as { images?: unknown }).images : undefined;
+  if (!given || typeof given !== "object" || Array.isArray(given)) return {};
+  const out: Record<string, string> = {};
+  for (const [path, url] of Object.entries(given as Record<string, unknown>)) if (path && typeof url === "string" && url) out[path] = url;
+  return out;
+}
+
+// --- Preloading (use-image-preload.ts) ---
+
+/** How many upcoming questions are fetched before any earlier one. */
+export const PRELOAD_AHEAD = 3;
+
+/** The order to preload a module's (or drill's) question images in while
+ *  question `current` is on screen: the next `ahead` first (students mostly
+ *  move on), then outward by distance -- the previous one, the one after
+ *  those, the one before... -- so the whole module ends up warm, nearest
+ *  first. The current image itself, repeats and empty paths are left out. */
+export function preloadOrder(paths: string[], current: number, ahead: number = PRELOAD_AHEAD): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>([paths[current] ?? ""]);
+  const take = (i: number) => {
+    const path = paths[i];
+    if (i < 0 || i >= paths.length || !path || seen.has(path)) return;
+    seen.add(path);
+    out.push(path);
+  };
+  for (let d = 1; d <= ahead; d++) take(current + d);
+  for (let d = 1; d < paths.length; d++) {
+    if (d > ahead) take(current + d);
+    take(current - d);
+  }
+  return out;
+}
+
+/** A finished sitting's review, in the order its images are preloaded: the
+ *  official rationale and the question of every wrong answer first (what a
+ *  student opens), then every other rationale. A correct answer's question
+ *  image loads when its row is opened. */
+export function reviewPreloadOrder(review: { img: string; rationaleImg: string | null; correct: boolean }[]): string[] {
+  const wrong = review.filter((r) => !r.correct).flatMap((r) => [r.rationaleImg ?? "", r.img]);
+  const right = review.filter((r) => r.correct).map((r) => r.rationaleImg ?? "");
+  return [...new Set([...wrong, ...right].filter(Boolean))];
+}
+
 /** A light shape check on a parsed 2xx response body before it's trusted as
  *  a usable session state. A body that parsed as JSON but isn't actually
  *  shaped like one (an empty object from a `.catch(() => ({}))` fallback, a
