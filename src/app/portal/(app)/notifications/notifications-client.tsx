@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Bell, BellRing, CheckCheck, Target, Trophy, ClipboardList, FlaskConical,
   Megaphone, Mail, BookOpen, CheckSquare, CalendarX2, TrendingUp, AlarmClock,
-  CalendarPlus, Smartphone, Copy, Check, ChevronDown,
+  CalendarPlus, Smartphone, Copy, Check, ChevronDown, GraduationCap,
 } from "lucide-react";
 
 type Notif = { id: string; kind: string; title: string; body: string | null; link: string | null; read_at: string | null; created_at: string };
@@ -22,12 +22,14 @@ const KIND_ICON: Record<string, React.ReactNode> = {
   attendance: <CalendarX2 size={15} className="text-signal" />,
   rank: <TrendingUp size={15} className="text-cyan" />,
   reminder: <AlarmClock size={15} className="text-amber-300" />,
+  sat: <GraduationCap size={15} className="text-cyan" />,
 };
 
 const FILTERS: { id: string; label: string; kinds: string[] | null }[] = [
   { id: "all", label: "All", kinds: null },
   { id: "work", label: "Tests & tasks", kinds: ["test", "assignment", "task", "challenge"] },
-  { id: "reminder", label: "Reminders", kinds: ["reminder"] },
+  // "sat": the SAT Coach's daily "Today's SAT … is ready" and "SAT Lab is open for you".
+  { id: "reminder", label: "Reminders", kinds: ["reminder", "sat"] },
   { id: "marks", label: "Marks", kinds: ["marks"] },
   { id: "announcement", label: "Announcements", kinds: ["announcement"] },
   { id: "resource", label: "Resources", kinds: ["resource"] },
