@@ -63,13 +63,24 @@ export function allocationQuestionIds(
  *  no longer narrows the student's practice for ever. */
 export const IN_PLAY_GRACE_MS = 7 * 24 * 60 * 60_000;
 
-/** A test or no-help assignment that is open or upcoming: its questions stay
- *  out of the student's practice and are never revealed to them elsewhere. */
-export function isInPlay(a: Pick<AllocLike, "mode" | "status" | "dueAt">, now: number): boolean {
+/** How far ahead of its start a scheduled test or no-help assignment counts
+ *  as "upcoming". Before that its questions are not held yet -- nothing about
+ *  a test weeks away changes what the student sees, so nothing can point at
+ *  it -- and practice papers of its type are not paused for weeks on end. */
+export const UPCOMING_WINDOW_MS = 14 * 24 * 60 * 60_000;
+
+/** A test or no-help assignment that is open, or starts within 14 days: its
+ *  questions stay out of the student's practice and are never revealed to
+ *  them elsewhere, and whole practice papers of its type are paused. */
+export function isInPlay(a: Pick<AllocLike, "mode" | "status" | "dueAt"> & { startsAt?: string | null }, now: number): boolean {
   if (a.mode === "assignment_help" || a.status === "submitted") return false;
   if (a.dueAt) {
     const due = Date.parse(a.dueAt);
     if (Number.isFinite(due) && due + IN_PLAY_GRACE_MS < now) return false;
+  }
+  if (a.startsAt) {
+    const start = Date.parse(a.startsAt);
+    if (Number.isFinite(start) && start - now > UPCOMING_WINDOW_MS) return false;
   }
   return true;
 }
@@ -142,15 +153,21 @@ export type SittingToken = {
 };
 
 export const SITTING_MAX_AGE_MS = 24 * 60 * 60_000;
+/** An attempt is still accepted with its sitting's token this long after the
+ *  sitting opened: a paper left open overnight, or a retried save, must
+ *  never lose its answers. Everything else (images, reveals, Maxwell) keeps
+ *  the one-day limit. */
+export const SUBMIT_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
 
-/** The token belongs to `uid`, has the right shape and is younger than a day. */
-export function sittingTokenOk(t: unknown, uid: string, now: number): t is SittingToken {
+/** The token belongs to `uid`, has the right shape and is younger than
+ *  `maxAgeMs` (a day by default). */
+export function sittingTokenOk(t: unknown, uid: string, now: number, maxAgeMs: number = SITTING_MAX_AGE_MS): t is SittingToken {
   if (!t || typeof t !== "object") return false;
   const s = t as Partial<SittingToken>;
   return s.v === 1 && s.uid === uid && typeof s.sid === "string" && !!s.sid &&
     Array.isArray(s.ids) && s.ids.length > 0 && s.ids.every((x) => typeof x === "string") &&
     (s.alloc === null || typeof s.alloc === "string") && typeof s.help === "boolean" && typeof s.strict === "boolean" &&
-    typeof s.iat === "number" && s.iat <= now + 60_000 && now - s.iat <= SITTING_MAX_AGE_MS;
+    typeof s.iat === "number" && s.iat <= now + 60_000 && now - s.iat <= maxAgeMs;
 }
 
 /** Same questions, any order, no extras and none missing. */
@@ -206,6 +223,32 @@ export type MarkReceipt = { v: 1; uid: string; sid: string; qid: string; h: stri
 
 export function answerHash(answer: string): string {
   return sha256Hex(answer.trim());
+}
+
+// --- the answer freeze after a reveal (server-side) ----------------------------
+
+/** A question whose mark scheme was shown in a sitting, and the answer the
+ *  student had at that moment (exam-lab/reveals.ts keeps these on the server). */
+export type RevealRecord = { text: string; at: number };
+
+/** Where a sitting's reveals are kept: an allocation's under the allocation
+ *  (so a reopened assignment, or an attempt saved without its token, still
+ *  finds them), a practice sitting's under its own id. */
+export function revealScope(t: { sid: string; alloc: string | null }): string {
+  return t.alloc ? `a-${t.alloc}` : t.sid;
+}
+
+/** The answer that counts for a question: once its scheme was revealed, the
+ *  answer as it was then, whatever the browser sends later. */
+export function frozenResponse(response: string | null, reveal: RevealRecord | undefined): string | null {
+  if (!reveal) return response;
+  return reveal.text.trim() ? reveal.text : null;
+}
+
+/** Maxwell may mark a revealed question only for the answer frozen at the
+ *  reveal (marking an edited answer would score a copy of the scheme). */
+export function markAllowedAfterReveal(answer: string, reveal: RevealRecord | undefined): boolean {
+  return !reveal || answerHash(answer) === answerHash(reveal.text);
 }
 
 export function receiptMatches(r: unknown, want: { uid: string; sid: string; qid: string; response: string | null }): r is MarkReceipt {

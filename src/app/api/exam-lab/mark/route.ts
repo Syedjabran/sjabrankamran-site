@@ -4,7 +4,8 @@ import { getPortalUser, isExamLabStaff } from "@/lib/edu/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { questionById } from "@/lib/exam-lab/bank-all";
 import { getAllocation, type ExamAllocation } from "@/lib/exam-lab/allocations";
-import { answerHash, helpAllowed, takeHit, type MarkReceipt } from "@/lib/exam-lab/answer-rules";
+import { answerHash, helpAllowed, markAllowedAfterReveal, revealScope, takeHit, type MarkReceipt } from "@/lib/exam-lab/answer-rules";
+import { readReveal } from "@/lib/exam-lab/reveals";
 import { examLabKey } from "@/lib/exam-lab/keys";
 import { signToken } from "@/lib/exam-lab/seal";
 import { heldIds, readSitting } from "@/lib/exam-lab/sittings";
@@ -30,8 +31,10 @@ async function b64(supabase: ReturnType<typeof createAdminClient>, path: string)
  * Its reply names the scheme points, so it is HELP: only in a help-allowed
  * sitting (practice, or a help-allowed assignment still open), only for a
  * question of that sitting, never for a question held back for the student
- * (an open test or no-help assignment). Returns a signed receipt for exactly
- * this answer: the attempt route counts a structured mark only with it.
+ * (an open test or no-help assignment), and -- once the question's mark
+ * scheme has been revealed -- only for the answer frozen at the reveal.
+ * Returns a signed receipt for exactly this answer: the attempt route counts
+ * a structured mark only with it.
  */
 export async function POST(request: Request) {
   const user = await getPortalUser();
@@ -58,6 +61,11 @@ export async function POST(request: Request) {
     if (!helpAllowed(sitting, live)) return NextResponse.json({ error: "Maxwell isn't available in this sitting." }, { status: 403 });
     if (!isExamLabStaff(user.roles) && (await heldIds(user.id, Date.now(), sitting.alloc)).has(q.id)) {
       return NextResponse.json({ error: "Maxwell isn't available for this question right now." }, { status: 403 });
+    }
+    const reveal = await readReveal(user.id, revealScope(sitting), q.id);
+    if (reveal === null) throw new Error("reveals unreadable");
+    if (!markAllowedAfterReveal(parsed.data.answer, reveal)) {
+      return NextResponse.json({ error: "This answer is final: you've seen its mark scheme." }, { status: 409 });
     }
   } catch {
     return NextResponse.json({ error: "Exam Lab is temporarily unavailable. Please retry." }, { status: 503 });

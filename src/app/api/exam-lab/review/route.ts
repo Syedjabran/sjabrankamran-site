@@ -10,7 +10,9 @@ import { imageUrls } from "@/lib/sat/signed-images";
 
 export const runtime = "nodejs";
 
-const schema = z.object({ token: z.string().min(10).max(20000) });
+// `fresh`: questions whose mark-scheme image failed to load -- signed again
+// (a new signature is a genuinely new request: the one retry).
+const schema = z.object({ token: z.string().min(10).max(20000), fresh: z.array(z.string().max(80)).max(80).optional() });
 
 type Item = { answer?: string; correct?: boolean | null; ms?: string; held?: true };
 
@@ -70,7 +72,16 @@ export async function POST(request: Request) {
       if (bq.ms_img) msPaths[aq.id] = bq.ms_img;
     }
   }
-  const signed = Object.keys(msPaths).length ? await imageUrls(Object.values(msPaths)) : { ok: true as const, urls: {} as Record<string, string> };
-  if (signed.ok) for (const [id, path] of Object.entries(msPaths)) if (signed.urls[path]) items[id].ms = signed.urls[path];
+  const again = new Set(parsed.data.fresh ?? []);
+  const reuse = Object.entries(msPaths).filter(([id]) => !again.has(id));
+  const renew = Object.entries(msPaths).filter(([id]) => again.has(id));
+  const none = { ok: true as const, urls: {} as Record<string, string> };
+  const [signed, resigned] = await Promise.all([
+    reuse.length ? imageUrls(reuse.map(([, p]) => p)) : none,
+    renew.length ? imageUrls(renew.map(([, p]) => p), { fresh: true }) : none,
+  ]);
+  for (const [list, got] of [[reuse, signed], [renew, resigned]] as const) {
+    if (got.ok) for (const [id, path] of list) if (got.urls[path]) items[id].ms = got.urls[path];
+  }
   return NextResponse.json({ mcq, items }, { status: 200, headers: { "cache-control": "no-store" } });
 }

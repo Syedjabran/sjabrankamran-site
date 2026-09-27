@@ -12,14 +12,14 @@ import "server-only";
 import { imageUrls, imagesOf } from "@/lib/sat/signed-images";
 import { formatPk } from "@/lib/portal/pk-time";
 import {
-  LAUNCHABLE_STATUSES, allocationQuestionIds, hasStarted, inPlayIds, sittingTokenOk, type SittingToken,
+  LAUNCHABLE_STATUSES, SITTING_MAX_AGE_MS, allocationQuestionIds, hasStarted, inPlayIds, sittingTokenOk, type SittingToken,
 } from "./answer-rules";
 import { freezeAllocationIds, getAllocation, listAllocations, withProctorStatus, type AllocContent, type ExamAllocation } from "./allocations";
 import { idsOfPaper, practiceBank, questionById, safeQuestion } from "./bank-all";
 import { IMAGE_BANK, type ImgQuestion } from "./image-bank";
 import { examLabKey } from "./keys";
 import type { ExamCourse, SafeQuestion } from "./paper-meta";
-import { legacyDrillPick, pickPractice, type PracticeSpec } from "./practice-pools";
+import { legacyDrillPick, pickPractice, practiceRefusal, type PracticeSpec } from "./practice-pools";
 import { newSealId, signToken, verifyToken } from "./seal";
 
 export type SitMode = "practice" | "exam" | "test";
@@ -48,12 +48,13 @@ export function issueSitting(p: Omit<SittingToken, "v" | "sid" | "iat">, now = D
   return signToken(token, key);
 }
 
-/** The caller's own, unexpired sitting token -- or null. */
-export function readSitting(token: unknown, uid: string, now = Date.now()): SittingToken | null {
+/** The caller's own sitting token, younger than `maxAgeMs` (a day by
+ *  default; the attempt route accepts older ones) -- or null. */
+export function readSitting(token: unknown, uid: string, now = Date.now(), maxAgeMs = SITTING_MAX_AGE_MS): SittingToken | null {
   const key = examLabKey("sitting");
   if (!key) return null;
   const t = verifyToken<SittingToken>(token, key);
-  return sittingTokenOk(t, uid, now) ? t : null;
+  return sittingTokenOk(t, uid, now, maxAgeMs) ? t : null;
 }
 
 /** Question ids held back from `uid` right now: those of their open or
@@ -75,17 +76,18 @@ async function opened(questions: ImgQuestion[], token: string | null, content?: 
 
 /**
  * A self-serve practice sitting in `course`. `held` = the student's in-play
- * questions (empty for staff): never drawn, and a whole paper holding any of
- * them is not offered. `mode` "test" (a proctored preview) is staff-only.
+ * questions (empty for staff): never drawn into a drill, and while any is of
+ * a paper type, every whole paper of that type is paused with one refusal
+ * (practice-pools.ts pickPractice). `mode` "test" (a proctored preview) is
+ * staff-only.
  */
 export async function openPractice(
   uid: string, course: ExamCourse, spec: PracticeSpec, mode: SitMode, held: ReadonlySet<string>,
 ): Promise<SittingResult> {
   const pick = pickPractice(spec, practiceBank(course), held, Math.random);
   if (!pick.ok) {
-    return pick.reason === "unavailable"
-      ? refuse(409, "This paper isn't available for practice right now. Try another paper.")
-      : refuse(404, spec.type === "focus" ? "No practice questions are available for those topics yet." : "No questions match that choice yet. Widen the topics or levels.");
+    const r = practiceRefusal(pick.reason, spec.type);
+    return refuse(r.status, r.error);
   }
   const questions = resolve(pick.ids);
   const token = issueSitting({ uid, ids: questions.map((q) => q.id), alloc: null, help: mode !== "test", strict: mode === "test" });

@@ -54,6 +54,10 @@ export type AttemptContext = {
   /** SERVER-SET: the sitting (answer-rules.ts SittingToken.sid) this attempt
    *  submitted -- what /api/exam-lab/review finds it by. */
   sittingId?: string;
+  /** SERVER-SET: a legacy randomised allocation sat from a browser that chose
+   *  its own questions (a tab opened before specs were frozen on the server);
+   *  they were checked against the spec's pool, then frozen. For staff audit. */
+  browserChosenPaper?: boolean;
 };
 
 export type Attempt = {

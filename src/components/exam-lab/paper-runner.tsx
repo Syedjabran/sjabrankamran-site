@@ -714,16 +714,35 @@ export function PaperRunner({
     if (ms[id]) { setRevealed((r) => ({ ...r, [id]: !r[id] })); return; }
     if (submitted || !help || msState[id]?.loading) return;
     setMsState((m) => ({ ...m, [id]: { loading: true } }));
-    const r = await revealMarkScheme(token, id);
+    const r = await revealMarkScheme(token, id, structRef.current[id] || "");
     if (!r.ok) { setMsState((m) => ({ ...m, [id]: { error: r.error } })); return; }
     setMsState((m) => ({ ...m, [id]: {} }));
     setMs((m) => ({ ...m, [id]: r.url }));
+    // The server keeps the answer as it was at the reveal: show that one.
+    setStructAnswers((s) => ({ ...s, [id]: r.answer }));
+    setMaxwell((m) => (m[id] && !m[id].loading && m[id].answer !== r.answer.trim() ? dropKey(m, id) : m));
     setFrozen((f) => new Set(f).add(id));
     setRevealed((rv) => ({ ...rv, [id]: true }));
     revealsRef.current += 1;
     if (startedAt !== null && kind !== "practice") {
       postProctor({ action: "event", events: [{ type: "reveal_ms", reason: "Revealed the mark scheme.", terminal: false, source: "system" }] });
     }
+  }
+
+  // One retry of a mark-scheme image that failed to load, with a fresh
+  // signature: from the review once submitted, else the reveal again (its
+  // frozen answer never changes).
+  async function resignMs(id: string): Promise<string | null> {
+    let url: string | null = null;
+    if (submitted) {
+      const r = await fetchReview(token, [id]);
+      url = r.ok ? r.review.items?.[id]?.ms ?? null : null;
+    } else {
+      const r = await revealMarkScheme(token, id, structRef.current[id] || "", true);
+      url = r.ok ? r.url : null;
+    }
+    if (url) setMs((m) => ({ ...m, [id]: url! }));
+    return url;
   }
 
   const mcqs = questions.filter(isMcq);
@@ -1088,7 +1107,7 @@ export function PaperRunner({
                   {!strict && revealed[q.id] && ms[q.id] && (
                     <div className="mt-3">
                       <p className="mb-1 font-mono text-[11px] uppercase tracking-widest text-cyan">Official mark scheme</p>
-                      <QuestionImage key={ms[q.id]} src={ms[q.id]} alt={`Mark scheme ${q.qnum}`} error={null} lazy imgClassName="border border-cyan/30" failedText="This mark scheme couldn't be loaded. Reload the page to try again." />
+                      <QuestionImage key={`ms-${q.id}`} src={ms[q.id]} alt={`Mark scheme ${q.qnum}`} error={null} resign={() => resignMs(q.id)} lazy imgClassName="border border-cyan/30" failedText="This mark scheme couldn't be loaded. Check your connection." />
                     </div>
                   )}
                 </div>

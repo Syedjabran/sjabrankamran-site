@@ -2,10 +2,15 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getPortalUser } from "@/lib/edu/auth";
 import { appendAttemptChecked, type Attempt, type AttemptContext, type AttemptQuestion } from "@/lib/exam-lab/attempts";
-import { idsOfPaper, questionById } from "@/lib/exam-lab/bank-all";
-import { getAllocation, type ExamAllocation } from "@/lib/exam-lab/allocations";
-import { allocationQuestionIds, hasStarted, receiptMatches, sameIdSet, sittingAlreadySubmitted, type MarkReceipt } from "@/lib/exam-lab/answer-rules";
+import { idsOfPaper, practiceBank, questionById } from "@/lib/exam-lab/bank-all";
+import { freezeAllocationIds, getAllocation, type ExamAllocation } from "@/lib/exam-lab/allocations";
+import {
+  SUBMIT_MAX_AGE_MS, allocationQuestionIds, frozenResponse, hasStarted, receiptMatches, revealScope, sameIdSet, sittingAlreadySubmitted,
+  type MarkReceipt, type RevealRecord,
+} from "@/lib/exam-lab/answer-rules";
 import { examLabKey } from "@/lib/exam-lab/keys";
+import { legacyIdsAcceptable } from "@/lib/exam-lab/practice-pools";
+import { readReveals } from "@/lib/exam-lab/reveals";
 import { verifyToken } from "@/lib/exam-lab/seal";
 import { readSitting } from "@/lib/exam-lab/sittings";
 
@@ -86,16 +91,22 @@ export async function POST(request: Request) {
   const ids = d.questions.map((q) => q.id);
 
   // The sitting this attempt submits: signed when it opened, so its question
-  // set, help rule and allocation cannot be changed by the browser.
+  // set, help rule and allocation cannot be changed by the browser. Accepted
+  // for a week (a paper left open overnight still saves). An allocation
+  // attempt whose token can't be used (older, or signed before a key change)
+  // falls back to the allocation itself -- MCQs marked here, no Maxwell marks
+  // -- rather than losing the student's answers.
   const sittingToken = d.context?.sitting;
-  const sitting = sittingToken ? readSitting(sittingToken, user.id, now) : null;
-  if (sittingToken && !sitting) return NextResponse.json({ error: "This sitting has expired, so your answers could not be verified. Open the paper again." }, { status: 403 });
+  const sitting = sittingToken ? readSitting(sittingToken, user.id, now, SUBMIT_MAX_AGE_MS) : null;
+  const claimedAllocation = d.context?.allocationId || null;
+  if (sittingToken && !sitting && !claimedAllocation) return NextResponse.json({ error: "This sitting has expired, so your answers could not be verified. Open the paper again." }, { status: 403 });
   if (sitting && !sameIdSet(sitting.ids, ids)) return NextResponse.json({ error: "This attempt does not match the paper that was opened." }, { status: 400 });
 
   let kind: AttemptContext["kind"];
   let help: boolean;
   let alloc: ExamAllocation | null = null;
-  const allocationId = sitting ? sitting.alloc : d.context?.allocationId || null;
+  let browserChosenPaper = false;
+  const allocationId = sitting ? sitting.alloc : claimedAllocation;
   if (allocationId) {
     // An allocation attempt must be the caller's own allocation, after it
     // opened, and the exact paper it froze; its mode (not the client) decides
@@ -105,7 +116,19 @@ export async function POST(request: Request) {
     }
     if (!alloc) return NextResponse.json({ error: "This attempt does not belong to one of your assignments." }, { status: 403 });
     if (!hasStarted(alloc, now)) return NextResponse.json({ error: "This activity has not opened yet." }, { status: 403 });
-    const expected = allocationQuestionIds(alloc, idsOfPaper)?.filter((id) => questionById(id));
+    let expected = allocationQuestionIds(alloc, idsOfPaper)?.filter((id) => questionById(id)) ?? null;
+    const c = alloc.content;
+    if (!expected && (c.type === "drill" || c.type === "daily") && legacyIdsAcceptable(c, ids, practiceBank("9702"))) {
+      // A legacy randomised spec the browser drew itself (a tab opened before
+      // specs were frozen on the server): questions its own pool could have
+      // given are frozen now, so this allocation takes no other set.
+      try {
+        expected = await freezeAllocationIds(user.id, alloc.id, () => ids);
+      } catch {
+        return NextResponse.json({ error: "Could not verify the assignment. Please retry." }, { status: 503 });
+      }
+      browserChosenPaper = !!expected && sameIdSet(expected, ids);
+    }
     if (!expected) return NextResponse.json({ error: "Open this assignment from Exam Lab, then submit it." }, { status: 409 });
     if (!sameIdSet(expected, ids)) return NextResponse.json({ error: "This attempt does not match the assigned paper." }, { status: 400 });
     help = alloc.mode === "assignment_help";
@@ -127,12 +150,25 @@ export async function POST(request: Request) {
   // "Attempted" = a non-empty response, so a student tampering with the
   // payload cannot turn a blank paper into a scored one.
   const receiptKey = examLabKey("receipt");
+  // Answers frozen by a mark-scheme reveal (reveals.ts) count as they were
+  // then, whatever the browser sends now; Maxwell receipts are matched
+  // against that answer too.
+  // An allocation's are found by the allocation, so an attempt saved without
+  // its token (the fallback above) is frozen all the same.
+  let reveals: Record<string, RevealRecord> = {};
+  const scope = alloc ? revealScope({ sid: "", alloc: alloc.id }) : sitting ? revealScope(sitting) : null;
+  if (scope && help) {
+    const structured = d.questions.map((q) => questionById(q.id)).filter((bq) => bq && bq.ms_img).map((bq) => bq!.id);
+    const read = structured.length ? await readReveals(user.id, scope, structured) : {};
+    if (read === null) return NextResponse.json({ error: "Your answers couldn't be checked just now. Please retry." }, { status: 503 });
+    reveals = read;
+  }
   const questions: AttemptQuestion[] = [];
   for (const q of d.questions) {
     const bq = questionById(q.id);
     if (!bq) return NextResponse.json({ error: "The attempt contains an unknown question." }, { status: 400 });
     const marks = bq.marks || 1;
-    const response = q.response && q.response.trim() ? q.response : null;
+    const response = frozenResponse(q.response && q.response.trim() ? q.response : null, reveals[bq.id]);
     let earned: number | null = null;
     let correct: boolean | null = null;
     let feedback: string | null = null;
@@ -179,6 +215,7 @@ export async function POST(request: Request) {
     context = {
       ...client, kind, help, status,
       allocationId: alloc?.id ?? null,
+      ...(browserChosenPaper ? { browserChosenPaper: true } : {}),
       // A proctored practice preview is proctored whatever the browser says.
       ...(sitting?.strict ? { integrity: "strict" as const, proctored: true } : {}),
       ...(sitting ? { sittingId: sitting.sid } : {}),

@@ -70,10 +70,11 @@ export async function signSittingImages(token: string, paths: string[], fresh = 
 export type ReviewItem = { answer?: string; correct?: boolean | null; ms?: string; held?: true };
 export type Review = { mcq: { got: number; total: number }; items?: Record<string, ReviewItem> };
 
-/** A submitted sitting's results (answers and mark schemes where allowed). */
-export async function fetchReview(token: string): Promise<{ ok: true; review: Review } | { ok: false; error: string }> {
+/** A submitted sitting's results (answers and mark schemes where allowed).
+ *  `fresh`: questions whose mark-scheme image failed -- signed again. */
+export async function fetchReview(token: string, fresh?: string[]): Promise<{ ok: true; review: Review } | { ok: false; error: string }> {
   try {
-    const r = await fetch("/api/exam-lab/review", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }), cache: "no-store" });
+    const r = await fetch("/api/exam-lab/review", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(fresh?.length ? { token, fresh } : { token }), cache: "no-store" });
     const j: unknown = await r.json().catch(() => null);
     if (!r.ok) return { ok: false, error: errorOf(j, "Couldn't load your results.") };
     const v = j as Partial<Review> | null;
@@ -84,14 +85,18 @@ export async function fetchReview(token: string): Promise<{ ok: true; review: Re
   }
 }
 
-/** One question's mark scheme while sitting (help-allowed sittings only). */
-export async function revealMarkScheme(token: string, id: string): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+/** One question's mark scheme while sitting (help-allowed sittings only).
+ *  `answer`: the student's answer now -- the server records it and it is
+ *  final from then on (the reply's `answer` is the one on record). `fresh`:
+ *  sign again (the retry of an image that failed to load). */
+export async function revealMarkScheme(token: string, id: string, answer: string, fresh = false): Promise<{ ok: true; url: string; answer: string } | { ok: false; error: string }> {
   try {
-    const r = await fetch("/api/exam-lab/reveal", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token, id }), cache: "no-store" });
+    const r = await fetch("/api/exam-lab/reveal", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token, id, answer, ...(fresh ? { fresh } : {}) }), cache: "no-store" });
     const j: unknown = await r.json().catch(() => null);
     const url = (j as { url?: unknown } | null)?.url;
+    const kept = (j as { answer?: unknown } | null)?.answer;
     if (!r.ok || typeof url !== "string") return { ok: false, error: errorOf(j, "Couldn't load the mark scheme.") };
-    return { ok: true, url };
+    return { ok: true, url, answer: typeof kept === "string" ? kept : answer };
   } catch {
     return { ok: false, error: "Couldn't load the mark scheme. Check your connection." };
   }

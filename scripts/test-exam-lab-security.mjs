@@ -4,11 +4,15 @@
 import assert from "node:assert/strict";
 import { deriveKey, newSealId, openSealed, sealJson, sha256Hex, signToken, verifyToken } from "../src/lib/exam-lab/seal.ts";
 import {
-  IN_PLAY_GRACE_MS, LAUNCHABLE_STATUSES, SITTING_MAX_AGE_MS, allocationQuestionIds, answerHash, classifyAssetPath,
-  examLabSittingRunning, hasStarted, helpAllowed, inPlayIds, isInPlay, pastPaperKey, publicAllocation, questionKey,
-  receiptMatches, revealAfterSubmit, sameIdSet, sittingAlreadySubmitted, sittingTokenOk, takeHit,
+  IN_PLAY_GRACE_MS, LAUNCHABLE_STATUSES, SITTING_MAX_AGE_MS, SUBMIT_MAX_AGE_MS, UPCOMING_WINDOW_MS, allocationQuestionIds, answerHash,
+  classifyAssetPath, examLabSittingRunning, frozenResponse, hasStarted, helpAllowed, inPlayIds, isInPlay, markAllowedAfterReveal,
+  pastPaperKey, publicAllocation, questionKey, receiptMatches, revealAfterSubmit, revealScope, sameIdSet, sittingAlreadySubmitted,
+  sittingTokenOk, takeHit,
 } from "../src/lib/exam-lab/answer-rules.ts";
-import { DAILY_QUESTIONS, MAX_DRILL_QUESTIONS, legacyDrillPick, pickPractice } from "../src/lib/exam-lab/practice-pools.ts";
+import {
+  DAILY_QUESTIONS, MAX_DRILL_QUESTIONS, PAPERS_PAUSED, legacyDrillPick, legacyIdsAcceptable, pickPractice, practiceRefusal,
+} from "../src/lib/exam-lab/practice-pools.ts";
+import { selectionSummary } from "../src/components/exam-lab/selection-summary.ts";
 import { CANON_9702, buildPaperIndex, chrono9702, countPool, courseOfCode, poolCounts, poolTopics } from "../src/lib/exam-lab/paper-meta.ts";
 import { PRACTICE_SET_MAX_AGE_MS, markSet, practiceSetOk, sealableSet, withoutHeld, withoutKeys } from "../src/lib/exam-lab/practice-set.ts";
 import { helperPausedOnPath } from "../src/lib/ai/helper-pause-paths.ts";
@@ -80,6 +84,11 @@ assert.equal(isInPlay(alloc({ mode: "assignment_nohelp" }), NOW), true, "no-help
 assert.equal(isInPlay(alloc({ mode: "assignment_help" }), NOW), false, "help-allowed work does not");
 assert.equal(isInPlay(alloc({ dueAt: new Date(NOW - IN_PLAY_GRACE_MS + HOUR).toISOString() }), NOW), true, "overdue but within the grace week");
 assert.equal(isInPlay(alloc({ dueAt: new Date(NOW - IN_PLAY_GRACE_MS - HOUR).toISOString() }), NOW), false, "a long-stale challenge stops holding questions");
+// "Upcoming" = starting within 14 days (fix round 1, I1): a test weeks away
+// holds nothing yet, so nothing the student sees can point at it.
+assert.equal(isInPlay(alloc({ startsAt: new Date(NOW + UPCOMING_WINDOW_MS - HOUR).toISOString() }), NOW), true, "13 days 23 h ahead: upcoming");
+assert.equal(isInPlay(alloc({ startsAt: new Date(NOW + UPCOMING_WINDOW_MS + HOUR).toISOString() }), NOW), false, "just over 14 days ahead: not yet");
+assert.equal(isInPlay(alloc({ startsAt: new Date(NOW - DAY).toISOString() }), NOW), true, "already open");
 const allocs = [
   alloc({ id: "t", content: { type: "paper", code: "9702_s18_11" } }),
   alloc({ id: "nh", mode: "assignment_nohelp", content: { type: "custom", ids: ["n1"] } }),
@@ -128,6 +137,11 @@ assert.equal(sittingTokenOk({ ...sit, help: "yes" }, "u1", NOW), false);
 assert.equal(sittingTokenOk({ ...sit, v: 2 }, "u1", NOW), false);
 assert.equal(sittingTokenOk({ ...sit, iat: NOW + HOUR }, "u1", NOW), false, "issued in the future");
 assert.equal(sittingTokenOk(null, "u1", NOW), false);
+// The attempt route accepts a token for a week (a paper left open overnight
+// must still save -- fix round 1, m3); everything else keeps the day.
+assert.equal(sittingTokenOk(sit, "u1", NOW + 2 * DAY, SUBMIT_MAX_AGE_MS), true, "a two-day-old sitting still submits");
+assert.equal(sittingTokenOk(sit, "u1", NOW + SUBMIT_MAX_AGE_MS + 1, SUBMIT_MAX_AGE_MS), false);
+assert.equal(sittingTokenOk(sit, "u2", NOW + 2 * DAY, SUBMIT_MAX_AGE_MS), false, "never another student's");
 
 // --- one submission per sitting (M4) -----------------------------------------------------
 const stored = (over) => ({ ts: NOW, context: { allocationId: null, cancelled: false, ...over } });
@@ -171,6 +185,19 @@ assert.equal(receiptMatches(receipt, { uid: "u1", sid: "s1", qid: "q8", response
 assert.equal(receiptMatches(receipt, { uid: "u1", sid: "s1", qid: "q9", response: null }), false);
 assert.equal(receiptMatches(null, { uid: "u1", sid: "s1", qid: "q9", response: "F = ma" }), false);
 
+// --- the answer freeze after a reveal, on the server (fix round 1, m1) ---------------------------
+const revealed = { text: "  v = u + at  ", at: NOW };
+assert.equal(frozenResponse("a copy of the mark scheme", revealed), "  v = u + at  ", "the answer at the reveal counts, whatever is sent later");
+assert.equal(frozenResponse(null, revealed), "  v = u + at  ");
+assert.equal(frozenResponse("anything", { text: "   ", at: NOW }), null, "revealed while blank: stays blank");
+assert.equal(frozenResponse("my answer", undefined), "my answer", "not revealed: the answer as sent");
+assert.equal(markAllowedAfterReveal("v = u + at", revealed), true, "Maxwell may mark the frozen answer");
+assert.equal(markAllowedAfterReveal("v = u + at, s = ut + at^2/2", revealed), false, "but not an edited one");
+assert.equal(markAllowedAfterReveal("anything", undefined), true, "not revealed: any answer");
+assert.equal(revealScope({ sid: "s1", alloc: null }), "s1", "practice: per sitting");
+assert.equal(revealScope({ sid: "s1", alloc: "A" }), "a-A", "an allocation: per allocation, found again without the token");
+assert.equal(revealScope({ sid: "s2", alloc: "A" }), revealScope({ sid: "s1", alloc: "A" }), "a reopened assignment keeps its reveals");
+
 // --- the AI helper during a sitting (M7) -------------------------------------------------------
 const running = (over) => ({ mode: "test", status: "in_progress", startedAt: NOW - 10 * 60_000, durationMin: 60, ...over });
 assert.equal(examLabSittingRunning([running({})], NOW), true);
@@ -210,7 +237,23 @@ const bank = [
 ];
 assert.deepEqual(pickPractice({ type: "paper", code: "9702_s18_11" }, bank, new Set(), rng), { ok: true, ids: ["a2", "a1", "a3"] }, "a paper in question order");
 assert.deepEqual(pickPractice({ type: "paper", code: "nope" }, bank, new Set(), rng), { ok: false, reason: "empty" });
-assert.deepEqual(pickPractice({ type: "paper", code: "9702_s18_11" }, bank, new Set(["a3"]), rng), { ok: false, reason: "unavailable" }, "a paper holding an in-play question is not offered");
+// I1 (fix round 1): while any held question is of a paper type, EVERY whole
+// paper of that type is refused, with the same words -- not only the one
+// holding it, which would name the upcoming test's past paper.
+const heldP1 = new Set(["a3"]); // a3 sits in 9702_s18_11 (P1)
+const own = pickPractice({ type: "paper", code: "9702_s18_11" }, bank, heldP1, rng);
+const otherPaper = pickPractice({ type: "paper", code: "9702_w19_12" }, bank, heldP1, rng);
+assert.deepEqual(own, { ok: false, reason: "paused" }, "the held question's own paper is paused");
+assert.deepEqual(otherPaper, { ok: false, reason: "paused" }, "and so is a paper with no held question");
+assert.equal(JSON.stringify(practiceRefusal(own.reason, "paper")), JSON.stringify(practiceRefusal(otherPaper.reason, "paper")), "byte-identical refusals");
+assert.deepEqual(practiceRefusal("paused", "paper"), { status: 409, error: PAPERS_PAUSED });
+assert.ok(!PAPERS_PAUSED.includes("9702") && !/P[124]/.test(PAPERS_PAUSED), "the refusal names no paper");
+assert.deepEqual(pickPractice({ type: "paper", code: "9702_s18_21" }, bank, heldP1, rng), { ok: true, ids: ["b1", "b2"] }, "other paper types stay open");
+assert.deepEqual(pickPractice({ type: "paper", code: "9702_s18_11" }, bank, new Set(["zz-other-course"]), rng).ok, true, "a held question of another course pauses nothing here");
+assert.deepEqual(pickPractice({ type: "paper", code: "nope" }, bank, heldP1, rng), { ok: false, reason: "empty" }, "an unknown code is refused the same way, held or not");
+const drillHeld = pickPractice({ type: "drill", paperType: "P1", topics: [], levels: ["LOT", "HOT"], count: 40 }, bank, heldP1, rng);
+assert.equal(drillHeld.ok, true, "drills of that type stay open");
+assert.ok(!drillHeld.ids.includes("a3"), "without the held question");
 const drill = pickPractice({ type: "drill", paperType: "P1", topics: ["Waves"], levels: ["LOT", "HOT"], count: 10 }, bank, new Set(["c1"]), rng);
 assert.equal(drill.ok, true);
 assert.deepEqual([...drill.ids].sort(), ["a1", "a3"], "a drill never draws an in-play question");
@@ -230,6 +273,17 @@ assert.deepEqual([...legacyDrillPick({ type: "drill", paperType: "P1", topics: [
 assert.deepEqual([...legacyDrillPick({ type: "drill", paperType: "P1", topics: ["Retired topic"], levels: ["HOT"], count: 5 }, bank, rng)].sort(), ["a2", "a3"], "a retired topic falls back to paper + level");
 assert.equal(legacyDrillPick({ type: "drill", paperType: "P2", topics: ["Gone"], levels: ["HOT"], count: 5 }, bank, rng).length, 2, "then to the whole paper type");
 assert.ok(legacyDrillPick({ type: "daily" }, bank, rng).every((id) => ["a1", "a2", "a3", "c1"].includes(id)));
+// A tab opened before specs were frozen on the server (fix round 1, m3): its
+// own draw is accepted if it could have come from the spec's pool.
+const waves = { type: "drill", paperType: "P1", topics: ["Waves"], levels: ["LOT", "HOT"], count: 2 };
+assert.equal(legacyIdsAcceptable(waves, ["a3", "a1"], bank), true);
+assert.equal(legacyIdsAcceptable(waves, ["a3", "a2"], bank), false, "a question outside the spec's pool is refused");
+assert.equal(legacyIdsAcceptable(waves, ["a1", "a3", "c1"], bank), false, "more than the spec's count");
+assert.equal(legacyIdsAcceptable(waves, ["a1", "a1"], bank), false, "duplicates");
+assert.equal(legacyIdsAcceptable(waves, [], bank), false);
+assert.equal(legacyIdsAcceptable({ ...waves, topics: ["Retired topic"], levels: ["HOT"] }, ["a2", "a3"], bank), true, "the same fallback pool the browser used");
+assert.equal(legacyIdsAcceptable({ type: "daily" }, ["a1", "c1"], bank), true);
+assert.equal(legacyIdsAcceptable({ type: "daily" }, ["b1"], bank), false, "a daily challenge is Paper 1 only");
 
 // --- paper index and pool counts (the hub renders from these, not the bank) -----------------------
 const idx = buildPaperIndex([
@@ -275,5 +329,18 @@ assert.deepEqual(markSet(portalSet, {}).mcqScore, 0, "a blank set scores 0");
 const heldKey = new Set([questionKey("9702_m19_12", 11)]);
 assert.deepEqual(withoutHeld(gen, heldKey).map((q) => q.id), ["seed-004", "ai-x-1"], "the text copy of a held-back past-paper question is left out");
 assert.deepEqual(withoutHeld(gen, new Set()).length, 3);
+
+// --- the assign panel's duration (fix round 1, m6) ----------------------------------------------------
+const sq = (id, paperType, level, marks) => ({ id, course: "9702", paperType, code: "c", qnum: 1, topic: null, level, marks, img: id + ".jpg", ref: id, duration: 75, hasMs: false });
+const onScreen = [sq("x1", "P1", "LOT", 1), sq("x2", "P2", "HOT", 6)];
+const early = selectionSummary(["x1", "x2"], null, onScreen);
+assert.equal(early.complete, true, "the paper on screen sums before the bank loads");
+assert.ok(early.minutes > 1 && early.marks === 7 && early.mix === "P1 ×1 · P2 ×1");
+const editedSel = selectionSummary(["x1", "x2", "y9"], null, onScreen);
+assert.equal(editedSel.complete, false, "an added question the page doesn't know yet: still estimating");
+const loadedSel = selectionSummary(["x1", "y9"], { byId: new Map([["y9", { q: sq("y9", "P4", "LOT", 4) }]]) }, onScreen);
+assert.equal(loadedSel.complete, true);
+assert.equal(loadedSel.marks, 5);
+assert.equal(selectionSummary([], null).complete, true);
 
 console.log("exam-lab security tests passed");
