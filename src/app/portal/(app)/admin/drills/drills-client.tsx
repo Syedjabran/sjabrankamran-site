@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Layers, Users, School, Clock3, FileText, ChevronLeft, Loader2, Hash, Printer, Search, CheckCircle2, AlertTriangle, Inbox } from "lucide-react";
+import { QuestionImage } from "@/components/sat/question-image";
+import { useImagePreload } from "@/components/sat/use-image-preload";
+import { signAssetPaths } from "@/components/exam-lab/sign-assets";
 
 type Row = {
   id: string; ref?: string; allocationId: string; name: string; mode: string;
@@ -116,14 +119,23 @@ export function DrillRecordsClient({ scoped = false }: { scoped?: boolean }) {
       const j = await (await fetch(`/api/portal/admin/drills/${encodeURIComponent(id)}`, { cache: "no-store" })).json();
       if (j.record) {
         setOpen(j.record);
-        const paths = [...new Set((j.record.snapshot as SnapQ[]).map((q) => q.img).filter(Boolean))].slice(0, 80);
-        if (paths.length) {
-          const s = await (await fetch("/api/exam-lab/asset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ paths }) })).json();
-          setImgs(s.urls || {});
-        }
+        const paths = [...new Set((j.record.snapshot as SnapQ[]).map((q) => q.img).filter(Boolean))];
+        if (paths.length) setImgs(await signAssetPaths(paths));
       }
     } catch { /* ignore */ } finally { setOpenLoading(false); }
   }, []);
+
+  // One retry of an image that failed to load, with a fresh signature.
+  const resignImage = useCallback(async (path: string): Promise<string | null> => {
+    const url = (await signAssetPaths([path], true))[path];
+    if (!url) return null;
+    setImgs((m) => ({ ...m, [path]: url }));
+    return url;
+  }, []);
+  // The open paper's images load in order in the background (stable URLs,
+  // cached by the browser), so scrolling down finds them ready.
+  const paperUrls = open ? open.snapshot.map((q) => imgs[q.img]).filter((u): u is string => !!u) : [];
+  useImagePreload(undefined, paperUrls);
 
   if (open) {
     return (
@@ -200,8 +212,7 @@ export function DrillRecordsClient({ scoped = false }: { scoped?: boolean }) {
                 {q.answer ? <span className="rounded-full border border-lime2/40 px-2 py-0.5 text-lime2">Ans {q.answer}</span> : null}
               </div>
               {imgs[q.img] ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={imgs[q.img]} alt={q.ref} className="w-full rounded-lg border border-white/10 bg-white" loading="lazy" />
+                <QuestionImage key={q.img} src={imgs[q.img]} alt={q.ref} error={null} resign={() => resignImage(q.img)} lazy imgClassName="border border-white/10" />
               ) : (
                 <p className="text-xs text-dust">{openLoading ? "…" : "Image unavailable"}</p>
               )}

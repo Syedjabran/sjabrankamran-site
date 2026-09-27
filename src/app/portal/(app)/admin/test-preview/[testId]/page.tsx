@@ -1,7 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import { requireAdmin, isSuperAdmin } from "@/lib/portal/admin";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { SECURE_BANK } from "@/lib/exam-lab/image-bank";
+import { imageUrls } from "@/lib/sat/signed-images";
+import { QuestionImage } from "@/components/sat/question-image";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Test question preview" };
@@ -31,9 +32,10 @@ export default async function TestPreviewPage({ params }: { params: Promise<{ te
     .sort((a, b) => a.qnum - b.qnum);
   if (questions.length !== 20) notFound();
 
-  const paths = questions.map((q) => q.img);
-  const { data } = await createAdminClient().storage.from("exam-assets").createSignedUrls(paths, 3600);
-  const urls = new Map((data || []).filter((item) => item.path && item.signedUrl).map((item) => [item.path, item.signedUrl as string]));
+  // The same URL for an hour (src/lib/sat/signed-images.ts): a reload of this
+  // page finds every image in the browser's and the CDN's cache.
+  const signed = await imageUrls(questions.map((q) => q.img));
+  const urls = new Map(Object.entries(signed.ok ? signed.urls : {}));
 
   return (
     <div className="space-y-6">
@@ -55,8 +57,7 @@ export default async function TestPreviewPage({ params }: { params: Promise<{ te
               </div>
             </div>
             {urls.get(q.img) ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={urls.get(q.img)} alt={`Question ${index + 1}`} className="w-full rounded-xl border border-white/10 bg-white" />
+              <QuestionImage key={q.img} src={urls.get(q.img)} alt={`Question ${index + 1}`} error={null} lazy imgClassName="border border-white/10" />
             ) : <p className="text-sm text-signal">Question image unavailable.</p>}
           </article>
         ))}

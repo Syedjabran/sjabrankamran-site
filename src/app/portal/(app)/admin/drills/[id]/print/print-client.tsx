@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, Loader2, Printer, Eye, EyeOff, AlertTriangle } from "lucide-react";
+import { signAssetPaths } from "@/components/exam-lab/sign-assets";
 
 type SnapQ = {
   id: string; ref: string; paperType: string; code: string; qnum: number;
@@ -25,24 +26,9 @@ const MODE_LABEL: Record<string, string> = {
 function refOf(r: { ref?: string } | null) { return r && typeof r.ref === "string" && r.ref ? r.ref : ""; }
 function when(ts: number) { return new Date(ts).toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" }); }
 
-/** The asset endpoint signs at most 80 paths per call, so long papers chunk. */
-async function signPaths(paths: string[]): Promise<Record<string, string>> {
-  const out: Record<string, string> = {};
-  for (let i = 0; i < paths.length; i += 80) {
-    const chunk = paths.slice(i, i + 80);
-    if (!chunk.length) continue;
-    try {
-      const res = await fetch("/api/exam-lab/asset", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ paths: chunk }),
-      });
-      const j = await res.json();
-      Object.assign(out, j.urls || {});
-    } catch { /* an unsigned path just renders as "image unavailable" */ }
-  }
-  return out;
-}
+/** The asset endpoint signs at most 80 paths per call, so long papers chunk
+ *  (sign-assets.ts); `fresh` is the one retry of an image that failed to load. */
+const signPaths = signAssetPaths;
 
 /**
  * Wait for every image inside the sheet to finish loading (or fail) before the
@@ -110,6 +96,16 @@ export function DrillPrintClient({ idOrRef }: { idOrRef: string }) {
     })();
     return () => { alive = false; };
   }, [withMs, rec]);
+
+  // One retry per image that failed to load, with a fresh signature (a new
+  // URL is a genuinely new request); a second failure stays as it is.
+  const retried = useRef(new Set<string>());
+  const retryImage = useCallback(async (path: string) => {
+    if (retried.current.has(path)) return;
+    retried.current.add(path);
+    const url = (await signPaths([path], true))[path];
+    if (url) setImgs((m) => ({ ...m, [path]: url }));
+  }, []);
 
   const printNow = useCallback(async () => {
     setPreparing(true);
@@ -227,6 +223,7 @@ export function DrillPrintClient({ idOrRef }: { idOrRef: string }) {
                     /* never lazy: an image below the fold that has not loaded prints blank */
                     loading="eager"
                     decoding="sync"
+                    onError={() => { void retryImage(q.img); }}
                   />
                 ) : (
                   <p className="border border-dashed border-black/30 p-4 text-center text-xs text-black/50">Question image unavailable</p>
@@ -254,7 +251,7 @@ export function DrillPrintClient({ idOrRef }: { idOrRef: string }) {
                   {q.ms_img ? (
                     imgs[q.ms_img] ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={imgs[q.ms_img]} alt={`Mark scheme ${i + 1}`} className="mt-2 w-full max-w-full bg-white" loading="eager" decoding="sync" />
+                      <img src={imgs[q.ms_img]} alt={`Mark scheme ${i + 1}`} className="mt-2 w-full max-w-full bg-white" loading="eager" decoding="sync" onError={() => { void retryImage(q.ms_img!); }} />
                     ) : (
                       <p className="mt-2 border border-dashed border-black/30 p-3 text-center text-xs text-black/50">{msLoading ? "Loading…" : "Mark-scheme image unavailable"}</p>
                     )
