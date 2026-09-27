@@ -7,7 +7,12 @@
 // exam and "Drill this" are one tap each, and one start at a time. When the
 // SAT date has gone by, a card asks how it went instead of the plan (not
 // booked: once the target month is here, it asks for a date or a new month).
-import { useEffect, useState, type ReactNode } from "react";
+// Every visit loads fresh (nothing is cached in the browser), and a tab left
+// in the background refreshes when it comes back -- a drill finished in
+// another tab shows here too; the card on screen stays until the new one
+// arrives ("Updating…"). The server regenerates Coach says only when the
+// student's finished work, plan or day changed, so an idle refresh is free.
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
@@ -56,6 +61,9 @@ function HorizonPassed({ booked }: { booked: boolean }) {
   );
 }
 
+// A tab hidden at least this long refreshes the coach when it is shown again.
+const REFRESH_AFTER_HIDDEN_MS = 10_000;
+
 export function CoachHome() {
   const router = useRouter();
   const [data, setData] = useState<CoachPayload | null>(null);
@@ -64,9 +72,13 @@ export function CoachHome() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [insights, setInsights] = useState<InsightsView | null>(null);
   const [insightsState, setInsightsState] = useState<"loading" | "ready" | "failed">("loading");
+  // Coach says is being fetched again while a view is on screen.
+  const [updating, setUpdating] = useState(false);
+  const refreshing = useRef(false);
 
   // Coach says is optional: a failure hides the card (a view already shown stays).
   async function loadInsights() {
+    setUpdating(true);
     try {
       const res = await fetch("/api/sat/coach/insights", { cache: "no-store" });
       if (!res.ok) throw new Error();
@@ -74,6 +86,8 @@ export function CoachHome() {
       setInsightsState("ready");
     } catch {
       setInsightsState((state) => (state === "ready" ? state : "failed"));
+    } finally {
+      setUpdating(false);
     }
   }
 
@@ -91,6 +105,32 @@ export function CoachHome() {
     void loadInsights();
   }
   useEffect(() => { void load(); }, []);
+
+  // Back to this tab after a while (or restored from the browser's
+  // back/forward cache): refresh Today, the plan, the goals and Coach says,
+  // keeping what is on screen until the new data lands.
+  useEffect(() => {
+    async function refresh() {
+      if (refreshing.current) return;
+      refreshing.current = true;
+      try { await load(); } finally { refreshing.current = false; }
+    }
+    let hiddenAt: number | null = document.visibilityState === "hidden" ? Date.now() : null;
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") { hiddenAt = Date.now(); return; }
+      const away = hiddenAt === null ? 0 : Date.now() - hiddenAt;
+      hiddenAt = null;
+      if (away >= REFRESH_AFTER_HIDDEN_MS) void refresh();
+    };
+    const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) void refresh(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load only uses state setters; listen once
+  }, []);
 
   async function begin(key: string, url: string, body: unknown) {
     if (busyId) return;
@@ -135,7 +175,7 @@ export function CoachHome() {
         <Notice>{data.planError ?? "Your plan couldn't be loaded — retry."} <button className="ml-2 text-cyan underline" onClick={() => void load()}>Retry</button></Notice>
       )}
       {data.goals.length ? <GoalsCard goals={data.goals} /> : null}
-      {insights ? <CoachSays view={insights} onDrill={drill} busy={busyId !== null} /> : insightsState === "loading" ? <CoachSaysSkeleton /> : null}
+      {insights ? <CoachSays view={insights} onDrill={drill} busy={busyId !== null} updating={updating} /> : insightsState === "loading" ? <CoachSaysSkeleton /> : null}
     </div>
   );
 }

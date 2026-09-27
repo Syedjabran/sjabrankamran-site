@@ -22,7 +22,7 @@ import { createHash } from "node:crypto";
 import { readFreshJson, writeFreshJson } from "@/lib/exam-lab/storage-fresh";
 import { pkToday } from "@/lib/portal/pk-time";
 import {
-  computeAnalytics, docsToLoad, finishedItemsCache, hasFinishedWork, historyOf, sittingScores, type AnalyticsItem,
+  computeAnalytics, docsToLoad, finishedItemsCache, finishedWorkKey, hasFinishedWork, historyOf, sittingScores, type AnalyticsItem,
 } from "./analytics.ts";
 import type { History } from "./coach/challenge-builder.ts";
 import type { SATAnalytics, SessionSummary } from "./client-types.ts";
@@ -47,7 +47,9 @@ type AnalyticsCache = {
   finished: Record<string, AnalyticsItem[]>; // items per FINISHED doc id
 };
 
-export type StudentAnalytics = { analytics: SATAnalytics; history: History; fingerprint: string };
+/** `work`: finishedWorkKey of the same summaries -- changes exactly when
+ *  finished work does ("Coach says" regenerates on it). */
+export type StudentAnalytics = { analytics: SATAnalytics; history: History; fingerprint: string; work: string };
 
 /** sha1 over each summary's id, finishedAt, correct, total and drill
  *  checkedCount, sorted by id: a save that only reorders the index (every
@@ -86,7 +88,7 @@ export async function studentAnalytics(uid: string, now: number, known?: KnownRe
   const cached = await readFreshJson<unknown>(BUCKET, cachePath(uid));
   const hit = cached.ok ? asCache(cached.data) : null;
   if (hit && hit.fingerprint === fingerprint && hit.day === day) {
-    return { analytics: hit.analytics, history: new Map(hit.history), fingerprint };
+    return { analytics: hit.analytics, history: new Map(hit.history), fingerprint, work: finishedWorkKey(summaries) };
   }
 
   const reuse = hit?.finished ?? {};
@@ -115,5 +117,5 @@ export async function studentAnalytics(uid: string, now: number, known?: KnownRe
     };
     await writeFreshJson(BUCKET, cachePath(uid), doc);
   }
-  return { analytics, history, fingerprint };
+  return { analytics, history, fingerprint, work: finishedWorkKey(summaries) };
 }

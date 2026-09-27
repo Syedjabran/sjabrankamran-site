@@ -4,17 +4,22 @@
 // presentational -- coach-home.tsx fetches the InsightsView from
 // GET /api/sat/coach/insights (after the plan, so the plan never waits on
 // the AI) and passes it in, with what a "Drill this" tap should do and
-// whether a start is already under way (`busy`: the buttons wait).
+// whether a start is already under way (`busy`: the buttons wait) and
+// whether a newer view is on its way (`updating`: this one stays meanwhile).
+import { Loader2 } from "lucide-react";
 import type { InsightsView } from "@/lib/sat/client-types";
 
-export function CoachSays({ view, onDrill, busy = false }: { view: InsightsView; onDrill: (skill: string) => void; busy?: boolean }) {
+export function CoachSays({ view, onDrill, busy = false, updating = false }: { view: InsightsView; onDrill: (skill: string) => void; busy?: boolean; updating?: boolean }) {
   return (
-    <section className="min-w-0 rounded-2xl border border-white/10 bg-space/60 p-5">
+    <section aria-busy={updating} className="min-w-0 rounded-2xl border border-white/10 bg-space/60 p-5">
       <div className="flex items-center justify-between gap-3">
         <h2 className="font-display text-lg text-ice">Coach says</h2>
-        <span className="shrink-0 rounded-full border border-white/10 px-2 py-0.5 text-[11px] uppercase tracking-wide text-dust">
-          {view.source === "ai" ? "AI" : "Coach"}
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          {updating ? <span role="status" className="flex items-center gap-1 text-[11px] text-dust"><Loader2 size={12} className="animate-spin" /> Updating…</span> : null}
+          <span className="rounded-full border border-white/10 px-2 py-0.5 text-[11px] uppercase tracking-wide text-dust">
+            {view.source === "ai" ? "AI" : "Coach"}
+          </span>
+        </div>
       </div>
       <p className="mt-3 text-base text-ice">{view.headline}</p>
       <p className="mt-1 text-sm text-fog">{view.summary}</p>

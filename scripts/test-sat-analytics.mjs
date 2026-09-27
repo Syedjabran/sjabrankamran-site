@@ -5,7 +5,7 @@
 // domain/skill row.
 import assert from "node:assert/strict";
 import {
-  analyticsItemsFromDoc, computeAnalytics, docsToLoad, finishedItemsCache, hasFinishedWork, historyOf, sittingScores,
+  analyticsItemsFromDoc, computeAnalytics, docsToLoad, finishedItemsCache, finishedWorkKey, hasFinishedWork, historyOf, sittingScores,
 } from "../src/lib/sat/analytics.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -358,6 +358,24 @@ function sitting(overrides) {
     summary({ id: "d1", finishedAt: NOW }),
   ]);
   assert.deepEqual(scores.map((s) => s.id), ["s1"]);
+}
+
+// --- 20: finishedWorkKey ("Coach says" regenerates on it, SAT polish B):
+// it moves with every finished attempt and with nothing else.
+{
+  const summary = (overrides) => ({ id: "x", kind: "drill", title: "t", createdAt: NOW, finishedAt: null, score: null, correct: 0, total: 0, assignmentId: null, overtime: false, ...overrides });
+  const base = [
+    summary({ id: "b-drill", checkedCount: 2 }),
+    summary({ id: "a-mock", kind: "adaptive", finishedAt: NOW }),
+  ];
+  const key = finishedWorkKey(base);
+  assert.equal(finishedWorkKey([...base].reverse()), key, "the index order (every save moves a doc to the front) doesn't matter");
+  assert.equal(finishedWorkKey([...base, summary({ id: "new-drill", checkedCount: 0 })]), key, "starting a drill is not finished work");
+  assert.equal(finishedWorkKey([...base, summary({ id: "open-mock", kind: "practice" })]), key, "starting (or saving) a sitting is not finished work");
+  assert.notEqual(finishedWorkKey([summary({ id: "b-drill", checkedCount: 3 }), base[1]]), key, "one more checked drill question");
+  assert.notEqual(finishedWorkKey([summary({ id: "b-drill", checkedCount: 2, finishedAt: NOW }), base[1]]), key, "a drill finished");
+  assert.notEqual(finishedWorkKey([...base, summary({ id: "c-test", kind: "practice", finishedAt: NOW })]), key, "a practice test finished");
+  assert.notEqual(finishedWorkKey([base[0]]), key, "a doc with finished work left the index");
 }
 
 console.log("sat-analytics tests passed");

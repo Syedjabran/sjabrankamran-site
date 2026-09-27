@@ -240,9 +240,16 @@ A few rules worth checking by hand:
 **Coach says**, on the SAT Lab home, is a short card: a one-line headline, a two-sentence
 summary, and up to three tips (each with a **Drill this** button when it names a specific
 skill). A small badge in the corner reads **AI** or **Coach** — "AI" means an AI provider
-wrote this text; "Coach" means the rule-based fallback did (see §11). It only regenerates
-when something actually changed (new finished work, a plan change, or a new day) — reloading
-the page a second time in the same state shouldn't visibly change it.
+wrote this text; "Coach" means the rule-based fallback did (see §11). It regenerates after
+every finished attempt — a checked daily-challenge or drill question, a finished diagnostic,
+a finished mock exam or practice test — the next time the SAT Lab home shows (also when the
+student comes back to a SAT Lab tab left open in the background: the old card stays with a
+small "Updating…" until the new one arrives), and on a plan change or a new day. A mock or
+practice test counts once the whole exam is finished: a submitted Module 1 of an exam still
+in progress never shows anywhere, so the route isn't revealed mid-exam. Reloading the page
+a second time with nothing new keeps the same card. Each student gets up to 16 AI-written
+versions a day (enough for the day's first visit plus about 15 attempts); after that the
+card is the rule-based "Coach" view, still rebuilt from the latest numbers on every attempt.
 
 Coach says never states a score it wasn't given: an AI reply that mentions a score-sized
 number (200 or more) or a "points" figure that isn't in the student's own numbers (the

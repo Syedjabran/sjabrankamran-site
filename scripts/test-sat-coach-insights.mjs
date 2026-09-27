@@ -1,11 +1,11 @@
 // Tests for the pure "Coach says" insights builders
 // (src/lib/sat/coach/insights-core.ts): prompt shape/sanitisation, JSON
-// parsing/validation, the deterministic rules fallback and the inputs
-// fingerprint.
+// parsing/validation, the deterministic rules fallback, the inputs
+// fingerprint, which view an AI result gives, and in-flight sharing.
 import assert from "node:assert/strict";
 import {
-  MAX_FIRST_NAME_CHARS, fallbackInsights, insightsCacheable, insightsFingerprint, insightsKnownNumbers, insightsPrompt, insightsRequest, onlyKnownNumbers, parseInsights,
-  sanitiseFirstName,
+  MAX_FIRST_NAME_CHARS, fallbackInsights, insightsCacheable, insightsFingerprint, insightsFromResult, insightsKnownNumbers, insightsPrompt, insightsRequest, onlyKnownNumbers,
+  parseInsights, sanitiseFirstName, shareInFlight,
 } from "../src/lib/sat/coach/insights-core.ts";
 
 function baseInput(overrides = {}) {
@@ -123,6 +123,64 @@ function validInsights() {
   const fp1 = insightsFingerprint(baseInput(), "2026-10-01");
   const fp2 = insightsFingerprint(baseInput(), "2026-10-02");
   assert.notEqual(fp1, fp2, "a different 'today' changes the fingerprint");
+}
+
+// --- 8b: every finished attempt regenerates (SAT polish B): the
+// finished-work key is part of the fingerprint, so an attempt that leaves
+// every prompt number where it was still brings a new card; the same key
+// (a plain reload) keeps the cached one.
+{
+  const today = "2026-10-01";
+  const before = insightsFingerprint(baseInput(), today, '[["d1",null,2]]');
+  assert.equal(insightsFingerprint(baseInput(), today, '[["d1",null,2]]'), before, "nothing new: same fingerprint");
+  assert.notEqual(insightsFingerprint(baseInput(), today, '[["d1",null,3]]'), before, "one more checked question: new fingerprint");
+  assert.equal(insightsFingerprint(baseInput(), today), insightsFingerprint(baseInput(), today, ""), "no key (analytics unreadable) is the empty key");
+}
+
+// --- 8c: insightsFromResult -- the AI's text when it parses; otherwise the
+// rules view built from the NEW numbers, including when the student's daily
+// AI budget is spent (never an earlier AI text).
+{
+  const fresh = baseInput({ weakSkills: [{ label: "Boundaries", mastery: 0.31 }] });
+  const ai = insightsFromResult({ ok: true, text: "{}", json: validInsights(), provider: "gemini", model: "m", usage: { input: 1, output: 1 } }, fresh);
+  assert.equal(ai.view.source, "ai");
+  assert.equal(ai.cacheable, true);
+  const capped = insightsFromResult({ ok: false, reason: "budget", scope: "student" }, fresh);
+  assert.equal(capped.view.source, "rules");
+  assert.match(capped.view.headline, /Boundaries/, "the capped view names the new weakest skill");
+  assert.match(capped.view.summary, /31% mastery/, "from the new numbers");
+  assert.equal(capped.cacheable, true, "cached under the new fingerprint: the next reload doesn't ask again");
+  const timedOut = insightsFromResult({ ok: false, reason: "timeout" }, fresh);
+  assert.equal(timedOut.view.source, "rules");
+  assert.equal(timedOut.cacheable, false, "a passing failure is retried on the next visit");
+  const unusable = insightsFromResult({ ok: true, text: "{}", json: { headline: 5 }, provider: "gemini", model: "m", usage: { input: 1, output: 1 } }, fresh);
+  assert.equal(unusable.view.source, "rules");
+}
+
+// --- 8d: shareInFlight -- concurrent requests for the same new view share
+// one run (one AI call); the key is forgotten once it settles, failed or not.
+{
+  const inFlight = new Map();
+  let runs = 0;
+  let release;
+  const task = () => { runs++; return new Promise((resolve) => { release = resolve; }); };
+  const a = shareInFlight(inFlight, "u:fp", task);
+  const b = shareInFlight(inFlight, "u:fp", task);
+  assert.equal(a, b, "the second caller gets the first run's promise");
+  assert.equal(runs, 1);
+  const other = shareInFlight(inFlight, "u:other", async () => { runs++; return "other"; });
+  assert.equal(runs, 2, "a different key runs on its own");
+  release("view");
+  assert.equal(await a, "view");
+  assert.equal(await b, "view");
+  assert.equal(await other, "other");
+  await Promise.resolve();
+  assert.equal(inFlight.size, 0, "settled runs are forgotten");
+  await shareInFlight(inFlight, "u:fp", async () => { runs++; return "again"; });
+  assert.equal(runs, 3, "a later request runs again");
+  await assert.rejects(shareInFlight(inFlight, "u:bad", async () => { throw new Error("boom"); }));
+  await Promise.resolve();
+  assert.equal(inFlight.size, 0, "a failed run is forgotten too");
 }
 
 // --- 9: a firstName with an "@" anywhere is never used -- not even an

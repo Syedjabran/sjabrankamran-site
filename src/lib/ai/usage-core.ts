@@ -7,8 +7,13 @@
 // "spent": the call is still refused (fails closed), but the student is told
 // to try again in a moment, not to come back tomorrow.
 
-/** Per-student daily limits per purpose, PKT calendar day. */
-export const LIMITS = { tutor: 40, insights: 6, parent: 2 } as const;
+/** Per-student daily limits per purpose, PKT calendar day. "Coach says"
+ *  regenerates after every finished attempt (and once on a new day): 16
+ *  covers the day's first visit plus ~15 attempts -- well past a busy study
+ *  day -- after which the card is the rule-based view, still rebuilt from
+ *  the latest numbers. The whole-site budget (usage.ts, SAT_AI_DAILY_BUDGET,
+ *  default 800 of Groq's 1,000 free requests a day) caps the sum. */
+export const LIMITS = { tutor: 40, insights: 16, parent: 2 } as const;
 
 export type Purpose = keyof typeof LIMITS;
 /** A counter read: `{ ok: true, data: null }` = no counter yet (nothing used). */

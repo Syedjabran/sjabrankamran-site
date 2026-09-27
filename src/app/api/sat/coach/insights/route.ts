@@ -5,8 +5,9 @@
 // for it once the plan is showing. Built from the profile, the analytics,
 // the stored plan (just refreshed by GET /api/sat/coach) and the student's
 // first name; studentInsights never throws -- no AI, no budget or a bad
-// reply gives the rules view. Tip skills take the bank's own spelling so
-// "Drill this" always finds questions.
+// reply gives the rules view. The student's finished-work key goes into
+// its fingerprint, so every finished attempt brings a new card. Tip skills
+// take the bank's own spelling so "Drill this" always finds questions.
 import { NextResponse } from "next/server";
 import { pkToday } from "@/lib/portal/pk-time";
 import { studentAnalytics } from "@/lib/sat/analytics-data";
@@ -54,6 +55,6 @@ export async function GET() {
     firstName: user.fullName, targetScore: profile.targetScore, analytics: stats?.analytics ?? null,
     view: plan ? planView(plan, today) : null, horizonPassed: end !== null && end < today, today,
   });
-  const payload: CoachInsightsPayload = { insights: normaliseTipSkills(await studentInsights(user.id, input, today, { deadlineAt: startedAt + INSIGHTS_DEADLINE_MS }), bankSkills()) };
+  const payload: CoachInsightsPayload = { insights: normaliseTipSkills(await studentInsights(user.id, input, today, { deadlineAt: startedAt + INSIGHTS_DEADLINE_MS, work: stats?.work }), bankSkills()) };
   return NextResponse.json(payload);
 }

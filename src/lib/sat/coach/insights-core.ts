@@ -34,6 +34,30 @@ export function insightsCacheable(result: LlmResult): boolean {
   return result.reason !== "timeout" && result.reason !== "http";
 }
 
+/** What "Coach says" shows after an LLM `result` for `input`, and whether
+ *  it may be cached under `input`'s fingerprint: the AI's text when it
+ *  parses, else the rules view built from these same numbers -- also when
+ *  the student's daily AI budget is spent, so a capped student still sees
+ *  their latest attempt reflected, never an earlier AI text. */
+export function insightsFromResult(result: LlmResult, input: InsightsInput): { view: InsightsView; cacheable: boolean } {
+  const view = (result.ok ? parseInsights(result.json, input) : null) ?? fallbackInsights(input);
+  return { view, cacheable: insightsCacheable(result) };
+}
+
+/** Runs `task` at most once per `key` at a time: a call made while that
+ *  key's run is in flight gets the same promise (two tabs, or the
+ *  development double-mount, asking for the same new "Coach says" cost one
+ *  AI call, not two). The key is forgotten once its run settles. */
+export function shareInFlight<T>(inFlight: Map<string, Promise<T>>, key: string, task: () => Promise<T>): Promise<T> {
+  const running = inFlight.get(key);
+  if (running) return running;
+  const run = task().finally(() => {
+    if (inFlight.get(key) === run) inFlight.delete(key);
+  });
+  inFlight.set(key, run);
+  return run;
+}
+
 export type InsightsSkill = { label: string; mastery: number };
 export type InsightsPacingFlag = { label: string; medianSec: number; accuracy: number };
 
@@ -283,12 +307,17 @@ export function fallbackInsights(input: InsightsInput): InsightsView {
 // --- fingerprint ----------------------------------------------------------------
 
 /** sha1 over every field that changes what the prompt/fallback would say,
- *  plus `today`: unchanged -> unchanged fingerprint -> the cached view is
- *  served as-is; either the inputs or the PKT calendar day moving on
- *  changes it, which is what tells `studentInsights` to regenerate. */
-export function insightsFingerprint(input: InsightsInput, today: string): string {
+ *  plus `today` and `work` (analytics.ts finishedWorkKey -- it changes
+ *  exactly when the student's finished work does): unchanged -> unchanged
+ *  fingerprint -> the cached view is served as-is; the inputs, the PKT
+ *  calendar day or any finished attempt (a checked drill question, a
+ *  finished sitting -- even one that happens to leave every number in the
+ *  prompt where it was) changes it, which is what tells `studentInsights`
+ *  to regenerate. Starting or saving a sitting changes nothing. */
+export function insightsFingerprint(input: InsightsInput, today: string, work = ""): string {
   const rows = {
     today,
+    work,
     daysToExam: input.daysToExam,
     targetScore: input.targetScore,
     latestScore: input.latestScore,

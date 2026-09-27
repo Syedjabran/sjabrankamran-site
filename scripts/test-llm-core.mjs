@@ -411,5 +411,9 @@ console.log("llm-core tests passed");
   assert.equal(remainingFrom({ ok: true, data: { tutor: 12 } }, "tutor"), 28);
   assert.equal(remainingFrom({ ok: true, data: { tutor: 45 } }, "tutor"), 0, "never negative");
   assert.equal(LIMITS.tutor, 40);
+  // Coach says regenerates after every finished attempt: a busy day (~10
+  // attempts plus the first visit) stays AI-written (SAT polish B).
+  assert.equal(LIMITS.insights, 16);
+  assert.deepEqual(checkStudent({ ok: true, data: { insights: 11 } }, "insights").ok, true, "the 12th regeneration of the day still gets the AI");
   console.log("usage-core tests passed");
 }

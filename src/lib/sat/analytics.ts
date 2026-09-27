@@ -144,6 +144,20 @@ export function hasFinishedWork(s: SessionSummary): boolean {
   return s.finishedAt !== null || s.checkedCount === undefined || s.checkedCount > 0;
 }
 
+/** A key that changes exactly when the student's finished work does -- a
+ *  drill question checked, a sitting finished (or a doc with finished work
+ *  leaving the index) -- and not when a sitting or drill is merely started
+ *  or saved. "Coach says" folds it into its fingerprint, so every finished
+ *  attempt regenerates the card and a plain reload doesn't. Sorted by id:
+ *  the index's order moves with every save. */
+export function finishedWorkKey(summaries: SessionSummary[]): string {
+  const rows = summaries
+    .filter(hasFinishedWork)
+    .map((s) => [s.id, s.finishedAt, s.checkedCount ?? null] as const)
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  return JSON.stringify(rows);
+}
+
 /** The finished sittings' scores, for the score history. */
 export function sittingScores(summaries: SessionSummary[]): SittingScore[] {
   const out: SittingScore[] = [];
