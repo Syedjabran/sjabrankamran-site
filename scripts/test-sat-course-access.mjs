@@ -12,7 +12,10 @@ const STUBS = {
   // Next resolves "server-only" itself; under plain Node it is a no-op.
   "server-only": stub(""),
   "@/lib/supabase/admin": stub("export const createAdminClient = () => globalThis.__sat.db();"),
-  "@/lib/supabase/server": stub("export const createClient = async () => { throw new Error('not used'); };"),
+  "@/lib/supabase/server": stub(
+    "export const createClient = async () => { throw new Error('not used'); };"
+    + " export const bearerToken = async () => null;",
+  ),
   "@/lib/portal/institutions": stub("export const getRegistry = async () => globalThis.__sat.registry();"),
   "@/lib/portal/timetable": stub("export const visibleClassIdsForUid = async () => [];"),
   "@/lib/portal/notifications": stub("export const notify = async (target, input) => { globalThis.__sat.notices.push({ target, input }); return 1; };"),
