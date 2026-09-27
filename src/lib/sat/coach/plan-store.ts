@@ -11,7 +11,13 @@
 // Storage fails closed (storage-fresh.ts): a failed plan read throws and is
 // never "no plan" followed by a write. Every write is a fresh read, the
 // change, a write and a verifying read -- retried once when another writer
-// landed in between -- so a lost update is never reported as saved.
+// landed in between. That confirms our write landed at the moment of the
+// verify; it is not compare-and-swap. A writer that read before a
+// confirmed write (a move, say) and writes after it can still replace it
+// with its own view, and the earlier save stays reported as done. Each such
+// race needs two writes within a fraction of a second; a lost completion is
+// healed by the next maintenance (statuses are rebuilt from the finished
+// work itself), a lost move is not.
 import "server-only";
 import { randomBytes, randomInt } from "node:crypto";
 import { readFreshJson, writeFreshJson } from "@/lib/exam-lab/storage-fresh";
