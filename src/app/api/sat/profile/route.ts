@@ -36,10 +36,12 @@ export async function GET() {
 export async function PUT(req: Request) {
   const caller = await student();
   if ("refused" in caller) return caller.refused;
-  const parsed = profileSchemaFor(pkToday()).safeParse(await req.json().catch(() => null));
+  const prev = caller.own.profile;
+  // Judged against the stored profile: a passed SAT date (or a started
+  // target month) sent back unchanged doesn't block saving the rest.
+  const parsed = profileSchemaFor(pkToday(), prev).safeParse(await req.json().catch(() => null));
   if (!parsed.success) return invalidRequest(parsed);
 
-  const prev = caller.own.profile;
   const now = Date.now();
   // The diagnostic is started before the profile is written: if the write
   // then fails, the retry resumes that same unfinished diagnostic.

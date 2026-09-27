@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { validateProfileInput, horizonEnd, daysBetween, applyProfileChange } from "../src/lib/sat/coach/profile.ts";
 import { pickDiagnostic } from "../src/lib/sat/coach/diagnostic.ts";
-import { questionsPerSession, previewLine, targetFromScore, addMonths, addDays, targetMonthOptions, DAY_PRESETS, presetOf } from "../src/lib/sat/coach/profile.ts";
+import { questionsPerSession, previewLine, targetFromScore, addMonths, addDays, targetMonthOptions, DAY_PRESETS, presetOf, profileSchemaFor, targetMonthChoices } from "../src/lib/sat/coach/profile.ts";
 import { DIAGNOSTIC_TITLE } from "../src/lib/sat/coach/diagnostic.ts";
 import { startDiagnostic } from "../src/lib/sat/drills.ts";
 import { summaryOf } from "../src/lib/sat/serve.ts";
@@ -161,3 +161,67 @@ assert.equal(summaryOf(diag).purpose, "diagnostic", "the summary carries the pur
 assert.equal(summaryOf(diag).title, DIAGNOSTIC_TITLE);
 
 console.log("sat-coach profile extra tests passed");
+
+// --- final review I1: the date window judges only a date that changed -------
+//
+// After the SAT date passes the home asks for the score; every save used to
+// re-check the STORED date against today and fail. Now a date field sent
+// back unchanged skips the window (on the server, fed the stored profile,
+// and in the form alike); a new date is still checked.
+{
+  const passed = { examDate: "2026-09-20", targetMonth: null, targetScore: 1350, start: { kind: "skip" }, days: [1, 3, 5], minutes: 30 };
+  const stored = applyProfileChange(null, passed, "2026-08-01T00:00:00Z"); // saved while the date was ahead
+  const save = (x) => validateProfileInput({ ...passed, ...x }, today, stored);
+
+  // A stored passed examDate plus a changed start (the score) and target saves.
+  const scored = save({ start: { kind: "score", total: 1210, rw: 610, math: 600, source: "SAT", date: "2026-09-20" }, targetScore: 1400 });
+  assert.equal(scored.ok, true, "the score can be added after the SAT date");
+  assert.equal(scored.value.examDate, "2026-09-20");
+  assert.equal(save({ days: [0, 6], minutes: 45 }).ok, true, "days and minutes save too");
+  // What the server runs (PUT /api/sat/profile: profileSchemaFor(pkToday(), prev)).
+  assert.equal(profileSchemaFor(today, stored).safeParse({ ...passed, targetScore: 1400 }).success, true);
+  assert.equal(profileSchemaFor(today).safeParse({ ...passed, targetScore: 1400 }).success, false, "without the stored profile the old rule applies");
+  assert.equal(validateProfileInput({ ...passed, targetScore: 1400 }, today, null).ok, false, "a first save has nothing stored");
+
+  // Changing the date still has to land in the window.
+  assert.deepEqual(save({ examDate: "2026-09-27" }), { ok: false, error: "Your SAT date must be after today.", field: "examDate" }, "a different past date fails");
+  assert.equal(save({ examDate: today }).error, "Your SAT date must be after today.", "today fails");
+  assert.equal(save({ examDate: "2028-06-01" }).error, "Your SAT date must be within the next 18 months.");
+  assert.equal(save({ examDate: "2026-12-05" }).ok, true, "a next SAT date saves");
+  // Switching to "Not booked yet" checks the new month.
+  assert.equal(save({ examDate: null, targetMonth: "2026-10" }).error, "Your target month must be after this month.");
+  assert.equal(save({ examDate: null, targetMonth: "2026-11" }).ok, true);
+  // A kept value is still a date, and the rest of the rules still apply.
+  assert.equal(validateProfileInput({ ...passed, examDate: "2026-02-30" }, today, { examDate: "2026-02-30", targetMonth: null }).error, "Choose a valid SAT date.");
+  assert.equal(save({ targetScore: 1355 }).field, "targetScore");
+}
+
+// Exam day itself: the stored date is today -- other fields save.
+{
+  const examDay = { examDate: today, targetMonth: null, targetScore: 1300, start: { kind: "skip" }, days: [1, 3, 5], minutes: 30 };
+  assert.equal(validateProfileInput({ ...examDay, minutes: 15 }, today).ok, false, "before the fix: exam day blocked every save");
+  assert.equal(validateProfileInput({ ...examDay, minutes: 15 }, today, { examDate: today, targetMonth: null }).ok, true);
+  assert.equal(validateProfileInput({ ...examDay, targetScore: 1400 }, today, { examDate: "2026-10-03", targetMonth: null }).ok, false, "moving the date to today fails");
+}
+
+// Not booked, in (or past) the target month: other fields save; the stored
+// month stays a choice in the picker so it never shows blank.
+{
+  const inMonth = { examDate: null, targetMonth: "2026-10", targetScore: 1300, start: { kind: "skip" }, days: [2, 4], minutes: 30 };
+  const midMonth = "2026-10-15";
+  const stored = { examDate: null, targetMonth: "2026-10" };
+  assert.equal(validateProfileInput({ ...inMonth, days: [2, 4, 6] }, midMonth).ok, false, "before the fix: the started month blocked the save");
+  assert.equal(validateProfileInput({ ...inMonth, days: [2, 4, 6] }, midMonth, stored).ok, true);
+  assert.equal(validateProfileInput({ ...inMonth, targetMonth: "2026-09" }, midMonth, stored).error, "Your target month must be after this month.", "a new past month fails");
+  assert.equal(validateProfileInput({ ...inMonth, targetMonth: "2026-10" }, midMonth, { examDate: null, targetMonth: "2026-12" }).error, "Your target month must be after this month.", "picking this month anew fails");
+  assert.equal(validateProfileInput({ ...inMonth, targetMonth: "2026-12" }, midMonth, stored).ok, true, "a new later month saves");
+
+  const choices = targetMonthChoices(midMonth, "2026-10");
+  assert.equal(choices[0], "2026-10", "the started month is offered first");
+  assert.deepEqual(choices.slice(1), targetMonthOptions(midMonth));
+  assert.deepEqual(targetMonthChoices(midMonth, "2026-12"), targetMonthOptions(midMonth), "a month already offered isn't repeated");
+  assert.deepEqual(targetMonthChoices(midMonth, null), targetMonthOptions(midMonth));
+  assert.deepEqual(targetMonthChoices(midMonth, "junk"), targetMonthOptions(midMonth));
+}
+
+console.log("sat-coach profile I1 tests passed");

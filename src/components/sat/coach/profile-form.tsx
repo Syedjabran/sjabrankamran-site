@@ -6,7 +6,7 @@ import { Loader2, Minus, Plus } from "lucide-react";
 import { formatPk } from "@/lib/portal/pk-time";
 import {
   DAY_PRESETS, DEFAULT_MINUTES, DEFAULT_TARGET, PRACTICE_MINUTES, SCORE_STEP, TARGET_MAX, TARGET_MIN,
-  addDays, addMonths, isCalendarDate, presetOf, previewLine, targetFromScore, targetMonthOptions, validateProfileInput,
+  addDays, addMonths, isCalendarDate, presetOf, previewLine, targetFromScore, targetMonthChoices, validateProfileInput,
   HORIZON_MONTHS, type DayPreset, type PracticeMinutes, type ProfileField, type SATProfile,
 } from "@/lib/sat/coach/profile";
 import { DIAGNOSTIC_SIZE } from "@/lib/sat/coach/diagnostic";
@@ -85,6 +85,8 @@ export function ProfileUnavailable() {
 export function ProfileForm({ mode, today, initial }: { mode: "setup" | "settings"; today: string; initial: SATProfile | null }) {
   const router = useRouter();
   const [draft, setDraft] = useState<Draft>(() => draftOf(initial));
+  // The profile as saved: the date-window rules judge only a date changed from it.
+  const [stored, setStored] = useState<SATProfile | null>(initial);
   const [errors, setErrors] = useState<Partial<Record<Block, string>>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -105,10 +107,12 @@ export function ProfileForm({ mode, today, initial }: { mode: "setup" | "setting
   }, [draft.booked, draft.examDate, draft.targetMonth, draft.days, draft.minutes, today]);
 
   async function save() {
-    const checked = validateProfileInput(inputOf(draft), today);
+    const checked = validateProfileInput(inputOf(draft), today, stored);
     if (!checked.ok) {
+      // In its block and next to Save too: on a phone the block may be far
+      // above the button, and a save must never look as if nothing happened.
       if (checked.field) setErrors({ [BLOCK_OF[checked.field]]: checked.error });
-      else setFormError(checked.error);
+      setFormError(checked.error);
       return;
     }
     setSaving(true);
@@ -116,6 +120,7 @@ export function ProfileForm({ mode, today, initial }: { mode: "setup" | "setting
       const res = await fetch("/api/sat/profile", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(checked.value) });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error || "Your SAT settings couldn't be saved. Please try again.");
+      if (j.profile && typeof j.profile === "object") setStored(j.profile as SATProfile);
       const diagnosticId = typeof j.diagnosticId === "string" ? j.diagnosticId : null;
       if (mode === "setup") {
         router.replace(diagnosticId ? `/portal/sat-lab/${diagnosticId}` : "/portal/sat-lab");
@@ -135,7 +140,7 @@ export function ProfileForm({ mode, today, initial }: { mode: "setup" | "setting
 
   return (
     <div className="space-y-4">
-      <WhenBlock draft={draft} set={set} today={today} error={errors.when} />
+      <WhenBlock draft={draft} set={set} today={today} error={errors.when} storedMonth={stored?.targetMonth ?? null} />
       <TargetBlock draft={draft} set={set} error={errors.target} />
       <StartBlock draft={draft} set={set} today={today} error={errors.start} />
       <DaysBlock draft={draft} set={set} error={errors.days} />
@@ -183,8 +188,8 @@ function Choice({ on, onClick, children, className = "" }: { on: boolean; onClic
   );
 }
 
-function WhenBlock({ draft, set, today, error }: { draft: Draft; set: SetDraft; today: string; error?: string }) {
-  const months = useMemo(() => targetMonthOptions(today), [today]);
+function WhenBlock({ draft, set, today, error, storedMonth }: { draft: Draft; set: SetDraft; today: string; error?: string; storedMonth: string | null }) {
+  const months = useMemo(() => targetMonthChoices(today, storedMonth), [today, storedMonth]);
   return (
     <Section n={1} title="When is your SAT?" error={error} id="sat-when">
       <div className="flex flex-wrap gap-2">

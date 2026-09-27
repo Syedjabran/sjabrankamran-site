@@ -115,6 +115,14 @@ export function targetMonthOptions(today: string): string[] {
   return out;
 }
 
+/** The month picker's choices: targetMonthOptions, plus the saved month when
+ *  it has since started -- first, so it can be kept while other settings
+ *  change and the picker never shows blank. */
+export function targetMonthChoices(today: string, saved: string | null): string[] {
+  const list = targetMonthOptions(today);
+  return saved && isCalendarMonth(saved) && !list.includes(saved) ? [saved, ...list] : list;
+}
+
 // --- validation ------------------------------------------------------------------
 
 const onScale = (v: unknown, [lo, hi]: readonly [number, number]): boolean =>
@@ -173,15 +181,21 @@ function startSchema(today: string | null) {
   });
 }
 
+/** The stored date fields a save is judged against (see profileSchemaFor). */
+export type StoredDates = Pick<SATProfile, "examDate" | "targetMonth">;
+
 /** The profile schema; `today` switches on the date-window rules (future,
  *  within 18 months). Stored profiles are re-read with `today: null`, so an
- *  exam date that has since passed still loads. Every rule a student can
- *  break carries a plain-sentence custom message, in the order the setup
- *  page asks. */
-function buildSchema(today: string | null) {
+ *  exam date that has since passed still loads. With `stored`, a date field
+ *  sent back unchanged skips the window (it is still checked as a date): the
+ *  window judges a date the student sets now, not one kept from before.
+ *  Every rule a student can break carries a plain-sentence custom message,
+ *  in the order the setup page asks. */
+function buildSchema(today: string | null, stored: StoredDates | null = null) {
+  const windowFor = (v: unknown, kept: string | null | undefined) => (kept != null && v === kept ? null : today);
   return z.object({
-    examDate: z.custom<string | null>().superRefine((v, ctx) => checkExamDate(v, ctx, today)),
-    targetMonth: z.custom<string | null>().superRefine((v, ctx) => checkTargetMonth(v, ctx, today)),
+    examDate: z.custom<string | null>().superRefine((v, ctx) => checkExamDate(v, ctx, windowFor(v, stored?.examDate))),
+    targetMonth: z.custom<string | null>().superRefine((v, ctx) => checkTargetMonth(v, ctx, windowFor(v, stored?.targetMonth))),
     targetScore: z.custom<number>((v) => onScale(v, [TARGET_MIN, TARGET_MAX]), {
       message: `Choose a target score between ${TARGET_MIN} and ${TARGET_MAX}, in steps of ${SCORE_STEP}.`,
     }),
@@ -206,14 +220,19 @@ function buildSchema(today: string | null) {
 /** Shape and score rules without the date window -- what a stored profile must satisfy. */
 export const profileInputSchema: z.ZodType<ProfileInput, z.ZodTypeDef, unknown> = buildSchema(null);
 
-/** The full rules for a save made on `today` (PKT). */
-export function profileSchemaFor(today: string): z.ZodType<ProfileInput, z.ZodTypeDef, unknown> {
-  return buildSchema(today);
+/** The full rules for a save made on `today` (PKT) over the `stored`
+ *  profile (null on the first save). The date-window rules -- after today /
+ *  this month, within 18 months -- apply only to a date field that differs
+ *  from the stored one, so a stored SAT date that has passed (or is today),
+ *  or a target month that has started, never blocks saving the score, the
+ *  target, the days or the minutes; a new date must still be in the window. */
+export function profileSchemaFor(today: string, stored: StoredDates | null = null): z.ZodType<ProfileInput, z.ZodTypeDef, unknown> {
+  return buildSchema(today, stored);
 }
 
-export function validateProfileInput(input: unknown, today: string):
+export function validateProfileInput(input: unknown, today: string, stored: StoredDates | null = null):
   { ok: true; value: ProfileInput } | { ok: false; error: string; field?: ProfileField } {
-  const parsed = profileSchemaFor(today).safeParse(input);
+  const parsed = profileSchemaFor(today, stored).safeParse(input);
   if (parsed.success) return { ok: true, value: parsed.data };
   const issue = parsed.error.issues[0];
   const field = issue?.code === "custom" ? FIELDS.find((f) => f === issue.path[0]) : undefined;
