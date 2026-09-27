@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Loader2, Send, Sparkles, X } from "lucide-react";
 import Link from "next/link";
+import { helperPausedOnPath } from "@/lib/ai/helper-pause-paths";
 import { MarkdownRenderer } from "./markdown-renderer";
 import { ResilientImg } from "@/components/ui/resilient-image";
 
@@ -33,6 +35,9 @@ const EXAMPLES = [
 const CURRICULA = ["A-Level", "O-Level", "IBDP", "General"] as const;
 
 export function EinsteinCompanion() {
+  // Not shown in the Exam Lab or the SAT Lab: tests, no-help assignments and
+  // timed modules are sat there (the helper's API refuses those students too).
+  const pausedHere = helperPausedOnPath(usePathname());
   const [visible, setVisible] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [msgIndex, setMsgIndex] = useState(0);
@@ -230,7 +235,7 @@ export function EinsteinCompanion() {
     try { sessionStorage.setItem("einstein-dismissed", "1"); } catch { /* dismissal lasts for this page view only */ }
   }
 
-  if (dismissed || !visible) return null;
+  if (dismissed || !visible || pausedHere) return null;
 
   return (
     <div

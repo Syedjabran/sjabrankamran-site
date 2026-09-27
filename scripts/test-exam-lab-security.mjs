@@ -11,6 +11,7 @@ import {
 import { DAILY_QUESTIONS, MAX_DRILL_QUESTIONS, legacyDrillPick, pickPractice } from "../src/lib/exam-lab/practice-pools.ts";
 import { CANON_9702, buildPaperIndex, chrono9702, countPool, courseOfCode, poolCounts, poolTopics } from "../src/lib/exam-lab/paper-meta.ts";
 import { PRACTICE_SET_MAX_AGE_MS, markSet, practiceSetOk, sealableSet, withoutHeld, withoutKeys } from "../src/lib/exam-lab/practice-set.ts";
+import { helperPausedOnPath } from "../src/lib/ai/helper-pause-paths.ts";
 
 const NOW = Date.parse("2026-09-28T09:00:00.000Z");
 const HOUR = 60 * 60_000;
@@ -180,6 +181,16 @@ assert.equal(examLabSittingRunning([running({ startedAt: NOW - 60 * 60_000 - 31 
 assert.equal(examLabSittingRunning([running({ startedAt: null })], NOW), false);
 assert.equal(examLabSittingRunning([running({ durationMin: null, startedAt: NOW - 3 * HOUR })], NOW), true, "no duration: three hours");
 assert.equal(examLabSittingRunning([], NOW), false);
+
+// The companion is not shown where tests and timed modules are sat.
+assert.equal(helperPausedOnPath("/portal/exam-lab"), true);
+assert.equal(helperPausedOnPath("/portal/exam-lab/review"), true);
+assert.equal(helperPausedOnPath("/Portal/Exam-Lab"), true, "any letter case");
+assert.equal(helperPausedOnPath("/portal/sat-lab/abc123"), true);
+assert.equal(helperPausedOnPath("/portal/exam-labs"), false, "a prefix of a word is not the route");
+assert.equal(helperPausedOnPath("/portal"), false);
+assert.equal(helperPausedOnPath("/physics-studio"), false);
+assert.equal(helperPausedOnPath(null), false);
 
 // --- rate limit -------------------------------------------------------------------------------
 const hits = new Map();

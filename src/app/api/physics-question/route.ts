@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { askPhysicsTutor } from "@/lib/ai/physics-tutor";
+import { getPortalUser, isExamLabStaff } from "@/lib/edu/auth";
+import { helperPaused } from "@/lib/exam-lab/helper-pause";
+
+const HELPER_PAUSED = "The physics helper is paused while you're sitting a test, a no-help assignment or a timed SAT module. Submit it first, then ask.";
 
 const schema = z.object({
   question: z.string().trim().min(10).max(4000),
@@ -40,6 +44,16 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Please check your question and options." }, { status: 400 });
 
   const d = parsed.data;
+
+  // No answers for a signed-in student in the middle of a test, a no-help
+  // assignment or a timed SAT module (the companion is hidden there too; this
+  // covers another tab or the Physics Studio form). Staff are never paused.
+  const user = await getPortalUser().catch(() => null);
+  if (user && !isExamLabStaff(user.roles)) {
+    const paused = await helperPaused(user.id, Date.now()).catch(() => null);
+    if (paused === null) return NextResponse.json({ error: "The physics helper couldn't check your open tests. Please try again." }, { status: 503 });
+    if (paused) return NextResponse.json({ error: HELPER_PAUSED }, { status: 423 });
+  }
 
   // Ask the AI tutor (provider-independent).
   const ai = await askPhysicsTutor({
