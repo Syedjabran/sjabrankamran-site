@@ -201,4 +201,23 @@ export function summaryOf(doc: SATSession | SATDrill): SessionSummary {
     overtime: results.some((r) => r.overtime), ...plan, ...(doc.kind === "practice" && doc.testNo !== null ? { testNo: doc.testNo } : {}) };
 }
 
+/** How many entries a student's session index keeps. */
+export const INDEX_CAP = 300;
+
+/** The session index (newest first) within `cap` entries. Past the cap,
+ *  entries go oldest first (by start), drills before unfinished sittings,
+ *  and those before finished practice tests and adaptive mocks -- the score
+ *  history and the record of practice tests taken, kept to the last. Each
+ *  daily challenge is its own drill, so an everyday student reaches the cap
+ *  within a year; before this, the oldest sittings dropped out. Order kept. */
+export function trimIndex(items: SessionSummary[], cap: number = INDEX_CAP): SessionSummary[] {
+  if (items.length <= cap) return items;
+  const rank = (s: SessionSummary) => (s.kind === "drill" ? 0 : s.finishedAt === null ? 1 : 2);
+  const dropOrder = items
+    .map((s, i) => ({ i, rank: rank(s), createdAt: s.createdAt }))
+    .sort((a, b) => a.rank - b.rank || a.createdAt - b.createdAt || b.i - a.i);
+  const dropped = new Set(dropOrder.slice(0, items.length - cap).map((x) => x.i));
+  return items.filter((_, i) => !dropped.has(i));
+}
+
 export { practiceTest };

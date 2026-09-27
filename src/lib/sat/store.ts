@@ -9,7 +9,7 @@ import { readFreshJson, writeFreshJson } from "@/lib/exam-lab/storage-fresh";
 import { sittingQuestionIds, type SATSession } from "./session.ts";
 import { openDrillQuestionIds, type SATDrill } from "./drills.ts";
 import type { SessionSummary } from "./client-types.ts";
-import { summaryOf } from "./serve.ts";
+import { summaryOf, trimIndex } from "./serve.ts";
 
 export type SATDoc = SATSession | SATDrill;
 
@@ -59,8 +59,10 @@ export async function listSummaries(uid: string): Promise<SessionSummary[] | nul
   return (r.data?.items ?? []).map((x) => ({ ...x, overtime: x.overtime === true }));
 }
 
-/** Save the document, then its summary. A failed index write leaves the
- *  sitting intact (it is the source of truth) and is retried on the next save.
+/** Save the document, then its summary (the index kept within its cap by
+ *  trimIndex: the oldest drills go first, finished sittings last). A failed
+ *  index write leaves the sitting intact (it is the source of truth) and is
+ *  retried on the next save.
  *  A doc whose uid or id fails SAFE_ID is rejected outright -- the same guard
  *  `loadDoc`/`listSummaries` apply on read, so a malformed id can never be
  *  written to a path those reads would then refuse to resolve. */
@@ -71,7 +73,7 @@ export async function saveDoc(doc: SATDoc): Promise<boolean> {
   if (!current.ok) return true;
   const items = (current.data?.items ?? []).filter((x) => x.id !== doc.id);
   items.unshift(summaryOf(doc));
-  await writeFreshJson(BUCKET, indexPath(doc.uid), { items: items.slice(0, 300) });
+  await writeFreshJson(BUCKET, indexPath(doc.uid), { items: trimIndex(items) });
   return true;
 }
 

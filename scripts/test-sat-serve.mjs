@@ -3,7 +3,7 @@ import { loadQuestionBank } from "../src/lib/sat/bank.ts";
 import { assembleForm } from "../src/lib/sat/forms.ts";
 import { startAdaptive, submitStage, beginStage } from "../src/lib/sat/session.ts";
 import { startDrill, checkDrillAnswer } from "../src/lib/sat/drills.ts";
-import { answerOf, sessionState, drillState, summaryOf, itemsOf } from "../src/lib/sat/serve.ts";
+import { answerOf, sessionState, drillState, summaryOf, itemsOf, trimIndex, INDEX_CAP } from "../src/lib/sat/serve.ts";
 
 // Deterministic RNG so a run is reproducible and a failure is debuggable.
 function seeded(seed) {
@@ -160,3 +160,35 @@ assert.equal(summaryOf(drill).checkedCount, 0);
 }
 
 console.log("sat-serve drill-state tests passed");
+
+// --- final review M14: the 300-entry index keeps finished practice tests and
+// adaptive mocks when it trims; the oldest drills go first
+{
+  const DAY_MS = 86_400_000;
+  const entry = (id, kind, createdAt, finished = true) => ({
+    id, kind, title: id, createdAt, finishedAt: finished ? createdAt + 3_600_000 : null, score: null, correct: 0, total: 0, assignmentId: null, overtime: false,
+  });
+  // Newest first, as saveDoc keeps it: a year of daily challenges on top of
+  // 12 finished full exams, the exams the oldest entries of all.
+  const exams = Array.from({ length: 12 }, (_, i) => entry(`exam-${i}`, i % 2 ? "adaptive" : "practice", T0 - (400 - i) * DAY_MS));
+  const drills = Array.from({ length: 289 }, (_, i) => entry(`drill-${i}`, "drill", T0 - (300 - i) * DAY_MS));
+  const index = [...drills].reverse().concat([...exams].reverse()); // 301 entries, newest first
+  assert.equal(index.length, 301);
+  assert.equal(INDEX_CAP, 300);
+  const trimmed = trimIndex(index);
+  assert.equal(trimmed.length, 300);
+  assert.ok(exams.every((e) => trimmed.some((t) => t.id === e.id)), "every finished full exam is kept");
+  assert.ok(!trimmed.some((t) => t.id === "drill-0"), "the oldest drill goes");
+  assert.deepEqual(trimmed.map((t) => t.id), index.filter((t) => t.id !== "drill-0").map((t) => t.id), "the order is kept");
+  // Under the old slice(0, 300) the oldest exam fell off instead.
+  assert.equal(index.slice(0, 300).some((t) => t.id === "exam-0"), false);
+
+  // Unfinished sittings go after drills, before finished ones.
+  const mixed = [entry("d-new", "drill", T0), entry("open-old", "adaptive", T0 - 50 * DAY_MS, false), entry("fin-old", "practice", T0 - 60 * DAY_MS), entry("d-old", "drill", T0 - 10 * DAY_MS)];
+  assert.deepEqual(trimIndex(mixed, 3).map((t) => t.id), ["d-new", "open-old", "fin-old"], "the older drill goes first");
+  assert.deepEqual(trimIndex(mixed, 2).map((t) => t.id), ["open-old", "fin-old"], "both drills go before any sitting");
+  assert.deepEqual(trimIndex(mixed, 1).map((t) => t.id), ["fin-old"], "a finished sitting is the last to go");
+  assert.equal(trimIndex(mixed, 4), mixed, "within the cap: unchanged");
+}
+
+console.log("sat-serve index-trim tests passed");
