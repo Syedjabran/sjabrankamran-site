@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPortalUser } from "@/lib/edu/auth";
 import { listAllocations, getAllocation, markSubmitted, markStarted, withProctorStatus } from "@/lib/exam-lab/allocations";
-import { getAttemptsStrict } from "@/lib/exam-lab/attempts";
+import { getAttemptsStrict, submissionFlags } from "@/lib/exam-lab/attempts";
 import { getSession, requestUnlock } from "@/lib/exam-lab/proctor";
 import { hasStarted, publicAllocation } from "@/lib/exam-lab/answer-rules";
 import { completeTaskBySource } from "@/lib/portal/tasks";
@@ -65,18 +65,7 @@ export async function POST(req: Request) {
     // nothing was recorded: unattempted. An unreadable attempts doc is retried
     // by the runner rather than guessed.
     let flags: { late?: boolean; unattempted?: boolean };
-    try {
-      const attempts = await getAttemptsStrict(user.id);
-      const linked = attempts.filter((a) => a.context?.allocationId === b.id && !a.context?.cancelled);
-      const last = linked[linked.length - 1];
-      if (!last) flags = { unattempted: true };
-      else {
-        const attempted = typeof last.attemptedCount === "number"
-          ? last.attemptedCount
-          : last.questions.filter((q) => (q.response && q.response.trim()) || q.correct !== null || q.earned !== null).length;
-        flags = attempted === 0 ? { unattempted: true } : last.context?.late ? { late: true } : {};
-      }
-    } catch { return UNAVAILABLE(); }
+    try { flags = submissionFlags(await getAttemptsStrict(user.id), b.id); } catch { return UNAVAILABLE(); }
     let ok: boolean;
     try { ok = await markSubmitted(user.id, b.id, flags); } catch { return UNAVAILABLE(); }
     // Blank submissions do NOT auto-complete the linked personal task/challenge.

@@ -12,10 +12,12 @@ import "server-only";
 import { imageUrls, imagesOf } from "@/lib/sat/signed-images";
 import { formatPk } from "@/lib/portal/pk-time";
 import {
-  LAUNCHABLE_STATUSES, SITTING_MAX_AGE_MS, allocationQuestionIds, hasStarted, inPlayIds, pausedPaperTypes, revealScope, sittingTokenOk,
+  LAUNCHABLE_STATUSES, SITTING_MAX_AGE_MS, allocationQuestionIds, hasStarted, inPlayIds, isInPlay, pausedPaperTypes, revealScope, sittingTokenOk,
   type SittingToken,
 } from "./answer-rules";
-import { freezeAllocationIds, getAllocation, listAllocations, withProctorStatus, type AllocContent, type ExamAllocation } from "./allocations";
+import {
+  freezeAllocationIds, getAllocation, listAllocations, withFrozenSets, withProctorStatus, type AllocContent, type ExamAllocation,
+} from "./allocations";
 import { idsOfPaper, isSecureQuestion, practiceBank, questionById, safeQuestion } from "./bank-all";
 import { IMAGE_BANK, type ImgQuestion } from "./image-bank";
 import { examLabKey } from "./keys";
@@ -63,19 +65,37 @@ export function readSitting(token: unknown, uid: string, now = Date.now(), maxAg
   return sittingTokenOk(t, uid, now, maxAgeMs) ? t : null;
 }
 
-/** Question ids held back from `uid` at `now` (a past moment for a review:
- *  as of its sitting's opening): those of their open or upcoming tests and
- *  no-help assignments (optionally except one). Throws when the allocations
- *  cannot be read -- callers refuse rather than guess. */
+/** The student's allocations as the holds must see them: every legacy
+ *  randomised item in play at one of `moments` carries the set it froze,
+ *  even when a stale write dropped it from the doc (allocations.ts
+ *  withFrozenSets). Throws when anything can't be read. */
+async function holdingAllocations(uid: string, moments: number[], exceptAllocationId: string | null): Promise<ExamAllocation[]> {
+  const allocs = await listAllocations(uid);
+  return withFrozenSets(uid, allocs, (a) => a.id !== exceptAllocationId && moments.some((t) => isInPlay(a, t)));
+}
+
+/** Question ids held back from `uid` at any of `moments` (a past moment for
+ *  a review or a submission: as of its sitting's opening): those of their
+ *  open or upcoming tests and no-help assignments (optionally except one).
+ *  One read of the allocations. Throws when they cannot be read -- callers
+ *  refuse rather than guess. */
+export async function heldIdsAt(uid: string, moments: number[], exceptAllocationId: string | null = null): Promise<Set<string>> {
+  const allocs = await holdingAllocations(uid, moments, exceptAllocationId);
+  const out = new Set<string>();
+  for (const t of moments) for (const id of inPlayIds(allocs, t, idsOfPaper, exceptAllocationId)) out.add(id);
+  return out;
+}
+
+/** Question ids held back from `uid` at `now` (see heldIdsAt). */
 export async function heldIds(uid: string, now: number, exceptAllocationId: string | null = null): Promise<Set<string>> {
-  return inPlayIds(await listAllocations(uid), now, idsOfPaper, exceptAllocationId);
+  return heldIdsAt(uid, [now], exceptAllocationId);
 }
 
 /** What a new practice sitting must keep from `uid` now: the held question
  *  ids, and per course the paper types whose whole papers are paused (a
  *  teacher-set whole-paper test in play). Throws when unreadable. */
 export async function practiceHolds(uid: string, now: number): Promise<{ held: Set<string>; paused: Record<ExamCourse, Set<string>> }> {
-  const allocs = await listAllocations(uid);
+  const allocs = await holdingAllocations(uid, [now], null);
   const held = inPlayIds(allocs, now, idsOfPaper);
   const paused: Record<ExamCourse, Set<string>> = { "9702": new Set(), "5054": new Set() };
   // Only PAST-paper questions can make a "whole paper": a staff-written

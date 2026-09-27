@@ -1,17 +1,18 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getPortalUser, isExamLabStaff } from "@/lib/edu/auth";
-import { appendAttemptChecked, type Attempt, type AttemptContext, type AttemptQuestion } from "@/lib/exam-lab/attempts";
+import { appendAttemptChecked, submissionFlags, type Attempt, type AttemptContext, type AttemptQuestion } from "@/lib/exam-lab/attempts";
 import { idsOfPaper, questionById } from "@/lib/exam-lab/bank-all";
-import { getAllocation, readFrozenIds, type ExamAllocation } from "@/lib/exam-lab/allocations";
+import { getAllocation, isStrictAlloc, markSubmitted, readFrozenIds, type ExamAllocation } from "@/lib/exam-lab/allocations";
 import {
-  SUBMIT_MAX_AGE_MS, allocationQuestionIds, frozenResponse, hasStarted, receiptMatches, revealScope, sameIdSet, sittingAlreadySubmitted,
-  type MarkReceipt, type RevealRecord,
+  SUBMIT_MAX_AGE_MS, allocationQuestionIds, allocationSubmissions, frozenResponse, hasStarted, receiptMatches, revealScope, sameIdSet,
+  sittingAlreadySubmitted, type MarkReceipt, type RevealRecord,
 } from "@/lib/exam-lab/answer-rules";
 import { examLabKey } from "@/lib/exam-lab/keys";
+import { unlockCount } from "@/lib/exam-lab/proctor";
 import { readReveals } from "@/lib/exam-lab/reveals";
 import { verifyToken } from "@/lib/exam-lab/seal";
-import { heldIds, readSitting } from "@/lib/exam-lab/sittings";
+import { heldIdsAt, readSitting } from "@/lib/exam-lab/sittings";
 
 export const runtime = "nodejs";
 
@@ -160,20 +161,19 @@ export async function POST(request: Request) {
     if (read === null) return NextResponse.json({ error: "Your answers couldn't be checked just now. Please retry." }, { status: 503 });
     reveals = read;
   }
-  // A PRACTICE sitting may hold questions held back for the student (an open
-  // test or no-help assignment's, opened in a whole practice paper): those
-  // are stored unscored -- no answer, no correctness, no marks -- so the
-  // score, "My question records" and /review say the same whatever was
-  // answered. Held as of submission (a paper opened before a hold began is no
-  // way round it), or as of the sitting's opening (the same holds /review
+  // A sitting may hold questions held back for the student by ANOTHER piece
+  // of work (an open test or no-help assignment's: in a whole practice
+  // paper, or in an allocation that shares questions with it): those are
+  // stored unscored -- no answer, no correctness, no marks -- so the score,
+  // "My question records" and /review say the same whatever was answered.
+  // Held as of submission (a paper opened before a hold began is no way
+  // round it), or as of the sitting's opening (the same holds /review
   // withholds, answer-rules.ts isInPlay at the token's iat). An allocation's
-  // own questions are always graded: it is one submission, and its work is
-  // the student's real result.
+  // own hold never un-grades its own questions: they are its real result.
   let held = new Set<string>();
-  if (!alloc && sitting && !isExamLabStaff(user.roles)) {
+  if ((alloc || sitting) && !isExamLabStaff(user.roles)) {
     try {
-      const [atOpen, atSubmit] = await Promise.all([heldIds(user.id, sitting.iat), heldIds(user.id, now)]);
-      held = new Set([...atOpen, ...atSubmit]);
+      held = await heldIdsAt(user.id, sitting ? [sitting.iat, now] : [now], alloc?.id ?? null);
     } catch {
       return NextResponse.json({ error: "Your answers couldn't be checked just now. Please retry." }, { status: 503 });
     }
@@ -239,7 +239,6 @@ export async function POST(request: Request) {
       ...(sitting ? { sittingId: sitting.sid } : {}),
     };
   }
-  const cancelled = !!d.context?.cancelled;
   const attempt: Attempt = {
     id: d.context?.attemptId || crypto.randomUUID(),
     ts: now,
@@ -252,11 +251,30 @@ export async function POST(request: Request) {
     questions,
     context,
   };
-  const result = await appendAttemptChecked(user.id, attempt, (existing) => sittingAlreadySubmitted(existing, {
-    sittingId: sitting?.sid ?? null, allocationId: alloc?.id ?? null, allocSubmitted: alloc?.status === "submitted",
-    allocStartedAt: alloc?.startedAt ?? null, cancelled,
-  }));
+  // Whether this attempt may be stored is the server's call alone: one per
+  // sitting, and an allocation takes ONE graded submission plus one per
+  // super-admin unlock on record. What the browser says about its sitting
+  // (cancelled, integrity, proctored, flags) is stored for staff and never
+  // consulted, so a "cancelled" sitting can't be graded again and again.
+  let history: Attempt[] = [];
+  const result = await appendAttemptChecked(user.id, attempt, async (existing) => {
+    history = existing;
+    // The unlocks matter (and are read) only once the allocation already has a submission.
+    const unlocks = alloc && allocationSubmissions(existing, alloc.id) > 0 ? await unlockCount(user.id, alloc.attemptId) : 0;
+    return sittingAlreadySubmitted(existing, {
+      sittingId: sitting?.sid ?? null, allocationId: alloc?.id ?? null, allocSubmitted: alloc?.status === "submitted", unlocks,
+    });
+  });
+  // A refusal says nothing about these answers: no score, no correctness.
   if (result === "refused") return NextResponse.json({ ok: false, alreadySubmitted: true, error: ALREADY }, { status: 409 });
+  // A sitting its browser stopped (its guard cancelled it) is the
+  // allocation's submission as it stood, and the runner never marks it
+  // submitted: close it here, so the student isn't offered a re-sit that
+  // would be refused. A proctored one stays as it is: its proctor session
+  // locks it, and a super-admin unlock re-opens it.
+  if (result === "stored" && alloc && d.context?.cancelled && alloc.status !== "submitted" && !isStrictAlloc(alloc)) {
+    await markSubmitted(user.id, alloc.id, submissionFlags([...history, attempt], alloc.id)).catch(() => false);
+  }
   const ok = result === "stored" || result === "duplicate";
   return NextResponse.json({ ok }, { status: ok ? 200 : 503 });
 }

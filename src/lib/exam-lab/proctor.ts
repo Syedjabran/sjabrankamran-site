@@ -56,8 +56,20 @@ export type ProctorSession = {
   events: ProctorEvent[];
   snapshots: { path: string; at: number; reason: string }[];
   unlockRequest: { at: number; note: string } | null;
-  unlock: { by: string; byName: string; at: number; note: string } | null;
+  unlock: UnlockEntry | null;
+  /** Every super-admin unlock of this sitting, oldest first; never cleared
+   *  (the re-sit's reset keeps it). Written only by unlockTest: each entry
+   *  grants the allocation ONE more graded attempt (unlockCount). */
+  unlocks?: UnlockEntry[];
 };
+
+export type UnlockEntry = { by: string; byName: string; at: number; note: string };
+
+/** The unlocks recorded on a session. A session unlocked before the ledger
+ *  existed and not yet re-sat carries its one unlock in `unlock`. */
+function unlockLedger(s: Pick<ProctorSession, "unlock" | "unlocks">): UnlockEntry[] {
+  return Array.isArray(s.unlocks) ? s.unlocks : s.unlock ? [s.unlock] : [];
+}
 
 export type LockEntry = {
   uid: string;
@@ -105,6 +117,16 @@ export async function getSession(uid: string, attemptId: string): Promise<Procto
   return readJson<ProctorSession>(sessKey(uid, attemptId));
 }
 
+/** How many super-admin unlocks the server recorded for this sitting (0
+ *  when it has no session). THROWS when the session can't be read, so a
+ *  caller never mistakes "unknown" for "none". */
+export async function unlockCount(uid: string, attemptId: string): Promise<number> {
+  if (!validKey(uid, attemptId)) return 0;
+  const r = await readFreshJson<ProctorSession>(BUCKET, sessKey(uid, attemptId));
+  if (!r.ok) throw new Error("Could not read the proctor session.");
+  return r.data ? unlockLedger(r.data).length : 0;
+}
+
 export async function startSession(
   uid: string,
   attemptId: string,
@@ -131,6 +153,7 @@ export async function startSession(
         cameraConsent: init.cameraConsent,
         startedAt: Date.now(), endedAt: null, status: "active",
         lockedReason: null, events: [], snapshots: [], unlockRequest: null, unlock: null,
+        unlocks: unlockLedger(existing), // the grant stands after the reset
       };
       await writeJson(sessKey(uid, attemptId), reset);
       return reset;
@@ -240,12 +263,17 @@ export async function listLocks(): Promise<LockEntry[]> {
   return Object.values(idx).sort((a, b) => b.at - a.at);
 }
 
-/** Super-admin: unlock a test so the student may re-sit. */
+/** Super-admin: unlock a test so the student may re-sit -- ONE more graded
+ *  attempt per unlock (unlockCount). Unlocking again before the student has
+ *  re-opened it grants nothing more. */
 export async function unlockTest(uid: string, attemptId: string, by: string, byName: string, note: string): Promise<boolean> {
   const s = await getSession(uid, attemptId);
   if (!s) return false;
+  const entry: UnlockEntry = { by, byName, at: Date.now(), note: (note || "").slice(0, 1000) };
+  const ledger = unlockLedger(s);
+  s.unlocks = s.status === "unlocked" && ledger.length ? ledger : [...ledger, entry];
   s.status = "unlocked";
-  s.unlock = { by, byName, at: Date.now(), note: (note || "").slice(0, 1000) };
+  s.unlock = entry;
   await writeJson(sessKey(uid, attemptId), s);
   const k = `${uid}:${attemptId}`;
   await updateLocks((idx) => { if (!idx[k]) return false; idx[k].status = "unlocked"; return true; });

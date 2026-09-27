@@ -118,13 +118,29 @@ export async function appendAttempt(userId: string, attempt: Attempt): Promise<b
 }
 
 /**
+ * What an allocation's submission earns it on the allocation itself: "late"
+ * or "unattempted" (no credit), from its last stored attempt. A sitting its
+ * browser reported cancelled never counts as real work.
+ */
+export function submissionFlags(attempts: Attempt[], allocationId: string): { late?: boolean; unattempted?: boolean } {
+  const linked = attempts.filter((a) => a.context?.allocationId === allocationId && !a.context?.cancelled);
+  const last = linked[linked.length - 1];
+  if (!last) return { unattempted: true };
+  const attempted = typeof last.attemptedCount === "number"
+    ? last.attemptedCount
+    : last.questions.filter((q) => (q.response && q.response.trim()) || q.correct !== null || q.earned !== null).length;
+  return attempted === 0 ? { unattempted: true } : last.context?.late ? { late: true } : {};
+}
+
+/**
  * Stores `attempt` unless it is a retry of one already stored ("duplicate",
  * same submission nonce) or `refuse(existing)` says the sitting it belongs to
  * already has its submission ("refused"). "failed": the history could not be
- * read or written -- nothing was changed.
+ * read or written, or `refuse` could not decide (it threw) -- nothing was
+ * changed.
  */
 export async function appendAttemptChecked(
-  userId: string, attempt: Attempt, refuse: (existing: Attempt[]) => boolean,
+  userId: string, attempt: Attempt, refuse: (existing: Attempt[]) => boolean | Promise<boolean>,
 ): Promise<"stored" | "duplicate" | "refused" | "failed"> {
   let existing: Attempt[];
   try {
@@ -136,7 +152,13 @@ export async function appendAttemptChecked(
   }
   const nonce = attempt.context?.submissionId;
   if (nonce && existing.some((a) => a.context?.submissionId === nonce)) return "duplicate"; // retried POST
-  if (refuse(existing)) return "refused";
+  let refused: boolean;
+  try {
+    refused = await refuse(existing);
+  } catch {
+    return "failed";
+  }
+  if (refused) return "refused";
   existing.push(attempt);
   // keep the most recent 800 attempts
   return (await writeFreshJson(BUCKET, docPath(userId), { attempts: existing.slice(-800) })) ? "stored" : "failed";

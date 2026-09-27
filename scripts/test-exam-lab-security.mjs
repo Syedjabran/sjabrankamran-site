@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { deriveKey, newSealId, openSealed, sealJson, sha256Hex, signToken, verifyToken } from "../src/lib/exam-lab/seal.ts";
 import {
-  IN_PLAY_GRACE_MS, LAUNCHABLE_STATUSES, SITTING_MAX_AGE_MS, SUBMIT_MAX_AGE_MS, UPCOMING_WINDOW_MS, allocationQuestionIds, answerHash,
+  IN_PLAY_GRACE_MS, LAUNCHABLE_STATUSES, SITTING_MAX_AGE_MS, SUBMIT_MAX_AGE_MS, UPCOMING_WINDOW_MS, allocationQuestionIds, allocationSubmissions, answerHash,
   classifyAssetPath, examLabSittingRunning, frozenResponse, hasStarted, helpAllowed, inPlayIds, isInPlay, markAllowedAfterReveal,
   pastPaperKey, pausedPaperTypes, publicAllocation, questionKey, receiptMatches, revealAfterSubmit, revealScope, sameIdSet, sittingAlreadySubmitted,
   sittingTokenOk, takeHit,
@@ -151,18 +151,24 @@ assert.equal(sittingTokenOk(sit, "u2", NOW + 2 * DAY, SUBMIT_MAX_AGE_MS), false,
 
 // --- one submission per sitting (M4) -----------------------------------------------------
 const stored = (over) => ({ ts: NOW, context: { allocationId: null, cancelled: false, ...over } });
-const fresh = { sittingId: "s-new", allocationId: null, allocSubmitted: false, allocStartedAt: null, cancelled: false };
+const fresh = { sittingId: "s-new", allocationId: null, allocSubmitted: false, unlocks: 0 };
 assert.equal(sittingAlreadySubmitted([], fresh), false);
 assert.equal(sittingAlreadySubmitted([stored({ sittingId: "s-new" })], fresh), true, "a practice sitting is submitted once");
 assert.equal(sittingAlreadySubmitted([stored({ sittingId: "s-old" })], fresh), false, "another sitting of the same paper is fine");
-const allocSit = { ...fresh, allocationId: "A", allocStartedAt: NOW - HOUR };
+const allocSit = { ...fresh, allocationId: "A" };
+assert.equal(sittingAlreadySubmitted([], allocSit), false, "an allocation's first submission is taken");
 assert.equal(sittingAlreadySubmitted([], { ...allocSit, allocSubmitted: true }), true, "a submitted allocation takes no more attempts");
 assert.equal(sittingAlreadySubmitted([stored({ allocationId: "A", sittingId: "s-1" })], allocSit), true, "reopening cannot replace recorded answers");
-assert.equal(sittingAlreadySubmitted([stored({ allocationId: "A", sittingId: "s-1", cancelled: true })], allocSit), false, "a cancelled sitting does not block the next");
-assert.equal(sittingAlreadySubmitted([{ ts: NOW - 2 * HOUR, context: { allocationId: "A", sittingId: "s-1" } }], allocSit), false, "an attempt before a super-admin re-open does not count");
-assert.equal(sittingAlreadySubmitted([stored({ allocationId: "A" })], { ...allocSit, cancelled: true }), false, "a cancellation is always recorded");
-assert.equal(sittingAlreadySubmitted([stored({ allocationId: "B" })], allocSit), false);
-assert.equal(sittingAlreadySubmitted([stored({ allocationId: "A" })], { ...allocSit, allocStartedAt: null }), true, "no recorded start: any earlier attempt counts");
+// OS-A (fix round 4): what the browser said about the earlier sitting never
+// buys another graded attempt -- only a staff unlock recorded on the server.
+assert.equal(sittingAlreadySubmitted([stored({ allocationId: "A", sittingId: "s-1", cancelled: true })], allocSit), true, "a sitting the browser called cancelled is still the submission");
+assert.equal(sittingAlreadySubmitted([{ ts: NOW - 2 * HOUR, context: { allocationId: "A", sittingId: "s-1" } }], allocSit), true, "an earlier sitting counts however long ago");
+assert.equal(allocationSubmissions([stored({ allocationId: "A", cancelled: true }), stored({ allocationId: "A" }), stored({ allocationId: "B" })], "A"), 2);
+assert.equal(sittingAlreadySubmitted([stored({ allocationId: "A", cancelled: true })], { ...allocSit, unlocks: 1 }), false, "a staff unlock allows one more");
+assert.equal(sittingAlreadySubmitted([stored({ allocationId: "A", cancelled: true }), stored({ allocationId: "A" })], { ...allocSit, unlocks: 1 }), true, "exactly one more");
+assert.equal(sittingAlreadySubmitted([stored({ allocationId: "A" }), stored({ allocationId: "A" })], { ...allocSit, unlocks: 2 }), false, "one more per unlock");
+assert.equal(sittingAlreadySubmitted([stored({ allocationId: "A" })], { ...allocSit, unlocks: -3 }), true, "a nonsense count grants nothing");
+assert.equal(sittingAlreadySubmitted([stored({ allocationId: "B" })], allocSit), false, "another allocation's attempts don't count");
 
 // --- help while sitting (H1, H2) -------------------------------------------------------
 assert.equal(helpAllowed({ help: true, strict: false, alloc: null }, null), true, "practice with help");

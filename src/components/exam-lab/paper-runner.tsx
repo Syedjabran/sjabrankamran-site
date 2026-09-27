@@ -842,6 +842,7 @@ export function PaperRunner({
           <p className="mx-auto mt-3 max-w-md text-sm text-fog">Your attempt was terminated due to <b className="text-red-300">unethical means of attempting the paper</b>.</p>
           <p className="mx-auto mt-1 max-w-md font-mono text-xs text-dust">{voided}</p>
           <p className="mx-auto mt-4 max-w-md text-xs text-dust">No-help drills must be sat in a single, full-screen window — no minimising, tab-switching, split-screen or screenshots once the timer begins.</p>
+          <p className="mx-auto mt-2 max-w-md text-xs text-dust">What you had answered is recorded as your submission for this activity. If you need another attempt, ask your teacher.</p>
           <button onClick={onExit} className="btn-primary mx-auto mt-6"><ArrowLeft size={15} /> Back to Exam Lab</button>
         </div>
       </div>

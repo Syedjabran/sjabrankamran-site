@@ -19,6 +19,7 @@
  * throws instead of reading as empty, so no writer ever replaces a student's
  * allocations with a near-empty list.
  */
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createFreshJson, readFreshJson, writeFreshJson } from "./storage-fresh";
 import { getSession, type ProctorStatus } from "./proctor";
 
@@ -205,6 +206,43 @@ export async function readFrozenIds(uid: string, id: string): Promise<string[] |
 
 const sameList = (a: string[] | undefined, b: string[]) => !!a && a.length === b.length && a.every((x, i) => x === b[i]);
 
+const isLegacySpec = (a: ExamAllocation) => a.content.type === "drill" || a.content.type === "daily";
+const FROZEN_LIST_LIMIT = 1000;
+
+/** The allocation ids with a write-once frozen record (one listing), or
+ *  "all" when the listing is full and can't be trusted to be complete.
+ *  THROWS when the listing fails. */
+async function frozenRecordIds(uid: string): Promise<Set<string> | "all"> {
+  const { data, error } = await createAdminClient().storage.from(DATA).list(`exam-allocations/frozen/${uid}`, { limit: FROZEN_LIST_LIMIT });
+  if (error) throw new Error("Could not list the frozen papers.");
+  const names = (data ?? []).map((f) => f.name);
+  if (names.length >= FROZEN_LIST_LIMIT) return "all";
+  return new Set(names.filter((n) => n.endsWith(".json")).map((n) => n.slice(0, -5)));
+}
+
+/**
+ * `items`, with the frozen set restored from its write-once record on every
+ * legacy randomised item (`drill` / `daily`) that `needs` it and whose copy
+ * on the allocations doc is missing -- a stale whole-doc write can drop
+ * `frozenIds` from the doc, never the record, so a hold follows the set the
+ * student can still submit. One listing of the student's records, then a
+ * read of each one needed (an item never opened has none: nothing frozen,
+ * nothing held). THROWS when the listing or a record can't be read: a hold
+ * never lapses because storage failed (callers refuse).
+ */
+export async function withFrozenSets(uid: string, items: ExamAllocation[], needs: (a: ExamAllocation) => boolean): Promise<ExamAllocation[]> {
+  const todo = items.filter((a) => isLegacySpec(a) && !(a.frozenIds && a.frozenIds.length) && needs(a));
+  if (!todo.length || !FROZEN_SAFE.test(uid)) return items;
+  const listed = await frozenRecordIds(uid);
+  const restored = new Map<string, string[]>();
+  await Promise.all(todo.filter((a) => listed === "all" || listed.has(a.id)).map(async (a) => {
+    const ids = await readFrozenIds(uid, a.id);
+    if (ids === null) throw new Error("Could not read the paper.");
+    if (ids) restored.set(a.id, ids);
+  }));
+  return restored.size ? items.map((a) => (restored.has(a.id) ? { ...a, frozenIds: restored.get(a.id) } : a)) : items;
+}
+
 /**
  * The ids a legacy randomised allocation (`drill` / `daily`) is sat with:
  * the ones already frozen, or `pick()` frozen now (first open). Race-safe:
@@ -251,7 +289,7 @@ export async function freezeAllocationIds(uid: string, id: string, pick: () => s
 }
 
 /** The guard mode an allocation runs under (mirrors `allocCfg` in papers-hub). */
-function isStrictAlloc(it: ExamAllocation): boolean {
+export function isStrictAlloc(it: ExamAllocation): boolean {
   return (it.integrity ?? (it.mode === "test" ? "strict" : it.mode === "assignment_nohelp" ? "standard" : "off")) === "strict";
 }
 

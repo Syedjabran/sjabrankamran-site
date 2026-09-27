@@ -215,24 +215,30 @@ export function sameIdSet(a: string[], b: string[]): boolean {
 
 export type StoredAttemptLike = { ts: number; context?: { allocationId?: string | null; cancelled?: boolean; sittingId?: string } };
 
+/** How many attempts are stored for one allocation -- every one, whatever
+ *  its browser reported (a sitting the browser called cancelled is still a
+ *  graded submission). */
+export function allocationSubmissions(existing: StoredAttemptLike[], allocationId: string): number {
+  return existing.filter((a) => a.context?.allocationId === allocationId).length;
+}
+
 /**
- * Whether a new attempt must be refused because its sitting already has its
- * submission: one attempt per opened sitting; an allocation that is marked
- * submitted takes no more; and an allocation's first stored (not cancelled)
- * attempt of its current sitting is final -- reopening it cannot replace
- * answers already recorded. A sitting re-opened by a super-admin unlock
- * starts a new sitting (`allocStartedAt` moves on), and a cancelled sitting
- * never blocks the next.
+ * Whether a new attempt must be refused, decided by the server alone: one
+ * attempt per opened sitting; an allocation that is marked submitted takes
+ * no more; and an allocation takes ONE graded submission, plus one more for
+ * each staff unlock the server recorded (`unlocks`, proctor.ts unlockCount).
+ * Nothing the browser reports about its sitting (cancelled, integrity,
+ * proctored, flags) is consulted: those are stored for staff only, so a
+ * sitting reported cancelled can't be used to be graded again and again.
  */
 export function sittingAlreadySubmitted(
   existing: StoredAttemptLike[],
-  s: { sittingId: string | null; allocationId: string | null; allocSubmitted: boolean; allocStartedAt: number | null; cancelled: boolean },
+  s: { sittingId: string | null; allocationId: string | null; allocSubmitted: boolean; unlocks: number },
 ): boolean {
   if (s.sittingId && existing.some((a) => a.context?.sittingId === s.sittingId)) return true;
   if (!s.allocationId) return false;
   if (s.allocSubmitted) return true;
-  if (s.cancelled) return false;
-  return existing.some((a) => a.context?.allocationId === s.allocationId && !a.context?.cancelled && (!s.allocStartedAt || a.ts >= s.allocStartedAt));
+  return allocationSubmissions(existing, s.allocationId) >= 1 + Math.max(0, s.unlocks);
 }
 
 /** Help (a mark scheme, Maxwell) for one question of a sitting: only in a

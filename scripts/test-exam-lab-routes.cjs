@@ -19,6 +19,11 @@
  * wrong answers give byte-identical results (NB1); a staff-written class
  * test pauses no practice paper (NB2); the first-open freeze is race-safe
  * and survives a stale write (NB3); reveals are listed once (NB4).
+ * Round 4: holds follow the write-once frozen set after a stale write and
+ * fail closed (NB5); inside an allocation, another allocation's held
+ * questions are stored unscored (R1); an allocation takes one graded
+ * submission whatever the browser says -- "cancelled" buys no re-sit, a
+ * super-admin unlock buys exactly one (OS-A).
  */
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -31,6 +36,8 @@ const files = new Map(); // "<bucket>/<path>" -> JSON text
 let user = { id: "u1", roles: ["student"], fullName: "Student One", email: "s1@example.test" };
 const aiCalls = [];
 const reads = []; // storage paths read, to count reads
+const unreadable = new Set(); // storage paths whose read fails (fail-closed checks)
+let listFails = false; // storage listings fail
 
 // ---- a tiny bank: two MCQs and two structured questions -----------------------
 const bankQs = [
@@ -82,6 +89,7 @@ const mocks = {
     readFreshJson: async (bucket, p) => {
       reads.push(p);
       await Promise.resolve();
+      if (unreadable.has(p)) return { ok: false };
       return { ok: true, data: files.has(`${bucket}/${p}`) ? JSON.parse(files.get(`${bucket}/${p}`)) : null };
     },
     writeFreshJson: async (bucket, p, v) => { await Promise.resolve(); files.set(`${bucket}/${p}`, JSON.stringify(v)); return true; },
@@ -92,7 +100,7 @@ const mocks = {
       return true;
     },
   },
-  "./proctor": { getSession: async () => null },
+  "@/lib/portal/tasks": { completeTaskBySource: async () => {} },
   "@/lib/supabase/admin": {
     createAdminClient: () => ({
       storage: {
@@ -104,7 +112,7 @@ const mocks = {
             return { error: null };
           },
           download: async () => ({ data: new Blob(["img"]), error: null }),
-          list: async (prefix) => ({
+          list: async (prefix) => (listFails ? { data: null, error: { message: "list failed" } } : {
             data: [...files.keys()].filter((k) => k.startsWith(`${bucket}/${prefix}/`)).map((k) => ({ name: k.slice(bucket.length + prefix.length + 2) })).filter((f) => !f.name.includes("/")),
             error: null,
           }),
@@ -152,6 +160,8 @@ const KEYS = { sitting: seal.deriveKey("a-long-enough-test-secret", "exam-lab:si
 mocks["@/lib/exam-lab/keys"] = { examLabKey: (purpose) => KEYS[purpose] ?? null };
 mocks["./keys"] = mocks["@/lib/exam-lab/keys"];
 const allocations = load(src("lib/exam-lab/allocations.ts"));
+const proctor = load(src("lib/exam-lab/proctor.ts")); // the real proctor log (sessions, locks, unlocks)
+const allocationsRoute = load(src("app/api/exam-lab/allocations/route.ts"));
 const sittingRoute = load(src("app/api/exam-lab/sitting/route.ts"));
 const reviewRoute = load(src("app/api/exam-lab/review/route.ts"));
 const attemptRoute = load(src("app/api/exam-lab/attempt/route.ts"));
@@ -428,6 +438,155 @@ async function allocate(id, over) {
   r = await open({ allocationId: "help-two" });
   assert.deepEqual(r.body.reveals, { s1: "one" });
   assert.deepEqual(reads.filter((p) => p.startsWith("exam-reveals/")), ["exam-reveals/u1/a-help-two/s1.json"], "one listing, then only the revealed question is read");
+
+  // ===== NB5: a hold follows the write-once frozen set, and fails closed =====
+  // Still in play: "legacy" and "race2" (frozen on the doc) and "race", whose
+  // doc copy a stale write dropped above (its record still holds the set it
+  // can submit). Close the first two: only the record can hold m1 / m2 now.
+  await allocations.markSubmitted("u1", "legacy", {});
+  await allocations.markSubmitted("u1", "race2", {});
+  assert.equal((await allocations.getAllocation("u1", "race")).frozenIds, undefined, "the doc copy is gone");
+  const staleSit = await practice9702({ type: "paper", code: "9702_s18_11" });
+  assert.equal(staleSit.status, 200);
+  r = await attempt(staleSit.body.token, answersFor("A"));
+  assert.equal(r.status, 200);
+  const staleRec = await lastAttempt();
+  for (const id of tabOne) assert.equal(staleRec.questions.find((q) => q.id === id).held, true, `${id}: held through the frozen record`);
+  assert.equal(staleRec.questions.find((q) => q.id === "m3").correct, true, "the rest of the paper is scored");
+  // Fail closed: an unreadable record (or listing) refuses rather than un-holds.
+  unreadable.add("exam-allocations/frozen/u1/race.json");
+  r = await practice9702({ type: "paper", code: "9702_s18_11" });
+  assert.equal(r.status, 503, "a frozen record that can't be read refuses the sitting");
+  r = await revealRoute.POST(req({ token: heldPaper, id: "s1", answer: "" }));
+  assert.equal(r.status, 503, "and every other hold reader");
+  unreadable.delete("exam-allocations/frozen/u1/race.json");
+  listFails = true;
+  r = await practice9702({ type: "paper", code: "9702_s18_11" });
+  assert.equal(r.status, 503, "so does a listing that fails");
+  listFails = false;
+  await allocations.markSubmitted("u1", "race", {});
+
+  // Held when the sitting opened, though no longer when it is submitted (its
+  // hold lapsed by time in between): still stored unscored.
+  const openedAt = Date.now() - 2 * 24 * 60 * 60_000;
+  await allocate("lapsing", { mode: "assignment_nohelp", content: { type: "custom", ids: ["m3"] }, dueAt: new Date(Date.now() - rules.IN_PLAY_GRACE_MS - 60 * 60_000).toISOString() });
+  const lapDoc = JSON.parse(files.get("portal-data/exam-allocations/u1.json"));
+  lapDoc.items = lapDoc.items.map((it) => (it.id === "lapsing" ? { ...it, createdAt: openedAt - 60 * 60_000 } : it));
+  files.set("portal-data/exam-allocations/u1.json", JSON.stringify(lapDoc));
+  const lapToken = sitting({ ids: ["m1", "m2", "m3"], iat: openedAt });
+  r = await attempt(lapToken, answersFor("A"));
+  assert.equal(r.status, 200);
+  assert.equal((await lastAttempt()).questions.find((q) => q.id === "m3").held, true, "held as of the sitting's opening");
+  assert.equal((await lastAttempt()).questions.find((q) => q.id === "m1").correct, true);
+  await allocations.markSubmitted("u1", "lapsing", {});
+
+  // ===== R1: inside an allocation, another allocation's held questions are unscored =====
+  // A live test holds m2; two no-help assignments each share m2 with it.
+  await allocate("r1-test", { mode: "test", content: { type: "custom", ids: ["m2"] } });
+  await allocate("r1-a", { mode: "assignment_nohelp", content: { type: "custom", ids: ["m1", "m2"] } });
+  await allocate("r1-b", { mode: "assignment_nohelp", content: { type: "custom", ids: ["m3", "m2"] } });
+  const r1a = await open({ allocationId: "r1-a" });
+  const r1b = await open({ allocationId: "r1-b" });
+  assert.equal(r1a.status, 200);
+  assert.equal(r1b.status, 200);
+  const r1ctx = { kind: "assignment", help: false, integrity: "standard" };
+  const resRight = await attempt(r1a.body.token, [{ id: "m1", response: "B" }, { id: "m2", response: "C" }], r1ctx); // m2's key is C
+  const recRight = (await lastAttempt()).questions;
+  const resWrong = await attempt(r1b.body.token, [{ id: "m3", response: "A" }, { id: "m2", response: "D" }], r1ctx);
+  const recWrong = (await lastAttempt()).questions;
+  assert.equal(JSON.stringify(resRight), JSON.stringify(resWrong), "the same response to the submission");
+  assert.equal(JSON.stringify(recRight.find((q) => q.id === "m2")), JSON.stringify(recWrong.find((q) => q.id === "m2")), "the same stored record for the held question");
+  assert.equal(recRight.find((q) => q.id === "m2").held, true);
+  assert.equal(recRight.find((q) => q.id === "m1").correct, true, "the allocation's own question is graded");
+  assert.equal(recWrong.find((q) => q.id === "m3").correct, true);
+  await allocations.markSubmitted("u1", "r1-a", {});
+  r = await reviewRoute.POST(req({ token: r1a.body.token }));
+  assert.deepEqual(r.body.items.m2, { held: true });
+  assert.deepEqual(r.body.mcq, { got: 1, total: 1 }, "the held question is out of the allocation's score");
+  for (const id of ["r1-b", "r1-test"]) await allocations.markSubmitted("u1", id, {});
+
+  // ===== OS-A: an allocation takes ONE graded submission; the browser can't buy more =====
+  const attemptsKey = "exam-data/u1.json";
+  const allocKey = "portal-data/exam-allocations/u1.json";
+  const ALREADY = { ok: false, alreadySubmitted: true, error: "This sitting's answers were already recorded — these were not saved again." };
+  const osaCtx = (over) => ({ kind: "assignment", help: false, integrity: "standard", ...over });
+  // (a) A no-help assignment whose guard "cancelled" it (the browser says so).
+  await allocate("osa-work", { mode: "assignment_nohelp", content: { type: "custom", ids: ["m1", "m3"] } });
+  r = await open({ allocationId: "osa-work" });
+  assert.equal(r.status, 200);
+  r = await attempt(r.body.token, [{ id: "m1", response: "A" }, { id: "m3", response: "A" }], osaCtx({ cancelled: true, lockedReason: "Switched tabs" }));
+  assert.equal(r.status, 200, "the cancelled sitting is stored");
+  saved = await lastAttempt();
+  assert.equal(saved.context.cancelled, true, "the browser's report is kept for staff");
+  assert.equal(saved.questions.find((q) => q.id === "m3").correct, true, "and graded: it is the submission");
+  const closed = await allocations.getAllocation("u1", "osa-work");
+  assert.equal(closed.status, "submitted", "the server closes it: no re-sit is offered");
+  assert.equal(closed.unattempted, true, "a cancelled sitting earns no credit");
+  let before = [files.get(attemptsKey), files.get(allocKey)];
+  const again = await attempt(null, [{ id: "m1", response: "B" }, { id: "m3", response: "B" }], osaCtx({ allocationId: "osa-work", cancelled: true }));
+  const againWrong = await attempt(null, [{ id: "m1", response: "C" }, { id: "m3", response: "C" }], osaCtx({ allocationId: "osa-work", cancelled: true }));
+  assert.equal(again.status, 409, "a second submission saying cancelled is refused");
+  assert.deepEqual(again.body, ALREADY, "with a plain message: no score, no correctness");
+  assert.equal(JSON.stringify(againWrong), JSON.stringify(again), "whatever it answered");
+  assert.deepEqual([files.get(attemptsKey), files.get(allocKey)], before, "and nothing stored changes");
+  r = await open({ allocationId: "osa-work" });
+  assert.equal(r.status, 409, "nor does it open again");
+
+  // (b) A proctored test: the proctor session locks it (not the browser's flag).
+  await allocate("osa-test", { mode: "test", content: { type: "custom", ids: ["m1", "m3"] } });
+  const lockId = "alloc-osa-test";
+  const started = async () => allocationsRoute.POST(req({ id: "osa-test", action: "started" }));
+  const sessionInit = { studentName: "Student One", studentEmail: "s1@example.test", kind: "test", integrity: "strict", meta: { title: "osa-test" }, cameraConsent: true };
+  r = await open({ allocationId: "osa-test" });
+  assert.equal(r.status, 200);
+  const firstTestToken = r.body.token;
+  await proctor.startSession("u1", lockId, sessionInit);
+  assert.equal((await started()).status, 200);
+  await proctor.appendEvents("u1", lockId, [{ type: "tab", reason: "Left the tab", terminal: true, at: Date.now(), source: "guard" }]);
+  r = await attempt(firstTestToken, [{ id: "m1", response: "A" }, { id: "m3", response: "A" }], osaCtx({ kind: "test", integrity: "strict", proctored: true, cancelled: true }));
+  assert.equal(r.status, 200, "the locked sitting's answers are stored");
+  assert.notEqual((await allocations.getAllocation("u1", "osa-test")).status, "submitted", "a proctored one is left to its lock");
+  const sessKey = `portal-data/proctor/u1/${lockId}.json`;
+  before = [files.get(attemptsKey), files.get(allocKey), files.get(sessKey)];
+  r = await attempt(null, [{ id: "m1", response: "B" }, { id: "m3", response: "B" }], osaCtx({ allocationId: "osa-test", kind: "test", cancelled: true }));
+  assert.equal(r.status, 409, "cancelled again: refused");
+  assert.deepEqual(r.body, ALREADY);
+  r = await attempt(sitting({ alloc: "osa-test", ids: ["m1", "m3"], help: false, strict: true }), [{ id: "m1", response: "B" }, { id: "m3", response: "B" }], osaCtx({ kind: "test", cancelled: true }));
+  assert.equal(r.status, 409, "a new sitting of it is refused too");
+  assert.deepEqual([files.get(attemptsKey), files.get(allocKey), files.get(sessKey)], before, "nothing stored changes");
+  r = await open({ allocationId: "osa-test" });
+  assert.equal(r.status, 423, "the lock holds");
+  // A super-admin unlock grants exactly one more (unlocking twice, still one).
+  await proctor.unlockTest("u1", lockId, "sa1", "Super Admin", "camera fault");
+  await proctor.unlockTest("u1", lockId, "sa1", "Super Admin", "clicked twice");
+  assert.equal(await proctor.unlockCount("u1", lockId), 1);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  r = await open({ allocationId: "osa-test" });
+  assert.equal(r.status, 200, "the unlocked test opens");
+  await proctor.startSession("u1", lockId, sessionInit); // the re-sit's session reset
+  assert.equal(await proctor.unlockCount("u1", lockId), 1, "the grant survives the reset");
+  assert.equal((await started()).status, 200);
+  unreadable.add(`proctor/u1/${lockId}.json`);
+  before = files.get(attemptsKey);
+  const resit = [{ id: "m1", response: "B" }, { id: "m3", response: "A" }];
+  r = await attempt(r.body.token, resit, osaCtx({ kind: "test", integrity: "strict", proctored: true }));
+  assert.equal(r.status, 503, "an unlock that can't be read is never guessed");
+  assert.equal(files.get(attemptsKey), before, "and nothing is stored");
+  unreadable.delete(`proctor/u1/${lockId}.json`);
+  r = await open({ allocationId: "osa-test" });
+  r = await attempt(r.body.token, resit, osaCtx({ kind: "test", integrity: "strict", proctored: true }));
+  assert.equal(r.status, 200, "the re-sit is stored");
+  assert.equal((await lastAttempt()).questions.find((q) => q.id === "m1").correct, true);
+  r = await attempt(null, [{ id: "m1", response: "C" }, { id: "m3", response: "C" }], osaCtx({ allocationId: "osa-test", kind: "test" }));
+  assert.equal(r.status, 409, "exactly one more");
+  await allocations.markSubmitted("u1", "osa-test", {});
+  // A session unlocked before the ledger existed keeps its one grant through the reset.
+  await allocate("osa-legacy", { mode: "test", content: { type: "custom", ids: ["m1"] } });
+  const legacyKey = "portal-data/proctor/u1/alloc-osa-legacy.json";
+  files.set(legacyKey, JSON.stringify({ ...JSON.parse(files.get(sessKey)), attemptId: "alloc-osa-legacy", status: "unlocked", unlocks: undefined, unlock: { by: "sa1", byName: "Super Admin", at: Date.now(), note: "old" } }));
+  await proctor.startSession("u1", "alloc-osa-legacy", sessionInit);
+  assert.equal(await proctor.unlockCount("u1", "alloc-osa-legacy"), 1, "a legacy unlock still grants one");
+  await allocations.markSubmitted("u1", "osa-legacy", {});
 
   // ===== m2: a student signs by path only what their own work references =====
   const sign = async (paths) => (await assetRoute.POST(req({ paths }))).status;
