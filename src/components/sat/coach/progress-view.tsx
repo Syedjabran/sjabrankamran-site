@@ -77,7 +77,7 @@ export function ProgressView() {
     );
   }
   if (!analytics) return <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading your progress…</p>;
-  if (analytics.totals.answered === 0 && analytics.scores.history.length === 0) return <EmptyProgress />;
+  if (analytics.totals.attempted === 0 && analytics.scores.history.length === 0) return <EmptyProgress />;
 
   return (
     <div className="space-y-6">
@@ -144,15 +144,17 @@ function Stat({ label, value, detail }: { label: string; value: string; detail?:
   );
 }
 
+// "Questions answered" leaves out blanks; "correct" is over every finished
+// question, a blank counting as wrong (as a module's own score does).
 function Overview({ totals, generatedAt }: { totals: SATAnalytics["totals"]; generatedAt: number }) {
-  const accuracy = totals.answered > 0 ? pct(totals.correct / totals.answered) : "—";
+  const accuracy = totals.attempted > 0 ? pct(totals.correct / totals.attempted) : "—";
   const week = totals.last7;
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-3 gap-3">
         <Stat label="Questions answered" value={count(totals.answered)} />
         <Stat label="Correct" value={accuracy} />
-        <Stat label="Last 7 days" value={count(week.answered)} detail={week.answered > 0 ? `${pct(week.correct / week.answered)} correct` : undefined} />
+        <Stat label="Last 7 days" value={count(week.answered)} detail={week.attempted > 0 ? `${pct(week.correct / week.attempted)} correct` : undefined} />
       </div>
       <p className="text-xs text-dust">Updated {formatPk(generatedAt)}</p>
     </div>

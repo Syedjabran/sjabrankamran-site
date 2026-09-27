@@ -32,7 +32,9 @@ import { listSummaries, loadDocs, type SATDoc } from "./store.ts";
 const BUCKET = "portal-data";
 const SAFE_UID = /^[A-Za-z0-9_-]{6,64}$/;
 const cachePath = (uid: string) => `sat/analytics/${uid}.json`;
-const CACHE_VERSION = 2;
+// 3: items mark blanks and totals split answered / attempted (final review
+// M12) -- an older cache is recomputed once.
+const CACHE_VERSION = 3;
 
 type HistoryEntry = History extends Map<string, infer V> ? V : never;
 

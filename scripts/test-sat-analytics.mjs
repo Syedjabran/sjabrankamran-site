@@ -67,6 +67,7 @@ function item(overrides) {
   assert.equal(result.sections.rw.answered, 1);
   assert.equal(result.sections.rw.correct, 1);
   assert.equal(result.totals.answered, 1);
+  assert.equal(result.totals.attempted, 1);
   assert.equal(result.totals.correct, 1);
   assert.equal(result.skills.length, 0, "practice item must not create a skill row");
   assert.equal(result.domains.filter((d) => d.attempts > 0).length, 0, "practice item must not add attempts to any domain row");
@@ -238,6 +239,44 @@ function sitting(overrides) {
   assert.equal(byId.r3.correct, false, "an unanswered question in a submitted module counts as wrong");
   assert.ok(items.every((it) => it.at === T_SUB && it.source === "adaptive" && it.section === "rw"));
   assert.equal(byId.r1.timeMs, 60_000);
+  // Final review M12: the blank is marked, the answered ones aren't.
+  assert.equal(byId.r3.blank, true, "a blank is marked blank");
+  assert.equal(byId.r1.blank, undefined);
+  assert.equal(byId.r2.blank, undefined, "a wrong answer is still an answer");
+}
+
+// 12b (final review M12): "questions answered" leaves blanks out; accuracy
+// doesn't change -- a blank still counts as wrong (attempted). A blank-
+// submitted mock is never "98 questions answered".
+{
+  const T_SUB = NOW - DAY;
+  const answered = sitting({
+    plan: { "rw.m1": ["r1", "r2", "r3", "r4"] }, current: 4, stageStartedAt: null, finishedAt: T_SUB,
+    answers: { r1: "A", r2: "B", r3: "   " }, // r3 whitespace only, r4 never touched: both blank
+    results: { "rw.m1": { correct: 1, total: 4, answered: 2, overtime: false, submittedAt: T_SUB } },
+  });
+  const items = analyticsItemsFromDoc(answered, lookup);
+  assert.deepEqual(items.filter((it) => it.blank).map((it) => it.qid).sort(), ["r3", "r4"]);
+  const result = computeAnalytics(items, [], NOW);
+  assert.equal(result.totals.answered, 2, "only the two answered questions");
+  assert.equal(result.totals.attempted, 4, "every finished question is attempted");
+  assert.equal(result.totals.correct, 1);
+  assert.equal(result.totals.correct / result.totals.attempted, 0.25, "accuracy unchanged: the blanks count as wrong");
+  assert.equal(result.sections.rw.accuracy, 0.25, "section accuracy unchanged");
+  assert.deepEqual(result.totals.last7, { answered: 2, attempted: 4, correct: 1 });
+  assert.deepEqual(result.totals.last30, { answered: 2, attempted: 4, correct: 1 });
+
+  const allBlank = sitting({
+    plan: { "rw.m1": ["r1", "r2", "r3"] }, current: 4, stageStartedAt: null, finishedAt: T_SUB, answers: {},
+    results: { "rw.m1": { correct: 0, total: 3, answered: 0, overtime: false, submittedAt: T_SUB } },
+  });
+  const blank = computeAnalytics(analyticsItemsFromDoc(allBlank, lookup), [], NOW);
+  assert.equal(blank.totals.answered, 0, "a blank-submitted module answers nothing");
+  assert.equal(blank.totals.attempted, 3);
+
+  // A checked drill question carries its recorded answer: answered.
+  const checked = analyticsItemsFromDoc(drill({ answers: { q1: "B" }, checked: { q1: false } }), lookup);
+  assert.equal(checked[0].blank, undefined);
 }
 
 // 13: practice-test items carry null domain/skill/difficulty; source "practice".

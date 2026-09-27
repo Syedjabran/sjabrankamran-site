@@ -22,7 +22,7 @@ function freshBank(prefix, section, domain, skill, difficulty, count) {
 function emptyAnalytics(overrides = {}) {
   return {
     generatedAt: NOW,
-    totals: { answered: 0, correct: 0, last7: { answered: 0, correct: 0 }, last30: { answered: 0, correct: 0 } },
+    totals: { answered: 0, attempted: 0, correct: 0, last7: { answered: 0, attempted: 0, correct: 0 }, last30: { answered: 0, attempted: 0, correct: 0 } },
     sections: { rw: { answered: 0, correct: 0, accuracy: null }, math: { answered: 0, correct: 0, accuracy: null } },
     domains: [],
     skills: [],

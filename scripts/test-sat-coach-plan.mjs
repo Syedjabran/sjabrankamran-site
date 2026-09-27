@@ -227,11 +227,15 @@ assert.equal(existingSessionFor([summary({ id: "c" })], "p"), null);
 }
 
 // --- challengeAnalytics: no finished work yet -> the balanced first challenge
-assert.equal(challengeAnalytics({ totals: { answered: 0 } }), null);
+assert.equal(challengeAnalytics({ totals: { answered: 0, attempted: 0 } }), null);
 assert.equal(challengeAnalytics(null), null);
 {
-  const a = { totals: { answered: 3 } };
+  const a = { totals: { answered: 3, attempted: 3 } };
   assert.equal(challengeAnalytics(a), a);
+  // Blank-only finished work is still finished work (final review M12:
+  // "answered" leaves blanks out, "attempted" doesn't).
+  const blanks = { totals: { answered: 0, attempted: 4 } };
+  assert.equal(challengeAnalytics(blanks), blanks);
 }
 
 // --- coach-view: streak, week tallies, today's list, the 14-day view
@@ -319,7 +323,7 @@ assert.equal(challengeAnalytics(null), null);
 // --- analyticsSummary / insightsInputOf / normaliseTipSkills (ruling 9)
 {
   const analytics = {
-    totals: { answered: 40 },
+    totals: { answered: 40, attempted: 40 },
     sections: { rw: { answered: 20, correct: 12, accuracy: 0.6 }, math: { answered: 20, correct: 15, accuracy: 0.75 } },
     skills: [
       { key: "a", label: "Alpha", mastery: 0.9, confidence: 4 },

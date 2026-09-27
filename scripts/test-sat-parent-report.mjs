@@ -128,8 +128,31 @@ const item = (id, date, kind, status, extra = {}) => ({ id, date, kind, status, 
     { at: Date.parse("2026-09-24T08:05:00Z"), correct: true },                    // no timing data
     { at: Date.parse("2026-09-15T08:00:00Z"), correct: false, timeMs: 45_000 },
   ];
-  assert.deepEqual(activityIn(items, WEEK.start, WEEK.runDate), { answered: 3, correct: 2, ms: 120_000 });
-  assert.deepEqual(activityIn(items, WEEK.prevStart, WEEK.prevEnd), { answered: 2, correct: 1, ms: 105_000 });
+  assert.deepEqual(activityIn(items, WEEK.start, WEEK.runDate), { answered: 3, attempted: 3, correct: 2, ms: 120_000 });
+  assert.deepEqual(activityIn(items, WEEK.prevStart, WEEK.prevEnd), { answered: 2, attempted: 2, correct: 1, ms: 105_000 });
+}
+
+// --- 6b (final review M12): "questions answered" leaves blanks out; the
+// accuracy still counts them as wrong
+{
+  const at = Date.parse("2026-09-24T08:00:00Z");
+  const items = [
+    { at, correct: true }, { at, correct: false },
+    { at, correct: false, blank: true }, { at, correct: false, blank: true },
+  ];
+  assert.deepEqual(activityIn(items, WEEK.start, WEEK.runDate), { answered: 2, attempted: 4, correct: 1, ms: 0 });
+  const weekOf = (list) => satWeekFrom({
+    fullName: "Ali Khan", runDate: RUN, profile: { examDate: "2026-11-07", targetMonth: null, targetScore: 1400 },
+    planItems: [], done: {}, analytics: null, summaries: [], items: list,
+  });
+  const w = weekOf(items);
+  assert.equal(w.answered, 2, "the tile's questions answered");
+  assert.equal(w.accuracy, 25, "1 of 4: the blanks count as wrong");
+  assert.ok(renderSatSectionText(w).includes("Questions answered: 2"));
+  const blankOnly = weekOf(Array.from({ length: 98 }, () => ({ at, correct: false, blank: true })));
+  assert.equal(blankOnly.answered, 0, "a blank-submitted mock is not 98 questions answered");
+  assert.equal(blankOnly.accuracy, 0);
+  assert.ok(renderSatSectionText(blankOnly).includes("Questions answered: 0"));
 }
 
 // --- 7: parentFirstName

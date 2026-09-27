@@ -46,7 +46,7 @@ function ctx(overrides = {}) {
     },
     plan: { items: planItems() },
     analytics: {
-      totals: { answered: 320, correct: 210, last7: { answered: 40, correct: 28 }, last30: { answered: 200, correct: 130 } },
+      totals: { answered: 320, attempted: 320, correct: 210, last7: { answered: 40, attempted: 40, correct: 28 }, last30: { answered: 200, attempted: 200, correct: 130 } },
       sections: { rw: { answered: 180, correct: 130, accuracy: 0.72 }, math: { answered: 140, correct: 80, accuracy: 0.57 } },
       skills: [
         { key: "words in context", label: "Words in Context", section: "rw", domain: "craft-structure", mastery: 0.83, confidence: 12, attempts: 14, trend: 0.05 },
@@ -375,6 +375,20 @@ const reply = (actions) => ({ reply: "Here's the plan.", actions });
   assert.deepEqual(unavailable, { error: TUTOR_COUNT_UNAVAILABLE, status: 503 });
   assert.equal(TUTOR_COUNT_UNAVAILABLE, "Couldn't check your messages — try again in a moment.");
   assert.ok(!/tomorrow/i.test(unavailable.error) && /try again in a moment/.test(unavailable.error));
+}
+
+// --- final review M12: the record's "Answered" leaves blanks out; the
+// percentage correct is over every finished question (a blank is wrong)
+{
+  const full = tutorSystemPrompt(ctx());
+  assert.match(full, /Answered 320; 66% correct; last 7 days 40 answered, 70% correct\./);
+  const base = ctx().analytics;
+  const zero = (attempted) => ({ answered: 0, attempted, correct: 0 });
+  const withBlanks = tutorSystemPrompt(ctx({ analytics: { ...base, totals: { ...zero(98), last7: zero(98), last30: zero(98) } } }));
+  assert.match(withBlanks, /Answered 0 \(98 more left blank\); 0% correct; last 7 days 0 answered, 0% correct\./, "a blank-submitted mock is not 98 answered");
+  assert.ok(!/Answered 98/.test(withBlanks));
+  const none = tutorSystemPrompt(ctx({ analytics: { ...base, totals: { ...zero(0), last7: zero(0), last30: zero(0) } } }));
+  assert.match(none, /No finished work yet/);
 }
 
 console.log("sat tutor tests passed");

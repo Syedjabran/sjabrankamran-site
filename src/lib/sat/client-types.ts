@@ -234,11 +234,15 @@ export type MasteryRow = {
 
 export type SATAnalytics = {
   generatedAt: number;
+  // `attempted`: every finished question, blanks included -- the accuracy
+  // base (a blank counts as wrong); `answered`: those actually answered
+  // (not left blank) -- what "questions answered" shows.
   totals: {
     answered: number;
+    attempted: number;
     correct: number;
-    last7: { answered: number; correct: number };
-    last30: { answered: number; correct: number };
+    last7: { answered: number; attempted: number; correct: number };
+    last30: { answered: number; attempted: number; correct: number };
   };
   sections: Record<SATSection, { answered: number; correct: number; accuracy: number | null }>;
   domains: MasteryRow[];

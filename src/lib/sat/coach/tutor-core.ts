@@ -212,13 +212,17 @@ const RECORD_UNAVAILABLE = "RECORD\nThe record is unavailable right now (a tempo
 function recordBlock(ctx: TutorContext): string {
   const a = ctx.analytics;
   if (ctx.recordUnavailable) return RECORD_UNAVAILABLE;
-  if (!a || a.totals.answered === 0) {
+  if (!a || a.totals.attempted === 0) {
     return "RECORD\nNo finished work yet: suggest the plan's first session or a short drill.";
   }
   const lines = ["RECORD (finished work only)"];
-  const last7 = a.totals.last7;
-  lines.push(`Answered ${a.totals.answered} (${pct(a.totals.correct / a.totals.answered)} correct)` +
-    (last7.answered ? `; last 7 days ${last7.answered} (${pct(last7.correct / last7.answered)})` : "; none in the last 7 days") + ".");
+  const { totals } = a;
+  const last7 = totals.last7;
+  // "Answered" leaves out blanks; the percentage is over every finished
+  // question, a blank counting as wrong.
+  const blanks = totals.attempted - totals.answered;
+  lines.push(`Answered ${totals.answered}${blanks > 0 ? ` (${blanks} more left blank)` : ""}; ${pct(totals.correct / totals.attempted)} correct` +
+    (last7.attempted ? `; last 7 days ${last7.answered} answered, ${pct(last7.correct / last7.attempted)} correct` : "; none in the last 7 days") + ".");
   const section = (s: SATSection) => {
     const row = a.sections[s];
     return row.accuracy === null ? `${SECTION_LABEL[s]} no answers yet` : `${SECTION_LABEL[s]} ${pct(row.accuracy)} of ${row.answered}`;
@@ -259,7 +263,7 @@ function recordBlock(ctx: TutorContext): string {
 function explainRecordBlock(ctx: TutorContext, e: TutorExplain): string | null {
   if (ctx.recordUnavailable) return RECORD_UNAVAILABLE;
   const a = ctx.analytics;
-  if (!a || a.totals.answered === 0) return null;
+  if (!a || a.totals.attempted === 0) return null;
   const section = (s: SATSection) => {
     const row = a.sections[s];
     return row.accuracy === null ? `${SECTION_LABEL[s]} no answers yet` : `${SECTION_LABEL[s]} ${pct(row.accuracy)}`;

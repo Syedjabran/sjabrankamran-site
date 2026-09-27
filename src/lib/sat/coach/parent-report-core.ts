@@ -72,8 +72,10 @@ export type SatWeek = {
 export type WarningLevel = "missed-week" | "partial" | "none";
 export type ReportWeek = { start: string; end: string; runDate: string; prevStart: string; prevEnd: string };
 export type SessionTally = Pick<SatWeek, "scheduled" | "done" | "late" | "missed" | "upcoming">;
-export type ActivityItem = Pick<AnalyticsItem, "at" | "correct" | "timeMs">;
-export type WeekActivity = { answered: number; correct: number; ms: number };
+export type ActivityItem = Pick<AnalyticsItem, "at" | "correct" | "timeMs" | "blank">;
+/** `attempted`: every finished item (the accuracy base, a blank is wrong);
+ *  `answered`: those not left blank. */
+export type WeekActivity = { answered: number; attempted: number; correct: number; ms: number };
 
 /** Email colours: dark text on white, a red and an amber warning. */
 export const COLORS = {
@@ -250,14 +252,16 @@ export function weekFullExam(
   return { title: "", score: null, status: "none" };
 }
 
-/** Finished items answered on PKT days `from`..`to` (inclusive), and the
- *  time spent on them (items without timing data add none). */
+/** Finished items dated on PKT days `from`..`to` (inclusive): how many were
+ *  answered (not left blank), attempted and correct, and the time spent on
+ *  them (items without timing data add none). */
 export function activityIn(items: ActivityItem[], from: string, to: string): WeekActivity {
-  const out: WeekActivity = { answered: 0, correct: 0, ms: 0 };
+  const out: WeekActivity = { answered: 0, attempted: 0, correct: 0, ms: 0 };
   for (const it of items) {
     const day = pkToday(it.at);
     if (day < from || day > to) continue;
-    out.answered++;
+    out.attempted++;
+    if (!it.blank) out.answered++;
     if (it.correct) out.correct++;
     if (typeof it.timeMs === "number" && Number.isFinite(it.timeMs) && it.timeMs > 0) out.ms += it.timeMs;
   }
@@ -320,8 +324,8 @@ export function satWeekFrom(input: SatWeekInput): SatWeek {
     asOf: formatPkDay(week.runDate),
     ...sessionTally(input.planItems, week, input.done),
     answered: thisWeek.answered,
-    accuracy: percent(thisWeek.correct, thisWeek.answered),
-    accuracyPrev: percent(lastWeek.correct, lastWeek.answered),
+    accuracy: percent(thisWeek.correct, thisWeek.attempted),
+    accuracyPrev: percent(lastWeek.correct, lastWeek.attempted),
     minutes: Math.round(thisWeek.ms / 60_000),
     fullExam: weekFullExam(input.planItems, week, input.done, (id) => scoreById.get(id) ?? null),
     streak: planStreak(withFinishes(input.planItems, input.done), week.runDate),

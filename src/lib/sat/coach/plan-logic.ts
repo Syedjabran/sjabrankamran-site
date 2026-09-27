@@ -222,5 +222,5 @@ export function startDecision(plan: SATPlan, itemId: string, today: string): Sta
 /** The analytics a challenge is built from: none until there is finished
  *  work, so a first challenge is the balanced one (spec 6.2). */
 export function challengeAnalytics<T extends Pick<SATAnalytics, "totals">>(analytics: T | null): T | null {
-  return analytics && analytics.totals.answered > 0 ? analytics : null;
+  return analytics && analytics.totals.attempted > 0 ? analytics : null;
 }

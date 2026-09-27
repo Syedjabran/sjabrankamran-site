@@ -49,6 +49,9 @@ export type AnalyticsItem = {
   at: number; // ms epoch
   timeMs?: number;
   source: "drill" | "diagnostic" | "challenge" | "adaptive" | "practice";
+  /** Submitted with no answer: graded wrong (accuracy counts it, as the
+   *  module's own score does) but not an answered question. */
+  blank?: true;
 };
 
 export type SittingScore = {
@@ -77,9 +80,12 @@ export type AnalyticsLookup = (id: string) => AnalyticsLookupEntry | null;
 // client module that imports this one.
 const STAGE_ORDER: readonly SATStageKey[] = ["rw.m1", "rw.m2", "math.m1", "math.m2"];
 
-function toItem(id: string, e: AnalyticsLookupEntry, correct: boolean, at: number, timeMs: number | undefined, source: AnalyticsItem["source"]): AnalyticsItem {
+function toItem(
+  id: string, e: AnalyticsLookupEntry, correct: boolean, at: number, timeMs: number | undefined, source: AnalyticsItem["source"], response: string | undefined,
+): AnalyticsItem {
   const out: AnalyticsItem = { qid: id, section: e.section, domain: e.domain, skill: e.skill, difficulty: e.difficulty, correct, at, source };
   if (typeof timeMs === "number") out.timeMs = timeMs;
+  if (!response?.trim()) out.blank = true;
   return out;
 }
 
@@ -92,7 +98,8 @@ function toItem(id: string, e: AnalyticsLookupEntry, correct: boolean, at: numbe
  *    "challenge"), else "drill".
  *  - A sitting contributes only its SUBMITTED modules (`results[stage]`
  *    exists), every planned question of each -- a blank counts as wrong, as
- *    in the module's own score -- dated at that module's `submittedAt` and
+ *    in the module's own score, and is marked `blank` (not an answered
+ *    question) -- dated at that module's `submittedAt` and
  *    graded through the lookup. A running or not-yet-reached module
  *    contributes nothing. Source = the sitting's kind.
  *  - A question id the lookup doesn't know is skipped. */
@@ -104,7 +111,7 @@ export function analyticsItemsFromDoc(doc: SATSession | SATDrill, lookup: Analyt
     for (const id of doc.questionIds) {
       if (!(id in doc.checked)) continue;
       const e = lookup(id);
-      if (e) items.push(toItem(id, e, doc.checked[id] === true, at, doc.timeMs?.[id], source));
+      if (e) items.push(toItem(id, e, doc.checked[id] === true, at, doc.timeMs?.[id], source, doc.answers[id]));
     }
     return items;
   }
@@ -113,7 +120,7 @@ export function analyticsItemsFromDoc(doc: SATSession | SATDrill, lookup: Analyt
     if (!result) continue;
     for (const id of doc.plan[stage] ?? []) {
       const e = lookup(id);
-      if (e) items.push(toItem(id, e, e.correct(doc.answers[id] ?? null), result.submittedAt, doc.timeMs?.[id], doc.kind));
+      if (e) items.push(toItem(id, e, e.correct(doc.answers[id] ?? null), result.submittedAt, doc.timeMs?.[id], doc.kind, doc.answers[id]));
     }
   }
   return items;
@@ -309,12 +316,11 @@ export function computeAnalytics(
 
   // --- totals / sections / difficulty / pacing: every item, regardless of
   // whether domain/skill are known (practice-test items still count here).
-  let totalAnswered = 0;
-  let totalCorrect = 0;
-  let last7Answered = 0;
-  let last7Correct = 0;
-  let last30Answered = 0;
-  let last30Correct = 0;
+  // `attempted` counts every item (the accuracy base: a blank is wrong);
+  // `answered` only those not left blank.
+  const total = { answered: 0, attempted: 0, correct: 0 };
+  const last7 = { answered: 0, attempted: 0, correct: 0 };
+  const last30 = { answered: 0, attempted: 0, correct: 0 };
   const last7Cutoff = now - 7 * DAY_MS;
   const last30Cutoff = now - 30 * DAY_MS;
 
@@ -331,15 +337,10 @@ export function computeAnalytics(
   const skillGroups = new Map<string, Group>();
 
   for (const it of items) {
-    totalAnswered += 1;
-    if (it.correct) totalCorrect += 1;
-    if (it.at >= last7Cutoff) {
-      last7Answered += 1;
-      if (it.correct) last7Correct += 1;
-    }
-    if (it.at >= last30Cutoff) {
-      last30Answered += 1;
-      if (it.correct) last30Correct += 1;
+    for (const bucket of [total, ...(it.at >= last7Cutoff ? [last7] : []), ...(it.at >= last30Cutoff ? [last30] : [])]) {
+      bucket.attempted += 1;
+      if (!it.blank) bucket.answered += 1;
+      if (it.correct) bucket.correct += 1;
     }
 
     sectionAcc[it.section].answered += 1;
@@ -476,12 +477,7 @@ export function computeAnalytics(
 
   return {
     generatedAt: now,
-    totals: {
-      answered: totalAnswered,
-      correct: totalCorrect,
-      last7: { answered: last7Answered, correct: last7Correct },
-      last30: { answered: last30Answered, correct: last30Correct },
-    },
+    totals: { ...total, last7, last30 },
     sections,
     domains,
     skills,
