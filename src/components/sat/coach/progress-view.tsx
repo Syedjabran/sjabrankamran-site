@@ -26,6 +26,11 @@ const TREND_STEADY = 0.01;
 
 const pct = (fraction: number) => `${Math.round(fraction * 100)}%`;
 const count = (n: number) => n.toLocaleString("en-GB");
+// "answered" on this page always means answered, not left blank (the
+// Overview). Per-domain, per-skill and pacing counts include blanks -- the
+// mastery and accuracy they sit next to count a blank as wrong -- so they
+// say "questions".
+const questions = (n: number) => `${count(n)} ${n === 1 ? "question" : "questions"}`;
 const day = (ms: number) => formatPk(ms, { day: "numeric", month: "short", year: "numeric" });
 
 export function ProgressView() {
@@ -237,14 +242,14 @@ function DomainRow({ row }: { row: MasteryRow }) {
   return (
     <MeterRow
       label={row.label} value={pct(row.mastery)} fraction={row.mastery}
-      detail={<span className="inline-flex flex-wrap items-center gap-x-2">{count(row.attempts)} answered <Trend trend={row.trend} /></span>}
+      detail={<span className="inline-flex flex-wrap items-center gap-x-2">{questions(row.attempts)} <Trend trend={row.trend} /></span>}
     />
   );
 }
 
 function DomainsCard({ domains }: { domains: MasteryRow[] }) {
   return (
-    <Card title="Mastery by domain" note="Recency-weighted accuracy: recent answers count most, and a few answers can't read as 100%. Practice-test questions carry no domain, so they aren't included.">
+    <Card title="Mastery by domain" note="Recency-weighted accuracy: recent questions count most, and a few questions can't read as 100%. Practice-test questions carry no domain, so they aren't included.">
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
         {SECTIONS.map((section) => (
           <div key={section} className="min-w-0 space-y-3">
@@ -281,15 +286,15 @@ function SkillsCard({ weakSkills, notEnoughData, busyKey, error, onDrill }: {
         <ul className="space-y-4">
           {weakSkills.map((s) => <WeakSkillRow key={s.key} skill={s} busyKey={busyKey} onDrill={onDrill} />)}
         </ul>
-      ) : <p className="text-sm text-fog">No skill has 3 answers yet — keep practising and your weakest skills appear here.</p>}
+      ) : <p className="text-sm text-fog">No skill has 3 questions yet — keep practising and your weakest skills appear here.</p>}
       {notEnoughData.length ? (
         <div className="mt-5 space-y-2">
           <SubHeading>Not enough data yet</SubHeading>
-          <p className="text-xs text-dust">Fewer than 3 answers so far — mastery shows after 3.</p>
+          <p className="text-xs text-dust">Fewer than 3 questions so far — mastery shows after 3.</p>
           <ul className="flex flex-wrap gap-2">
             {notEnoughData.map((s) => (
               <li key={s.key} className="max-w-full break-words rounded-full border border-white/10 px-2.5 py-1 text-xs text-fog">
-                {s.label} · {s.attempts} answered
+                {s.label} · {questions(s.attempts)}
               </li>
             ))}
           </ul>
@@ -309,7 +314,7 @@ function PaceRow({ section, pace }: { section: SATSection; pace: SATAnalytics["p
     <MeterRow
       label={SECTION_LABEL[section]} value={`${Math.round(pace.medianSec)} s`}
       fraction={pace.medianSec / scale} marker={pace.targetSec / scale}
-      detail={`${slow ? "Slower than" : "Within"} the real test's ${pace.targetSec} s per question (the tick) · ${count(pace.samples)} timed answers`}
+      detail={`${slow ? "Slower than" : "Within"} the real test's ${pace.targetSec} s per question (the tick) · ${questions(pace.samples)} timed`}
     />
   );
 }

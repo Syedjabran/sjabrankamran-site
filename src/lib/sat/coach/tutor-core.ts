@@ -271,7 +271,7 @@ function explainRecordBlock(ctx: TutorContext, e: TutorExplain): string | null {
   const lines = ["RECORD (finished work only)", `Sections: ${section("rw")}; ${section("math")}.`];
   if (a.weakSkills.length) lines.push(`Weakest skills: ${a.weakSkills.slice(0, MAX_STRONG).map((w) => `${w.label} ${pct(w.mastery)}`).join("; ")}.`);
   const skill = e.skill ? a.skills.find((s) => s.key === e.skill?.toLowerCase()) : undefined;
-  if (skill) lines.push(`This question's skill, ${skill.label}: ${pct(skill.mastery)} mastery over ${skill.attempts} answers.`);
+  if (skill) lines.push(`This question's skill, ${skill.label}: ${pct(skill.mastery)} mastery over ${plural(skill.attempts, "question")}.`);
   return lines.join("\n");
 }
 

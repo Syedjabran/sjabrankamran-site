@@ -276,6 +276,9 @@ const reply = (actions) => ({ reply: "Here's the plan.", actions });
   const prompt = tutorSystemPrompt(c);
   assert.ok(prompt.includes("Linear functions") && prompt.includes('"C"') && prompt.includes('"B"'), "official answer and the student's answer");
   assert.ok(prompt.includes("slope is 3"), "the worked answer text");
+  // Final review M12 follow-up: a per-skill count includes blanks, so it
+  // says "questions", never "answers".
+  assert.match(prompt, /This question's skill, Linear functions: 41% mastery over 10 questions\./);
   assert.ok(prompt.includes("43 days"), "still knows the countdown");
   assert.ok(!prompt.includes("Full exams") && !prompt.includes("Rhetorical Synthesis"), "no plan and no other section in an explanation");
   assert.ok(prompt.length < tutorSystemPrompt(ctx()).length * 0.75, "an explanation prompt is lean (its images are costly)");

@@ -267,7 +267,7 @@ submitted module don't count as answered, though they still count as wrong in th
 estimate, and score history — only real scores, nothing invented); **Accuracy by section**;
 **Mastery by domain** (all 8 official SAT domains, recency-weighted — a couple of lucky
 answers won't read as 100%); **Weakest skills** with a **Drill this** button on each, and a
-separate list of skills with "not enough data yet" (fewer than 3 answers); **Pacing**
+separate list of skills with "not enough data yet" (fewer than 3 questions); **Pacing**
 (median seconds per question against the real exam's own pace — about 71s for Reading &
 Writing, 95s for Math — flagging any skill that's both slow and often wrong); and **Recent
 mistakes**, each with an **Explain** link straight into the tutor.
