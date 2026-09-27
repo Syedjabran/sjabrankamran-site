@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { ArrowLeft, ChartColumn } from "lucide-react";
 import { getPortalUser } from "@/lib/edu/auth";
 import { satAccess } from "@/lib/sat/access";
+import { readProfile } from "@/lib/sat/coach/profile-store";
 import { ProgressView } from "@/components/sat/coach/progress-view";
 
 export const metadata = { title: "SAT progress", robots: { index: false } };
@@ -17,6 +18,9 @@ export default async function SatProgressPage() {
   if (!access) return <p className="rounded-2xl border border-signal/30 bg-signal/5 p-5 text-sm text-fog">Your access couldn&rsquo;t be checked just now. Please refresh.</p>;
   // Staff have no personal analytics; without SAT the hub says why.
   if (!access.ok || access.isStaff) redirect("/portal/sat-lab");
+  // Before SAT setup, setup first -- as on the SAT Lab home (spec 5). A
+  // failed profile read is not "no profile": the page still opens.
+  if ((await readProfile(user.id).catch(() => undefined)) === null) redirect("/portal/sat-lab/setup");
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
