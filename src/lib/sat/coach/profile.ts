@@ -10,6 +10,7 @@
 // pkToday), never read from a clock here.
 import { z } from "zod";
 import { zodIssueMessage } from "../zod-issue-message.ts";
+import { mockDates } from "./planner.ts";
 
 export type PracticeMinutes = 15 | 30 | 45 | 60;
 export const PRACTICE_MINUTES: readonly PracticeMinutes[] = [15, 30, 45, 60];
@@ -282,14 +283,18 @@ export function questionsPerSession(minutes: PracticeMinutes): number {
   return QUESTIONS_PER_SESSION[minutes];
 }
 
-/** "43 days to go · 5 sessions a week of ~15 questions". The full-exam count
- *  joins it once the planner exists. */
+/** "43 days to go · 6 full practice exams · 5 sessions a week of ~15
+ *  questions" (spec 5). The full-exam count is the planner's own (mockDates:
+ *  what a plan built today would hold); it is left out when there are none
+ *  (the last 2 days before the SAT, or no date yet). */
 export function previewLine(p: Pick<ProfileInput, "examDate" | "targetMonth" | "days" | "minutes">, today: string): string {
   const end = horizonEnd(p);
   const left = end ? daysBetween(today, end) : null;
   const sessions = p.days.length;
+  const exams = end && left !== null && left > 0 ? mockDates(today, end, p.days).length : 0;
   return [
     left !== null && left > 0 ? `${left} ${left === 1 ? "day" : "days"} to go` : null,
+    exams > 0 ? `${exams} full practice ${exams === 1 ? "exam" : "exams"}` : null,
     `${sessions} ${sessions === 1 ? "session" : "sessions"} a week of ~${questionsPerSession(p.minutes)} questions`,
   ].filter(Boolean).join(" · ");
 }

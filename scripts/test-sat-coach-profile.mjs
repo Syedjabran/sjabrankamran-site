@@ -3,6 +3,7 @@ import { validateProfileInput, horizonEnd, daysBetween, applyProfileChange } fro
 import { pickDiagnostic } from "../src/lib/sat/coach/diagnostic.ts";
 import { questionsPerSession, previewLine, targetFromScore, addMonths, addDays, targetMonthOptions, DAY_PRESETS, presetOf, profileSchemaFor, targetMonthChoices } from "../src/lib/sat/coach/profile.ts";
 import { DIAGNOSTIC_TITLE } from "../src/lib/sat/coach/diagnostic.ts";
+import { mockDates } from "../src/lib/sat/coach/planner.ts";
 import { startDiagnostic } from "../src/lib/sat/drills.ts";
 import { summaryOf } from "../src/lib/sat/serve.ts";
 import { loadQuestionBank } from "../src/lib/sat/bank.ts";
@@ -109,8 +110,13 @@ assert.equal(targetFromScore(null), 1200);
 assert.equal(targetFromScore(1055), 1210, "past score + 150, rounded to 10");
 assert.equal(targetFromScore(1500), 1600, "capped at 1600");
 assert.deepEqual([15, 30, 45, 60].map(questionsPerSession), [8, 15, 22, 30]);
-assert.equal(previewLine({ examDate: "2026-11-13", targetMonth: null, days: [0, 1, 2, 3, 4], minutes: 15 }, today), "43 days to go · 5 sessions a week of ~8 questions");
-assert.equal(previewLine({ examDate: null, targetMonth: "2027-03", days: [6], minutes: 60 }, today), "151 days to go · 1 session a week of ~30 questions");
+// The full-exam count (final review M9, spec 5) is the planner's own mockDates.
+assert.equal(previewLine({ examDate: "2026-11-13", targetMonth: null, days: [0, 1, 2, 3, 4], minutes: 15 }, today), "43 days to go · 6 full practice exams · 5 sessions a week of ~8 questions");
+assert.equal(mockDates(today, "2026-11-13", [0, 1, 2, 3, 4]).length, 6);
+assert.equal(previewLine({ examDate: null, targetMonth: "2027-03", days: [6], minutes: 60 }, today), `151 days to go · ${mockDates(today, "2027-03-01", [6]).length} full practice exams · 1 session a week of ~30 questions`);
+assert.equal(previewLine({ examDate: "2026-10-05", targetMonth: null, days: [0, 1, 2, 3, 4, 5, 6], minutes: 30 }, today), "4 days to go · 1 full practice exam · 7 sessions a week of ~15 questions", "one exam, singular");
+assert.equal(previewLine({ examDate: "2026-10-03", targetMonth: null, days: [1, 2, 3], minutes: 30 }, today), "2 days to go · 3 sessions a week of ~15 questions", "no full exam in the last 2 days: no count");
+assert.equal(previewLine({ examDate: "2026-09-20", targetMonth: null, days: [1, 2, 3], minutes: 30 }, today), "3 sessions a week of ~15 questions", "a passed date: no countdown, no count");
 assert.equal(previewLine({ examDate: null, targetMonth: null, days: [1, 2], minutes: 30 }, today), "2 sessions a week of ~15 questions");
 assert.deepEqual(DAY_PRESETS.every, [0, 1, 2, 3, 4, 5, 6]);
 assert.equal(presetOf([1, 2, 3, 4, 5]), "weekdays");
