@@ -14,11 +14,12 @@
 // student's own answer and the College Board worked answer.
 import { z } from "zod";
 import type { LlmImage, LlmMessage, LlmRequest } from "../../ai/llm-core.ts";
+import { LIMITS, type BudgetDenial } from "../../ai/usage-core.ts";
 import { latexToUnicode } from "../../ai/format.ts";
 import { formatPk, formatPkDay } from "../../portal/pk-time.ts";
 import {
   DIFFICULTY_LABEL, DOMAIN_LABEL, DOMAIN_SECTIONS, DRILL_COUNT_DEFAULT, DRILL_COUNT_MAX, DRILL_COUNT_MIN, SECTION_LABEL,
-  TUTOR_MAX_MESSAGE_CHARS, planItemTitle, type InsightsView, type PlanItem, type SATAnalytics, type SATDomainId, type SessionSummary,
+  TUTOR_COUNT_UNAVAILABLE, TUTOR_MAX_MESSAGE_CHARS, planItemTitle, type InsightsView, type PlanItem, type SATAnalytics, type SATDomainId, type SessionSummary,
   type TutorAction, type TutorDrillFilter,
 } from "../client-types.ts";
 import type { SATDifficulty, SATSection } from "../types.ts";
@@ -542,6 +543,21 @@ export function parseTutorReply(json: unknown, ctx: TutorContext): { reply: stri
     if (drill) actions.push(drill);
   }
   return { reply, actions };
+}
+
+// --- budget refusals -----------------------------------------------------------
+
+export const TUTOR_OUT_OF_MESSAGES = `You've used today's ${LIMITS.tutor} tutor messages — they come back tomorrow (Pakistan time).`;
+export const TUTOR_GLOBAL_LIMIT = "The tutor has reached today's limit — it'll be back tomorrow.";
+
+/** What a turn refused for budget tells the student: this student's 40 are
+ *  used (429, back tomorrow); the global daily cap is reached (503, back
+ *  tomorrow); or a counter couldn't be read (503, try again in a moment --
+ *  a passing failure, never "back tomorrow"). */
+export function budgetRefusal(scope: BudgetDenial): { error: string; status: number } {
+  if (scope === "student") return { error: TUTOR_OUT_OF_MESSAGES, status: 429 };
+  if (scope === "global") return { error: TUTOR_GLOBAL_LIMIT, status: 503 };
+  return { error: TUTOR_COUNT_UNAVAILABLE, status: 503 };
 }
 
 // --- the pause rule ------------------------------------------------------------

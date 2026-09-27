@@ -11,7 +11,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type R
 import { useRouter } from "next/navigation";
 import { ArrowRight, CalendarClock, Dumbbell, Loader2, PauseCircle, SendHorizontal } from "lucide-react";
 import {
-  TUTOR_EXPLAIN_MESSAGE, TUTOR_MAX_MESSAGE_CHARS, TUTOR_PAUSED_MESSAGE, type TutorAction, type TutorMessageView, type TutorPayload, type TutorTurnResult,
+  TUTOR_COUNT_UNAVAILABLE, TUTOR_EXPLAIN_MESSAGE, TUTOR_MAX_MESSAGE_CHARS, TUTOR_PAUSED_MESSAGE, type TutorAction, type TutorMessageView, type TutorPayload, type TutorTurnResult,
 } from "@/lib/sat/client-types";
 
 // The server answers a turn within ~45 s (its route runs for at most 60).
@@ -147,11 +147,19 @@ export function TutorChat({ firstName, explainId, explainFrom = null }: { firstN
   if (!meta) return <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading the tutor…</p>;
 
   const lastAssistant = messages.map((m) => m.role).lastIndexOf("assistant");
-  const outOfMessages = meta.remaining <= 0;
+  // An unreadable count (null) says "couldn't check" and leaves the box open:
+  // the turn itself re-checks the count on the server.
+  const outOfMessages = meta.remaining !== null && meta.remaining <= 0;
   const blocked = meta.paused || outOfMessages;
   return (
     <div className="space-y-4">
-      <p className="text-xs text-dust">{meta.remaining} of {meta.limit} messages left today</p>
+      {meta.remaining === null ? (
+        <p className="text-xs text-dust">
+          {TUTOR_COUNT_UNAVAILABLE} <button type="button" onClick={() => void load()} className="ml-1 text-cyan underline">Check again</button>
+        </p>
+      ) : (
+        <p className="text-xs text-dust">{meta.remaining} of {meta.limit} messages left today</p>
+      )}
       {meta.paused ? <PausedNotice onRetry={() => void load()} /> : null}
       <section className="min-w-0 space-y-4 rounded-2xl border border-white/10 bg-space/60 p-4 sm:p-5">
         {messages.length === 0 ? <Welcome firstName={firstName} /> : null}

@@ -11,6 +11,7 @@ import {
   callLlm,
   selectProvider,
 } from "../src/lib/ai/llm-core.ts";
+import { LIMITS, checkGlobal, checkStudent, remainingFrom } from "../src/lib/ai/usage-core.ts";
 
 // --- buildGroqBody -----------------------------------------------------------
 
@@ -387,3 +388,28 @@ assert.equal(selectProvider({}), null);
 assert.equal(selectProvider({ SAT_AI_PROVIDER: "groq" }), null, "an override with no matching key still yields null");
 
 console.log("llm-core tests passed");
+
+// --- usage-core (final review M4): an unreadable counter is "unavailable" --
+// the call is still refused (fail closed), but never as "0 left" or a spent
+// budget ("back tomorrow")
+{
+  assert.deepEqual(checkGlobal({ ok: false }, 800), { ok: false, reason: "unavailable" }, "an unreadable global counter");
+  assert.deepEqual(checkGlobal({ ok: true, data: null }, 800), { ok: true, counters: { n: 0 } }, "no counter yet = nothing used");
+  assert.deepEqual(checkGlobal({ ok: true, data: { n: 799 } }, 800), { ok: true, counters: { n: 799 } });
+  assert.deepEqual(checkGlobal({ ok: true, data: { n: 800 } }, 800), { ok: false, reason: "global" }, "the cap is reached");
+  assert.deepEqual(checkGlobal({ ok: true, data: { n: "junk" } }, 800), { ok: true, counters: { n: 0 } });
+
+  assert.deepEqual(checkStudent({ ok: false }, "tutor"), { ok: false, reason: "unavailable" }, "an unreadable student counter");
+  assert.deepEqual(checkStudent({ ok: true, data: null }, "tutor"), { ok: true, counters: { tutor: 0, insights: 0, parent: 0 } });
+  assert.deepEqual(checkStudent({ ok: true, data: { tutor: 39 } }, "tutor").ok, true);
+  assert.deepEqual(checkStudent({ ok: true, data: { tutor: 40 } }, "tutor"), { ok: false, reason: "student" }, "40 used");
+  assert.deepEqual(checkStudent({ ok: true, data: { tutor: 40, insights: 2 } }, "insights").ok, true, "limits are per purpose");
+  assert.deepEqual(checkStudent({ ok: true, data: { insights: LIMITS.insights } }, "insights"), { ok: false, reason: "student" });
+
+  assert.equal(remainingFrom({ ok: false }, "tutor"), null, "couldn't check -- not 0 left");
+  assert.equal(remainingFrom({ ok: true, data: null }, "tutor"), 40);
+  assert.equal(remainingFrom({ ok: true, data: { tutor: 12 } }, "tutor"), 28);
+  assert.equal(remainingFrom({ ok: true, data: { tutor: 45 } }, "tutor"), 0, "never negative");
+  assert.equal(LIMITS.tutor, 40);
+  console.log("usage-core tests passed");
+}

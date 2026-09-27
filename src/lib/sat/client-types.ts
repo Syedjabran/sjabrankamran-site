@@ -337,6 +337,9 @@ export const TUTOR_MAX_MESSAGE_CHARS = 1000;
 export const TUTOR_EXPLAIN_MESSAGE = "Explain my mistake on this question.";
 /** The tutor's answer while a timed module is running or on its break. */
 export const TUTOR_PAUSED_MESSAGE = "I'm paused while your exam is running — submit the module first, then come back.";
+/** When today's message count couldn't be read (a passing storage failure):
+ *  never "none left" or "back tomorrow". */
+export const TUTOR_COUNT_UNAVAILABLE = "Couldn't check your messages — try again in a moment.";
 
 export type TutorDrillFilter ={ section?: SATSection; domain?: SATDomainId; skill?: string; difficulty?: SATDifficulty };
 
@@ -353,7 +356,7 @@ export type TutorMessageView = { role: "user" | "assistant"; text: string; at: n
 export type TutorPayload = {
   messages: TutorMessageView[];
   pending: string[];
-  remaining: number;
+  remaining: number | null;   // null: the count couldn't be read right now (TUTOR_COUNT_UNAVAILABLE)
   limit: number;
   paused: boolean;
   lastWrongId: string | null;

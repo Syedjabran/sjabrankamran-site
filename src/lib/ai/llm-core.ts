@@ -13,7 +13,8 @@ export type ProviderConfig = { provider: "gemini" | "groq"; apiKey: string; mode
 export type LlmResult =
   | { ok: true; text: string; json: unknown | null; provider: string; model: string; usage: { input: number; output: number } }
   | { ok: false; reason: "timeout" | "http" | "parse" | "empty" | "no-provider"; status?: number }
-  | { ok: false; reason: "budget"; scope: "student" | "global" };
+  // "unavailable": a budget counter couldn't be read (try again in a moment).
+  | { ok: false; reason: "budget"; scope: "student" | "global" | "unavailable" };
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const DEFAULT_TIMEOUT_MS = 20_000;

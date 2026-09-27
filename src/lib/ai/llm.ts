@@ -17,10 +17,12 @@ export function providerConfig(): ProviderConfig | null {
 
 /** Budget-checked LLM call for the SAT Coach: `reason: "no-provider"` when no
  *  provider is configured; `reason: "budget", scope` when today's per-student
- *  or global budget is spent (every caller falls back to deterministic text
- *  either way, but the tutor can tell the two apart to show "you've used
- *  today's messages" instead of "AI unavailable"). `opts.deadlineAt` bounds
- *  the whole call, retries and fallback included (see CallOptions). */
+ *  ("student") or global ("global") budget is spent, or a budget counter
+ *  couldn't be read ("unavailable") -- every caller falls back to
+ *  deterministic text either way, but the tutor tells them apart ("you've
+ *  used today's messages" / "back tomorrow" / "try again in a moment").
+ *  `opts.deadlineAt` bounds the whole call, retries and fallback included
+ *  (see CallOptions). */
 export async function complete(
   req: LlmRequest,
   purpose: "insights" | "tutor" | "parent",

@@ -30,14 +30,14 @@ import { after } from "next/server";
 import { readFreshJson, writeFreshJson } from "@/lib/exam-lab/storage-fresh";
 import { complete, providerConfig } from "@/lib/ai/llm";
 import { modelAcceptsImages, type LlmImage, type ProviderConfig } from "@/lib/ai/llm-core";
-import { LIMITS, readTutorRemaining, refundBudget, tutorRemaining } from "@/lib/ai/usage";
+import { LIMITS, refundBudget, tutorRemaining } from "@/lib/ai/usage";
 import { formatPkDay, pkToday } from "@/lib/portal/pk-time";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { studentAnalytics, type StudentAnalytics } from "../analytics-data.ts";
 import { hasFinishedWork } from "../analytics.ts";
 import { loadQuestionBank } from "../bank.ts";
 import {
-  DIFFICULTY_LABEL, SECTION_LABEL, TUTOR_EXPLAIN_MESSAGE, TUTOR_MAX_MESSAGE_CHARS, TUTOR_PAUSED_MESSAGE, practiceTestTitle,
+  DIFFICULTY_LABEL, SECTION_LABEL, TUTOR_COUNT_UNAVAILABLE, TUTOR_EXPLAIN_MESSAGE, TUTOR_MAX_MESSAGE_CHARS, TUTOR_PAUSED_MESSAGE, practiceTestTitle,
   type SessionSummary, type TutorAction, type TutorMistake, type TutorPayload,
 } from "../client-types.ts";
 import { buildFilteredDrill } from "../drill-start.ts";
@@ -52,7 +52,7 @@ import { cachedInsights } from "./insights.ts";
 import { ensureSatPlan, moveMock } from "./plan-store.ts";
 import { readProfile } from "./profile-store.ts";
 import {
-  applySummary, compactHistory, isPaused, isSatLabHref, parseSummary, parseTutorReply, pauseCandidateIds, recentMistakes, summaryRequest,
+  applySummary, budgetRefusal, compactHistory, isPaused, isSatLabHref, parseSummary, parseTutorReply, pauseCandidateIds, recentMistakes, summaryRequest,
   toSummarise, trimMemory, tutorRequest, type TutorContext, type TutorExplain, type TutorMemory, type TutorMessage, type TutorSkillRef,
 } from "./tutor-core.ts";
 
@@ -72,8 +72,6 @@ const STORE_MARGIN_MS = 3000;
 const FOLD_DEADLINE_MS = 55_000;
 
 const BRAIN = "I can't reach my brain right now — try again in a minute.";
-const OUT_OF_MESSAGES = `You've used today's ${LIMITS.tutor} tutor messages — they come back tomorrow (Pakistan time).`;
-const GLOBAL_LIMIT = "The tutor has reached today's limit — it'll be back tomorrow.";
 const HISTORY_UNAVAILABLE = "Your SAT history couldn't be checked. Please try again.";
 const MEMORY_UNAVAILABLE = "Your chat with the tutor couldn't be loaded. Please try again.";
 const EXPIRED = "That suggestion has expired — ask the tutor again.";
@@ -311,9 +309,9 @@ export async function tutorTurn(
   if (paused === null) return refuse(HISTORY_UNAVAILABLE, 503);
   if (paused) return refuse(TUTOR_PAUSED_MESSAGE, 423);
 
-  const left = await readTutorRemaining(uid, today);
-  if (left === null) return refuse("Your message count couldn't be checked. Please try again.", 503);
-  if (left <= 0) return refuse(OUT_OF_MESSAGES, 429);
+  const left = await tutorRemaining(uid, today);
+  if (left === null) return refuse(TUTOR_COUNT_UNAVAILABLE, 503);
+  if (left <= 0) return budgetRefusal("student");
   const cfg = providerConfig();
   if (!cfg) return refuse(BRAIN, 503);
 
@@ -362,7 +360,7 @@ export async function tutorTurn(
   const request = tutorRequest(ctx, { summary: memory.summary, history: send, message: text, images });
   const result = await complete(request, "tutor", uid, { deadlineAt: now + TURN_BUDGET_MS - STORE_MARGIN_MS });
   if (!result.ok) {
-    if (result.reason === "budget") return result.scope === "student" ? refuse(OUT_OF_MESSAGES, 429) : refuse(GLOBAL_LIMIT, 503);
+    if (result.reason === "budget") return budgetRefusal(result.scope);
     if (result.reason !== "no-provider") await refundBudget(uid, "tutor", today).catch(() => undefined);
     return refuse(BRAIN, 503);
   }

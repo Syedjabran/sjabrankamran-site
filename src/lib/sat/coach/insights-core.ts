@@ -23,12 +23,15 @@ import type { LlmResult } from "../../ai/llm-core.ts";
 export const INSIGHTS_DEADLINE_MS = 50_000;
 
 /** Whether the view an LLM `result` led to may be cached for the day. A
- *  fallback caused by a passing provider failure -- a timeout, an HTTP
- *  error, the network -- is not, so the next visit tries again; a spent
- *  budget, no provider, or a reply that came back unusable is (retrying
- *  those on every visit would only spend budget on the same outcome). */
+ *  fallback caused by a passing failure -- a timeout, an HTTP error, the
+ *  network, a budget counter that couldn't be read -- is not, so the next
+ *  visit tries again; a spent budget, no provider, or a reply that came back
+ *  unusable is (retrying those on every visit would only spend budget on
+ *  the same outcome). */
 export function insightsCacheable(result: LlmResult): boolean {
-  return result.ok || (result.reason !== "timeout" && result.reason !== "http");
+  if (result.ok) return true;
+  if (result.reason === "budget") return result.scope !== "unavailable";
+  return result.reason !== "timeout" && result.reason !== "http";
 }
 
 export type InsightsSkill = { label: string; mastery: number };

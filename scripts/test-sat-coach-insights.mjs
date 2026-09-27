@@ -216,6 +216,7 @@ function validInsights() {
   assert.equal(insightsCacheable({ ok: false, reason: "http" }), false, "a network failure (no status)");
   assert.equal(insightsCacheable({ ok: false, reason: "budget", scope: "student" }), true);
   assert.equal(insightsCacheable({ ok: false, reason: "budget", scope: "global" }), true);
+  assert.equal(insightsCacheable({ ok: false, reason: "budget", scope: "unavailable" }), false, "an unreadable budget counter is passing too (M4)");
   assert.equal(insightsCacheable({ ok: false, reason: "no-provider" }), true);
   assert.equal(insightsCacheable({ ok: false, reason: "parse" }), true);
   assert.equal(insightsCacheable({ ok: false, reason: "empty" }), true);

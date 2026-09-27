@@ -5,10 +5,10 @@
 // explain mode, and the reply contract.
 import assert from "node:assert/strict";
 import {
-  applySummary, compactHistory, isPaused, isSatLabHref, markSummarised, parseSummary, parseTutorReply, pauseCandidateIds,
+  applySummary, budgetRefusal, compactHistory, isPaused, isSatLabHref, markSummarised, parseSummary, parseTutorReply, pauseCandidateIds,
   recentMistakes, summaryRequest, trimMemory, tutorRequest, tutorSystemPrompt, MAX_STORED_MESSAGES,
 } from "../src/lib/sat/coach/tutor-core.ts";
-import { TUTOR_EXPLAIN_MESSAGE, TUTOR_MAX_MESSAGE_CHARS, TUTOR_PAUSED_MESSAGE } from "../src/lib/sat/client-types.ts";
+import { TUTOR_COUNT_UNAVAILABLE, TUTOR_EXPLAIN_MESSAGE, TUTOR_MAX_MESSAGE_CHARS, TUTOR_PAUSED_MESSAGE } from "../src/lib/sat/client-types.ts";
 import { KNOWLEDGE_SKILLS, knowledgePack } from "../src/lib/sat/coach/knowledge.ts";
 import { modelAcceptsImages } from "../src/lib/ai/llm-core.ts";
 import { loadQuestionBank } from "../src/lib/sat/bank.ts";
@@ -362,6 +362,19 @@ const reply = (actions) => ({ reply: "Here's the plan.", actions });
   assert.equal(modelAcceptsImages({ provider: "gemini", apiKey: "k", model: "gemini-3.1-flash-lite", fallbackAcceptsImages: true }), true);
   assert.equal(modelAcceptsImages({ provider: "groq", apiKey: "k", model: "qwen/qwen3.8-27b", fallbackAcceptsImages: false }), true);
   assert.equal(modelAcceptsImages({ provider: "groq", apiKey: "k", model: "openai/gpt-oss-20b", fallbackAcceptsImages: false }), false);
+}
+
+// --- final review M4: a budget refusal says what really happened -- this
+// student's 40 are used (429, back tomorrow), the global cap is reached
+// (back tomorrow), or a counter couldn't be read: "try again in a moment",
+// never "back tomorrow"
+{
+  assert.deepEqual(budgetRefusal("student"), { error: "You've used today's 40 tutor messages — they come back tomorrow (Pakistan time).", status: 429 });
+  assert.deepEqual(budgetRefusal("global"), { error: "The tutor has reached today's limit — it'll be back tomorrow.", status: 503 });
+  const unavailable = budgetRefusal("unavailable");
+  assert.deepEqual(unavailable, { error: TUTOR_COUNT_UNAVAILABLE, status: 503 });
+  assert.equal(TUTOR_COUNT_UNAVAILABLE, "Couldn't check your messages — try again in a moment.");
+  assert.ok(!/tomorrow/i.test(unavailable.error) && /try again in a moment/.test(unavailable.error));
 }
 
 console.log("sat tutor tests passed");
