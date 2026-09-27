@@ -228,6 +228,15 @@ const reply = (actions) => ({ reply: "Here's the plan.", actions });
   assert.match(booked, /not booked/i);
   assert.match(booked, /66 days/, "countdown to the target month's first day");
 
+  // Final review M7: once the SAT date has passed the tutor asks how it
+  // went; a not-booked student whose target month has started is asked to
+  // book a date or pick a later month instead -- never "how did it go?".
+  const passed = tutorSystemPrompt(ctx({ profile: { ...ctx().profile, examDate: "2026-09-20" } }));
+  assert.match(passed, /the date Sun 2026-09-20 has passed\. Ask how it went/);
+  const monthHere = tutorSystemPrompt(ctx({ profile: { ...ctx().profile, examDate: null, targetMonth: "2026-09" } }));
+  assert.match(monthHere, /not booked yet, and the target month 2026-09 is here\. Suggest booking the SAT and setting its date, or picking a later month/);
+  assert.ok(!/how it went|has passed/i.test(monthHere), "no 'how did it go' for an exam that was never booked");
+
   const blank = tutorSystemPrompt(ctx({ analytics: null, plan: null, insights: null, mistakes: [], firstName: "" }));
   assert.ok(blank.includes("there"), "a missing name still reads naturally");
   assert.match(blank, /No finished work yet/);

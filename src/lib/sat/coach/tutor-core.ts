@@ -167,8 +167,13 @@ function examLine(ctx: TutorContext): string {
   const end = horizonEnd({ examDate, targetMonth });
   if (!end) return "SAT: no date or target month set yet.";
   const days = daysBetween(ctx.today, end);
+  if (days < 0 && examDate) {
+    return `SAT: the date ${dayLabel(examDate)} has passed. Ask how it went and suggest adding the result or a next date in /portal/sat-lab/settings.`;
+  }
   if (days < 0) {
-    return `SAT: the date ${examDate ? dayLabel(examDate) : targetMonth} has passed. Ask how it went and suggest adding the result or a next date in /portal/sat-lab/settings.`;
+    // Not booked: the plan ran to the target month's first day, which is
+    // usually before the real SAT -- never ask how an unbooked exam went.
+    return `SAT: not booked yet, and the target month ${targetMonth} is here. Suggest booking the SAT and setting its date, or picking a later month, in /portal/sat-lab/settings.`;
   }
   const countdown = days === 0 ? "today" : `${plural(days, "day")} to go`;
   return examDate

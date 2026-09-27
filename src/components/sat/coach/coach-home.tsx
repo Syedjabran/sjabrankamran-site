@@ -5,7 +5,8 @@
 // for only once the plan is showing, so the plan never waits on the AI (a
 // skeleton holds its place meanwhile). Starting today's work, moving a full
 // exam and "Drill this" are one tap each, and one start at a time. When the
-// SAT date has gone by, a card asks how it went instead of the plan.
+// SAT date has gone by, a card asks how it went instead of the plan (not
+// booked: once the target month is here, it asks for a date or a new month).
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -28,7 +29,21 @@ function Notice({ children }: { children: ReactNode }) {
   return <div className="rounded-2xl border border-signal/30 bg-signal/5 p-5 text-sm text-fog">{children}</div>;
 }
 
-function ExamPassed() {
+/** The plan has run out. Booked: the SAT date has passed, so ask how it
+ *  went. Not booked: the plan ran to the target month's first day, which is
+ *  usually before the real SAT -- ask for a date or a later month instead. */
+function HorizonPassed({ booked }: { booked: boolean }) {
+  if (!booked) {
+    return (
+      <section className="min-w-0 rounded-2xl border border-cyan/30 bg-space/60 p-5">
+        <h2 className="font-display text-lg text-ice">Your target month is here — book your SAT date or pick a new month.</h2>
+        <p className="mt-2 text-sm text-fog">Set your SAT date once it&rsquo;s booked for a plan that counts down to it, or choose a later month to keep practising.</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link href="/portal/sat-lab/settings#sat-when" className="btn-primary !px-4 !py-2 text-sm">Set your SAT date or month</Link>
+        </div>
+      </section>
+    );
+  }
   return (
     <section className="min-w-0 rounded-2xl border border-cyan/30 bg-space/60 p-5">
       <h2 className="font-display text-lg text-ice">Your SAT date has passed — how did it go?</h2>
@@ -111,7 +126,7 @@ export function CoachHome() {
   return (
     <div className="space-y-6">
       {actionError ? <Notice>{actionError}</Notice> : null}
-      {data.horizonPassed ? <ExamPassed /> : data.plan ? (
+      {data.horizonPassed ? <HorizonPassed booked={data.profile.examDate !== null} /> : data.plan ? (
         <>
           <TodayCard plan={data.plan} today={data.today} busyId={busyId} onStart={start} onOpen={(id) => router.push(`/portal/sat-lab/${id}`)} onMove={move} />
           <PlanCard plan={data.plan} today={data.today} onMove={move} />
