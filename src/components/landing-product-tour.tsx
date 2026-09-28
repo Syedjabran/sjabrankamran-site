@@ -4,6 +4,7 @@ import "driver.js/dist/driver.css";
 import { useRef } from "react";
 import { CircleHelp } from "lucide-react";
 import { driver, type Driver } from "driver.js";
+import { TOUR_POPOVER_CLASS } from "@/lib/portal/tour-style";
 
 const SEEN_KEY = "sjak_live_tour_seen_v1";
 
@@ -20,6 +21,7 @@ export function LandingProductTour() {
       overlayOpacity: 0.72,
       stagePadding: 10,
       stageRadius: 16,
+      popoverClass: TOUR_POPOVER_CLASS,
       nextBtnText: "Next",
       prevBtnText: "Back",
       doneBtnText: "Open portal",

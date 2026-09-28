@@ -7,41 +7,99 @@
   --foreground: #eef2ff;
 }
 
-/* Live website/portal product-tour tooltips (Driver.js). */
-.driver-popover.sjak-tour-popover,
-.driver-popover {
-  border: 1px solid rgb(61 225 240 / 0.35);
-  border-radius: 14px;
-  background: #101824;
-  color: #dbe7f2;
-  box-shadow: 0 20px 70px rgb(0 0 0 / 0.6);
-  font-family: var(--font-inter), sans-serif;
+/* Product-tour popovers (Driver.js). Both tours pass popoverClass
+   "sjak-tour-popover" (src/lib/portal/tour-style.ts): two classes outrank
+   driver.css's one-class rules whichever stylesheet loads last -- the popover
+   used to render as driver.css's white box with this file's light text on it.
+   Colours are the portal tokens: void, ice, fog, dust, cyan. */
+.driver-popover.sjak-tour-popover {
+  box-sizing: border-box;
+  min-width: 260px;
+  max-width: min(340px, calc(100vw - 24px));
+  padding: 18px 18px 16px;
+  border: 1px solid rgb(61 225 240 / 0.3);
+  border-radius: 16px;
+  background-color: #0d1530;
+  color: #aeb8d8;
+  box-shadow: 0 24px 80px rgb(0 0 0 / 0.65);
+  font-family: var(--font-inter), system-ui, sans-serif;
 }
-
-.driver-popover .driver-popover-title {
-  color: #f1f7fb;
-  font-family: var(--font-space-grotesk), sans-serif;
-  font-size: 1rem;
+.driver-popover.sjak-tour-popover .driver-popover-title {
+  padding-right: 24px;
+  color: #eef2ff;
+  font-family: var(--font-space-grotesk), system-ui, sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.35;
 }
-
-.driver-popover .driver-popover-description,
-.driver-popover .driver-popover-progress-text {
-  color: #a7bac9;
-  line-height: 1.55;
+.driver-popover.sjak-tour-popover .driver-popover-description {
+  margin-top: 6px;
+  color: #aeb8d8;
+  font-size: 0.875rem;
+  line-height: 1.6;
 }
-
-.driver-popover .driver-popover-next-btn,
-.driver-popover .driver-popover-prev-btn {
-  border: 1px solid rgb(61 225 240 / 0.35);
-  border-radius: 8px;
-  background: rgb(61 225 240 / 0.1);
-  color: #3de1f0;
+.driver-popover.sjak-tour-popover .driver-popover-footer { margin-top: 16px; gap: 12px; }
+.driver-popover.sjak-tour-popover .driver-popover-progress-text { color: #6b77a0; font-size: 0.75rem; }
+.driver-popover.sjak-tour-popover .driver-popover-navigation-btns { gap: 8px; }
+.driver-popover.sjak-tour-popover .driver-popover-navigation-btns button + button { margin-left: 0; }
+.driver-popover.sjak-tour-popover .driver-popover-footer-btn {
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 34px;
   text-shadow: none;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
 }
+.driver-popover.sjak-tour-popover .driver-popover-prev-btn {
+  border: 1px solid rgb(255 255 255 / 0.18);
+  background-color: transparent;
+  color: #eef2ff;
+}
+.driver-popover.sjak-tour-popover .driver-popover-prev-btn:hover {
+  border-color: #3de1f0;
+  background-color: transparent;
+  color: #3de1f0;
+}
+.driver-popover.sjak-tour-popover .driver-popover-next-btn {
+  border: 1px solid #3de1f0;
+  background-color: #3de1f0;
+  color: #070b18;
+}
+.driver-popover.sjak-tour-popover .driver-popover-next-btn:hover { border-color: #7cedf7; background-color: #7cedf7; }
+.driver-popover.sjak-tour-popover .driver-popover-footer-btn:focus-visible,
+.driver-popover.sjak-tour-popover .driver-popover-close-btn:focus-visible { outline: 2px solid #3de1f0; outline-offset: 2px; }
+.driver-popover.sjak-tour-popover .driver-popover-btn-disabled { opacity: 0.35; }
+.driver-popover.sjak-tour-popover .driver-popover-close-btn { top: 6px; right: 6px; color: #6b77a0; }
+.driver-popover.sjak-tour-popover .driver-popover-close-btn:hover { color: #eef2ff; }
+/* The arrow takes the popover's colour on the side pointing at the target. */
+.driver-popover.sjak-tour-popover .driver-popover-arrow-side-left { border-left-color: #0d1530; }
+.driver-popover.sjak-tour-popover .driver-popover-arrow-side-right { border-right-color: #0d1530; }
+.driver-popover.sjak-tour-popover .driver-popover-arrow-side-top { border-top-color: #0d1530; }
+.driver-popover.sjak-tour-popover .driver-popover-arrow-side-bottom { border-bottom-color: #0d1530; }
 
-.driver-popover .driver-popover-close-btn {
-  color: #a7bac9;
+/* Scrollbars: slim and themed on every scrolling surface, instead of the
+   operating system's grey bars. The standard properties serve Firefox and
+   Chromium 121+; ::-webkit-scrollbar serves Safari and older Chromium. The
+   track is transparent and the thumb a subtle fog tint (cyan on hover where
+   the browser allows). Only the look changes: wheel, keyboard and touch
+   scrolling, and focus outlines, are untouched. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(174 184 216 / 0.26) transparent;
 }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-color: rgb(174 184 216 / 0.26);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: rgb(61 225 240 / 0.5); }
+::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
 
 @layer base {
   html {
@@ -257,11 +315,6 @@
   animation: wave-flow 9s linear infinite;
 }
 
-/* Portal sidebar: quiet, self-contained scroll so it never fights the content column */
-.nav-scroll { scrollbar-width: thin; scrollbar-color: rgba(174,184,216,.25) transparent; scroll-behavior: smooth; overscroll-behavior: contain; }
-.nav-scroll::-webkit-scrollbar { width: 6px; }
-.nav-scroll::-webkit-scrollbar-thumb { background: rgba(174,184,216,.25); border-radius: 999px; }
-.nav-scroll::-webkit-scrollbar-track { background: transparent; }
 html { scroll-behavior: smooth; }
 
 /* Einstein companion */
