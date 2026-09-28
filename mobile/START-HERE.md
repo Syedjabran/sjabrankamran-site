@@ -46,15 +46,17 @@ open a new terminal afterwards so the new version is picked up.
 
 ## Phase 1 — Get the code
 
-The app lives in the `mobile/` folder of the website repo, on the branch
-`feat/mobile-app`.
+The app lives in the `mobile/` folder of the website repo. Use `main` once the
+owner has merged the `portal-v2` branch into it; until then, use `portal-v2`.
+The commands below say `main` — put `portal-v2` in its place if it isn't merged
+yet.
 
 **If you do not have the repo yet:**
 
 ```bash
 git clone https://github.com/Syedjabran/sjabrankamran-site.git
 cd sjabrankamran-site
-git checkout feat/mobile-app
+git checkout main
 ```
 
 **If you already have the repo:**
@@ -62,8 +64,8 @@ git checkout feat/mobile-app
 ```bash
 cd sjabrankamran-site
 git fetch origin
-git checkout feat/mobile-app
-git pull origin feat/mobile-app
+git checkout main
+git pull origin main
 ```
 
 The repo is **private**. If the clone asks for credentials and fails, the user
@@ -84,10 +86,11 @@ is the Next.js website; running `npm install` there installs the wrong thing.
 ## Phase 2 — Install
 
 ```bash
-npm install
+npm ci
 ```
 
-This takes 2–4 minutes and downloads roughly 600 packages. It is normal to see
+(`npm ci` installs the exact versions in `package-lock.json`; `npm install` also
+works.) This takes 2–4 minutes and downloads roughly 600 packages. It is normal to see
 deprecation warnings and a vulnerability count — ignore both.
 
 There is an `.npmrc` in this folder setting `legacy-peer-deps=true`. That is
@@ -95,21 +98,29 @@ deliberate: Expo pins `react@19.2.3` while a transitive `react-dom` asks for
 `^19.2.8`. React Native never loads `react-dom`, so the conflict is harmless.
 **Do not delete `.npmrc`** — without it `npm install` fails with `ERESOLVE`.
 
-Then confirm the code compiles:
+Then confirm the code compiles and the link-safety tests pass:
 
 ```bash
 npx tsc --noEmit
+npm test
 ```
 
-No output means success.
+`tsc` prints nothing on success; `npm test` ends with
+`mobile web targets: all tests passed`.
 
 ---
 
 ## Phase 3 — About configuration (read, don't act)
 
 There is nothing to configure. The app points at the **live production portal**
-at `https://www.sjabrankamran.com` and signs in against the same Supabase
+at `https://sjabrankamran.com` and signs in against the same Supabase
 project the website uses.
+
+The app's home screen lists your subjects from the portal's
+`/api/portal/navigation`, which arrives with the `portal-v2` release. If the live
+site doesn't have it yet, the app shows an **Open the portal** button instead of
+your subjects; everything still works through it. (`README.md` says how to
+point the app at a local portal to see the subjects before that release.)
 
 The Supabase URL and anon key are already in `src/config.ts`. These are **public
 values** — the identical pair is in the website's own JavaScript bundle, served
@@ -156,20 +167,28 @@ bundle takes about 45 seconds when the phone connects — that is expected.
 
 ## Phase 6 — What you should see
 
-After signing in, the tab bar at the bottom depends on your role.
+After signing in, **Home** shows your subjects the way the portal's home page
+does — for example **Physics** and **Digital SAT** — then **Administration** (staff)
+and **General**. Tap a subject to see its pages: Exam Lab, Study plan and the rest
+for Physics (with **Practical Lab** if the admin switched it on for you); SAT Lab,
+Practice, Progress, Tutor and Settings for the SAT. You only see what the portal
+shows your account, and a subject the admin adds later appears without updating
+the app.
 
-- **Staff/admin:** Dashboard · Users · Rankings · Resources · More
-- **Student:** Dashboard · Learning · Leaderboard · Resources · More
+The tab bar holds Home, More and up to three screens you use most:
 
-**More** contains the complete portal menu — the same sections, labels and order
-as the website's sidebar, gated by the same roles.
+- **Staff/admin:** Home · Users · Rankings · Resources · More
+- **Student:** Home · Learning · Leaderboard · Resources · More
 
-Some screens are native React Native; others open the real portal page inside
-the app, already signed in. Those are marked with a **globe** icon in the More
-menu. That is deliberate, not unfinished work: Exam Lab's proctor runs MediaPipe
-face and object detection in a browser engine, which has no React Native
-equivalent, and several admin pages are server-rendered with no JSON API. Showing
-the genuine page keeps them pixel-identical and fully working.
+**More** lists every page you have, grouped the same way.
+
+Some pages are native React Native; others open the real portal page inside
+the app, already signed in. Those are marked with a **globe** icon. That is
+deliberate, not unfinished work: Exam Lab's proctor runs MediaPipe face and
+object detection in a browser engine, which has no React Native equivalent, and
+the SAT Lab, Practical Lab and several admin pages are server-rendered with no
+JSON API. Showing the genuine page keeps them identical and fully working. A
+link to another website (a Drive file, say) opens in your phone's browser.
 
 ---
 
@@ -256,7 +275,8 @@ Useful map:
 | `app/` | Screens (expo-router: the file path is the route) |
 | `src/theme/tokens.ts` | Colours, fonts, spacing — ported from the website's Tailwind config |
 | `src/api/hooks.ts` | Data fetching |
-| `src/nav/nav.ts` | The role-aware menu, ported from the website's `navFor()` |
+| `src/nav/nav.ts` | Reads the portal's navigation (`/api/portal/navigation`); which native screen opens what |
+| `src/web/portal-url.ts` | The exact-origin check every link goes through (`npm test`) |
 | `src/auth/` | Sign-in, session storage, token refresh |
 
 Colours are only ever defined in `src/theme/tokens.ts` so the app cannot drift
@@ -266,6 +286,7 @@ Before pushing anything:
 
 ```bash
 npx tsc --noEmit
+npm test
 ```
 
 Full architecture notes are in `README.md` and
