@@ -7,16 +7,19 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { configureApi } from '../api/client';
 import {
   clearSession,
   isExpiring,
   loadSession,
   refreshSession,
+  revokeSession,
   saveSession,
   signInWithPassword,
   type Session,
 } from './session';
+import { signOutInOrder, type SignOutSteps } from './sign-out';
 
 type AuthState = {
   /** null while the stored session is still being read from SecureStore. */
@@ -29,6 +32,7 @@ type AuthState = {
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const queryClient = useQueryClient();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -36,6 +40,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // leaves it holding a stale closure.
   const sessionRef = useRef<Session | null>(null);
   sessionRef.current = session;
+
+  /** What signing out clears (src/auth/sign-out.ts runs them in order). */
+  const signOutSteps = useMemo<SignOutSteps<Session>>(
+    () => ({
+      forget: () => {
+        sessionRef.current = null;
+        setSession(null);
+      },
+      clearCache: () => queryClient.clear(),
+      clearStored: clearSession,
+      revoke: revokeSession,
+    }),
+    [queryClient]
+  );
 
   /** Returns a valid session, refreshing it first when the token is stale. */
   const getValidSession = useCallback(async (): Promise<Session | null> => {
@@ -45,22 +63,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const result = await refreshSession(current.refresh_token);
     if ('error' in result) {
-      await clearSession();
-      sessionRef.current = null;
-      setSession(null);
+      // The session can't be renewed: sign out (nothing left to end on the server).
+      await signOutInOrder(null, signOutSteps);
       return null;
     }
     sessionRef.current = result.session;
     setSession(result.session);
     await saveSession(result.session);
     return result.session;
-  }, []);
+  }, [signOutSteps]);
 
-  const signOut = useCallback(async () => {
-    await clearSession();
-    sessionRef.current = null;
-    setSession(null);
-  }, []);
+  /** Signs out and leaves nothing of the account on the phone (sign-out.ts). */
+  const signOut = useCallback(
+    () => signOutInOrder(sessionRef.current, signOutSteps),
+    [signOutSteps]
+  );
 
   // Install the accessor before any screen can issue a request.
   configureApi(getValidSession, () => {
@@ -86,14 +103,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [getValidSession]);
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const result = await signInWithPassword(email, password);
-    if ('error' in result) return result.error;
-    sessionRef.current = result.session;
-    setSession(result.session);
-    await saveSession(result.session);
-    return null;
-  }, []);
+  const signIn = useCallback(
+    async (email: string, password: string) => {
+      const result = await signInWithPassword(email, password);
+      if ('error' in result) return result.error;
+      // A new account starts from an empty cache: nothing of whoever used
+      // the app before (their navigation, profile, tasks) can show.
+      queryClient.clear();
+      sessionRef.current = result.session;
+      setSession(result.session);
+      await saveSession(result.session);
+      return null;
+    },
+    [queryClient]
+  );
 
   const value = useMemo<AuthState>(
     () => ({ session, loading, signIn, signOut }),

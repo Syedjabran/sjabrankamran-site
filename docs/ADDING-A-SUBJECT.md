@@ -159,7 +159,8 @@ Run `npm run test:subject-registry` (part of `npm run test:portal`). It checks t
 every route is a real page, every icon exists, courses and subjects agree, and that the general and
 staff items never name a subject. Update its expected lists (subject ids, item ids, the Physics and
 SAT spaces) to include the new subject, and the personas in `scripts/test-portal-nav.mjs` (what each
-kind of viewer's home page and spaces show). Then run the rest: `npx tsc --noEmit -p tsconfig.json`,
+kind of viewer's home page and spaces show) and `scripts/test-app-nav.mjs` (what the mobile app
+is sent). Then run the rest: `npx tsc --noEmit -p tsconfig.json`,
 `npm run test:sat`, `npm run test:portal`, `npm run test:access`.
 
 ## What adapts on its own
@@ -175,6 +176,11 @@ Once the registry has the subject, these need no change:
   per module, an entry in the top bar's subject switcher, every module in "Find a page…", the
   breadcrumb ("Chemistry › Resources"), and the admin's Subjects card line ("Their home page shows
   …"). A subject shown inside another (`partOf`) appears in that space instead.
+- **The mobile app** (`mobile/`): its home screen, subject screens and More list come from
+  `GET /api/portal/navigation` (`src/lib/portal/app-nav.ts`, built from the same navigation), so
+  the new subject and its modules appear in the app with no app release. A module opens its portal
+  page inside the app unless the app has a native screen for it (`APP_NATIVE_SCREENS`); its icon
+  can be any lucide icon; an accent the app doesn't know yet shows as cyan.
 - **The product tour:** it walks the subject cards on the home page and a space's modules in the
   space, each explained by its registry `purpose`.
 - **The floating helper:** it follows the open page's subject.

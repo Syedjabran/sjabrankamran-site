@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bell, GraduationCap, LogOut, Settings } from 'lucide-react-native';
 import { useMe, useNotifications } from '../api/hooks';
 import { useAuth } from '../auth/context';
+import { PORTAL_NAME } from '../config';
 import { isStaff, roleBadges } from '../nav/roles';
 import { alpha, colors, fonts, fontSize, radius, spacing } from '../theme/tokens';
 import { Badge, T } from './ui';
@@ -32,7 +33,7 @@ export function PortalHeader() {
           </View>
           <View style={{ flex: 1 }}>
             <T weight="display" size="base" numberOfLines={1}>
-              {me?.full_name || me?.email || 'Portal'}
+              {me?.full_name || me?.email || PORTAL_NAME}
             </T>
             <T tone="dust" size="xs" numberOfLines={1}>
               {me ? roleBadges(me.roles) : '—'}

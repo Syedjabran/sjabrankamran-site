@@ -459,9 +459,15 @@ const OLD_SIDEBAR = [
   "/portal/teach/syllabus", "/portal/studio", "/portal/admin/notify", "/portal/admin/academics", "/portal/admin/finance",
   "/portal/admin/access", "/portal/settings",
 ];
-const mobileNav = read("mobile/src/nav/nav.ts");
-const MOBILE = [...mobileNav.matchAll(/web\('(\/portal[^']*)'\)/g)].map((m) => m[1]);
-assert.ok(MOBILE.length >= 10, "the app's portal pages were found");
+// The pages installed copies of the mobile app open, from its hardcoded menu
+// and screens before it read its menu from /api/portal/navigation (frozen at
+// 1a97310; the app now opens what that endpoint lists: test-app-nav.mjs).
+const MOBILE = [
+  "/portal/admin/attendance-view", "/portal/timetable", "/portal/coordinator", "/portal/admin/access", "/portal/admin/institutions",
+  "/portal/admin/assign", "/portal/admin/attendance", "/portal/admin/proctoring", "/portal/admin/mail", "/portal/admin/notify",
+  "/portal/admin/academics", "/portal/admin/finance", "/portal/teach", "/portal/exam-lab", "/portal/studio", "/portal/study-plan",
+  "/portal/exam-lab/review", "/portal/progress", "/portal/my-ranking", "/portal/family", "/portal/admin/analytics", "/portal/learn",
+];
 const LINKED = [
   "/portal/exam-lab?allocation=a1", "/portal/tasks/t1", "/portal/learn/assignments/a1", "/portal/sat-lab/s1", "/portal/sat-lab/progress",
   "/portal/sat-lab/tutor", "/portal/sat-lab/settings", "/portal/sat-lab/setup", "/portal/sat-lab/results/u1/s1", "/portal/admin/users/u1",

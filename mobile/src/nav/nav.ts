@@ -1,166 +1,206 @@
-import { isAdmin, isCoordinatorOnly, isRegistrarOnly, isStaff, type EduRole } from './roles';
-
 /**
- * Where a nav entry goes. `native` routes render as React Native screens;
- * `web` routes open the real portal page inside an authenticated WebView, so
- * surfaces that depend on browser-only technology (Exam Lab's MediaPipe
- * proctor, the analytics console) stay pixel-identical and fully functional.
+ * The app's navigation, from ONE source: the portal's own subject-first
+ * navigation, fetched as JSON from GET /api/portal/navigation. The portal
+ * builds it from its subject registry with the same visibility rule its own
+ * home page uses (the website's src/lib/portal/app-nav.ts), so the app lists
+ * exactly what the signed-in user may see there and nothing is listed twice.
+ *
+ * A subject or module added to the portal appears here without an app
+ * release: every place carries its portal route, and a place the app has no
+ * native screen for opens in the signed-in WebView (app/(app)/web.tsx), where
+ * the portal hides its own chrome.
+ *
+ * Pure (no React Native imports): the portal's `npm run test:portal` imports
+ * this file to check the two sides agree, and `npm test` here runs it too.
  */
-export type NavTarget =
-  | { kind: 'native'; route: string }
-  | { kind: 'web'; path: string };
 
-export type NavItem = { label: string; target: NavTarget };
-export type NavSection = { title?: string; items: NavItem[] };
+/** One destination: a portal page, maybe with a native screen here. */
+export type AppPlace = {
+  id: string;
+  name: string;
+  /** A lucide icon's export name ("FlaskConical"). */
+  icon: string;
+  /** Its portal page, a path from the portal's root. */
+  route: string;
+  purpose: string;
+  /** The app's native screen for it (a NATIVE_ROUTES key), or null. */
+  native: string | null;
+};
 
-const native = (route: string): NavTarget => ({ kind: 'native', route });
-const web = (path: string): NavTarget => ({ kind: 'web', path });
+/** A subject the user has, with its modules in display order. */
+export type AppSubject = AppPlace & {
+  shortName: string;
+  /** The portal's accent token: cyan, violet, emerald, amber, magenta. */
+  accent: string;
+  modules: AppPlace[];
+};
 
-/**
- * Role-aware navigation, ported from the website's navFor() in
- * src/app/portal/(app)/layout.tsx — same sections, same labels, same order,
- * same role gates. Keeping this a faithful port is what makes the app's menu
- * match the portal's sidebar exactly.
- */
-export function navFor(roles: EduRole[]): NavSection[] {
-  const staff = isStaff(roles);
-  const admin = isAdmin(roles);
-  const isStudent = roles.includes('student');
-  const isParent = roles.includes('parent');
-  const sections: NavSection[] = [];
+export type AppNavigation = {
+  version: number;
+  portalName: string;
+  subjects: AppSubject[];
+  general: AppPlace[];
+  admin: AppPlace[];
+  home: AppPlace | null;
+  profile: AppPlace | null;
+  /** The portal's Home: the portal home, or a desk role's desk. */
+  homeRoute: string;
+  deskHome: boolean;
+  subjectsUnavailable: boolean;
+  /** Set while a student must complete their profile first. */
+  onboardingRoute: string | null;
+};
 
-  // --- Attendance Registrar (school-scoped, view-only) ---
-  // A registrar with no fuller staff role gets a deliberately minimal nav:
-  // just the Dashboard and the read-only daily attendance view for their school.
-  if (isRegistrarOnly(roles)) {
-    return [
-      {
-        title: 'Attendance',
-        items: [
-          { label: 'Dashboard', target: native('/') },
-          { label: 'Daily attendance', target: web('/portal/admin/attendance-view') },
-          { label: 'Physics timetable', target: web('/portal/timetable') },
-        ],
-      },
-    ];
-  }
-  if (isCoordinatorOnly(roles)) {
-    return [
-      {
-        title: 'Assigned class',
-        items: [
-          { label: 'Class staff desk', target: web('/portal/coordinator') },
-          { label: 'Physics timetable', target: web('/portal/timetable') },
-          { label: 'Daily attendance', target: web('/portal/admin/attendance-view') },
-          { label: 'Resource Library', target: native('/library') },
-          { label: 'Physics Resources', target: native('/resources') },
-          { label: 'Notifications', target: native('/notifications') },
-        ],
-      },
-    ];
-  }
+/** The navigation shape this app reads (the portal's APP_NAV_VERSION).
+ *  The portal adds fields without bumping it; a bump means this app is too
+ *  old to read the reply. */
+export const SUPPORTED_NAV_VERSION = 1;
 
-  // --- Administration (staff / owner) ---
-  const adminItems: NavItem[] = [{ label: 'Dashboard', target: native('/') }];
-  if (staff) {
-    adminItems.push({ label: 'Physics timetable', target: web('/portal/timetable') });
-    adminItems.push({ label: 'Users & activity', target: native('/users') });
-    if (roles.includes('super_admin')) {
-      adminItems.push({ label: 'Access locks', target: web('/portal/admin/access') });
-    }
-    adminItems.push({ label: 'Rankings & analytics', target: native('/rankings') });
-    adminItems.push({ label: 'Institutions', target: web('/portal/admin/institutions') });
-    adminItems.push({ label: 'Post / Tests', target: web('/portal/admin/assign') });
-    adminItems.push({ label: 'Attendance', target: web('/portal/admin/attendance') });
-    adminItems.push({ label: 'Daily attendance', target: web('/portal/admin/attendance-view') });
-    adminItems.push({ label: 'Proctoring & Locks', target: web('/portal/admin/proctoring') });
-    adminItems.push({ label: 'Email', target: web('/portal/admin/mail') });
-    adminItems.push({ label: 'Notifications', target: native('/notifications') });
-  }
-  if (roles.includes('coordinator')) {
-    adminItems.push({ label: 'Coordinator desk', target: web('/portal/coordinator') });
-  }
-  if (admin) adminItems.push({ label: 'Announcements', target: web('/portal/admin/notify') });
-  if (admin) {
-    adminItems.push({ label: 'Academics', target: web('/portal/admin/academics') });
-    adminItems.push({ label: 'Fees & Finance', target: web('/portal/admin/finance') });
-  }
-  if (admin || roles.includes('teacher') || roles.includes('teaching_assistant')) {
-    adminItems.push({ label: 'My Classes', target: web('/portal/teach') });
-  }
-  if (admin || roles.includes('teaching_assistant')) {
-    adminItems.push({ label: 'Exam Lab', target: web('/portal/exam-lab') });
-  }
-  if (staff) adminItems.push({ label: 'Physics Studio', target: web('/portal/studio') });
-  // Available to everyone.
-  adminItems.push({ label: 'Physics Resources', target: native('/resources') });
-  adminItems.push({ label: 'Resource Library', target: native('/library') });
-  sections.push({ title: staff ? 'Administration' : undefined, items: adminItems });
+/** The app's native screens, by the name the portal gives them (app-nav.ts
+ *  `AppScreen`), and their routes here. A name this app doesn't know -- a
+ *  screen from a later release -- opens the place's route in the WebView. */
+export const NATIVE_ROUTES: Readonly<Record<string, string>> = {
+  home: '/',
+  learn: '/learn',
+  leaderboard: '/leaderboard',
+  resources: '/resources',
+  library: '/library',
+  notifications: '/notifications',
+  users: '/users',
+  rankings: '/rankings',
+  settings: '/settings',
+};
 
-  // --- Learning (students only) + parents ---
-  const learnItems: NavItem[] = [];
-  if (isStudent) {
-    learnItems.push({ label: 'Physics timetable', target: web('/portal/timetable') });
-    learnItems.push({ label: 'My study plan', target: web('/portal/study-plan') });
-    learnItems.push({ label: 'Exam Lab', target: web('/portal/exam-lab') });
-    learnItems.push({ label: 'My answer scripts', target: web('/portal/exam-lab/review') });
-    learnItems.push({ label: 'My Learning', target: native('/learn') });
-    learnItems.push({ label: 'My Progress', target: web('/portal/progress') });
-    learnItems.push({ label: 'My Ranking', target: web('/portal/my-ranking') });
-    learnItems.push({ label: 'Leaderboard', target: native('/leaderboard') });
-    learnItems.push({ label: 'Notifications', target: native('/notifications') });
-  }
-  if (isParent) {
-    learnItems.push({ label: 'My Children', target: web('/portal/family') });
-    learnItems.push({ label: 'Physics timetable', target: web('/portal/timetable') });
-  }
-  if (learnItems.length) sections.push({ title: staff ? 'Learning' : undefined, items: learnItems });
+/** The generic subject screen: any subject's modules, drawn from the reply. */
+export const SUBJECT_SCREEN = 'subject';
+export const SUBJECT_ROUTE = '/subject/[id]';
 
-  return sections;
+/** How to open a place. */
+export type OpenTarget =
+  | { kind: 'native'; pathname: string; params?: Record<string, string> }
+  | { kind: 'web'; path: string; title: string };
+
+const own = (map: Readonly<Record<string, string>>, key: string | null): string | undefined =>
+  key !== null && Object.prototype.hasOwnProperty.call(map, key) ? map[key] : undefined;
+
+export function openTargetFor(place: AppPlace | AppSubject): OpenTarget {
+  if (place.native === SUBJECT_SCREEN && 'modules' in place) {
+    return { kind: 'native', pathname: SUBJECT_ROUTE, params: { id: place.id } };
+  }
+  const route = own(NATIVE_ROUTES, place.native);
+  if (route) return { kind: 'native', pathname: route };
+  return { kind: 'web', path: place.route, title: place.name };
+}
+
+// --- reading the reply ---------------------------------------------------------------
+
+/** The reply couldn't be read as a navigation (the message says why, plainly). */
+export class NavigationFormatError extends Error {
+  readonly outdatedApp: boolean;
+  constructor(message: string, outdatedApp = false) {
+    super(message);
+    this.name = 'NavigationFormatError';
+    this.outdatedApp = outdatedApp;
+  }
+}
+
+type Json = Record<string, unknown>;
+const isObject = (v: unknown): v is Json => !!v && typeof v === 'object' && !Array.isArray(v);
+const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+/** A path from the portal's root ("/portal/..."), never "//host". */
+const isRoute = (v: unknown): v is string => typeof v === 'string' && v.startsWith('/') && !v.startsWith('//');
+
+function readPlace(v: unknown): AppPlace | null {
+  if (!isObject(v) || !text(v.id) || !text(v.name) || !isRoute(v.route)) return null;
+  return {
+    id: text(v.id),
+    name: text(v.name),
+    icon: text(v.icon),
+    route: v.route,
+    purpose: text(v.purpose),
+    native: typeof v.native === 'string' && v.native ? v.native : null,
+  };
+}
+
+function readPlaces(v: unknown): AppPlace[] {
+  return Array.isArray(v) ? v.map(readPlace).filter((p): p is AppPlace => p !== null) : [];
+}
+
+function readSubject(v: unknown): AppSubject | null {
+  const place = readPlace(v);
+  if (!place || !isObject(v)) return null;
+  const modules = readPlaces(v.modules);
+  if (!modules.length) return null;
+  return { ...place, shortName: text(v.shortName) || place.name, accent: text(v.accent), modules };
 }
 
 /**
- * The four bottom-tab destinations, chosen from the role-aware nav so a
- * student and an admin each get the surfaces they actually use. Everything
- * else stays one tap away under "More", which lists the full nav above.
+ * The navigation in a /api/portal/navigation reply. Entries it can't read
+ * (no id, name or root path) are left out rather than failing the whole
+ * menu; fields it doesn't know are ignored. Throws NavigationFormatError when
+ * the reply isn't a navigation, or is a newer shape than this app reads.
  */
-export function primaryTabsFor(roles: EduRole[]): NavItem[] {
-  // The two restricted, school-scoped roles mirror their cut-down sidebar: the
-  // website fences them out of every other surface, so the tab bar must not
-  // offer one either. Their primary destinations (the attendance view, the
-  // coordinator desk) are web surfaces, which the tab bar cannot host — those
-  // stay one tap away under "More", where navFor() lists them first.
-  if (isRegistrarOnly(roles)) {
-    return [{ label: 'Dashboard', target: native('/') }];
+export function parseAppNavigation(json: unknown): AppNavigation {
+  if (!isObject(json) || typeof json.version !== 'number') {
+    throw new NavigationFormatError('The portal sent a menu this app could not read. Please try again.');
   }
-  if (isCoordinatorOnly(roles)) {
-    return [
-      { label: 'Resources', target: native('/resources') },
-      { label: 'Library', target: native('/library') },
-    ];
+  if (json.version > SUPPORTED_NAV_VERSION) {
+    throw new NavigationFormatError('This version of the app is out of date. Please update it to see your subjects.', true);
   }
-  // Staff first: the website lists Administration above Learning, so a user who
-  // is both (e.g. an owner with a student role) gets the staff surfaces on the
-  // tab bar and the Learning ones under "More".
-  if (isStaff(roles)) {
-    return [
-      { label: 'Dashboard', target: native('/') },
-      { label: 'Users', target: native('/users') },
-      { label: 'Rankings', target: native('/rankings') },
-      { label: 'Resources', target: native('/resources') },
-    ];
-  }
-  if (roles.includes('student')) {
-    return [
-      { label: 'Dashboard', target: native('/') },
-      { label: 'Learning', target: native('/learn') },
-      { label: 'Leaderboard', target: native('/leaderboard') },
-      { label: 'Resources', target: native('/resources') },
-    ];
-  }
-  return [
-    { label: 'Dashboard', target: native('/') },
-    { label: 'Resources', target: native('/resources') },
-    { label: 'Library', target: native('/library') },
-  ];
+  return {
+    version: json.version,
+    portalName: text(json.portalName),
+    subjects: Array.isArray(json.subjects) ? json.subjects.map(readSubject).filter((s): s is AppSubject => s !== null) : [],
+    general: readPlaces(json.general),
+    admin: readPlaces(json.admin),
+    home: readPlace(json.home),
+    profile: readPlace(json.profile),
+    homeRoute: isRoute(json.homeRoute) ? json.homeRoute : '/portal',
+    deskHome: json.deskHome === true,
+    subjectsUnavailable: json.subjectsUnavailable === true,
+    onboardingRoute: isRoute(json.onboardingRoute) ? json.onboardingRoute : null,
+  };
+}
+
+// --- what the screens show ------------------------------------------------------------
+
+/** Every destination once: Home, each subject's modules, General,
+ *  Administration, Profile. */
+export function allPlaces(nav: AppNavigation): AppPlace[] {
+  const seen = new Set<string>();
+  const out: AppPlace[] = [];
+  const add = (p: AppPlace | null) => {
+    if (p && !seen.has(p.id)) {
+      seen.add(p.id);
+      out.push(p);
+    }
+  };
+  add(nav.home);
+  nav.subjects.forEach((s) => s.modules.forEach(add));
+  nav.general.forEach(add);
+  nav.admin.forEach(add);
+  add(nav.profile);
+  return out;
+}
+
+export function subjectById(nav: AppNavigation, id: unknown): AppSubject | null {
+  return typeof id === 'string' ? nav.subjects.find((s) => s.id === id) ?? null : null;
+}
+
+/** The native screens that can sit on the tab bar (app/(app)/_layout.tsx). */
+export type TabScreen = 'learn' | 'leaderboard' | 'users' | 'rankings' | 'resources' | 'library';
+
+/**
+ * The (at most three) native screens on the tab bar beside Home and More:
+ * staff lead with their consoles, everyone else with their learning; each
+ * only when the user's navigation holds it, so the tab bar never offers a
+ * page the portal wouldn't. Everything else is one tap away under More.
+ */
+export function primaryTabs(nav: AppNavigation | null | undefined): TabScreen[] {
+  if (!nav) return [];
+  const has = new Set(allPlaces(nav).map((p) => p.native));
+  const order: TabScreen[] = nav.admin.length
+    ? ['users', 'rankings', 'resources', 'library']
+    : ['learn', 'leaderboard', 'resources', 'library'];
+  return order.filter((s) => has.has(s)).slice(0, 3);
 }

@@ -1,119 +1,150 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, Pressable, StyleSheet, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BackHandler, Linking, Pressable, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { WebView, type WebViewNavigation } from 'react-native-webview';
-import { ArrowLeft, RotateCw } from 'lucide-react-native';
-import { PORTAL_CLIENT_APP, PORTAL_CLIENT_COOKIE, SITE_URL } from '../../src/config';
-import { sessionCookiePairs, type Session } from '../../src/auth/session';
+import { WebView, type WebViewNavigation, type WebViewProps } from 'react-native-webview';
+import { ArrowLeft, ExternalLink, RotateCw } from 'lucide-react-native';
+import { PORTAL_CLIENT_APP, PORTAL_CLIENT_COOKIE, PORTAL_NAME, SITE_ORIGIN } from '../../src/config';
+import { SESSION_COOKIE_NAME, sessionCookiePairs } from '../../src/auth/session';
 import { useAuth } from '../../src/auth/context';
-import { ErrorNote, Screen, T } from '../../src/components/ui';
+import { Button, Card, ErrorNote, Screen, T } from '../../src/components/ui';
 import { SkeletonDocument, TopProgressBar } from '../../src/components/Skeleton';
+import { navigationDecision, resolveWebTarget, type WebTarget } from '../../src/web/portal-url';
+import { authCookieNames, cookieHeader, sessionCookieScript } from '../../src/web/session-script';
 import { alpha, colors, spacing } from '../../src/theme/tokens';
 
+/** How long the session cookie written into the page lives (the access token's life). */
+const SESSION_COOKIE_SECONDS = 60 * 60;
+/** The app marker lives for a year: it only says "inside the app". */
+const APP_MARKER_SECONDS = 60 * 60 * 24 * 365;
+const APP_MARKER = [PORTAL_CLIENT_COOKIE, PORTAL_CLIENT_APP] as const;
+/** Every name a session cookie can have: the script expires the ones it
+ *  isn't writing, so a previous account's cookie never lingers. */
+const SESSION_COOKIE_NAMES = authCookieNames(SESSION_COOKIE_NAME);
+
+type ShouldStartLoadRequest = Parameters<NonNullable<WebViewProps['onShouldStartLoadWithRequest']>>[0];
+type OpenWindowEvent = Parameters<NonNullable<WebViewProps['onOpenWindow']>>[0];
+
 /**
- * Renders a real portal page inside the app, already signed in.
+ * Shows a real portal page inside the app, already signed in -- the
+ * modules without a native screen (Exam Lab, the SAT Lab and its tutor,
+ * Practical Lab, the staff consoles, and any page the portal adds later).
+ * The portal hides its own top bar here (the `portal_client=app` cookie).
  *
- * Surfaces like Exam Lab depend on browser-only technology (MediaPipe face and
- * object detection over WebAssembly), so they are shown as the genuine web page
- * rather than reimplemented — identical design, identical behaviour.
- *
- * The session is presented two ways because Android applies `headers` only to
- * the first request: the initial load carries a `Cookie` header, and
- * `injectedJavaScriptBeforeContentLoaded` writes the same cookie into
- * document.cookie so every in-page navigation stays authenticated. The auth
- * cookie is not httpOnly (the site's own browser client sets it via
- * document.cookie), so this is exactly how the website manages it.
+ * `path` arrives from the app's own screens and from deep links
+ * (`sjkportal://web?path=...`) alike, and both go through the same exact-origin
+ * check (src/web/portal-url.ts): only the portal's own origin opens here, with
+ * the session; another website opens in the phone's browser after the user
+ * says so, without it; anything else is refused.
  */
 export default function WebScreen() {
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
-  const { session } = useAuth();
-  const params = useLocalSearchParams<{ path?: string; title?: string }>();
-  const path = params.path ?? '/portal';
-  const title = params.title ?? 'Portal';
+  const params = useLocalSearchParams<{ path?: string | string[]; title?: string | string[] }>();
+  const title = typeof params.title === 'string' && params.title.trim() ? params.title : PORTAL_NAME;
+  const target = useMemo(() => resolveWebTarget(params.path ?? '/portal', SITE_ORIGIN), [params.path]);
 
+  // Keyed by URL: this is a tab route, so opening another page only changes
+  // its params. A fresh PortalPage starts from its placeholder instead of
+  // leaving the previous page painted until the new one renders.
+  if (target.kind === 'portal') return <PortalPage key={target.url} url={target.url} title={title} />;
+  return <OutsideLink target={target} title={title} />;
+}
+
+function TitleBar({ title, onBack, onReload }: { title: string; onBack: () => void; onReload?: () => void }) {
+  return (
+    <View style={styles.bar}>
+      <Pressable onPress={onBack} hitSlop={10} style={styles.iconBtn} accessibilityLabel="Back">
+        <ArrowLeft size={16} color={colors.fog} />
+      </Pressable>
+      <T weight="display" size="base" numberOfLines={1} style={{ flex: 1 }}>
+        {title}
+      </T>
+      {onReload ? (
+        <Pressable onPress={onReload} hitSlop={10} style={styles.iconBtn} accessibilityLabel="Reload">
+          <RotateCw size={15} color={colors.fog} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+function useGoBack() {
+  const router = useRouter();
+  return useCallback(() => (router.canGoBack() ? router.back() : router.replace('/')), [router]);
+}
+
+/** A link that isn't the portal: another website opens in the phone's
+ *  browser (never here, never with the session) once the user says so;
+ *  anything else is refused. */
+function OutsideLink({ target, title }: { target: Exclude<WebTarget, { kind: 'portal' }>; title: string }) {
+  const insets = useSafeAreaInsets();
+  const goBack = useGoBack();
+  return (
+    <View style={[styles.root, { paddingTop: insets.top }]}>
+      <TitleBar title={title} onBack={goBack} />
+      <Screen>
+        {target.kind === 'external' ? (
+          <Card>
+            <T weight="semibold" size="base">
+              This link leaves the {PORTAL_NAME}
+            </T>
+            <T tone="fog" size="sm" style={{ marginTop: spacing.sm }}>
+              {`It opens ${target.host} in your browser. Your portal sign-in is not shared with it.`}
+            </T>
+            <Button
+              label="Open in browser"
+              icon={<ExternalLink size={14} color={colors.space} />}
+              onPress={() => void Linking.openURL(target.url).catch(() => undefined)}
+              style={{ marginTop: spacing.lg, alignSelf: 'flex-start' }}
+            />
+          </Card>
+        ) : (
+          <ErrorNote message="This link can’t be opened in the app." />
+        )}
+      </Screen>
+    </View>
+  );
+}
+
+/**
+ * A portal page in the signed-in WebView. The session goes two ways because
+ * Android applies request headers to the first load only: a `Cookie` header
+ * on the first request, and a script that writes the same cookies (host-only,
+ * and only on the portal's own origin) before the page's own scripts run, so
+ * in-page navigation stays signed in. The auth cookie is not httpOnly (the
+ * website's own browser client sets it through document.cookie), so this is
+ * how the website itself holds it.
+ */
+function PortalPage({ url, title }: { url: string; title: string }) {
+  const insets = useSafeAreaInsets();
+  const goBack = useGoBack();
+  const { session } = useAuth();
   const webRef = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState(0);
   const [canGoBack, setCanGoBack] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
 
-  // `path` may be a portal path ("/portal/exam-lab") or an absolute URL — a
-  // resource's href is a signed storage link or a Google Drive URL.
-  const isAbsolute = /^https?:\/\//i.test(path);
-  const uri = isAbsolute ? path : SITE_URL + path;
+  const pairs = useMemo(() => (session ? sessionCookiePairs(session) : []), [session]);
+  // The first request's cookies, fixed for this page: a token refresh later
+  // must not change `source`, which would reload the page mid-test.
+  const [source] = useState(() => ({ uri: url, headers: { Cookie: cookieHeader([...pairs, APP_MARKER]) } }));
 
-  /**
-   * This screen is a tab route, so opening a second page from "More" reuses
-   * this same component instead of mounting a fresh one — only `params` change.
-   * Without resetting here, the previous page stayed painted (with `loading`
-   * still false from its own load) until the new document rendered, which is
-   * the ungraceful flash between pages.
-   *
-   * Adjusting state during render is React's documented pattern for this: it
-   * re-renders before committing, so the placeholder is already covering the
-   * old page on the very first frame of the new URL.
-   */
-  const [shownUri, setShownUri] = useState(uri);
-  if (shownUri !== uri) {
-    setShownUri(uri);
-    setLoading(true);
-    setProgress(0);
-    setCanGoBack(false);
-    setFailed(null);
-  }
-
-  /**
-   * The session is attached ONLY for our own origin. Resource links point at
-   * Supabase storage and Google Drive, and sending the portal's auth cookie to
-   * a third-party host would hand them the user's session.
-   */
-  const isOwnOrigin = !isAbsolute || uri.startsWith(SITE_URL);
-
-  const cookiePairs = useMemo(
-    () => (session && isOwnOrigin ? sessionCookiePairs(session as Session) : []),
-    [session, isOwnOrigin]
+  // The page's cookies before its content loads, on the portal's origin
+  // only, after expiring any other session cookie the WebView still holds.
+  const injected = useMemo(
+    () =>
+      sessionCookieScript(
+        SITE_ORIGIN,
+        [
+          ...pairs.map(([name, value]) => [name, value, SESSION_COOKIE_SECONDS] as const),
+          [...APP_MARKER, APP_MARKER_SECONDS] as const,
+        ],
+        SESSION_COOKIE_NAMES
+      ),
+    [pairs]
   );
 
-  /**
-   * Cookies for the FIRST request. The app marker has to travel in this header
-   * rather than only in injected JS: the injected script runs once the document
-   * is already loading, by which point the server has rendered — so without it
-   * here the first page would still come back with the site's full chrome.
-   */
-  const cookieHeader = useMemo(() => {
-    if (!isOwnOrigin) return '';
-    const pairs = cookiePairs.map(([k, v]) => `${k}=${v}`);
-    pairs.push(`${PORTAL_CLIENT_COOKIE}=${PORTAL_CLIENT_APP}`);
-    return pairs.join('; ');
-  }, [cookiePairs, isOwnOrigin]);
-
-  /**
-   * Writes the session cookie into the WebView before the page's own JS runs,
-   * plus a marker telling the site it is being rendered inside the app.
-   *
-   * The site reads `portal_client` during SSR and drops its own header and
-   * sidebar when it is set, because the app already supplies a title bar and
-   * the full role-aware menu. A cookie rather than a query string means the
-   * marker survives the user tapping links inside the WebView.
-   */
-  const injectedCookieScript = useMemo(() => {
-    if (!isOwnOrigin) return '';
-    const host = SITE_URL.replace(/^https?:\/\//, '');
-    const domain = host.startsWith('www.') ? host.slice(4) : host;
-    const write = (name: string, value: string, maxAge: number) =>
-      `document.cookie = ${JSON.stringify(
-        `${name}=${value}; path=/; domain=.${domain}; max-age=${maxAge}; SameSite=Lax; Secure`
-      )};`;
-    const statements = [
-      ...cookiePairs.map(([name, value]) => write(name, value, 3600)),
-      write(PORTAL_CLIENT_COOKIE, PORTAL_CLIENT_APP, 60 * 60 * 24 * 365),
-    ].join('\n');
-    return `(function(){try{${statements}}catch(e){}})(); true;`;
-  }, [cookiePairs, isOwnOrigin]);
-
-  // Hardware back button walks the WebView's own history first.
+  // Hardware back walks the WebView's own history first.
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (canGoBack) {
@@ -124,6 +155,32 @@ export default function WebScreen() {
     });
     return () => sub.remove();
   }, [canGoBack]);
+
+  /** Every navigation the page makes: the portal loads here (a www link is
+   *  loaded on the portal's own origin instead); another website goes to the
+   *  phone's browser; anything else goes nowhere. */
+  const onShouldStartLoadWithRequest = useCallback((request: ShouldStartLoadRequest) => {
+    const decision = navigationDecision(request.url, request.isTopFrame !== false, SITE_ORIGIN);
+    if (decision === 'hand-off') void Linking.openURL(request.url).catch(() => undefined);
+    if (decision === 'rewrite') {
+      const canonical = resolveWebTarget(request.url, SITE_ORIGIN);
+      if (canonical.kind === 'portal') {
+        webRef.current?.injectJavaScript(`location.assign(${JSON.stringify(canonical.url)});true;`);
+      }
+    }
+    return decision === 'load';
+  }, []);
+
+  /** A link that asks for a new window: a portal page opens here (keeping
+   *  the back history); another website in the phone's browser. */
+  const onOpenWindow = useCallback((event: OpenWindowEvent) => {
+    const next = resolveWebTarget(event.nativeEvent.targetUrl, SITE_ORIGIN);
+    if (next.kind === 'portal') {
+      webRef.current?.injectJavaScript(`location.assign(${JSON.stringify(next.url)});true;`);
+    } else if (next.kind === 'external') {
+      void Linking.openURL(next.url).catch(() => undefined);
+    }
+  }, []);
 
   function onNavigationStateChange(nav: WebViewNavigation) {
     setCanGoBack(nav.canGoBack);
@@ -139,27 +196,11 @@ export default function WebScreen() {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
-      <View style={styles.bar}>
-        <Pressable
-          onPress={() => (canGoBack ? webRef.current?.goBack() : router.back())}
-          hitSlop={10}
-          style={styles.iconBtn}
-          accessibilityLabel="Back"
-        >
-          <ArrowLeft size={16} color={colors.fog} />
-        </Pressable>
-        <T weight="display" size="base" numberOfLines={1} style={{ flex: 1 }}>
-          {title}
-        </T>
-        <Pressable
-          onPress={() => webRef.current?.reload()}
-          hitSlop={10}
-          style={styles.iconBtn}
-          accessibilityLabel="Reload"
-        >
-          <RotateCw size={15} color={colors.fog} />
-        </Pressable>
-      </View>
+      <TitleBar
+        title={title}
+        onBack={() => (canGoBack ? webRef.current?.goBack() : goBack())}
+        onReload={() => webRef.current?.reload()}
+      />
 
       {failed ? (
         <Screen>
@@ -174,14 +215,15 @@ export default function WebScreen() {
       ) : (
         <View style={{ flex: 1 }}>
           <WebView
-            // Remount on a new URL rather than letting one native view carry the
-            // old document (and its history) into the next page.
-            key={uri}
             ref={webRef}
-            source={
-              cookieHeader ? { uri, headers: { Cookie: cookieHeader } } : { uri }
-            }
-            injectedJavaScriptBeforeContentLoaded={injectedCookieScript}
+            source={source}
+            injectedJavaScriptBeforeContentLoaded={injected}
+            // Every navigation goes through onShouldStartLoadWithRequest: the
+            // library's own origin list matches by prefix, so it can't be
+            // the check (and it would hand unknown schemes to the phone).
+            originWhitelist={['*']}
+            onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
+            onOpenWindow={onOpenWindow}
             sharedCookiesEnabled
             thirdPartyCookiesEnabled
             domStorageEnabled
@@ -190,7 +232,6 @@ export default function WebScreen() {
             // once the OS permission has been granted to the app.
             mediaPlaybackRequiresUserAction={false}
             allowsInlineMediaPlayback
-            originWhitelist={['https://*']}
             onNavigationStateChange={onNavigationStateChange}
             onLoadStart={() => {
               setProgress(0);
@@ -201,9 +242,7 @@ export default function WebScreen() {
               setProgress(1);
               setLoading(false);
             }}
-            onError={() =>
-              setFailed('Could not load this page. Check your connection and try again.')
-            }
+            onError={() => setFailed('Could not load this page. Check your connection and try again.')}
             style={styles.web}
             containerStyle={styles.webContainer}
           />
