@@ -98,7 +98,8 @@ progress and tutor.
 Create account**), tick the **Digital SAT** checkbox before clicking **Create account**. It
 sits just under the class dropdown, and only appears when the **Student** role is selected.
 
-Either way, the student sees **SAT Lab** appear in their portal menu, and the next time they
+Either way, the student's home page gains a **Digital SAT** card (its space holds SAT Lab,
+Practice, Progress, Tutor and Settings), and the next time they
 open it (or finish onboarding, if they're brand-new) they're taken straight to the SAT setup
 page — see §6 below.
 
@@ -123,12 +124,12 @@ portal — there's no separate SAT toggle.
 4. In the **Enrolments (schools & classes)** panel, pick the class you just created from
    the **"Add to class…"** dropdown and click **Enrol**.
 
-The student will now see **SAT Lab** in their portal menu, alongside their other learning
-links.
+The student will now see a **Digital SAT** card on their home page, next to their other
+subjects.
 
-Staff menu access and student-data access are two different things. Any teacher,
-coordinator, facilitator, admin, or super admin already sees **SAT Lab** and **SAT results**
-in their own menu, under Administration — that doesn't depend on being enrolled in anything.
+Staff navigation and student-data access are two different things. Any teacher, admin, or
+super admin already has a **Digital SAT** space (SAT Lab, Practice, Results; a coordinator or
+facilitator desk has none) — that doesn't depend on being enrolled in anything.
 Enrolment is what decides *whose* SAT work a teacher can actually see and assign: a
 teacher only sees the students in the SAT-track classes they're themselves enrolled in
 (so enrol a teacher in the same class as the student, the same way you enrolled the

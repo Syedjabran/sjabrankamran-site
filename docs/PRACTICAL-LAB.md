@@ -3,8 +3,8 @@
 The **Practical Lab** is the set of 50 virtual Cambridge 9702 practicals (set up the apparatus,
 observe, take your own readings). The pages the student sees live in `public/lab/`; the physics
 behind them runs on the server (`src/lib/practical-lab/`). It is a subject an admin switches on per
-student, exactly like Digital SAT, and it belongs to **Physics**: later it will appear inside the
-Physics space; for now it is an entry in the portal menu.
+student, exactly like Digital SAT, and it belongs to **Physics**: it appears inside the Physics
+space.
 
 ## Set it up once: `LAB_SECRET`
 
@@ -42,12 +42,14 @@ Things to know:
 
 ## What the student sees
 
-**Practical Lab** appears in their portal menu, just under **Exam Lab**. It opens
-`/portal/practical-lab`: the lab inside the portal page, as tall as the screen allows, with an
-**Open full screen** button that opens the lab on its own (handy on a phone). Staff find it in
-their own menu (Administration, or Assigned class for coordinators and facilitators).
+**Practical Lab** appears in their **Physics** space (the Physics card on their home page), just
+after **Exam Lab**. A student switched on who isn't in a physics class gets a Physics card holding
+only the lab. It opens `/portal/practical-lab`: the lab inside the portal page, as tall as the
+screen allows, with an **Open full screen** button that opens the lab on its own (handy on a
+phone). Staff find it in their Physics space too (coordinators and facilitators on their desk's
+Physics card); everyone can also type "lab" in **Find a page…** (Ctrl+K).
 
-A student without the switch doesn't see the menu entry. If they open the page anyway, it says
+A student without the switch doesn't see it anywhere. If they open the page anyway, it says
 "Practical Lab isn't switched on for your account yet — ask the admin to add Practical Lab to your
 subjects."
 
@@ -150,9 +152,9 @@ which the website never serves. `npm run test:portal` fails if a teacher-only fi
 
 1. With a test student who is **not** switched on: sign in as them and open
    `https://sjabrankamran.com/lab/index.html` — you should get the "isn't switched on" page, and no
-   Practical Lab in their menu.
+   Practical Lab in their Physics space.
 2. As an admin, switch **Practical Lab (Physics)** on for them.
-3. As the student, refresh: **Practical Lab** is in the menu, the page shows the lab, and the bell
+3. As the student, refresh: **Practical Lab** is in their Physics space, the page shows the lab, and the bell
    has "Practical Lab is open for you". Open a practical, assemble it, release it and take a
    reading.
 4. Reload the practical: the notebook still says the same attempt number and the readings at the

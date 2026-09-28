@@ -50,16 +50,24 @@ The portal has no sidebar and no menu list of its own. `src/lib/portal/portal-na
 
 - **subject spaces** — one per top-level subject (`SUBJECT_SPACES`) the viewer has anything in:
   that subject's visible modules plus those of any subject shown inside it (`partOf`), in `order`.
-  Each space is a page, `/portal/subjects/<id>` (`spaceRoute`), and a card on the home page;
-- **General** — the visible `GENERAL_ITEMS` (Home and Profile live in the top bar);
-- **Administration** — the visible `STAFF_ITEMS`;
-- **More** — pages the old menu gave the viewer whose subject they don't have (it showed Physics to
-  every student): a SAT-only student keeps the physics pages, folded away under More on the home page.
+  Each space is a page, `/portal/subjects/<id>` (`spaceRoute`), and a card on the home page. A space
+  that would hold only `shared` pages (a parent's Physics Resources) is not shown: those pages go to
+  General;
+- **General** — the visible `GENERAL_ITEMS` (Home and Profile live in the top bar), plus a subject's
+  `shared` modules, under their full menu label ("Physics Resources"), for a viewer with no space of
+  that subject. A module is `shared` when it is useful without the subject (Physics Resources' Class
+  Drive holds every class's folders). The old menu showed every student Physics: a student who
+  doesn't take it keeps those shared pages, and the subject's other pages leave their navigation
+  (the routes still open by URL);
+- **Administration** — the visible `STAFF_ITEMS`, listed most used first (a long group shows eight
+  and folds the rest).
 
-The home page (subject cards, then the groups), each subject space, the top bar (Home, the subject
-switcher, the breadcrumb, "Find a page…" / Ctrl+K), the admin's Subjects card line and the product
-tour (`tourSteps`) are all drawn from that one result. `src/lib/portal/viewer-nav.ts` reads the
-viewer's roles, courses and Practical Lab switch on the server once per request and calls it.
+The home page (subject cards, then the groups), each subject space, a desk role's desk (coordinator
+desk, daily attendance — their Home; `DeskGroups`), the top bar (Home, the subject switcher, the
+breadcrumb, "Find a page…" / Ctrl+K), the desk roles' page fence (`deskRoutes`), the admin's Subjects
+card line and the product tour (`tourSteps`) are all drawn from that one result.
+`src/lib/portal/viewer-nav.ts` reads the viewer's roles, courses and Practical Lab switch on the
+server once per request and calls it.
 
 ## Checklist for a new subject
 
@@ -192,6 +200,7 @@ These were left as they are on purpose; each needs its own decision when a subje
 - **The subject cards' glances:** Physics' card shows the next Exam Lab work or the study-plan count
   and the SAT's the exam countdown (`src/lib/portal/glance.ts`); a new subject's card lists its first
   pages until it gets a glance of its own.
-- **More:** the rule behind it assumes the class-granted subjects (Physics) for every student, because
-  that is what the old menu showed. A second class-granted subject would put its pages under More for
-  students not in its classes too; decide then whether it should.
+- **Shared pages for students who don't take the subject:** the rule assumes the class-granted
+  subjects (Physics) for every student, because that is what the old menu showed. A second
+  class-granted subject's `shared` pages would appear in General for students not in its classes
+  too; decide then whether they should.
