@@ -38,11 +38,15 @@ export const ROLE_LABELS: Record<EduRole, string> = {
 /**
  * Server-side: current signed-in portal user with roles (RLS-scoped).
  *
- * Resolves the caller from the session cookie (the website) or, when there is
- * no cookie session, from an `Authorization: Bearer <access_token>` header
- * (the React Native portal app). Both paths validate the token against the
- * Auth server, and createClient() forwards a bearer token to PostgREST so RLS
- * applies identically either way.
+ * Resolves the caller from the session cookie (the website) or, only when the
+ * request carries no Supabase auth cookie at all, from an
+ * `Authorization: Bearer <access_token>` header (the React Native portal app;
+ * bearer.ts sessionBearer). The cookie always wins: an expired or invalid
+ * auth cookie sent with a valid bearer resolves to null (signed out) by
+ * design, exactly as the middleware's gate decides, so a request can never be
+ * one user for the role checks and another for RLS. Both paths validate the
+ * token against the Auth server, and createClient() forwards a bearer token
+ * to PostgREST so RLS applies identically either way.
  *
  * Memoized per request via React.cache: the portal layout AND the page both
  * call this on every tab navigation; without dedup that doubles the Supabase

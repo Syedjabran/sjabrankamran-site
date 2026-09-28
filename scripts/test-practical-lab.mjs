@@ -521,4 +521,28 @@ assert.ok(passes(await call("/api/portal/admin/users")), "a signed-out API call 
 assert.ok(passes(await call("/api/lab/view")), "a signed-out lab API call reaches its route (JSON 401 there)");
 assert.ok(passes(await call("/portal/login")), "the login page stays reachable");
 
+// Portal deep links keep their query through sign-in, as /lab links do (final fix wave, M8):
+// inside `next` only, and the login page still goes only to a same-site path.
+{
+  const { safeNextPath } = await import("../src/lib/request-guards.ts");
+  const nextOf = (r) => new URL(r.headers.get("location")).searchParams.get("next");
+  world({ uid: null });
+  res = await call("/portal/exam-lab?allocation=a1b2c3");
+  assert.equal(location(res), "/portal/login?next=%2Fportal%2Fexam-lab%3Fallocation%3Da1b2c3", "an allocation link survives sign-in");
+  assert.equal(safeNextPath(nextOf(res)), "/portal/exam-lab?allocation=a1b2c3", "and the login page goes there");
+  res = await call("/portal/exam-lab?course=5054&mode=paper");
+  assert.equal(safeNextPath(nextOf(res)), "/portal/exam-lab?course=5054&mode=paper", "a course link too, every parameter kept");
+  res = await call("/portal/learn?error=Wrong%20password");
+  assert.equal(location(res), "/portal/login?next=%2Fportal%2Flearn%3Ferror%3DWrong%2520password", "the page's query never lands on the login page's own URL");
+  res = await call("/portal");
+  assert.equal(location(res), "/portal/login?next=%2Fportal", "no query, no '?'");
+  // Open redirects stay refused: a hostile query is only a query on a portal page...
+  res = await call("/portal/x?next=https://evil.example/&u=//evil.example");
+  assert.equal(safeNextPath(nextOf(res)), "/portal/x?next=https://evil.example/&u=//evil.example");
+  // ...and a hand-made `next` that leaves the site is refused by the login page.
+  for (const evil of ["//evil.example/portal", "/\\evil.example", "https://evil.example/", "/\t/evil.example", "\\\\evil.example", "javascript:alert(1)"]) {
+    assert.equal(safeNextPath(evil), "/portal", JSON.stringify(evil));
+  }
+}
+
 console.log("practical-lab tests passed");

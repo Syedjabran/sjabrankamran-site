@@ -391,10 +391,16 @@ export async function middleware(request: NextRequest) {
     if (isRscRequest || isPrefetch) res.headers.set("cache-control", "no-store, must-revalidate");
     return res;
   }
+  /** Sign-in, then back to this page with its query: an email or
+   *  notification link's ?allocation= / ?course= survives sign-in, as /lab
+   *  links' do. The query rides inside `next` only, never on the login
+   *  page's own URL, and the login page redirects only to a same-site path
+   *  (request-guards.ts safeNextPath). */
   function toLogin() {
     const url = request.nextUrl.clone();
     url.pathname = "/portal/login";
-    url.searchParams.set("next", pathname);
+    url.search = "";
+    url.searchParams.set("next", pathname + request.nextUrl.search);
     return protectedRedirect(url);
   }
 
