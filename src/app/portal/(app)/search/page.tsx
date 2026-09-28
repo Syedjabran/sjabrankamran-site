@@ -1,6 +1,7 @@
 import { PortalSearchClient } from "./search-client";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "Search", robots: { index: false } };
+export const metadata = { title: portalItem("search").menuLabel, robots: { index: false } };
 export const dynamic = "force-dynamic";
 
 export default async function PortalSearchPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {

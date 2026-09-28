@@ -5,8 +5,9 @@ import { getPortalUser } from "@/lib/edu/auth";
 import { satAccess } from "@/lib/sat/access";
 import { readProfile } from "@/lib/sat/coach/profile-store";
 import { ProgressView } from "@/components/sat/coach/progress-view";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "SAT progress", robots: { index: false } };
+export const metadata = { title: portalItem("sat-progress").menuLabel, robots: { index: false } };
 export const dynamic = "force-dynamic";
 
 export default async function SatProgressPage() {

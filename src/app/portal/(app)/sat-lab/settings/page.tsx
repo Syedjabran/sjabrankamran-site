@@ -3,8 +3,9 @@ import { getPortalUser } from "@/lib/edu/auth";
 import { pkToday } from "@/lib/portal/pk-time";
 import { ownSatProfile } from "@/lib/sat/coach/profile-store";
 import { ProfileForm, ProfileUnavailable } from "@/components/sat/coach/profile-form";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "SAT settings", robots: { index: false } };
+export const metadata = { title: portalItem("sat-settings").menuLabel, robots: { index: false } };
 export const dynamic = "force-dynamic";
 
 export default async function SatSettingsPage() {

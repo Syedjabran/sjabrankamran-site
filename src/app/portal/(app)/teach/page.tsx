@@ -3,8 +3,9 @@ import { redirect } from "next/navigation";
 import { BookOpen } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getPortalUser, isAdmin } from "@/lib/edu/auth";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "My Classes" };
+export const metadata = { title: portalItem("classes").menuLabel };
 
 export default async function TeachHome() {
   const user = await getPortalUser();

@@ -8,6 +8,7 @@ import rehypeKatex from "rehype-katex";
 import { Zap, Printer, RotateCcw, Loader2, CheckCircle2, Eye, Timer as TimerIcon } from "lucide-react";
 import { TOPICS } from "@/lib/exam-lab/topics";
 import { normalizePhysicsMath } from "@/components/markdown-renderer";
+import { courseBoardLabel, courseOf } from "@/lib/portal/subjects";
 
 // A generated question as the browser receives it: no answer, no mark
 // scheme. Those come back from /api/exam-lab/submit, for the whole set, once
@@ -74,6 +75,9 @@ export function ExamRunner({
   const paperRef = useRef<HTMLDivElement>(null);
 
   const isOLevel = course === "5054";
+  /** "CAIE 9702" / "CAIE 5054": the paper header names this runner's course. */
+  const courseDef = courseOf(course);
+  const paperCourse = courseDef ? courseBoardLabel(courseDef) : course;
   const patterns: Pattern[] = isOLevel
     ? [
         { key: "drill", label: "Topical drill", style: "mixed", count: 6 },
@@ -335,7 +339,7 @@ export function ExamRunner({
           <div className="mb-2 flex flex-wrap items-start justify-between gap-4 border-b border-white/[0.08] pb-4">
             <div>
               <p className="eyebrow">Physics Studio · Exam Lab</p>
-              <h3 className="mt-1 font-display text-xl">CAIE 9702 Practice Paper</h3>
+              <h3 className="mt-1 font-display text-xl">{paperCourse} Practice Paper</h3>
               <p className="mt-1 font-mono text-xs text-fog">
                 {questions.length} questions · {totalMarks} marks · LOT {lotN} / HOT {questions.length - lotN} · rec. {recMin} min
               </p>

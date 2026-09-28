@@ -6,8 +6,9 @@ import { drillState } from "@/lib/sat/serve";
 import { imagesFor } from "@/lib/sat/signed-images";
 import { SatRunner } from "@/components/sat/sat-runner";
 import { SatDrill } from "@/components/sat/sat-drill";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "SAT Lab", robots: { index: false } };
+export const metadata = { title: portalItem("sat-today").menuLabel, robots: { index: false } };
 export const dynamic = "force-dynamic";
 
 export default async function SatSittingPage({ params }: { params: Promise<{ sessionId: string }> }) {

@@ -6,6 +6,8 @@ import { effectiveRoles } from "@/lib/portal/view-as";
 import { getStudentAttempts } from "@/lib/exam-lab/attempts";
 import { analyse, type TopicStat } from "@/lib/exam-lab/analytics";
 import { getMyPerformance } from "@/lib/edu/performance";
+import { resolveCourseAccess } from "@/lib/portal/course-access";
+import { examLabWorkLabel } from "@/lib/portal/exam-lab-context";
 
 export const metadata = { title: "My Progress — Exam Lab", robots: { index: false } };
 
@@ -58,7 +60,7 @@ export default async function ProgressPage() {
   const { roles: effRoles } = await effectiveRoles(user);
   if (!effRoles.includes("student")) redirect("/portal");
   // The student's own view: a result another of their open tests holds is left out until then.
-  const [attempts, perf] = await Promise.all([getStudentAttempts(user!.id), getMyPerformance()]);
+  const [attempts, perf, access] = await Promise.all([getStudentAttempts(user!.id), getMyPerformance(), resolveCourseAccess(user)]);
   const a = analyse(attempts);
   const first = (user?.fullName || user?.email || "").split(" ")[0];
 
@@ -88,7 +90,7 @@ export default async function ProgressPage() {
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="font-display text-2xl text-ice">My Progress</h1>
-          <p className="text-sm text-dust">Your CAIE 9702 performance{first ? ` · ${first}` : ""}</p>
+          <p className="text-sm text-dust">Your {examLabWorkLabel(access)} performance{first ? ` · ${first}` : ""}</p>
         </div>
         <Link href="/portal/exam-lab" className="btn-ghost !px-3.5 !py-1.5 text-xs">Exam Lab <ArrowRight size={13} /></Link>
       </div>

@@ -3,8 +3,9 @@ import { FlaskConical, Maximize2 } from "lucide-react";
 import { getPortalUser } from "@/lib/edu/auth";
 import { practicalLabAccess } from "@/lib/portal/practical-lab";
 import { PRACTICAL_LAB_ENTRY, PRACTICAL_LAB_PAGE } from "@/lib/portal/practical-lab-access";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "Practical Lab", robots: { index: false } };
+export const metadata = { title: portalItem("practical-lab").menuLabel, robots: { index: false } };
 export const dynamic = "force-dynamic";
 
 /** The 9702 virtual practicals (public/lab) inside the portal chrome. The

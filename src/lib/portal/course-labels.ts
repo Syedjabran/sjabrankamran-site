@@ -66,6 +66,17 @@ export function coursesForEnrolment(
   return courses;
 }
 
+/** The course a new student's welcome email is written for: their class
+ *  (`classId`, placed by the registry `classes`) and direct grants, ranked by
+ *  primaryCourse; null with neither -- course access gives such a student no
+ *  course. */
+export function welcomeCourse(
+  classId: string | null, classes: readonly { id: string; year: string }[], directCourses: readonly Course[],
+): Course | null {
+  if (!classId && !directCourses.length) return null;
+  return primaryCourse(coursesForEnrolment(new Set(classId ? [classId] : []), classes, { directCourses }));
+}
+
 /** The course to show first: O Level precedence when a student is
  *  (unusually) in both physics courses, matching courseStage; SAT only when
  *  it is the student's only course. null for no enrolment at all. */

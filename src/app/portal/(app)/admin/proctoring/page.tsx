@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { requireStaff, isSuperAdmin } from "@/lib/portal/admin";
 import { ProctoringClient } from "./proctoring-client";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "Proctoring & Locks", robots: { index: false } };
+export const metadata = { title: portalItem("proctoring").menuLabel, robots: { index: false } };
 export const dynamic = "force-dynamic";
 
 export default async function ProctoringPage() {

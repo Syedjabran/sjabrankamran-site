@@ -6,8 +6,9 @@ import {
 import { getPortalUser, isStaff } from "@/lib/edu/auth";
 import { effectiveRoles } from "@/lib/portal/view-as";
 import { getKpiCached, KPI_WEIGHTS, PILLAR_INFO, type KpiStudent, type PillarKey } from "@/lib/portal/kpi";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "My Ranking" };
+export const metadata = { title: portalItem("ranking").menuLabel };
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 

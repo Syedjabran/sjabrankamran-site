@@ -3,8 +3,9 @@ import { Users, CalendarDays, Trophy, Receipt } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getPortalUser } from "@/lib/edu/auth";
 import { attendancePercent } from "@/lib/edu/attendance";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "My Children" };
+export const metadata = { title: portalItem("family").menuLabel };
 
 export default async function FamilyPage() {
   const user = await getPortalUser();

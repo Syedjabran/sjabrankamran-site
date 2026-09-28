@@ -3,8 +3,9 @@ import { getPortalUser, isAdmin } from "@/lib/edu/auth";
 import { getStaffScope } from "@/lib/portal/staff-school";
 import { getInstitutionReport } from "@/lib/portal/institutions";
 import { CoordinatorClient } from "./coordinator-client";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "Coordinator desk", robots: { index: false } };
+export const metadata = { title: portalItem("coordinator").menuLabel, robots: { index: false } };
 export const dynamic = "force-dynamic";
 
 export default async function CoordinatorPage() {

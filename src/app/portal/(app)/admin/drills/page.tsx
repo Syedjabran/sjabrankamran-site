@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { getPortalUser, isAdmin, canViewDrillRecords } from "@/lib/edu/auth";
 import { DrillRecordsClient } from "./drills-client";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "Drill Records", robots: { index: false } };
+export const metadata = { title: portalItem("drill-records").menuLabel, robots: { index: false } };
 export const dynamic = "force-dynamic";
 
 /**

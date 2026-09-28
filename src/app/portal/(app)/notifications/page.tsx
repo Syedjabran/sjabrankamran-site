@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { getPortalUser } from "@/lib/edu/auth";
 import { NotificationsClient } from "./notifications-client";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "Notifications" };
+export const metadata = { title: portalItem("notifications").menuLabel };
 export const dynamic = "force-dynamic";
 
 /** Full Notification Centre — every signed-in portal user (students, parents,

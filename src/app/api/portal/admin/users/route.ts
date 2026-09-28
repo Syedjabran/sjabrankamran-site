@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireAdmin, audit, genPassword, isEmail, ALL_ROLES, emailCredentials, isSuperAdmin } from "@/lib/portal/admin";
+import { requireAdmin, audit, genPassword, isEmail, ALL_ROLES, emailCredentials, isSuperAdmin, welcomeCourseFor } from "@/lib/portal/admin";
 import { getAccessControlDocument } from "@/lib/portal/access-control";
 import { isRestrictionActive } from "@/lib/portal/access-shared";
 import type { EduRole } from "@/lib/edu/auth";
@@ -129,6 +129,7 @@ export async function POST(req: Request) {
 
   // 4) Student record + optional class enrolment.
   let studentId: string | null = null;
+  let enrolledClassId: string | null = null;
   if (roles.includes("student")) {
     const { data: st, error: sErr } = await sb
       .from("edu_students")
@@ -140,6 +141,7 @@ export async function POST(req: Request) {
     if (b.class_id) {
       const { error: eErr } = await sb.from("edu_enrolments").insert({ class_id: b.class_id, student_id: studentId, status: "active" });
       if (eErr) warnings.push(`Account created, but the class enrolment failed: ${eErr.message}`);
+      else enrolledClassId = b.class_id;
     }
   }
 
@@ -159,7 +161,7 @@ export async function POST(req: Request) {
 
   let emailStatus: string | undefined;
   if (b.send_email) {
-    const r = await emailCredentials(admin.id, email, fullName, password, false);
+    const r = await emailCredentials(admin.id, email, fullName, password, false, await welcomeCourseFor(roles, enrolledClassId, granted));
     emailStatus = r.status;
   }
 

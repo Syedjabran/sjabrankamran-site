@@ -7,10 +7,10 @@ import { effectiveRoles } from "@/lib/portal/view-as";
 import { getMyStudent } from "@/lib/edu/student";
 import { attendancePercent } from "@/lib/edu/attendance";
 import { formatPk, pkToday } from "@/lib/portal/pk-time";
-import { defaultHelper } from "@/lib/portal/subjects";
+import { defaultHelper, portalItem } from "@/lib/portal/subjects";
 import { MyTasks } from "./my-tasks";
 
-export const metadata = { title: "My Learning" };
+export const metadata = { title: portalItem("learning").menuLabel };
 
 /** My Learning belongs to no subject, so its helper card shows the first
  *  subject's helper (Physics' Einstein and the Physics Studio). */

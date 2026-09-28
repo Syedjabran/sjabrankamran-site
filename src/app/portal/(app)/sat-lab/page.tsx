@@ -5,8 +5,9 @@ import { getPortalUser } from "@/lib/edu/auth";
 import { satAccess } from "@/lib/sat/access";
 import { readProfile } from "@/lib/sat/coach/profile-store";
 import { SatHub } from "@/components/sat/sat-hub";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "SAT Lab", robots: { index: false } };
+export const metadata = { title: portalItem("sat-today").menuLabel, robots: { index: false } };
 export const dynamic = "force-dynamic";
 
 export default async function SatLabPage() {

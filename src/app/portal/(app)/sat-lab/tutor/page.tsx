@@ -5,8 +5,9 @@ import { getPortalUser } from "@/lib/edu/auth";
 import { ownSatProfile } from "@/lib/sat/coach/profile-store";
 import { sanitiseFirstName } from "@/lib/sat/coach/insights-core";
 import { TutorChat } from "@/components/sat/coach/tutor-chat";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "SAT tutor", robots: { index: false } };
+export const metadata = { title: portalItem("sat-tutor").menuLabel, robots: { index: false } };
 export const dynamic = "force-dynamic";
 
 const QUESTION_ID = /^[A-Za-z0-9_-]{1,64}$/;

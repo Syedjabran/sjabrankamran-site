@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { getPortalUser, canAccessGlobalStaffData } from "@/lib/edu/auth";
 import { VoiceAttendance } from "./voice-attendance";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "Attendance" };
+export const metadata = { title: portalItem("attendance").menuLabel };
 export const dynamic = "force-dynamic";
 
 export default async function AttendancePage() {

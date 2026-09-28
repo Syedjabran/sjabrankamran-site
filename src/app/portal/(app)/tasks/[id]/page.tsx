@@ -4,8 +4,9 @@ import { getPortalUser } from "@/lib/edu/auth";
 import { getTask } from "@/lib/portal/tasks";
 import { formatPk } from "@/lib/portal/pk-time";
 import { TaskActions } from "./task-actions";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "Assigned task" };
+export const metadata = { title: portalItem("task").menuLabel };
 export const dynamic = "force-dynamic";
 
 export default async function TaskPage({ params }: { params: Promise<{ id: string }> }) {

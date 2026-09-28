@@ -5,8 +5,9 @@ import { ensureStudyPlan } from "@/lib/portal/study-plan";
 import { effectiveRoles } from "@/lib/portal/view-as";
 import { DEMO_STUDENT_UID } from "@/lib/portal/demo-student";
 import { MyTasks } from "../learn/my-tasks";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "My study plan" };
+export const metadata = { title: portalItem("study-plan").menuLabel };
 export const dynamic = "force-dynamic";
 
 export default async function StudyPlanPage() {

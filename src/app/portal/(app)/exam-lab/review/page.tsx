@@ -3,8 +3,9 @@ import { redirect } from "next/navigation";
 import { ClipboardCheck, Clock3, FileText, TrendingUp } from "lucide-react";
 import { getPortalUser } from "@/lib/edu/auth";
 import { getStudentAttempts } from "@/lib/exam-lab/attempts";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "My answer scripts", robots: { index: false } };
+export const metadata = { title: portalItem("answer-scripts").menuLabel, robots: { index: false } };
 export const dynamic = "force-dynamic";
 
 function when(ts: number) { return new Date(ts).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }); }

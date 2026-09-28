@@ -6,13 +6,13 @@ import { getPortalUser, isAdmin } from "@/lib/edu/auth";
 import { getRegistry, type ClassMeta, type Registry } from "@/lib/portal/institutions";
 import { PORTAL_BUCKET } from "@/lib/portal/onboarding";
 import { readStorageJson, writeStorageJson } from "@/lib/portal/resources";
-import { CLASS_SUBJECTS } from "@/lib/portal/subjects";
+import { CLASS_SUBJECTS, portalItem } from "@/lib/portal/subjects";
 
 /** A new class's subject when none is typed: the subject class enrolment
  *  grants (Physics), from the subject registry. */
 const DEFAULT_CLASS_SUBJECT = CLASS_SUBJECTS[0]?.label ?? "";
 
-export const metadata = { title: "Academics" };
+export const metadata = { title: portalItem("academics").menuLabel };
 
 const REGISTRY_PATH = "institutions.json";
 

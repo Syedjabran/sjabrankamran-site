@@ -4,8 +4,9 @@ import { Gauge } from "lucide-react";
 import { getPortalUser } from "@/lib/edu/auth";
 import { effectiveRoles } from "@/lib/portal/view-as";
 import { LeaderboardClient } from "./leaderboard-client";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "Leaderboard" };
+export const metadata = { title: portalItem("leaderboard").menuLabel };
 export const dynamic = "force-dynamic";
 
 export default async function LeaderboardPage() {

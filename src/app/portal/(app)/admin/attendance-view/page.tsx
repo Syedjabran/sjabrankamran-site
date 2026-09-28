@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { getPortalUser, isStaff, isAttendanceRegistrar } from "@/lib/edu/auth";
 import { AttendanceView } from "./attendance-view";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "Daily attendance", robots: { index: false } };
+export const metadata = { title: portalItem("daily-attendance").menuLabel, robots: { index: false } };
 export const dynamic = "force-dynamic";
 
 export default async function AttendanceViewPage() {

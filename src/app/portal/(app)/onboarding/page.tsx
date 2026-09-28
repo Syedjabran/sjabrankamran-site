@@ -2,8 +2,9 @@ import { redirect } from "next/navigation";
 import { getPortalUser } from "@/lib/edu/auth";
 import { onboardingStatus } from "@/lib/portal/onboarding";
 import { OnboardingForm } from "./onboarding-form";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "Complete your profile", robots: { index: false } };
+export const metadata = { title: portalItem("onboarding").menuLabel, robots: { index: false } };
 
 export default async function OnboardingPage() {
   const user = await getPortalUser();

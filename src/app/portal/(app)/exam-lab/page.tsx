@@ -104,8 +104,8 @@ export default async function PortalExamLabPage({ searchParams }: { searchParams
         <div className="rounded-2xl border border-amber-400/30 bg-amber-400/[0.05] px-6 py-8 text-center">
           <p className="font-display text-lg text-ice">No course assigned yet</p>
           <p className="mx-auto mt-2 max-w-md text-sm text-fog">
-            Your account isn&rsquo;t enrolled in a {subjects} course, so the {EXAM_LAB.name} is locked.
-            Once your teacher assigns you to an {classes} class,
+            Your account has no {subjects} course yet, so the {EXAM_LAB.name} is locked.
+            Once your teacher adds you to a class for {classes},
             your papers and drills will appear here automatically.
           </p>
         </div>

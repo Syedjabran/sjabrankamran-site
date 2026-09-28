@@ -11,7 +11,9 @@
  * course access on every paper anyway).
  */
 import type { Course } from "./course-labels.ts";
-import { SUBJECTS, practiceItemOf, subjectOf, type PortalItem, type SubjectDef } from "./subjects.ts";
+import {
+  SUBJECTS, courseBoardLabel, courseOf, portalItem, practiceItemOf, subjectOf, type PortalItem, type SubjectDef,
+} from "./subjects.ts";
 
 /** The course access the page resolved (course-access.ts CourseAccess). */
 export type ExamLabAccess = { allowed: readonly Course[]; primary: Course | null };
@@ -66,4 +68,15 @@ export function examLabContext(access: ExamLabAccess, query: ExamLabQuery = {}):
     .map((subject) => ({ subject, item: practiceItemOf(subject) }))
     .filter((p): p is { subject: SubjectDef; item: PortalItem } => !!p.item);
   return places.length ? { kind: "elsewhere", places } : { kind: "none" };
+}
+
+/**
+ * How a user's Exam Lab work is named: "CAIE 5054" for an O Level student,
+ * "CAIE 9702" for an A Level one (the course the Exam Lab opens on for them),
+ * and the Exam Lab's own name when none of their courses has papers.
+ */
+export function examLabWorkLabel(access: ExamLabAccess): string {
+  const context = examLabContext(access);
+  const course = context.kind === "papers" ? courseOf(context.course) : null;
+  return course ? courseBoardLabel(course) : portalItem("exam-lab").name;
 }

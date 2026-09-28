@@ -2,8 +2,9 @@ import { redirect } from "next/navigation";
 import { BookMarked } from "lucide-react";
 import { getPortalUser, isExamLabStaff } from "@/lib/edu/auth";
 import { SyllabusCoverageClient } from "./syllabus-client";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "Syllabus coverage" };
+export const metadata = { title: portalItem("syllabus-coverage").menuLabel };
 export const dynamic = "force-dynamic";
 
 /**

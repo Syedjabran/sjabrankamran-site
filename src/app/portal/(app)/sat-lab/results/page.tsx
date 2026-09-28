@@ -2,8 +2,9 @@ import { redirect } from "next/navigation";
 import { ClipboardList } from "lucide-react";
 import { getPortalUser, isExamLabStaff } from "@/lib/edu/auth";
 import { SatResults } from "@/components/sat/sat-results";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "SAT results", robots: { index: false } };
+export const metadata = { title: portalItem("sat-results").menuLabel, robots: { index: false } };
 export const dynamic = "force-dynamic";
 
 export default async function SatResultsPage() {

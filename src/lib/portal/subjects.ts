@@ -22,6 +22,7 @@ import {
   canConductDrills, isAdmin, isCoordinatorOnly, isExamLabStaff, isRegistrarOnly, isStaff, type EduRole,
 } from "../edu/roles.ts";
 import { PHYSICS_HELPER, type HelperPersona } from "./subject-helpers.ts";
+import { PORTAL_NAME } from "./brand.ts";
 
 export type SubjectId = "physics" | "sat" | "practical-lab";
 
@@ -70,13 +71,15 @@ export type Audience =
 
 export type PortalItemId =
   // General (every subject)
-  | "home" | "search" | "notifications" | "learning" | "library" | "family" | "profile" | "install"
+  | "home" | "search" | "notifications" | "learning" | "timetable" | "library" | "family" | "profile" | "install"
+  | "onboarding" | "task"
   // Staff consoles
   | "users" | "access-locks" | "analytics" | "institutions" | "post-work" | "drill-records" | "attendance"
   | "daily-attendance" | "proctoring" | "email" | "coordinator" | "announcements" | "academics" | "finance" | "classes"
+  | "demo-student-access"
   // Physics
-  | "exam-lab" | "study-plan" | "timetable" | "answer-scripts" | "progress" | "ranking" | "leaderboard"
-  | "resources" | "syllabus-coverage" | "studio"
+  | "exam-lab" | "study-plan" | "answer-scripts" | "progress" | "ranking" | "leaderboard"
+  | "resources" | "syllabus-coverage" | "studio" | "test-preview"
   // Practical Lab (shown inside Physics)
   | "practical-lab"
   // Digital SAT
@@ -85,7 +88,9 @@ export type PortalItemId =
 /** One place in the portal: a page (or a section of one) and who sees it. */
 export interface PortalItem {
   id: PortalItemId;
-  /** An existing portal page; may end in a `#section` of that page. */
+  /** An existing portal page; may end in a `#section` of that page. A
+   *  `[param]` segment stands for any value (`/portal/tasks/[id]`), as in the
+   *  page's own folder name. */
   route: string;
   /** The plain student-facing name inside its subject space ("Timetable"). */
   name: string;
@@ -103,6 +108,10 @@ export interface PortalItem {
   /** Open with a full page load: a route some long-lived app sessions had
    *  cached as missing before it existed. */
   hardNavigate?: boolean;
+  /** false: a page, never a destination -- it is in no menu, finder or
+   *  subject space (`visibleItems` and `spaceModules` leave it out); it is
+   *  described so its title and breadcrumb resolve (`itemForPath`). */
+  listed?: false;
 }
 
 /** A module: a place that belongs to one subject. */
@@ -118,7 +127,8 @@ export interface ExamLabDef {
   courses: readonly Course[];
   /** What the papers are, as staff read it next to the course list. */
   source: string;
-  /** The browser-tab title after "Exam Lab — ". */
+  /** The browser-tab title after "Exam Lab — ". It names no single course:
+   *  every student of the subject sees it. */
   title: string;
   /** The short line after the course name in the page header. */
   tagline: string;
@@ -161,13 +171,30 @@ export interface CourseDef {
   level: string;
   /** The syllabus code, when it has one. */
   code?: string;
+  /** The awarding body's short name, when it prints one with the code ("CAIE"). */
+  board?: string;
+  /** The first lines of a new student's welcome email (admin.ts credentialsEmail). */
+  welcome: string;
 }
 
 export const COURSES: readonly CourseDef[] = [
-  { id: "9702", subject: "physics", label: "Cambridge A Level Physics · 9702", level: "A Level", code: "9702" },
-  { id: "5054", subject: "physics", label: "Cambridge O Level Physics · 5054", level: "O Level", code: "5054" },
-  { id: "SAT", subject: "sat", label: "Digital SAT", level: "Digital SAT" },
+  {
+    id: "9702", subject: "physics", label: "Cambridge A Level Physics · 9702", level: "A Level", code: "9702", board: "CAIE",
+    welcome: "Welcome to your A-Level Physics learning portal. You now have your own account where you can sit real CAIE 9702 past papers, take timed topic drills with instant marking and feedback, and track your progress through the year.",
+  },
+  {
+    id: "5054", subject: "physics", label: "Cambridge O Level Physics · 5054", level: "O Level", code: "5054", board: "CAIE",
+    welcome: "Welcome to your O-Level Physics learning portal. You now have your own account where you can sit real CAIE 5054 past papers, take timed topic drills with instant marking and feedback, and track your progress through the year.",
+  },
+  {
+    id: "SAT", subject: "sat", label: "Digital SAT", level: "Digital SAT",
+    welcome: "Welcome to your Digital SAT learning portal. You now have your own account where you can practise with official College Board questions, sit full adaptive practice tests, and track your progress towards your target score.",
+  },
 ];
+
+/** The welcome email's first lines for an account with no course (staff,
+ *  parents, a student not yet in a class or subject). */
+export const GENERAL_WELCOME = `Welcome to the ${PORTAL_NAME}. You now have your own account — sign in with the details below to get started.`;
 
 export const SUBJECTS: readonly SubjectDef[] = [
   {
@@ -176,7 +203,7 @@ export const SUBJECTS: readonly SubjectDef[] = [
     examLab: {
       courses: ["9702", "5054"],
       source: "Real CAIE past papers",
-      title: "Real CAIE 9702 Past Papers",
+      title: "Real CAIE Past Papers",
       tagline: "exact questions with diagrams",
       intro: "Sit a full past paper under timed conditions, or drill a topic. Paper 1 auto-marks; Paper 2 & 4 reveal the official mark scheme. Every question is the exact Cambridge original — diagrams, graphs and all.",
     },
@@ -190,11 +217,6 @@ export const SUBJECTS: readonly SubjectDef[] = [
         id: "study-plan", route: "/portal/study-plan", name: "Study plan", menuLabel: "My study plan", hardNavigate: true,
         icon: "BrainCircuit", order: 20, access: ["student"],
         purpose: "Follow personalised weekly activities based on your performance and learning needs.",
-      },
-      {
-        id: "timetable", route: "/portal/timetable", name: "Timetable", menuLabel: "Physics timetable",
-        icon: "CalendarClock", order: 30, access: ["student", "parent", "staff", "registrar-desk", "coordinator-desk"],
-        purpose: "See lessons and additional classes filtered for your school, class and group.",
       },
       {
         id: "answer-scripts", route: "/portal/exam-lab/review", name: "Answer scripts", menuLabel: "My answer scripts",
@@ -230,6 +252,11 @@ export const SUBJECTS: readonly SubjectDef[] = [
         id: "studio", route: "/portal/studio", name: "Physics Studio", menuLabel: "Physics Studio",
         icon: "Sparkles", order: 100, access: ["staff"],
         purpose: "Reach the teaching and studio workspace.",
+      },
+      {
+        id: "test-preview", route: "/portal/admin/test-preview/[testId]", name: "Test question preview", menuLabel: "Test question preview",
+        icon: "ClipboardCheck", order: 110, access: ["super-admin"], listed: false,
+        purpose: "Preview a physics class test's questions and images.",
       },
     ],
   },
@@ -308,6 +335,16 @@ export const GENERAL_ITEMS: readonly PortalItem[] = [
     purpose: "Find assignments and individual tasks, organised by status and deadline.",
   },
   {
+    // Class-based, so it belongs to every subject: it lists the lessons of
+    // every class the viewer is in (SAT classes too; timetable.ts). Its menu
+    // label is still today's "Physics timetable" -- the one subject word a
+    // general item carries, kept until the subject-first navigation renames
+    // it (Task 4's rename map: "Physics timetable" -> "Timetable").
+    id: "timetable", route: "/portal/timetable", name: "Timetable", menuLabel: "Physics timetable", icon: "CalendarClock",
+    access: ["student", "parent", "staff", "registrar-desk", "coordinator-desk"],
+    purpose: "See lessons and additional classes filtered for your school, class and group.",
+  },
+  {
     id: "library", route: "/portal/library", name: "Resource Library", menuLabel: "Resource Library", icon: "BookOpen",
     access: ["member", "coordinator-desk"],
     purpose: "Open approved notes, worksheets, videos and collaborative learning material.",
@@ -326,6 +363,16 @@ export const GENERAL_ITEMS: readonly PortalItem[] = [
     id: "install", route: "/portal/install", name: "Install App", menuLabel: "Install App", icon: "Download",
     access: ["everyone"],
     purpose: "Add the portal to your phone, tablet or computer.",
+  },
+  {
+    id: "onboarding", route: "/portal/onboarding", name: "Complete your profile", menuLabel: "Complete your profile", icon: "UserCog",
+    access: ["student"], listed: false,
+    purpose: "Set up your profile and a parent or guardian contact before using the portal.",
+  },
+  {
+    id: "task", route: "/portal/tasks/[id]", name: "Assigned task", menuLabel: "Assigned task", icon: "ListChecks",
+    access: ["student"], listed: false,
+    purpose: "One task assigned to you, with its details and due date.",
   },
 ];
 
@@ -346,6 +393,7 @@ export const STAFF_ITEMS: readonly PortalItem[] = [
   { id: "academics", route: "/portal/admin/academics", name: "Academics", menuLabel: "Academics", icon: "GraduationCap", access: ["admin"], purpose: "Manage academic configuration and teaching structures." },
   { id: "finance", route: "/portal/admin/finance", name: "Fees & Finance", menuLabel: "Fees & Finance", icon: "Receipt", access: ["admin"], purpose: "Access authorised fee and finance administration." },
   { id: "classes", route: "/portal/teach", name: "My Classes", menuLabel: "My Classes", icon: "Presentation", access: ["class-teacher"], purpose: "Open the classes and students assigned to you." },
+  { id: "demo-student-access", route: "/portal/admin/demo-student-access", name: "Private demo-student access", menuLabel: "Private demo-student access", icon: "LockKeyhole", access: ["super-admin"], listed: false, purpose: "Generate a fresh password for the private Portal QA Student." },
 ];
 
 /** The registry entry for an id, or null for anything that isn't a subject. */
@@ -409,6 +457,18 @@ export function courseClassLabel(course: CourseDef): string {
   return course.code ? `${course.level} (${course.code})` : course.level;
 }
 
+/** "CAIE 9702" (how Exam Lab work is named); the full name for a course
+ *  with no board or code. */
+export function courseBoardLabel(course: CourseDef): string {
+  return course.board && course.code ? `${course.board} ${course.code}` : course.label;
+}
+
+/** The first lines of a new account's welcome email: its course's, or the
+ *  general welcome for an account with no course. */
+export function welcomeIntro(course: string | null | undefined): string {
+  return (course ? courseOf(course)?.welcome : null) ?? GENERAL_WELCOME;
+}
+
 /** The subjects a set of courses opens, in registry order (9702 -> physics). */
 export function subjectsForCourses(courses: readonly string[]): SubjectId[] {
   return SUBJECTS.filter((s) => s.courses.some((c) => courses.includes(c))).map((s) => s.id);
@@ -441,34 +501,50 @@ export function portalItem(id: PortalItemId): PortalItem {
   return itemEntry(id).item;
 }
 
-/** A subject's space: its own modules and those of the subjects shown inside
- *  it (Practical Lab inside Physics), interleaved by `order`. */
+/** A subject's space: its own listed modules and those of the subjects shown
+ *  inside it (Practical Lab inside Physics), interleaved by `order`. */
 export function spaceModules(spaceId: SubjectId): { module: SubjectModule; subject: SubjectDef }[] {
   return SUBJECTS
     .filter((s) => s.id === spaceId || s.partOf === spaceId)
-    .flatMap((subject) => subject.modules.map((module) => ({ module, subject })))
+    .flatMap((subject) => subject.modules.filter((module) => module.listed !== false).map((module) => ({ module, subject })))
     .sort((a, b) => a.module.order - b.module.order);
 }
 
 const pagePath = (route: string) => route.split(/[?#]/)[0];
+const segmentsOf = (path: string) => path.split("/").filter(Boolean);
+const isParam = (segment: string) => segment.startsWith("[") && segment.endsWith("]");
+
+/** How closely a page covers a path: -1 when it doesn't; otherwise more for
+ *  more segments, and a named segment beats a `[param]` one. */
+function coverage(page: string, path: string, home: string): number {
+  if (page === home) return path === home ? 0 : -1;
+  const want = segmentsOf(page);
+  const got = segmentsOf(path);
+  if (got.length < want.length) return -1;
+  let params = 0;
+  for (let i = 0; i < want.length; i++) {
+    if (isParam(want[i])) params++;
+    else if (want[i] !== got[i]) return -1;
+  }
+  return want.length * 10 - params;
+}
 
 /** The item a portal path belongs to: the one whose page is the path or the
- *  longest prefix of it ("/portal/sat-lab/abc" -> SAT Today). The portal home
- *  matches itself only. Query strings and #sections are ignored. null for a
- *  path no item covers. */
+ *  closest prefix of it ("/portal/sat-lab/abc" -> SAT Today,
+ *  "/portal/tasks/9" -> Assigned task). The portal home matches itself only.
+ *  Query strings and #sections are ignored. null for a path no item covers. */
 export function itemForPath(pathname: string | null | undefined): ItemEntry | null {
   const path = pagePath(pathname || "").replace(/(.)\/+$/, "$1").toLowerCase();
   const home = pagePath(portalItem("home").route);
   let best: ItemEntry | null = null;
-  let bestLength = -1;
+  let bestScore = -1;
   for (const entry of ALL_ITEMS) {
-    const page = pagePath(entry.item.route);
-    const hit = path === page || (page !== home && path.startsWith(`${page}/`));
+    const score = coverage(pagePath(entry.item.route), path, home);
     // The first item wins a tie: two items on one page (SAT Today and its
     // Practice section) name the page after the first.
-    if (hit && page.length > bestLength) {
+    if (score > bestScore) {
       best = entry;
-      bestLength = page.length;
+      bestScore = score;
     }
   }
   return best;
@@ -521,22 +597,61 @@ export function audiencesOf(roles: readonly EduRole[]): Set<Audience> {
   return audiences;
 }
 
-/** A portal user as the registry sees them: their roles and the subjects
- *  they have (staff: every subject; a student: their classes' and grants'
- *  subjects -- the caller works these out on the server). */
-export type Viewer = { roles: readonly EduRole[]; subjects: readonly SubjectId[] };
+/**
+ * What the server knows about a viewer, all the registry needs:
+ * - `roles`: their (effective) roles;
+ * - `courses`: the courses course access opens for them
+ *   (course-access.ts `resolveCourseAccess(user).allowed`: their classes and
+ *   direct grants -- SAT by class or by grant). For a parent, pass their
+ *   children's courses when known, else none;
+ * - `practicalLab`: whether Practical Lab is switched on for them
+ *   (practical-lab.ts `practicalLabAccess(user).ok`).
+ */
+export type ViewerFacts = { roles: readonly EduRole[]; courses: readonly string[]; practicalLab: boolean };
 
-/** Whether a viewer sees an item: they are in one of its audiences and, for
- *  a subject's module, they have that subject. */
-export function canSee(entry: ItemEntry, viewer: Viewer): boolean {
-  if (entry.subject && !viewer.subjects.includes(entry.subject.id)) return false;
-  const audiences = audiencesOf(viewer.roles);
+/**
+ * The subjects a viewer has -- THE rule behind `visibleItems` (and so behind
+ * the subject picker, the spaces, the finder and the app's module list):
+ * - Exam Lab staff (teacher, coordinator, facilitator, admin, super admin):
+ *   every subject -- they teach across all of them and their menu has always
+ *   listed Exam Lab, Practical Lab and the SAT Lab;
+ * - everyone else: the subjects of their own courses, plus Practical Lab when
+ *   it is switched on for them;
+ * - and anyone who isn't a student -- other staff, parents, an account with
+ *   no role -- also keeps the class-granted subjects (Physics), whose shared
+ *   pages (Physics Resources, Physics Studio for staff) they have always had.
+ * A student has only their own: a student in no physics class has no Physics.
+ * With a physics course assumed for students, this shows exactly what the
+ * portal menu showed before the registry for every combination of the 12
+ * roles and both switches (scripts/test-subject-registry.mjs).
+ */
+export function viewerSubjects({ roles, courses, practicalLab }: ViewerFacts): SubjectId[] {
+  if (isExamLabStaff(roles)) return SUBJECTS.map((s) => s.id);
+  const has = new Set<SubjectId>(subjectsForCourses(courses));
+  if (practicalLab) has.add("practical-lab");
+  if (!roles.includes("student") || isStaff(roles)) for (const s of CLASS_SUBJECTS) has.add(s.id);
+  return SUBJECTS.filter((s) => has.has(s.id)).map((s) => s.id);
+}
+
+function seen(entry: ItemEntry, audiences: ReadonlySet<Audience>, subjects: readonly SubjectId[]): boolean {
+  if (entry.item.listed === false) return false;
+  if (entry.subject && !subjects.includes(entry.subject.id)) return false;
   return entry.item.access.some((a) => audiences.has(a));
 }
 
-/** Every item a viewer sees, in ALL_ITEMS order. */
-export function visibleItems(viewer: Viewer): ItemEntry[] {
-  return ALL_ITEMS.filter((entry) => canSee(entry, viewer));
+/** Whether a viewer sees an item: it is listed, they are in one of its
+ *  audiences and, for a subject's module, they have that subject
+ *  (`viewerSubjects`). */
+export function canSee(entry: ItemEntry, viewer: ViewerFacts): boolean {
+  return seen(entry, audiencesOf(viewer.roles), viewerSubjects(viewer));
+}
+
+/** Every place a viewer sees, in ALL_ITEMS order: the one visibility rule
+ *  the subject-first navigation and the app's module list use. */
+export function visibleItems(viewer: ViewerFacts): ItemEntry[] {
+  const audiences = audiencesOf(viewer.roles);
+  const subjects = viewerSubjects(viewer);
+  return ALL_ITEMS.filter((entry) => seen(entry, audiences, subjects));
 }
 
 // --- direct grants -----------------------------------------------------------------

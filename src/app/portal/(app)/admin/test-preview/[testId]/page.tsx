@@ -3,9 +3,10 @@ import { requireAdmin, isSuperAdmin } from "@/lib/portal/admin";
 import { SECURE_BANK } from "@/lib/exam-lab/image-bank";
 import { imageUrls } from "@/lib/sat/signed-images";
 import { StaffPaperImage } from "@/components/exam-lab/staff-paper-image";
+import { portalItem } from "@/lib/portal/subjects";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Test question preview" };
+export const metadata = { title: portalItem("test-preview").menuLabel };
 
 const TESTS: Record<string, { title: string; slot: string }> = {
   "ct1-lacas-sep11-7pm": {

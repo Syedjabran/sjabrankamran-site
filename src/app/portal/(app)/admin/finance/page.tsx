@@ -2,8 +2,9 @@ import { redirect } from "next/navigation";
 import { Receipt } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getPortalUser, type EduRole } from "@/lib/edu/auth";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "Fees & Finance" };
+export const metadata = { title: portalItem("finance").menuLabel };
 
 function canSeeFinance(roles: EduRole[]) {
   return roles.some((r) => ["super_admin", "admin", "finance_manager"].includes(r));

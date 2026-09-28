@@ -9,6 +9,9 @@
 import { getPortalUser, isAdmin, canAccessGlobalStaffData, ROLE_LABELS, type EduRole, type PortalUser } from "@/lib/edu/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendMail } from "@/lib/portal/mail";
+import { getRegistry } from "@/lib/portal/institutions";
+import { welcomeCourse, type Course } from "@/lib/portal/course-labels";
+import { coursesFromGrants, welcomeIntro, type SubjectId } from "@/lib/portal/subjects";
 
 export const ALL_ROLES = Object.keys(ROLE_LABELS) as EduRole[];
 export const STUDENT_STATUSES = ["active", "archived", "invited"] as const;
@@ -61,14 +64,16 @@ export async function audit(
   }
 }
 
-/** Welcome / credentials email (same voice as the student welcome blast). */
-export function credentialsEmail(name: string, email: string, password: string, isReset = false) {
+/** Welcome / credentials email (same voice as the student welcome blast).
+ *  `course`: the course the new account's welcome is written for
+ *  (welcomeCourseFor); null for an account with no course. */
+export function credentialsEmail(name: string, email: string, password: string, isReset = false, course: Course | null = null) {
   const subject = isReset
     ? "Your Physics portal password has been reset"
     : "Your Physics portal login - sjabrankamran.com";
   const intro = isReset
     ? "Your Physics portal password has been reset. Here are your current sign-in details."
-    : "Welcome to your A-Level Physics learning portal. You now have your own account where you can sit real CAIE 9702 past papers, take timed topic drills with instant marking and feedback, and track your progress through the year.";
+    : welcomeIntro(course);
   const text = `Dear ${name},
 
 ${intro}
@@ -94,14 +99,29 @@ Physics | sjabrankamran.com`;
   return { subject, text, html };
 }
 
+/**
+ * The course a new account's welcome email is written for: a student's
+ * class (read from the class registry) and directly granted subjects, ranked
+ * as course access ranks them; null for anyone else, or a student with
+ * neither. A failed registry read counts the class as unplaced, which course
+ * access treats as A Level (9702).
+ */
+export async function welcomeCourseFor(roles: readonly string[], classId: string | null | undefined, subjects: readonly SubjectId[]): Promise<Course | null> {
+  if (!roles.includes("student")) return null;
+  const directCourses = coursesFromGrants(Object.fromEntries(subjects.map((s) => [s, true])));
+  const classes = classId ? (await getRegistry().catch(() => null))?.classes ?? [] : [];
+  return welcomeCourse(classId || null, classes, directCourses);
+}
+
 export async function emailCredentials(
   actorId: string,
   to: string,
   name: string,
   password: string,
-  isReset = false
+  isReset = false,
+  course: Course | null = null
 ): Promise<{ status: string; error?: string }> {
-  const { subject, text, html } = credentialsEmail(name, to, password, isReset);
+  const { subject, text, html } = credentialsEmail(name, to, password, isReset, course);
   const r = await sendMail({
     to: [to],
     subject,
