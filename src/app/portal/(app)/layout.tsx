@@ -5,7 +5,7 @@ import { getPortalUser, ROLE_LABELS, isAdmin, isStaff, isRegistrarOnly, isCoordi
 import { getPortalRestriction } from "@/lib/portal/access-control";
 import { onboardingStatus } from "@/lib/portal/onboarding";
 import { HelperViewerCourses } from "@/components/helper-viewer";
-import { PRACTICAL_LAB_PAGE } from "@/lib/portal/practical-lab-access";
+import { deskRoutes, onDeskRoute } from "@/lib/portal/portal-nav";
 import { viewerNav } from "@/lib/portal/viewer-nav";
 import { SPACE_COOKIE } from "@/lib/portal/space-cookie";
 import { isEmbeddedClient } from "@/lib/portal/embed";
@@ -65,26 +65,15 @@ export default async function PortalLayout({ children }: { children: React.React
     redirect("/portal/onboarding");
   }
 
-  // Attendance Registrar hard-scope: this restricted role may ONLY reach the
-  // dashboard and the read-only daily attendance view. Since the role passes
-  // isStaff() (so it can read attendance), we must fence it out of every other
-  // staff surface here rather than page-by-page.
-  if (isRegistrarOnly(user.roles) && pathname) {
-    const allowed = [
-      "/portal",
-      "/portal/admin/attendance-view",
-      "/portal/timetable",
-      "/portal/install",
-      "/portal/settings",
-      "/portal/auth",
-      "/portal/onboarding",
-    ];
-    const ok = allowed.some((a) => pathname === a || pathname.startsWith(a + "/"));
-    if (!ok) redirect("/portal/admin/attendance-view");
-  }
-  if (isCoordinatorOnly(user.roles) && pathname) {
-    const allowed = ["/portal", "/portal/search", "/portal/subjects", "/portal/coordinator", "/portal/admin/attendance-view", "/portal/timetable", "/portal/library", "/portal/resources", "/portal/notifications", "/portal/install", "/portal/settings", "/portal/auth", PRACTICAL_LAB_PAGE];
-    if (!allowed.some((a) => pathname === a || pathname.startsWith(a + "/"))) redirect("/portal/coordinator");
+  // Desk hard-scope: an attendance registrar, or a coordinator/facilitator,
+  // with no fuller role may ONLY reach the pages their own navigation offers
+  // (their desk, its subject space, General) plus sign-in and onboarding --
+  // portal-nav.ts `deskRoutes`. Both roles pass isStaff() for what they do
+  // read, so they are fenced out of every other staff surface here rather
+  // than page-by-page. The portal home matches only exactly (it used to match
+  // every portal path as a prefix, so this fence never fired).
+  if ((isRegistrarOnly(user.roles) || isCoordinatorOnly(user.roles)) && pathname && !onDeskRoute(pathname, deskRoutes(nav))) {
+    redirect(nav.homeHref);
   }
 
   // Rendered inside the mobile app's WebView, which supplies its own title

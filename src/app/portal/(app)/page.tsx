@@ -19,22 +19,9 @@ import { satProfileOf, studentWork } from "@/lib/portal/student-work";
 import { planLine, satGlance } from "@/lib/portal/glance";
 import { SPACE_COOKIE } from "@/lib/portal/space-cookie";
 import { courseOf, courseShortLabel, subjectOf, type SubjectId } from "@/lib/portal/subjects";
-import type { PortalNav } from "@/lib/portal/portal-nav";
-import { LinkGroup, MoreGroup, SubjectCards } from "./portal-home-nav";
+import { HomeGroups, SubjectCards } from "./portal-home-nav";
 
 export const metadata = { title: "Portal Dashboard" };
-
-/** The home page's groups under the subject cards (the sidebar's replacement):
- *  Administration for staff, General, and More (folded) when there is any. */
-function HomeGroups({ nav }: { nav: PortalNav }) {
-  return (
-    <>
-      <LinkGroup id="administration" title="Administration" links={nav.admin} tour="group-admin" />
-      <LinkGroup id="general" title="General" links={nav.general} tour="group-general" />
-      <MoreGroup links={nav.more} />
-    </>
-  );
-}
 
 async function count(table: string, filter?: (q: unknown) => unknown): Promise<number | null> {
   try {
@@ -285,10 +272,13 @@ export default async function PortalDashboard() {
   // administrator's own account.
   const planUid = user.roles.includes("student") ? user.id : DEMO_STUDENT_UID;
   const isStudent = effRoles.includes("student");
-  const work = isStudent ? await studentWork(planUid) : null;
   const physicsWork = nav.spaces.some((s) => s.modules.some((m) => m.id === "exam-lab"));
   const satSpace = nav.spaces.some((s) => s.modules.some((m) => m.id === "sat-today"));
-  const satProfile = isStudent && satSpace ? await satProfileOf(planUid) : undefined;
+  // Both reads at once: the open work (all students) and the SAT plan settings.
+  const [work, satProfile] = await Promise.all([
+    isStudent ? studentWork(planUid) : null,
+    isStudent && satSpace ? satProfileOf(planUid) : undefined,
+  ]);
 
   // Priority model (master prompt E1): 1 dominant continue-action, then
   // deadlines. Open allocations sort by due date; a missing due date sorts
@@ -363,7 +353,7 @@ export default async function PortalDashboard() {
         ) : null}
       </div>
 
-      <SubjectCards nav={nav} glances={glances} courses={courseLines} unavailable={viewer.subjectsUnavailable} />
+      <SubjectCards nav={nav} glances={glances} courses={courseLines} unavailable={viewer.subjectsUnavailable} emptyNote={isStudent} />
 
       {/* Up next — the dominant continue-action */}
       {heroAlloc ? (

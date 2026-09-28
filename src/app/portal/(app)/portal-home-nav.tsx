@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { ArrowRight, ChevronDown } from "lucide-react";
 import { PortalIcon } from "@/components/portal-icon";
-import { ACCENT_CLASSES, subjectOf, type SubjectId } from "@/lib/portal/subjects";
-import type { NavLink, PortalNav, SpaceNav } from "@/lib/portal/portal-nav";
+import { ACCENT_CLASSES, type SubjectId } from "@/lib/portal/subjects";
+import { homeSections, type NavLink, type PortalNav, type SpaceNav } from "@/lib/portal/portal-nav";
 
 /**
  * The home page's buttons (the sidebar's replacement): a card per subject
- * space, then small groups for General, Administration and More. Server
- * components; everything they list comes from the viewer's navigation.
+ * space, then small groups for Administration and General -- on the portal
+ * home and on a desk role's desk. Server components; everything they list
+ * comes from the viewer's navigation (portal-nav.ts `homeSections`).
  */
 
 /** A link that honours the registry's full-page-load flag. */
@@ -51,14 +52,17 @@ export function SubjectCard({ space, glance, course }: { space: SpaceNav; glance
   );
 }
 
-/** The viewer's subject cards; a note instead when they have none. */
-export function SubjectCards({ nav, glances = {}, courses = {}, unavailable = false }: {
+/** The viewer's subject cards. With none: a note for a student (`emptyNote`),
+ *  nothing for anyone else (a parent's shared pages are in General). */
+export function SubjectCards({ nav, glances = {}, courses = {}, unavailable = false, emptyNote = false }: {
   nav: PortalNav;
   glances?: Partial<Record<SubjectId, string | null>>;
   courses?: Partial<Record<SubjectId, string | null>>;
   /** Their subjects couldn't be read just now. */
   unavailable?: boolean;
+  emptyNote?: boolean;
 }) {
+  if (!nav.spaces.length && !emptyNote && !unavailable) return null;
   return (
     <section aria-labelledby="your-subjects">
       <h2 id="your-subjects" className="mb-3 text-xs font-semibold uppercase tracking-wider text-dust">Your subjects</h2>
@@ -77,10 +81,10 @@ export function SubjectCards({ nav, glances = {}, courses = {}, unavailable = fa
   );
 }
 
-/** A small button for a general, staff or More page: the icon above the name
- *  on a phone (two to a row, so a long name keeps the tile's full width),
- *  beside it from the small breakpoint up. */
-function Tile({ link, tag }: { link: NavLink; tag?: string }) {
+/** A small button for a general or staff page: the icon above the name on a
+ *  phone (two to a row, so a long name keeps the tile's full width), beside
+ *  it from the small breakpoint up. */
+function Tile({ link }: { link: NavLink }) {
   return (
     <Go link={link}
       className={`group flex min-h-14 min-w-0 flex-col items-start gap-2 rounded-2xl border border-white/10 bg-space/40 px-3 py-2.5 transition hover:border-cyan/30 hover:bg-white/[0.03] sm:flex-row sm:items-center sm:gap-3 ${FOCUS}`}>
@@ -89,7 +93,6 @@ function Tile({ link, tag }: { link: NavLink; tag?: string }) {
       </span>
       <span className="w-full min-w-0 sm:w-auto">
         <span className="line-clamp-2 break-words text-sm leading-snug text-ice">{link.name}</span>
-        {tag ? <span className="block truncate text-[11px] text-dust">{tag}</span> : null}
       </span>
     </Go>
   );
@@ -122,23 +125,28 @@ export function LinkGroup({ id, title, links, tour, fold = 8 }: {
   );
 }
 
-/** Pages the old menu reached whose subject isn't on the viewer's account,
- *  folded away under "More pages" so they stay one click from home. */
-export function MoreGroup({ links }: { links: NavLink[] }) {
-  if (!links.length) return null;
+/** The Administration and General groups of a home page (the portal home, or
+ *  a desk -- `except` leaves out the desk's own tile on that desk). */
+export function HomeGroups({ nav, except }: { nav: PortalNav; except?: string }) {
+  const { admin, general } = homeSections(nav, except);
   return (
-    <details data-tour="group-more" className="group/more rounded-2xl border border-white/10 bg-space/30">
-      <summary className={`flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-4 text-sm text-fog hover:text-ice [&::-webkit-details-marker]:hidden ${FOCUS}`}>
-        <span>More pages <span className="text-dust">({links.length})</span></span>
-        <ChevronDown size={15} aria-hidden="true" className="shrink-0 transition group-open/more:rotate-180" />
-      </summary>
-      <div className="px-4 pb-4">
-        <p className="mb-3 text-xs text-dust">From subjects that aren&rsquo;t on your account.</p>
-        <div className={TILE_GRID}>
-          {links.map((link) => <Tile key={link.id} link={link} tag={link.space ? subjectOf(link.space)?.label : undefined} />)}
-        </div>
-      </div>
-    </details>
+    <>
+      <LinkGroup id="administration" title="Administration" links={admin} tour="group-admin" />
+      <LinkGroup id="general" title="General" links={general} tour="group-general" />
+    </>
+  );
+}
+
+/** A desk role's desk page (coordinator desk, daily attendance) is their home
+ *  (the portal home sends them there): its subject cards and groups sit
+ *  above the desk's own content, so every page their navigation offers is a
+ *  button there too. */
+export function DeskGroups({ nav }: { nav: PortalNav }) {
+  return (
+    <div className="el-noprint mb-10 space-y-8 border-b border-white/[0.06] pb-8">
+      <SubjectCards nav={nav} />
+      <HomeGroups nav={nav} except={nav.homeHref} />
+    </div>
   );
 }
 

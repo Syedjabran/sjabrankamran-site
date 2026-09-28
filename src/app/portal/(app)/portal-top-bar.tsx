@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, ChevronRight, House, LayoutGrid, LogOut, Search, Settings } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, ChevronRight, Globe, LayoutGrid, LogOut, Search, Settings } from "lucide-react";
 import { PortalIcon } from "@/components/portal-icon";
 import { ACCENT_CLASSES, type SubjectId } from "@/lib/portal/subjects";
 import { breadcrumbFor, finderEntries, spaceIdForPath, type Crumb, type PortalNav, type SpaceNav } from "@/lib/portal/portal-nav";
 import { SPACE_COOKIE } from "@/lib/portal/space-cookie";
+import { PORTAL_NAME } from "@/lib/portal/brand";
 import { PortalFinder } from "./portal-finder";
 import { PortalProductTour } from "./portal-product-tour";
 import { NotificationBell } from "./notification-bell";
@@ -18,28 +19,34 @@ const ROUND_BUTTON =
 const MENU_PANEL = "absolute z-50 mt-2 rounded-2xl border border-white/10 bg-abyss/95 p-1.5 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur";
 const MENU_ITEM = "flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-fog transition hover:bg-white/[0.05] hover:text-ice focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan";
 
-/** Closes a menu on a click outside it or on Escape. */
-function useDismiss(open: boolean, close: () => void) {
+/**
+ * A disclosure: a button that shows and hides a small panel of links. It
+ * closes on a click outside, on Escape (focus goes back to its button) and
+ * when the page changes. Plain links inside, reached with Tab -- not an ARIA
+ * menu, which would promise arrow-key behaviour.
+ */
+function useDisclosure() {
+  const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelId = useId();
+  const close = useCallback(() => setOpen(false), []);
+  const pathname = usePathname();
+  useEffect(() => { setOpen(false); }, [pathname]);
   useEffect(() => {
     if (!open) return;
-    const onPointer = (e: PointerEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) close(); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    const onPointer = (e: PointerEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      buttonRef.current?.focus();
+    };
     document.addEventListener("pointerdown", onPointer);
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("pointerdown", onPointer); document.removeEventListener("keydown", onKey); };
-  }, [open, close]);
-  return ref;
-}
-
-/** A small menu's open state; it closes itself when the page changes. */
-function useMenu() {
-  const [open, setOpen] = useState(false);
-  const close = useCallback(() => setOpen(false), []);
-  const ref = useDismiss(open, close);
-  const pathname = usePathname();
-  useEffect(() => { setOpen(false); }, [pathname]);
-  return { open, setOpen, close, ref };
+  }, [open]);
+  const button = { ref: buttonRef, "aria-expanded": open, "aria-controls": panelId, onClick: () => setOpen((o) => !o) };
+  return { open, close, ref, button, panelId };
 }
 
 function SubjectSwitcher({ spaces, current, here, onFind }: {
@@ -50,11 +57,11 @@ function SubjectSwitcher({ spaces, current, here, onFind }: {
   here: boolean;
   onFind: () => void;
 }) {
-  const { open, setOpen, close, ref } = useMenu();
+  const { open, close, ref, button, panelId } = useDisclosure();
   const accent = current ? ACCENT_CLASSES[current.accent] : null;
   return (
     <div ref={ref} className="relative" data-tour="portal-switcher">
-      <button type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}
+      <button type="button" {...button}
         aria-label={current ? `Subject: ${current.label}. Switch subject` : "Switch subject"}
         className={`${ROUND_BUTTON} px-2.5 sm:px-3.5 ${here ? "text-ice" : ""}`}>
         {current && accent ? <PortalIcon name={current.icon} size={15} className={accent.text} /> : <LayoutGrid size={15} aria-hidden="true" />}
@@ -62,19 +69,23 @@ function SubjectSwitcher({ spaces, current, here, onFind }: {
         <ChevronDown size={14} aria-hidden="true" className="text-dust" />
       </button>
       {open ? (
-        <div role="menu" className={`${MENU_PANEL} left-0 w-64 max-w-[calc(100vw-2rem)]`}>
+        <div id={panelId} className={`${MENU_PANEL} left-0 w-64 max-w-[calc(100vw-2rem)]`}>
           <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-dust">Your subjects</p>
-          {spaces.map((space) => (
-            <Link key={space.id} role="menuitem" href={space.href} onClick={close} className={MENU_ITEM}>
-              <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border ${ACCENT_CLASSES[space.accent].border} ${ACCENT_CLASSES[space.accent].text}`}>
-                <PortalIcon name={space.icon} size={15} />
-              </span>
-              <span className="min-w-0 flex-1 truncate text-ice">{space.label}</span>
-              {space.id === current?.id && here ? <Check size={14} aria-label="You are here" className="shrink-0 text-cyan" /> : null}
-            </Link>
-          ))}
+          <ul>
+            {spaces.map((space) => (
+              <li key={space.id}>
+                <Link href={space.href} onClick={close} aria-current={space.id === current?.id && here ? "true" : undefined} className={MENU_ITEM}>
+                  <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border ${ACCENT_CLASSES[space.accent].border} ${ACCENT_CLASSES[space.accent].text}`}>
+                    <PortalIcon name={space.icon} size={15} />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-ice">{space.label}</span>
+                  {space.id === current?.id && here ? <Check size={14} aria-label="You are here" className="shrink-0 text-cyan" /> : null}
+                </Link>
+              </li>
+            ))}
+          </ul>
           <div className="my-1 border-t border-white/10" />
-          <button type="button" role="menuitem" onClick={() => { close(); onFind(); }} className={MENU_ITEM}>
+          <button type="button" onClick={() => { close(); onFind(); }} className={MENU_ITEM}>
             <Search size={15} aria-hidden="true" className="shrink-0" /> All pages…
           </button>
         </div>
@@ -104,29 +115,32 @@ function Breadcrumb({ crumbs }: { crumbs: Crumb[] }) {
 }
 
 function AccountMenu({ user }: { user: { name: string; roles: string; staff: boolean } }) {
-  const { open, setOpen, close, ref } = useMenu();
+  const { open, close, ref, button, panelId } = useDisclosure();
   const initial = (user.name.trim()[0] || "?").toUpperCase();
   return (
     <div ref={ref} className="relative">
-      <button type="button" data-tour="portal-profile" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}
-        aria-label="Your account" className={`${ROUND_BUTTON} pl-1 pr-1 sm:pr-3`}>
+      <button type="button" data-tour="portal-profile" {...button} aria-label="Your account" className={`${ROUND_BUTTON} pl-1 pr-1 sm:pr-3`}>
         <span className="grid h-7 w-7 place-items-center rounded-full border border-cyan/30 bg-cyan/10 font-display text-xs font-semibold text-cyan">{initial}</span>
         <span className="hidden max-w-[8rem] truncate text-ice md:inline">{user.name.split(" ")[0]}</span>
         <ChevronDown size={14} aria-hidden="true" className="hidden text-dust sm:block" />
       </button>
       {open ? (
-        <div role="menu" className={`${MENU_PANEL} right-0 w-72 max-w-[calc(100vw-2rem)]`}>
+        <div id={panelId} className={`${MENU_PANEL} right-0 w-72 max-w-[calc(100vw-2rem)]`}>
           <div className="px-3 pb-2 pt-2">
             <p className="truncate font-display text-sm font-semibold text-ice">{user.name}</p>
             <p className="mt-0.5 text-xs text-dust">{user.roles}</p>
             {user.staff ? <span className="mt-2 inline-block rounded-full border border-emerald2/30 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-widest text-emerald2">Staff</span> : null}
           </div>
           <div className="my-1 border-t border-white/10" />
-          <Link role="menuitem" href="/portal/settings" onClick={close} className={MENU_ITEM}>
+          <Link href="/portal/settings" onClick={close} className={MENU_ITEM}>
             <Settings size={15} aria-hidden="true" className="shrink-0" /> Profile &amp; settings
           </Link>
+          {/* The public site: its own header isn't shown inside the portal. */}
+          <Link href="/" onClick={close} className={MENU_ITEM}>
+            <Globe size={15} aria-hidden="true" className="shrink-0" /> Main website
+          </Link>
           <form action="/portal/auth/signout" method="post">
-            <button type="submit" role="menuitem" className={MENU_ITEM}>
+            <button type="submit" className={MENU_ITEM}>
               <LogOut size={15} aria-hidden="true" className="shrink-0" /> Sign out
             </button>
           </form>
@@ -136,11 +150,24 @@ function AccountMenu({ user }: { user: { name: string; roles: string; staff: boo
   );
 }
 
+/** The portal's brand: the SJAK mark and the portal's name. */
+function Brand() {
+  return (
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element -- a small static brand mark */}
+      <img src="/brand/sjak-monogram.webp" alt="" width={36} height={36} className="h-9 w-auto" />
+      <span className="hidden whitespace-nowrap font-display text-sm font-semibold text-ice sm:inline">{PORTAL_NAME}</span>
+    </>
+  );
+}
+
 /**
- * The bar at the top of every portal page (the sidebar's replacement): Home,
- * the subject switcher, where you are ("Physics › Exam Lab"), "Find a page…"
- * (also Ctrl/Cmd+K), the tour, alerts and your account. Everything it lists
- * comes from the viewer's navigation, built on the server from the registry.
+ * The bar at the top of every portal page (the sidebar's and the public site
+ * header's replacement): the portal's brand, which is Home (a desk role's
+ * desk), the subject switcher, where you are ("Physics › Exam Lab"), "Find
+ * a page…" (also Ctrl/Cmd+K), the tour, alerts and your account (with the way
+ * back to the main website). Everything it lists comes from the viewer's
+ * navigation, built on the server from the registry.
  */
 export function PortalTopBar({ nav, remembered, navigable, tourAutoStart, user, rolePreview }: {
   nav: PortalNav;
@@ -194,18 +221,19 @@ export function PortalTopBar({ nav, remembered, navigable, tourAutoStart, user, 
     <header className="el-noprint mb-6 border-b border-white/[0.06] pb-4 sm:mb-8">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
         {navigable ? (
-          <>
-            <Link href="/portal" prefetch={false} data-tour="portal-home" aria-label="Home" className={`${ROUND_BUTTON} px-2.5 sm:px-3.5`}>
-              <House size={15} aria-hidden="true" /> <span className="hidden sm:inline">Home</span>
-            </Link>
-            {nav.spaces.length ? <SubjectSwitcher spaces={nav.spaces} current={shown} here={!!pageSpace} onFind={() => setFinding(true)} /> : null}
-            {crumbs.length ? (
-              // Its own line on phones and tablets; beside the switcher on a wide screen.
-              <div className="order-last w-full min-w-0 lg:order-none lg:w-auto lg:flex-1 lg:pl-2">
-                <Breadcrumb crumbs={crumbs} />
-              </div>
-            ) : null}
-          </>
+          <Link href={nav.homeHref} prefetch={false} data-tour="portal-home" aria-label={`${PORTAL_NAME}: home`} title="Home"
+            className="mr-1 inline-flex h-9 shrink-0 items-center gap-2.5 rounded-full pr-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan">
+            <Brand />
+          </Link>
+        ) : (
+          <span className="mr-1 inline-flex h-9 shrink-0 items-center gap-2.5"><Brand /></span>
+        )}
+        {navigable && nav.spaces.length ? <SubjectSwitcher spaces={nav.spaces} current={shown} here={!!pageSpace} onFind={() => setFinding(true)} /> : null}
+        {navigable && crumbs.length ? (
+          // Its own line on phones and tablets; beside the switcher on a wide screen.
+          <div className="order-last w-full min-w-0 lg:order-none lg:w-auto lg:flex-1 lg:pl-2">
+            <Breadcrumb crumbs={crumbs} />
+          </div>
         ) : null}
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
           {navigable ? (

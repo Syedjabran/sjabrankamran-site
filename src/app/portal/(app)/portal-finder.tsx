@@ -18,7 +18,9 @@ export function useOpenLink() {
 /**
  * "Find a page…": every destination the viewer has, grouped as the home page
  * groups them, filtered as they type. A centred panel on larger screens and
- * the whole screen on a phone. Arrow keys move, Enter opens, Escape closes.
+ * the whole screen on a phone. In the search box the arrow keys move and
+ * Enter opens; Escape closes from anywhere; Tab stays inside the dialog, and
+ * focus goes back to where it was when the finder closes.
  */
 export function PortalFinder({ entries, searchHref, onClose }: {
   entries: readonly FinderEntry[];
@@ -30,11 +32,18 @@ export function PortalFinder({ entries, searchHref, onClose }: {
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const open = useOpenLink();
   const listId = useId();
   const results = useMemo(() => findPages(entries, query), [entries, query]);
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  // Focus the search box; give focus back to the opener (the Find button, the
+  // switcher) when the finder closes.
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    inputRef.current?.focus();
+    return () => { if (opener?.isConnected) opener.focus(); };
+  }, []);
   useEffect(() => { setActive(0); }, [query]);
   useEffect(() => {
     listRef.current?.querySelector<HTMLElement>(`[data-index="${active}"]`)?.scrollIntoView({ block: "nearest" });
@@ -52,22 +61,36 @@ export function PortalFinder({ entries, searchHref, onClose }: {
     open(entry.link.href, entry.link.hardNavigate);
   }
 
-  function onKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Escape") { e.preventDefault(); onClose(); }
-    else if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => Math.min(i + 1, results.length - 1)); }
+  // Escape closes from anywhere in the dialog; Tab and Shift+Tab wrap inside it.
+  function onDialogKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
+    if (e.key !== "Tab" || !dialogRef.current) return;
+    const focusable = [...dialogRef.current.querySelectorAll<HTMLElement>("input, button, [href], [tabindex]:not([tabindex='-1'])")]
+      .filter((el) => !el.hasAttribute("disabled"));
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+
+  // The list keys belong to the search box only, so Enter on "Search
+  // everything" or on Close does what that button says.
+  function onInputKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "ArrowDown") { e.preventDefault(); setActive((i) => Math.min(i + 1, results.length - 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => Math.max(i - 1, 0)); }
     else if (e.key === "Enter") { e.preventDefault(); choose(results[active]); }
   }
 
   const q = query.trim();
   return (
-    <div className="fixed inset-0 z-[130] flex items-start justify-center sm:px-4 sm:pt-[12vh]" onKeyDown={onKeyDown}>
+    <div className="fixed inset-0 z-[130] flex items-start justify-center sm:px-4 sm:pt-[12vh]">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px]" onClick={onClose} aria-hidden="true" />
-      <div role="dialog" aria-modal="true" aria-label="Find a page"
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Find a page" onKeyDown={onDialogKeyDown}
         className="relative flex h-full w-full flex-col overflow-hidden border-white/10 bg-abyss shadow-[0_24px_80px_rgba(0,0,0,0.6)] sm:h-auto sm:max-h-[70vh] sm:max-w-xl sm:rounded-2xl sm:border">
         <div className="flex items-center gap-2 border-b border-white/10 px-4">
           <Search size={17} aria-hidden="true" className="shrink-0 text-fog" />
-          <input ref={inputRef} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a page…"
+          <input ref={inputRef} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onInputKeyDown} placeholder="Find a page…"
             role="combobox" aria-expanded="true" aria-controls={listId} aria-autocomplete="list"
             aria-activedescendant={results[active] ? `${listId}-${active}` : undefined}
             className="min-h-14 min-w-0 flex-1 bg-transparent text-base text-ice outline-none placeholder:text-dust" />

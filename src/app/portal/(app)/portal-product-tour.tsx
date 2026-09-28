@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { CircleHelp } from "lucide-react";
 import { driver, type Driver, type DriveStep } from "driver.js";
-import { presentSteps, tourSteps, type PortalNav } from "@/lib/portal/portal-nav";
+import { isTourHome, presentSteps, tourSteps, type PortalNav } from "@/lib/portal/portal-nav";
 import { TOUR_POPOVER_CLASS } from "@/lib/portal/tour-style";
 
 // v2: the subject-first navigation replaced the sidebar the first tour
@@ -51,19 +51,30 @@ export function PortalProductTour({ nav, autoStart = true }: { nav: PortalNav; a
     tour.drive();
   }
 
-  // Not over the mandatory onboarding form: the tour points at portal features
-  // the student cannot open yet, and dismissing it there would mark it seen, so
-  // they would never get it once onboarding is done.
+  // It starts by itself once per user, and only where it has something to
+  // walk: a home page (the portal home, a desk) or a subject space. Never over
+  // the mandatory onboarding form (autoStart is off there: dismissing it would
+  // mark it seen before the student could use the portal), never on a sitting
+  // or a deep link into one (a SAT session, an Exam Lab allocation link), and
+  // never over a full-screen run. It waits until the page's skeletons have
+  // given way to its cards, so no step is dropped for arriving late.
   useEffect(() => {
-    if (!autoStart) return;
+    if (!autoStart || !isTourHome(pathname, nav)) return;
     let seen = false;
     try { seen = localStorage.getItem(SEEN_KEY) === "1"; } catch { /* ignore */ }
     if (seen) return;
-    const timer = window.setTimeout(startTour, 700);
-    return () => window.clearTimeout(timer);
-    // Once per mount: the tour starts on the first portal page opened.
+    let tries = 0;
+    const timer = window.setInterval(() => {
+      tries += 1;
+      if (tries > 40 || document.fullscreenElement || document.querySelector(".el-exam-live")) { window.clearInterval(timer); return; }
+      if (document.querySelector("#portal-content [aria-busy='true']")) return;
+      window.clearInterval(timer);
+      if (!tourRef.current?.isActive()) startTour();
+    }, 350);
+    return () => window.clearInterval(timer);
+    // startTour reads this render's pathname and nav.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoStart]);
+  }, [autoStart, pathname]);
 
   useEffect(() => () => tourRef.current?.destroy(), []);
 

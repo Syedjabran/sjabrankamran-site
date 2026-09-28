@@ -317,12 +317,16 @@ for (const [persona, [roles, on, want]] of Object.entries(LEGACY_MENU)) {
 // (visibleItems, through viewerSubjects) shows exactly the old menu's places
 // -- a physics course assumed for everyone, as the old menu showed physics to
 // every student. And the subject-first navigation built from it reaches every
-// one of them whether or not the viewer is in a physics class (a page whose
-// subject they don't have is under More).
+// one of them -- except, for a viewer who doesn't take Physics, its
+// physics-only pages (Exam Lab, Study plan, Answer scripts, Progress, Ranking,
+// Leaderboard): exactly those leave their navigation, and nothing else does
+// (their shared Physics Resources stays, in General). The routes still open.
+const PHYSICS_ONLY = ["answer-scripts", "exam-lab", "leaderboard", "progress", "ranking", "study-plan"];
 const ROLES = ["super_admin", "admin", "teacher", "teaching_assistant", "student", "parent", "counsellor", "content_manager", "finance_manager", "coordinator", "facilitator", "attendance_registrar"];
 let combinations = 0;
 const reachDiffs = [];
 const ruleDiffs = [];
+let withoutPhysics = 0;
 for (let mask = 0; mask < 1 << ROLES.length; mask++) {
   const roles = ROLES.filter((_, i) => mask & (1 << i));
   for (const sat of [false, true]) {
@@ -334,16 +338,30 @@ for (let mask = 0; mask < 1 << ROLES.length; mask++) {
       const visible = [...new Set(visibleItems(facts).map((e) => e.item.id).filter((id) => !NOT_IN_TODAYS_MENU.has(id)))].sort();
       if (JSON.stringify(visible) !== JSON.stringify(shown)) ruleDiffs.push(`${roles.join("+") || "(none)"} sat=${sat} lab=${practicalLab}: +[${visible.filter((v) => !shown.includes(v))}] -[${shown.filter((v) => !visible.includes(v))}]`);
       for (const physicsClass of [true, false]) {
-        const nav = navigationFor({ roles, courses: [...(physicsClass ? ["9702"] : []), ...(sat ? ["SAT"] : [])], practicalLab });
+        const viewer = { roles, courses: [...(physicsClass ? ["9702"] : []), ...(sat ? ["SAT"] : [])], practicalLab };
+        const nav = navigationFor(viewer);
         const reached = [...new Set(allLinks(nav).map((l) => l.id).filter((id) => !NOT_IN_TODAYS_MENU.has(id)))].sort();
-        if (JSON.stringify(reached) !== JSON.stringify(shown)) reachDiffs.push(`${roles.join("+") || "(none)"} sat=${sat} lab=${practicalLab} physics=${physicsClass}: +[${reached.filter((v) => !shown.includes(v))}] -[${shown.filter((v) => !reached.includes(v))}]`);
-        if (physicsClass && nav.more.length) reachDiffs.push(`${roles.join("+")}: More is only for a subject the viewer lacks`);
+        const lacksPhysics = !viewerSubjects(viewer).includes("physics");
+        if (lacksPhysics) withoutPhysics++;
+        const expected = lacksPhysics ? shown.filter((id) => !PHYSICS_ONLY.includes(id)) : shown;
+        const missing = shown.filter((id) => !reached.includes(id));
+        if (JSON.stringify(reached) !== JSON.stringify(expected)) reachDiffs.push(`${roles.join("+") || "(none)"} sat=${sat} lab=${practicalLab} physics=${physicsClass}: +[${reached.filter((v) => !expected.includes(v))}] -[${expected.filter((v) => !reached.includes(v))}]`);
+        // The exact difference: every physics-only page the old menu gave them, and nothing else.
+        if (lacksPhysics && JSON.stringify(missing) !== JSON.stringify(PHYSICS_ONLY.filter((id) => shown.includes(id)))) reachDiffs.push(`${roles.join("+")}: missing [${missing}]`);
       }
     }
   }
 }
 assert.equal(combinations, 16384);
-assert.deepEqual(reachDiffs.slice(0, 5), [], `the subject-first navigation reaches exactly the old menu's places for every combination (${reachDiffs.length} differ)`);
+assert.deepEqual(reachDiffs.slice(0, 5), [], `the subject-first navigation reaches exactly the old menu's places (less Physics' own pages for a viewer without Physics) for every combination (${reachDiffs.length} differ)`);
+assert.ok(withoutPhysics > 0, "some viewers don't take Physics");
+// A student who doesn't take Physics: exactly the six physics-only pages leave, the shared Resources stays.
+{
+  const old = [...new Set(legacyMenu(["student"], { sat: true, practicalLab: false }).flatMap((s) => s.items).map((i) => itemForRoute(i.href)?.id))];
+  const reached = allLinks(navigationFor({ roles: ["student"], courses: ["SAT"], practicalLab: false })).map((l) => l.id);
+  assert.deepEqual(old.filter((id) => !reached.includes(id)).sort(), PHYSICS_ONLY);
+  assert.ok(reached.includes("resources"), "Physics Resources' shared Class Drive stays");
+}
 assert.deepEqual(ruleDiffs.slice(0, 5), [], `the registry's rule shows the old menu's places for every combination (${ruleDiffs.length} differ)`);
 
 // The product tour explains each menu link with its registry purpose; every

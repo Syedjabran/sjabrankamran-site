@@ -119,6 +119,11 @@ export interface SubjectModule extends PortalItem {
   /** Its place in the subject's space. A subject shown inside another
    *  (`partOf`) interleaves its modules with the parent's by this number. */
   order: number;
+  /** Usable by someone who doesn't take the subject: Physics Resources, whose
+   *  Class Drive holds every class's shared folders. The navigation lists it
+   *  in General (under its menu label) for a viewer with no space of that
+   *  subject -- a subject's other pages appear only in its space. */
+  shared?: true;
 }
 
 /** What a subject's Exam Lab shows. Only subjects with papers have one. */
@@ -240,7 +245,7 @@ export const SUBJECTS: readonly SubjectDef[] = [
       },
       {
         id: "resources", route: "/portal/resources", name: "Resources", menuLabel: "Physics Resources",
-        icon: "Library", order: 80, access: ["member", "coordinator-desk"],
+        icon: "Library", order: 80, access: ["member", "coordinator-desk"], shared: true,
         purpose: "Browse curated Cambridge Physics resources and supporting content.",
       },
       {
@@ -265,7 +270,7 @@ export const SUBJECTS: readonly SubjectDef[] = [
     grant: "direct", courses: ["SAT"], setupPath: "/portal/sat-lab/setup", practice: "sat-today",
     modules: [
       {
-        id: "sat-today", route: "/portal/sat-lab", name: "Today", menuLabel: "SAT Lab",
+        id: "sat-today", route: "/portal/sat-lab", name: "SAT Lab", menuLabel: "SAT Lab",
         icon: "GraduationCap", order: 10, access: ["student", "exam-lab-staff"],
         purpose: "Your SAT plan for today, work from your teacher and anything left unfinished.",
       },
@@ -383,23 +388,25 @@ export const GENERAL_ITEMS: readonly PortalItem[] = [
   },
 ];
 
-/** The staff consoles (Administration): no subject around them. */
+/** The staff consoles (Administration): no subject around them. Listed most
+ *  used first -- a long Administration group shows the first eight and folds
+ *  the rest (a desk's own desk, then a teacher's classes, lead). */
 export const STAFF_ITEMS: readonly PortalItem[] = [
-  { id: "users", route: "/portal/admin/users", name: "Users & activity", menuLabel: "Users & activity", icon: "UserCog", access: ["staff"], purpose: "Manage portal users and inspect authorised activity records." },
-  { id: "access-locks", route: "/portal/admin/access", name: "Access locks", menuLabel: "Access locks", icon: "LockKeyhole", access: ["super-admin"], purpose: "Lock or suspend a user, group, class or school with a custom message." },
-  { id: "analytics", route: "/portal/admin/analytics", name: "Rankings & analytics", menuLabel: "Rankings & analytics", icon: "ChartColumn", access: ["staff"], purpose: "Review performance evidence and portal analytics." },
-  { id: "institutions", route: "/portal/admin/institutions", name: "Institutions", menuLabel: "Institutions", icon: "Building2", access: ["staff"], purpose: "Manage the school, class and group hierarchy." },
+  { id: "coordinator", route: "/portal/coordinator", name: "Coordinator desk", menuLabel: "Coordinator desk", deskLabel: "Class staff desk", icon: "School", access: ["coordinator", "coordinator-desk"], purpose: "Run your assigned school's classes: students, drills and attendance in one place." },
+  { id: "classes", route: "/portal/teach", name: "My Classes", menuLabel: "My Classes", icon: "Presentation", access: ["class-teacher"], purpose: "Open the classes and students assigned to you." },
   { id: "post-work", route: "/portal/admin/assign", name: "Post / Tests", menuLabel: "Post / Tests", deskLabel: "Assign drill", icon: "ClipboardList", access: ["staff", "coordinator-desk"], purpose: "Assign learning activities and Exam Lab assessments." },
-  { id: "drill-records", route: "/portal/admin/drills", name: "Drill Records", menuLabel: "Drill Records", icon: "ClipboardCheck", access: ["drill-staff", "coordinator-desk"], purpose: "Look back at the class drills you conducted and how each student did." },
+  { id: "users", route: "/portal/admin/users", name: "Users & activity", menuLabel: "Users & activity", icon: "UserCog", access: ["staff"], purpose: "Manage portal users and inspect authorised activity records." },
   { id: "attendance", route: "/portal/admin/attendance", name: "Attendance", menuLabel: "Attendance", icon: "CalendarCheck", access: ["staff"], purpose: "Record and manage lesson attendance." },
   { id: "daily-attendance", route: "/portal/admin/attendance-view", name: "Daily attendance", menuLabel: "Daily attendance", icon: "CalendarDays", access: ["staff", "registrar-desk", "coordinator-desk"], purpose: "Review the current attendance picture for authorised classes." },
-  { id: "proctoring", route: "/portal/admin/proctoring", name: "Proctoring & Locks", menuLabel: "Proctoring & Locks", icon: "ShieldCheck", access: ["staff"], purpose: "Monitor proctored assessments and exam restrictions." },
-  { id: "email", route: "/portal/admin/mail", name: "Email", menuLabel: "Email", icon: "Mail", access: ["staff"], purpose: "Manage portal email communication and delivery status." },
-  { id: "coordinator", route: "/portal/coordinator", name: "Coordinator desk", menuLabel: "Coordinator desk", deskLabel: "Class staff desk", icon: "School", access: ["coordinator", "coordinator-desk"], purpose: "Run your assigned school's classes: students, drills and attendance in one place." },
+  { id: "drill-records", route: "/portal/admin/drills", name: "Drill Records", menuLabel: "Drill Records", icon: "ClipboardCheck", access: ["drill-staff", "coordinator-desk"], purpose: "Look back at the class drills you conducted and how each student did." },
+  { id: "analytics", route: "/portal/admin/analytics", name: "Rankings & analytics", menuLabel: "Rankings & analytics", icon: "ChartColumn", access: ["staff"], purpose: "Review performance evidence and portal analytics." },
+  { id: "institutions", route: "/portal/admin/institutions", name: "Institutions", menuLabel: "Institutions", icon: "Building2", access: ["staff"], purpose: "Manage the school, class and group hierarchy." },
   { id: "announcements", route: "/portal/admin/notify", name: "Announcements", menuLabel: "Announcements", icon: "Megaphone", access: ["admin"], purpose: "Publish targeted announcements to portal users." },
+  { id: "email", route: "/portal/admin/mail", name: "Email", menuLabel: "Email", icon: "Mail", access: ["staff"], purpose: "Manage portal email communication and delivery status." },
+  { id: "proctoring", route: "/portal/admin/proctoring", name: "Proctoring & Locks", menuLabel: "Proctoring & Locks", icon: "ShieldCheck", access: ["staff"], purpose: "Monitor proctored assessments and exam restrictions." },
   { id: "academics", route: "/portal/admin/academics", name: "Academics", menuLabel: "Academics", icon: "GraduationCap", access: ["admin"], purpose: "Manage academic configuration and teaching structures." },
   { id: "finance", route: "/portal/admin/finance", name: "Fees & Finance", menuLabel: "Fees & Finance", icon: "Receipt", access: ["admin"], purpose: "Access authorised fee and finance administration." },
-  { id: "classes", route: "/portal/teach", name: "My Classes", menuLabel: "My Classes", icon: "Presentation", access: ["class-teacher"], purpose: "Open the classes and students assigned to you." },
+  { id: "access-locks", route: "/portal/admin/access", name: "Access locks", menuLabel: "Access locks", icon: "LockKeyhole", access: ["super-admin"], purpose: "Lock or suspend a user, group, class or school with a custom message." },
   { id: "demo-student-access", route: "/portal/admin/demo-student-access", name: "Private demo-student access", menuLabel: "Private demo-student access", icon: "LockKeyhole", access: ["super-admin"], listed: false, purpose: "Generate a fresh password for the private Portal QA Student." },
 ];
 

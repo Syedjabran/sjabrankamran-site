@@ -1,31 +1,37 @@
 /**
  * The portal's subject-first navigation, built from the subject registry.
  * Pure and isomorphic (no `@/` alias, no React): the portal layout, the home
- * page's subject picker, each subject space, the page finder, the top bar's
- * breadcrumb and subject switcher, the product tour and plain Node tests all
- * read it.
+ * page's subject picker, each subject space, the desk pages, the page
+ * finder, the top bar's breadcrumb and subject switcher, the product tour and
+ * plain Node tests all read it.
  *
  * Everything a viewer sees comes from ONE rule, `visibleItems` (subjects.ts):
  * - each subject space (Physics, Digital SAT) holds the viewer's visible
  *   modules of that subject and of the subjects shown inside it (Practical
- *   Lab inside Physics), in `order`; a space with nothing in it is not shown;
- * - General holds the visible places that belong to every subject;
- * - Administration holds the visible staff consoles;
- * - More holds the pages the portal menu reached before subject spaces but
- *   whose subject the viewer doesn't have (the old menu showed every student
- *   Physics; a SAT-only student keeps those pages, one level down).
+ *   Lab inside Physics), in `order`; a space with nothing in it is not shown,
+ *   and nor is one holding only pages usable without the subject (a
+ *   parent's Physics Resources) -- those pages go to General;
+ * - General holds the visible places that belong to every subject, plus a
+ *   subject's `shared` pages (Physics Resources, under that full name) for a
+ *   viewer with no space of that subject. The old menu showed every student
+ *   Physics: a student who doesn't take it keeps its shared pages, and its
+ *   physics-only pages (Exam Lab, Study plan, ...) leave their navigation --
+ *   those routes still open by URL and say what they are for;
+ * - Administration holds the visible staff consoles, most used first.
  */
 import {
-  CLASS_SUBJECTS, SUBJECTS, SUBJECT_SPACES, audiencesOf, itemForPath, listed, spaceForPath, spaceOf, spaceRoute,
+  CLASS_SUBJECTS, SUBJECTS, SUBJECT_SPACES, audiencesOf, itemForPath, listed, portalItem, spaceForPath, spaceOf, spaceRoute,
   viewerSubjects, visibleItems,
-  type AccentToken, type IconName, type ItemEntry, type PortalItemId, type SubjectId, type ViewerFacts,
+  type AccentToken, type Audience, type IconName, type ItemEntry, type PortalItemId, type SubjectId, type ViewerFacts,
 } from "./subjects.ts";
 
 /** One destination as a button. */
 export type NavLink = {
   id: PortalItemId;
   href: string;
-  /** What the button says: the plain name (the coordinator desk's own name where it has one). */
+  /** What the button says: the plain name inside its space (the coordinator
+   *  desk's own name where it has one); a subject's page shown outside its
+   *  space reads its full menu label ("Physics Resources"). */
   name: string;
   icon: IconName;
   /** One line on what it is for (the registry's `purpose`). */
@@ -34,7 +40,7 @@ export type NavLink = {
   aliases: string[];
   /** Open with a full page load (registry `hardNavigate`). */
   hardNavigate?: boolean;
-  /** The space it belongs to; on a More link, the subject the viewer doesn't have. */
+  /** The space it is shown in. */
   space?: SubjectId;
 };
 
@@ -51,14 +57,18 @@ export type SpaceNav = {
 
 export type PortalNav = {
   spaces: SpaceNav[];
-  /** Places that belong to every subject. Home and Profile are in the top bar instead. */
+  /** Places that belong to every subject (and shared subject pages). Home
+   *  and Profile are in the top bar instead. */
   general: NavLink[];
-  /** The staff consoles. */
+  /** The staff consoles, most used first. */
   admin: NavLink[];
-  /** Pages the old menu reached whose subject the viewer doesn't have. */
-  more: NavLink[];
   /** The portal home, when the viewer's menu listed it. */
   home: NavLink | null;
+  /** Where the top bar's Home goes: the portal home, or a desk role's desk
+   *  (the portal home sends them there). */
+  homeHref: string;
+  /** Whether Home is a desk (coordinator/facilitator, registrar). */
+  deskHome: boolean;
   /** Profile & settings (every viewer). */
   profile: NavLink | null;
 };
@@ -66,9 +76,25 @@ export type PortalNav = {
 /** The top bar's own places: never repeated in the General group. */
 const TOP_BAR: readonly PortalItemId[] = ["home", "profile"];
 
-function toLink(entry: ItemEntry, desk: boolean, space?: SubjectId): NavLink {
+/** The page each desk audience lands on instead of the portal home. */
+const DESK_HOMES: Partial<Record<Audience, PortalItemId>> = {
+  "coordinator-desk": "coordinator",
+  "registrar-desk": "daily-attendance",
+};
+
+/** The desk page a desk role lands on (the portal home redirects them
+ *  there); null for everyone else. */
+export function deskHomeOf(roles: ViewerFacts["roles"]): string | null {
+  const audiences = audiencesOf(roles);
+  for (const [audience, id] of Object.entries(DESK_HOMES) as [Audience, PortalItemId][]) {
+    if (audiences.has(audience)) return portalItem(id).route;
+  }
+  return null;
+}
+
+function toLink(entry: ItemEntry, desk: boolean, { space, outside = false }: { space?: SubjectId; outside?: boolean } = {}): NavLink {
   const { item } = entry;
-  const name = desk && item.deskLabel ? item.deskLabel : item.name;
+  const name = desk && item.deskLabel ? item.deskLabel : outside ? item.menuLabel : item.name;
   const aliases = [...new Set([item.menuLabel, item.name, item.deskLabel].filter((a): a is string => !!a && a !== name))];
   const link: NavLink = { id: item.id, href: item.route, name, icon: item.icon, purpose: item.purpose, aliases };
   if (item.hardNavigate) link.hardNavigate = true;
@@ -80,6 +106,8 @@ function toLink(entry: ItemEntry, desk: boolean, space?: SubjectId): NavLink {
 function spaceIdOf(entry: ItemEntry): SubjectId | null {
   return entry.subject ? spaceOf(entry.subject).id : null;
 }
+
+const isShared = (entry: ItemEntry) => entry.group === "subject" && entry.item.shared === true;
 
 const byOrder = (a: ItemEntry, b: ItemEntry) =>
   (a.group === "subject" ? a.item.order : 0) - (b.group === "subject" ? b.item.order : 0);
@@ -99,36 +127,48 @@ export function navigationFor(viewer: ViewerFacts): PortalNav {
   const shown = new Set(visible.map((e) => e.item.id));
 
   const spaces: SpaceNav[] = [];
+  const shared: NavLink[] = [];
   for (const subject of SUBJECT_SPACES) {
-    const modules = visible
-      .filter((e) => e.group === "subject" && spaceIdOf(e) === subject.id)
-      .sort(byOrder)
-      .map((e) => toLink(e, desk, subject.id));
-    if (!modules.length) continue;
+    const entries = visible.filter((e) => e.group === "subject" && spaceIdOf(e) === subject.id).sort(byOrder);
+    if (!entries.length) continue;
+    // A space that would hold only pages anyone can use (a parent's Physics
+    // Resources) is no space: those pages go to General.
+    if (entries.every(isShared)) {
+      shared.push(...entries.map((e) => toLink(e, desk, { outside: true })));
+      continue;
+    }
     spaces.push({
       id: subject.id, label: subject.label, shortLabel: subject.shortLabel, icon: subject.icon, accent: subject.accent,
-      href: spaceRoute(subject.id), modules,
+      href: spaceRoute(subject.id), modules: entries.map((e) => toLink(e, desk, { space: subject.id })),
     });
   }
+  // The old menu's pages of a subject the viewer doesn't take: only the
+  // shared ones stay (the rest would only say they are for that subject).
+  for (const entry of formerReach(viewer)) {
+    if (!shown.has(entry.item.id) && isShared(entry)) shared.push(toLink(entry, desk, { outside: true }));
+  }
+
+  // General in registry order, with any shared subject page beside the library.
+  const general = visible.filter((e) => e.group === "general" && !TOP_BAR.includes(e.item.id)).map((e) => toLink(e, desk));
+  const at = general.findIndex((l) => l.id === "library");
+  general.splice(at < 0 ? general.length : at + 1, 0, ...shared);
 
   const find = (id: PortalItemId) => visible.find((e) => e.item.id === id);
   const homeEntry = find("home");
   const profileEntry = find("profile");
-  const more = formerReach(viewer)
-    .filter((e) => !shown.has(e.item.id))
-    .map((e) => toLink(e, desk, spaceIdOf(e) ?? undefined));
-
+  const deskHome = deskHomeOf(viewer.roles);
   return {
     spaces,
-    general: visible.filter((e) => e.group === "general" && !TOP_BAR.includes(e.item.id)).map((e) => toLink(e, desk)),
+    general,
     admin: visible.filter((e) => e.group === "staff").map((e) => toLink(e, desk)),
-    more,
     home: homeEntry ? toLink(homeEntry, desk) : null,
+    homeHref: deskHome ?? portalItem("home").route,
+    deskHome: !!deskHome,
     profile: profileEntry ? toLink(profileEntry, desk) : null,
   };
 }
 
-/** Every destination of a navigation, each once (a space's own page first). */
+/** Every destination of a navigation, each once. */
 export function allLinks(nav: PortalNav): NavLink[] {
   const links: NavLink[] = [];
   const add = (l: NavLink | null) => { if (l && !links.some((x) => x.href === l.href && x.id === l.id)) links.push(l); };
@@ -136,9 +176,38 @@ export function allLinks(nav: PortalNav): NavLink[] {
   for (const space of nav.spaces) space.modules.forEach(add);
   nav.general.forEach(add);
   nav.admin.forEach(add);
-  nav.more.forEach(add);
   add(nav.profile);
   return links;
+}
+
+/** What a home page (the portal home, or a desk) shows as buttons: the
+ *  subject cards, Administration and General -- everything but the top
+ *  bar's Home and Profile, less the page it is drawn on (`except`, a desk's
+ *  own tile on that desk). */
+export function homeSections(nav: PortalNav, except?: string): { spaces: SpaceNav[]; admin: NavLink[]; general: NavLink[] } {
+  const keep = (l: NavLink) => l.href !== except;
+  return { spaces: nav.spaces, admin: nav.admin.filter(keep), general: nav.general.filter(keep) };
+}
+
+// --- the desk roles' fence ----------------------------------------------------------
+
+/** Pages every signed-in viewer's plumbing needs: the portal home (a desk
+ *  role is sent on from it), sign-in callbacks and the onboarding form. */
+const DESK_PLUMBING = ["/portal", "/portal/auth", "/portal/onboarding"];
+
+/** The pages a desk role may open: every destination their navigation
+ *  offers (spaces included) plus the plumbing. Paths without query or hash. */
+export function deskRoutes(nav: PortalNav): string[] {
+  const pages = [...allLinks(nav).map((l) => l.href), ...nav.spaces.map((s) => s.href), nav.homeHref, ...DESK_PLUMBING];
+  return [...new Set(pages.map((p) => p.split(/[?#]/)[0]))];
+}
+
+/** Whether a path is one of `routes`: the portal home only exactly, every
+ *  other route itself or any page under it ("/portal/admin/drills/x/print"). */
+export function onDeskRoute(pathname: string, routes: readonly string[]): boolean {
+  const path = pathname.split(/[?#]/)[0].replace(/(.)\/+$/, "$1").toLowerCase();
+  const home = portalItem("home").route;
+  return routes.some((r) => (r === home ? path === home : path === r || path.startsWith(`${r}/`)));
 }
 
 // --- where a page sits -----------------------------------------------------------
@@ -181,7 +250,7 @@ export function breadcrumbFor(pathname: string | null | undefined, nav: PortalNa
 export type FinderEntry = { link: NavLink; group: string };
 
 /** Everything the finder offers, grouped as the home page groups it: the
- *  viewer's subject spaces, each space's pages, General, Administration, More. */
+ *  viewer's subject spaces, each space's pages, General, Administration. */
 export function finderEntries(nav: PortalNav): FinderEntry[] {
   const entries: FinderEntry[] = [];
   if (nav.home) entries.push({ link: nav.home, group: "General" });
@@ -196,7 +265,6 @@ export function finderEntries(nav: PortalNav): FinderEntry[] {
   for (const link of nav.general) entries.push({ link, group: "General" });
   if (nav.profile) entries.push({ link: nav.profile, group: "General" });
   for (const link of nav.admin) entries.push({ link, group: "Administration" });
-  for (const link of nav.more) entries.push({ link, group: "More" });
   return entries;
 }
 
@@ -243,10 +311,19 @@ export const TOUR_TARGETS = {
   profile: "[data-tour='portal-profile']",
   general: "[data-tour='group-general']",
   admin: "[data-tour='group-admin']",
-  more: "[data-tour='group-more']",
   space: (id: SubjectId) => `[data-tour-space='${id}']`,
   module: (id: PortalItemId) => `[data-tour-module='${id}']`,
 } as const;
+
+const pathOnly = (pathname: string | null | undefined) => (pathname || "").split(/[?#]/)[0].replace(/(.)\/+$/, "$1").toLowerCase();
+
+/** Whether a page is a home page (the portal home, or a desk role's desk)
+ *  or a subject space: the pages the tour walks, and the only ones it starts
+ *  on by itself (never a sitting or a deep link into one). */
+export function isTourHome(pathname: string | null | undefined, nav: PortalNav): boolean {
+  const path = pathOnly(pathname);
+  return path === portalItem("home").route || path === nav.homeHref || !!spaceForPath(path);
+}
 
 const namesOf = (links: readonly NavLink[], max = 3) => {
   const names = links.map((l) => l.name);
@@ -254,11 +331,11 @@ const namesOf = (links: readonly NavLink[], max = 3) => {
 };
 
 /** The tour for a page, built from the viewer's navigation, so it never
- *  mentions a space, group or page the viewer can't see. On the home page it
- *  walks the subject cards and groups; in a subject space, that space's
- *  pages; everywhere, the top bar. */
+ *  mentions a space, group or page the viewer can't see. On a home page
+ *  (the portal home, a desk) it walks the subject cards and groups; in a
+ *  subject space, that space's pages; everywhere, the top bar. */
 export function tourSteps(nav: PortalNav, pathname: string | null | undefined): TourStep[] {
-  const path = (pathname || "").split(/[?#]/)[0].replace(/(.)\/+$/, "$1");
+  const path = pathOnly(pathname);
   const steps: TourStep[] = [{
     target: null,
     title: "Welcome to your portal",
@@ -266,25 +343,29 @@ export function tourSteps(nav: PortalNav, pathname: string | null | undefined): 
       ? "Everything is arranged by subject: pick a subject on your home page to see its pages. Use Next to walk through the real controls."
       : "Use Next to walk through the real controls of your portal.",
   }];
-  if (path === "/portal") {
+  if (path === portalItem("home").route || path === nav.homeHref) {
     for (const space of nav.spaces) {
       steps.push({ target: TOUR_TARGETS.space(space.id), title: space.label, body: `Open ${space.label} for ${namesOf(space.modules)}.`, side: "bottom", align: "start" });
     }
-    if (nav.general.length) steps.push({ target: TOUR_TARGETS.general, title: "For every subject", body: `${namesOf(nav.general, 4)}.`, side: "top", align: "start" });
-    if (nav.admin.length) steps.push({ target: TOUR_TARGETS.admin, title: "Administration", body: `Your staff tools: ${namesOf(nav.admin, 4)}.`, side: "top", align: "start" });
-    if (nav.more.length) steps.push({ target: TOUR_TARGETS.more, title: "More pages", body: `Pages from subjects that aren't on your account: ${namesOf(nav.more, 4)}.`, side: "top", align: "start" });
+    const sections = homeSections(nav, nav.deskHome ? nav.homeHref : undefined);
+    if (sections.admin.length) steps.push({ target: TOUR_TARGETS.admin, title: "Administration", body: `Your staff tools: ${namesOf(sections.admin, 4)}.`, side: "top", align: "start" });
+    if (sections.general.length) steps.push({ target: TOUR_TARGETS.general, title: "General", body: `For every subject: ${namesOf(sections.general, 4)}.`, side: "top", align: "start" });
   }
   const space = spaceForPath(path);
   const own = space ? nav.spaces.find((s) => s.id === space.id) : null;
   if (own) {
     for (const link of own.modules) steps.push({ target: TOUR_TARGETS.module(link.id), title: link.name, body: link.purpose, side: "bottom", align: "start" });
   }
-  steps.push({ target: TOUR_TARGETS.home, title: "Home", body: "Back to your subjects from any page.", side: "bottom", align: "start" });
+  steps.push({
+    target: TOUR_TARGETS.home, title: "Home",
+    body: nav.deskHome ? "Back to your desk and all your pages from anywhere." : "Back to your subjects from any page.",
+    side: "bottom", align: "start",
+  });
   if (nav.spaces.length > 1) steps.push({ target: TOUR_TARGETS.switcher, title: "Switch subject", body: "Jump straight to another subject's pages. The portal remembers the last one you used.", side: "bottom", align: "start" });
   else if (nav.spaces.length === 1) steps.push({ target: TOUR_TARGETS.switcher, title: nav.spaces[0].label, body: `Open ${nav.spaces[0].label} from any page.`, side: "bottom", align: "start" });
   steps.push({ target: TOUR_TARGETS.finder, title: "Find a page", body: "Type any page's name to jump to it. Ctrl+K (Cmd+K on a Mac) opens it from anywhere.", side: "bottom", align: "end" });
   steps.push({ target: TOUR_TARGETS.alerts, title: "Alerts", body: "Announcements, reminders, class changes and marked work arrive here.", side: "bottom", align: "end" });
-  steps.push({ target: TOUR_TARGETS.profile, title: "Profile and settings", body: "Your profile, guardian details and device settings.", side: "bottom", align: "end" });
+  steps.push({ target: TOUR_TARGETS.profile, title: "Your account", body: "Your profile and settings, the main website, and signing out.", side: "bottom", align: "end" });
   return steps;
 }
 

@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SJAK_MONOGRAM_DATA_URI } from "@/lib/sjak-monogram";
+import { isPortalAppPath } from "@/lib/portal/portal-paths";
 
 const NAV = [
   { href: "/profile", label: "Profile" },
@@ -20,6 +22,10 @@ const NAV = [
 
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+  // Inside the signed-in portal its own top bar carries the brand and the
+  // way back to the main website; this public header would be a second bar.
+  if (isPortalAppPath(pathname)) return null;
   return (
     <header className="sticky top-0 z-[110] border-b border-white/[0.06] bg-abyss/80 backdrop-blur-xl">
       <div className="container-x flex h-16 items-center justify-between">
