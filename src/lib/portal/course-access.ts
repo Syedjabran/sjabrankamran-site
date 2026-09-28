@@ -24,7 +24,7 @@ import { isExamLabStaff, type PortalUser } from "@/lib/edu/auth";
 import {
   courseFromYear, coursesForEnrolment, primaryCourse, studentCourseAccess, COURSE_LABEL, type Course,
 } from "@/lib/portal/course-labels";
-import { coursesFromGrants } from "@/lib/portal/subjects";
+import { classGrantedCourses, coursesFromGrants } from "@/lib/portal/subjects";
 import { readGrants } from "@/lib/portal/subject-grants";
 
 export type { Course };
@@ -135,4 +135,27 @@ export async function resolveCourseAccess(user: PortalUser, options: CourseAcces
     return { ...studentCourseAccess(await enrolledCourses(user.id, options)), isStaff: false };
   }
   return { allowed: [], primary: null, locked: true, isStaff: false };
+}
+
+/**
+ * What a student's portal navigation lists (viewer-nav.ts, so the website's
+ * navigation and the app's /api/portal/navigation alike).
+ *
+ * The strict read decides (`access`, as satAccess reads it). When it fails
+ * -- a database or Storage blip on the enrolment, registry or subject-grants
+ * read -- the navigation keeps the courses of class-granted subjects
+ * (Physics), read the non-strict way every physics page reads them, so a blip
+ * doesn't strand a physics class. Nothing a direct grant opens comes back
+ * that way: no SAT (even from an SAT class), and the Practical Lab switch is
+ * read separately and fails closed. `access` is null then, so nothing that
+ * relies on the strict read mistakes the fallback for it.
+ */
+export async function navigationCourses(user: PortalUser): Promise<{ access: CourseAccess | null; courses: Course[] }> {
+  try {
+    const access = await resolveCourseAccess(user, { strict: true });
+    return { access, courses: access.allowed };
+  } catch {
+    const loose = await resolveCourseAccess(user).catch(() => null);
+    return { access: null, courses: classGrantedCourses(loose?.allowed ?? []) };
+  }
 }

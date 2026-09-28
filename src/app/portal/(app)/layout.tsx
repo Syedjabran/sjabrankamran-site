@@ -31,8 +31,8 @@ export default async function PortalLayout({ children }: { children: React.React
   const isStudentUser = user.roles.includes("student");
   // The viewer's navigation (viewer-nav.ts): a student's course access is
   // read once (strict, as satAccess reads it) with their Practical Lab switch;
-  // a failed read opens nothing (fail closed). It also tells the helper which
-  // courses they take.
+  // a failed read keeps only their class subjects (Physics) and opens no SAT
+  // or lab (fail closed). It also tells the helper which courses they take.
   const [restriction, onboarding, viewer] = await Promise.all([
     getPortalRestriction(user),
     isStudentUser ? onboardingStatus(user.id) : Promise.resolve("complete" as const),

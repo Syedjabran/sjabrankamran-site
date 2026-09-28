@@ -723,3 +723,11 @@ export function coursesFromGrants(grants: Partial<Record<SubjectId, unknown>>): 
   }
   return courses;
 }
+
+/** The courses among `courses` that a class-granted subject teaches
+ *  (Physics: 9702, 5054), in the order given. A course of a direct-grant
+ *  subject (the SAT) is left out even when a class opened it. */
+export function classGrantedCourses(courses: readonly string[]): Course[] {
+  const taught = new Set<string>(CLASS_SUBJECTS.flatMap((s) => s.courses));
+  return courses.filter((c): c is Course => taught.has(c));
+}

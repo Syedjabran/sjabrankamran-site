@@ -93,7 +93,8 @@ export type AppNavigation = {
   homeRoute: string;
   /** Whether Home is a desk (coordinator/facilitator, attendance registrar). */
   deskHome: boolean;
-  /** A student whose subjects couldn't be read just now (no subject is shown). */
+  /** A student whose subjects couldn't all be read just now: only their
+   *  class subjects (Physics) may be listed, or none (viewer-nav.ts). */
   subjectsUnavailable: boolean;
   /** Set while a student must complete their profile first: the portal opens
    *  nothing else until they do (the onboarding page's route). */
