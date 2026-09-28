@@ -26,14 +26,16 @@ environment), and a terminal: Terminal on a Mac, or **Git Bash** on Windows (it 
 ## Part A: before the merge
 
 **1. Check that `main` hasn't moved** (your developer, or ask Claude). portal-v2 was checked
-against `main` at `5ab743c`.
+against `main` at `5ab743c`. These commands work in any copy of the repository once `portal-v2`
+is on GitHub; `git fetch origin` brings both branches up to date first.
 
 ```bash
 git fetch origin
-git merge-base --is-ancestor origin/main portal-v2 && echo "main is included: OK"
+git merge-base --is-ancestor origin/main origin/portal-v2 && echo "main is included: OK"
 ```
 
-If it doesn't print OK, merge `main` into `portal-v2` first and re-run the checks:
+If it doesn't print OK, your developer merges `main` into `portal-v2` (and pushes it), then
+re-runs the checks on it:
 
 ```bash
 npx tsc --noEmit -p tsconfig.json
@@ -70,9 +72,10 @@ challenges.
 **5. Merge and deploy.**
 
 ```bash
+git fetch origin
 git checkout main
 git pull origin main
-git merge --no-ff portal-v2
+git merge --no-ff origin/portal-v2
 git push origin main
 ```
 
@@ -189,9 +192,29 @@ Expect `401` for all three. `200` means the table is still readable without sign
 step 8 and check again.
 
 **If something breaks and you must go back:** the **UNDO** section is at the end of the migration
-file. It is commented out on purpose. Copy everything below the "UNDO" heading, remove the `-- `
-at the start of each line (in VS Code: select it and press Ctrl+/), and run it. It reopens the
-leaks listed at the top of this page, so treat it as a stop-gap and tell your developer.
+file. It reopens the leaks listed at the top of this page, so treat it as a stop-gap and tell your
+developer. It is commented out on purpose; here is how to run it.
+
+1. Build the undo script. In Git Bash, from the repository folder, run this one command. It
+   takes the file from its first `-- begin;` line to the end and removes the leading `-- ` from
+   each line:
+
+   ```bash
+   sed -n '/^-- begin;/,$p' supabase/migrations/portal-v2-001-answer-security.sql | sed 's/^-- //' > undo-portal-v2-001.sql
+   ```
+
+   **By hand instead:** in the migration file, find the UNDO heading. Below it are four lines
+   starting `-- NOTE` / `-- privileges` / `-- el_tests` / `-- (select`, then a `-- ====` line.
+   Start copying at the line right after that `-- ====` line, which reads `-- begin;`. Stop at the
+   last line of the file, `-- commit;`. In what you copied, delete the first three characters
+   (`--` and the space after it) of **every** line, and nothing else. A line that read `-- -- H5`
+   becomes `-- H5`, which is fine: it's still a comment.
+2. Check the script before running it. Its first line must be `begin;` and its last line
+   `commit;`. No line may start with `NOTE`, `privileges` or `====`. If any does, you copied too
+   much: start again.
+3. Supabase → SQL Editor → **New query**. Paste the whole script and **Run**. (If you used the
+   command, open `undo-portal-v2-001.sql` in any text editor and copy all of it.) Expect "Success.
+   No rows returned".
 
 ## Part D: after the deploy
 
@@ -200,7 +223,7 @@ leaks listed at the top of this page, so treat it as a stop-gap and tell your de
 ```bash
 SITE="https://sjabrankamran.com"
 curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" "$SITE/portal"
-curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" "$SITE/lab/"
+curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" "$SITE/lab"
 curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" "$SITE/Lab/index.html"
 curl -s -o /dev/null -w "%{http_code}\n" -X POST "$SITE/api/lab/attempt"
 curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer not.a.token" "$SITE/api/portal/navigation"
@@ -215,15 +238,19 @@ Expect, line by line:
 5. `401`
 
 A `200` on any of them means a page or API opened without signing in: tell your developer.
+Type the addresses exactly as shown, without a trailing `/`. The site first redirects an address
+ending in `/` to the same address without it (a `308`), before any sign-in check.
 
 **12. Switch the Practical Lab on.** Before this update `/lab` was public (just not linked); now
 only staff and students switched on can open it. For each student who should have it: **Admin →
 Users & activity**, open the student, **Subjects** card, switch **Practical Lab (Physics)** on. New
 students: tick it on the **Create account** form. (`docs/PRACTICAL-LAB.md` has the details.)
 
-**13. Check no account mixes a desk role with another role.** A coordinator, facilitator or
-attendance registrar who is also a teacher, student or parent is kept to their desk and can't use
-the other pages. Run in the SQL Editor (read-only):
+**13. Check no account mixes a desk role with another role.** An account with a desk role
+(coordinator, facilitator or attendance registrar) and no admin role is kept to its desk
+(`src/lib/edu/roles.ts`, `isCoordinatorOnly` / `isRegistrarOnly`). If it also has any other role
+(teacher, teaching assistant, student, parent, counsellor, content manager or finance manager),
+it can't use that role's pages. Run in the SQL Editor (read-only):
 
 ```sql
 select p.email, p.full_name, string_agg(r.role::text, ', ' order by r.role::text) as roles
@@ -231,11 +258,13 @@ select p.email, p.full_name, string_agg(r.role::text, ', ' order by r.role::text
   join edu_profiles p on p.id = r.user_id
  group by p.id, p.email, p.full_name
 having bool_or(r.role::text in ('coordinator','facilitator','attendance_registrar'))
-   and bool_or(r.role::text in ('teacher','student','parent'))
+   and bool_or(r.role::text not in ('coordinator','facilitator','attendance_registrar','admin','super_admin'))
    and not bool_or(r.role::text in ('admin','super_admin'));
 ```
 
-Expect no rows. For any row, either remove the desk role or give that person a second account.
+Expect no rows. Two desk roles together (say coordinator and attendance registrar) aren't listed:
+that account gets the coordinator's desk, as intended. For any row, either remove the desk role or
+give that person a second account.
 
 **14. Rotate the demo student's password.** This is older than portal-v2: the file
 `tmp-tour/.capture-login.json` in the repository's history (on `main` since commit `decbc59`)
