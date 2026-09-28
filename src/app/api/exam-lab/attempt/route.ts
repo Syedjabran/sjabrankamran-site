@@ -266,7 +266,7 @@ export async function POST(request: Request) {
   // consulted, so a "cancelled" sitting can't be graded again and again.
   // An allocation's submissions are counted from its durable record, which
   // trimming the attempt history never removes (allocations.ts gradedCount).
-  let history: Attempt[] = [];
+  let history: Attempt[] = []; // the attempts stored before this one
   let used = 0;
   const result = await appendAttemptChecked(user.id, attempt, async (existing) => {
     history = existing;

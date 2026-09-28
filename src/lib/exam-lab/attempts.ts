@@ -191,11 +191,16 @@ export async function appendAttemptChecked(
     return "failed";
   }
   if (refused) return "refused";
-  existing.push(attempt);
+  const next = [...existing, attempt];
   // Keep the most recent 800 attempts. An allocation attempt about to be
   // trimmed is first made sure of in its allocation's durable record
   // (allocations.ts gradedCount): trimming never frees a graded submission.
-  const dropped = existing.slice(0, Math.max(0, existing.length - MAX_ATTEMPTS));
+  // The record is brought up to the submissions ALREADY stored (`existing`),
+  // never the incoming one: it isn't stored until the write below succeeds,
+  // and if that write fails, a record counting it would use up a re-sit that
+  // was never stored. The attempt route records the incoming submission once
+  // it is stored.
+  const dropped = next.slice(0, Math.max(0, next.length - MAX_ATTEMPTS));
   const allocIds = new Set(dropped.map((a) => a.context?.allocationId).filter((id): id is string => !!id));
   try {
     for (const id of allocIds) {
@@ -205,5 +210,5 @@ export async function appendAttemptChecked(
   } catch {
     return "failed";
   }
-  return (await writeFreshJson(BUCKET, docPath(userId), { attempts: existing.slice(-MAX_ATTEMPTS) })) ? "stored" : "failed";
+  return (await writeFreshJson(BUCKET, docPath(userId), { attempts: next.slice(-MAX_ATTEMPTS) })) ? "stored" : "failed";
 }

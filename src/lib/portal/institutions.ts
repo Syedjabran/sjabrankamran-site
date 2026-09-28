@@ -8,7 +8,7 @@
  */
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ROLE_LABELS, type EduRole } from "@/lib/edu/auth";
-import { getAttempts } from "@/lib/exam-lab/attempts";
+import { getAttempts, getStudentAttempts } from "@/lib/exam-lab/attempts";
 import { analyse } from "@/lib/exam-lab/analytics";
 import { PORTAL_BUCKET } from "@/lib/portal/onboarding";
 import { attendancePercent } from "@/lib/edu/attendance";
@@ -170,8 +170,21 @@ function primaryRoleLabel(roles: EduRole[]): string {
   return primary ? ROLE_LABELS[primary] : "Staff";
 }
 
+export type ReportOptions = {
+  /**
+   * Read each student's attempts as the student may see them
+   * (attempts.ts getStudentAttempts): a graded result that another of their
+   * open tests or no-help assignments still holds is left out of their
+   * figures until that hold ends. For figures students are shown -- the
+   * rankings behind the leaderboard (rankings.ts); one more read per student.
+   * Staff-only reports (the institutions page, the coordinator desk) read the
+   * stored attempts, as every staff view does.
+   */
+  studentView?: boolean;
+};
+
 /** Roster + per-student progress for one class. */
-export async function getClassReport(meta: ClassMeta): Promise<ClassReport> {
+export async function getClassReport(meta: ClassMeta, { studentView = false }: ReportOptions = {}): Promise<ClassReport> {
   const supabase = createAdminClient();
   const { data: enr } = await supabase
     .from("edu_enrolments")
@@ -199,7 +212,7 @@ export async function getClassReport(meta: ClassMeta): Promise<ClassReport> {
     studentRows.map(async (r) => {
       const s = r.edu_students;
       const uid = s?.profile_id || "";
-      const attempts = uid ? await getAttempts(uid) : [];
+      const attempts = uid ? await (studentView ? getStudentAttempts(uid) : getAttempts(uid)) : [];
       const a = analyse(attempts);
       // attendance
       let attendancePct: number | null = null;
@@ -245,11 +258,11 @@ export async function getClassReport(meta: ClassMeta): Promise<ClassReport> {
 
 /** Full institutional report: schools → classes → students. */
 /** Optional school/class arguments are authorization boundaries for scoped staff. */
-export async function getInstitutionReport(onlySchool?: string | null, onlyClassIds?: string[] | null): Promise<SchoolReport[]> {
+export async function getInstitutionReport(onlySchool?: string | null, onlyClassIds?: string[] | null, options: ReportOptions = {}): Promise<SchoolReport[]> {
   const reg = await getRegistry();
   const classSet = onlyClassIds ? new Set(onlyClassIds) : null;
   const allowed = reg.classes.filter((c) => (!onlySchool || c.school === onlySchool) && (!classSet || classSet.has(c.id)));
-  const classReports = await Promise.all(allowed.map((c) => getClassReport(c)));
+  const classReports = await Promise.all(allowed.map((c) => getClassReport(c, options)));
   const bySchool = new Map<string, ClassReport[]>();
   for (const cr of classReports) {
     const arr = bySchool.get(cr.school) || [];

@@ -30,6 +30,10 @@
  * replacing round 4's R1); a used-up allocation is refused when it opens
  * (NB7); the one-submission rule reads a durable record that trimming the
  * 800-attempt history never removes (OS-A residual).
+ * Final fix wave: a trim puts on that record only the submissions already
+ * stored, never the incoming one, so a history write that fails can't use
+ * up an unlocked re-sit (NB9); the leaderboard's rankings leave out results
+ * that are withheld (NB8).
  */
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -43,6 +47,8 @@ let user = { id: "u1", roles: ["student"], fullName: "Student One", email: "s1@e
 const aiCalls = [];
 const reads = []; // storage paths read, to count reads
 const unreadable = new Set(); // storage paths whose read fails (fail-closed checks)
+const writeFails = new Set(); // storage paths whose write fails
+const dbRows = { edu_enrolments: [], edu_user_roles: [], edu_attendance: [] }; // table -> rows
 let listFails = false; // storage listings fail
 let listFailsUnder = null; // storage listings under this prefix fail
 const completed = []; // linked tasks completed (completeTaskBySource)
@@ -100,7 +106,12 @@ const mocks = {
       if (unreadable.has(p)) return { ok: false };
       return { ok: true, data: files.has(`${bucket}/${p}`) ? JSON.parse(files.get(`${bucket}/${p}`)) : null };
     },
-    writeFreshJson: async (bucket, p, v) => { await Promise.resolve(); files.set(`${bucket}/${p}`, JSON.stringify(v)); return true; },
+    writeFreshJson: async (bucket, p, v) => {
+      await Promise.resolve();
+      if (writeFails.has(p)) return false;
+      files.set(`${bucket}/${p}`, JSON.stringify(v));
+      return true;
+    },
     createFreshJson: async (bucket, p, v) => {
       await Promise.resolve();
       if (files.has(`${bucket}/${p}`)) return false;
@@ -109,8 +120,18 @@ const mocks = {
     },
   },
   "@/lib/portal/tasks": { completeTaskBySource: async (uid, id) => { completed.push([uid, id]); } },
+  "@/lib/portal/onboarding": { PORTAL_BUCKET: "portal-data" },
   "@/lib/supabase/admin": {
     createAdminClient: () => ({
+      // The few table reads the rankings make (institutions.ts); any other table is not mocked.
+      from: (table) => {
+        if (!Object.hasOwn(dbRows, table)) throw new TypeError(`the ${table} table is not mocked`);
+        const chain = {
+          select: () => chain, eq: () => chain, in: () => chain,
+          then: (ok, fail) => Promise.resolve({ data: dbRows[table], error: null }).then(ok, fail),
+        };
+        return chain;
+      },
       storage: {
         from: (bucket) => ({
           upload: async (p, blob, opts) => {
@@ -119,7 +140,7 @@ const mocks = {
             files.set(key, await blob.text());
             return { error: null };
           },
-          download: async () => ({ data: new Blob(["img"]), error: null }),
+          download: async (p) => ({ data: new Blob([files.get(`${bucket}/${p}`) ?? "img"]), error: null }),
           list: async (prefix) => (listFails || (listFailsUnder && prefix.startsWith(listFailsUnder)) ? { data: null, error: { message: "list failed" } } : {
             data: [...files.keys()].filter((k) => k.startsWith(`${bucket}/${prefix}/`)).map((k) => ({ name: k.slice(bucket.length + prefix.length + 2) })).filter((f) => !f.name.includes("/")),
             error: null,
@@ -180,6 +201,8 @@ const sittings = load(src("lib/exam-lab/sittings.ts"));
 const analytics = load(src("lib/exam-lab/analytics.ts"));
 mocks["@/lib/sat/image-access"] = load(src("lib/sat/image-access.ts"));
 const assetRoute = load(src("app/api/exam-lab/asset/route.ts"));
+const institutions = load(src("lib/portal/institutions.ts"));
+const rankings = load(src("lib/portal/rankings.ts")); // behind /api/portal/leaderboard
 
 // ---- helpers --------------------------------------------------------------------
 const req = (body) => ({ json: async () => structuredClone(body), headers: { get: () => null } });
@@ -775,6 +798,62 @@ async function allocate(id, over) {
   assert.equal(await allocations.gradedCount("u1", "gap"), 2);
   assert.equal(await allocations.recordGraded("u1", "gap", 2), true, "an existing slot is confirmed, never overwritten");
   assert.equal(files.get("portal-data/exam-allocations/graded/u1/gap/1.json"), "{}");
+
+  // ===== NB9 (final fix wave): a trim records only what is already stored =====
+  // An unlocked re-sit of an allocation whose first sitting (stored before the record existed) is
+  // the oldest of 800 attempts. Storing the re-sit trims that sitting, so it goes on the record
+  // first -- the sitting alone, not the re-sit: if the history write then fails, the re-sit was
+  // never stored and must still be there (the record used to count it and so use it up).
+  await allocate("nb9", { mode: "assignment_nohelp", content: { type: "custom", ids: ["m3"] } });
+  files.set(attemptsKey, JSON.stringify({ attempts: [storedBefore("nb9"), ...Array.from({ length: attempts.MAX_ATTEMPTS - 1 }, (_, i) => filler(i))] }));
+  await proctor.startSession("u1", "alloc-nb9", sessionInit);
+  await proctor.unlockTest("u1", "alloc-nb9", "sa1", "Super Admin", "re-sit");
+  writeFails.add("u1.json");
+  r = await attempt(null, [{ id: "m3", response: "A" }], osaCtx({ allocationId: "nb9" }));
+  writeFails.delete("u1.json");
+  assert.equal(r.status, 503, "the history write fails: nothing is stored");
+  assert.equal(await allocations.gradedCount("u1", "nb9"), 1, "the record holds the stored sitting, not the re-sit");
+  assert.equal((await openAlloc("nb9")).status, 200, "so the unlocked re-sit is still there");
+  r = await attempt(null, [{ id: "m3", response: "A" }], osaCtx({ allocationId: "nb9" }));
+  assert.equal(r.status, 200, "the retry stores it");
+  assert.equal(await allocations.gradedCount("u1", "nb9"), 2, "and the route records it once stored");
+  assert.deepEqual(await openAlloc("nb9"), usedUp, "now it is used up");
+  await allocations.markSubmitted("u1", "nb9", {});
+
+  // ===== NB8 (final fix wave): the leaderboard leaves out results that are withheld =====
+  // The rankings behind /api/portal/leaderboard (and a student's own rank) read each student's
+  // attempts as the student may see them: a question another of their open tests holds counts
+  // once that hold ends, so its grading can't move their accuracy (a correctness oracle). Staff
+  // reports (the institutions page) still read the stored attempts.
+  files.set("portal-data/institutions.json", JSON.stringify({
+    updated_at: "t", schools: ["School"],
+    classes: [{ id: "c1", key: "c1", school: "School", year: "A Level", section: null, subject: "Physics", name: "A Level" }],
+  }));
+  dbRows.edu_enrolments = [{ student_id: "st1", edu_students: { id: "st1", student_no: null, profile_id: "u1", edu_profiles: { full_name: "Ayesha Khan", email: "s1@example.test" } } }]; // ("Student …" names are dropped as demo accounts)
+  await allocate("lb-test", { mode: "test", content: { type: "custom", ids: ["m2"] } });
+  const lbTs = Date.now() - 60_000;
+  const lbAttempt = (m2Right) => ({
+    id: "lb-1", ts: lbTs, mode: "drill", paperType: "P1", score: m2Right ? 2 : 1, total: 2, qCount: 2, scoredCount: 2, attemptedCount: 2,
+    questions: [
+      { id: "m1", topic: "Waves", level: "LOT", paperType: "P1", marks: 1, earned: 1, correct: true, response: "B" },
+      { id: "m2", topic: "Waves", level: "HOT", paperType: "P1", marks: 1, earned: m2Right ? 1 : 0, correct: m2Right, response: m2Right ? "C" : "D", withheldFor: ["lb-test"] },
+    ],
+    context: { integrity: "standard", kind: "assignment", help: false, revealsUsed: 0, proctored: false, cancelled: false, flags: 0, allocationId: "lb-a" },
+  });
+  const board = async (m2Right) => {
+    files.set(attemptsKey, JSON.stringify({ attempts: [lbAttempt(m2Right)] }));
+    const me = (await rankings.buildRankings()).students.find((s) => s.uid === "u1");
+    const [school] = await institutions.getInstitutionReport();
+    return { me, staffAccuracy: school.classes[0].students[0].accuracy };
+  };
+  const heldRight = await board(true);
+  const heldWrong = await board(false);
+  assert.equal(heldRight.me.accuracy, 100, "the leaderboard counts only the result that isn't withheld");
+  assert.deepEqual(heldWrong.me, heldRight.me, "right or wrong, the held question moves nothing on the leaderboard");
+  assert.deepEqual([heldRight.staffAccuracy, heldWrong.staffAccuracy], [100, 50], "staff reports read the stored attempts");
+  await allocations.markSubmitted("u1", "lb-test", {});
+  assert.equal((await board(false)).me.accuracy, 50, "released once the test is done");
+  dbRows.edu_enrolments = [];
 
   // ===== m2: a student signs by path only what their own work references =====
   const sign = async (paths) => (await assetRoute.POST(req({ paths }))).status;

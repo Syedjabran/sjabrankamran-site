@@ -77,7 +77,10 @@ export async function getRankingsCached(ttlMs = 60_000): Promise<RankingsData> {
 }
 
 export async function buildRankings(): Promise<RankingsData> {
-  const schoolsReport = await getInstitutionReport();
+  // Students see these figures (the leaderboard, their own rank), so every
+  // student's attempts are read as they may see them: a result another of
+  // their open tests holds counts once that hold ends -- as kpi.ts does.
+  const schoolsReport = await getInstitutionReport(null, null, { studentView: true });
 
   // ---- Flatten students, tagging school/class ----
   type SFlat = RankedStudent & { _classId: string };
