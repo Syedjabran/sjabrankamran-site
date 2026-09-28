@@ -948,6 +948,9 @@ export function PaperRunner({
             {alreadyNote && (
               <p className="mt-2 text-xs text-amber-200">Your answers for this activity were already recorded earlier, so this sitting&rsquo;s answers were not saved again.</p>
             )}
+            {!!review?.pending && (
+              <p className="mt-2 text-xs text-dust">{review.pending === 1 ? "1 question’s result appears" : `${review.pending} questions’ results appear`} after your other test: your answers are recorded and marked, and the score above leaves them out until then.</p>
+            )}
             {reviewState === "error" && (
               <p className="el-noprint mt-2 flex flex-wrap items-center gap-2 text-xs text-signal">
                 {reviewErr || "Couldn't load your results."}

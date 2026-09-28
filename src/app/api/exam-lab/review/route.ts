@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getPortalUser, isExamLabStaff } from "@/lib/edu/auth";
-import { revealAfterSubmit } from "@/lib/exam-lab/answer-rules";
-import { getAllocation, type ExamAllocation } from "@/lib/exam-lab/allocations";
-import { getAttemptsStrict, type Attempt } from "@/lib/exam-lab/attempts";
+import { holdingIds, resultWithheld, revealAfterSubmit } from "@/lib/exam-lab/answer-rules";
+import { listAllocations, type ExamAllocation } from "@/lib/exam-lab/allocations";
+import { getAttemptsStrict, type Attempt, type AttemptQuestion } from "@/lib/exam-lab/attempts";
 import { questionById } from "@/lib/exam-lab/bank-all";
 import { heldIds, readSitting } from "@/lib/exam-lab/sittings";
 import { imageUrls } from "@/lib/sat/signed-images";
@@ -34,9 +34,13 @@ export async function POST(request: Request) {
   if (!sitting) return NextResponse.json({ error: "This sitting has expired. Your answers are saved — see My question records." }, { status: 403 });
 
   const now = Date.now();
+  const staff = isExamLabStaff(user.roles);
   let attempt: Attempt | undefined;
   let alloc: ExamAllocation | null = null;
-  let held: Set<string>;
+  // Withheld from this review: a practice paper's questions held as of its
+  // opening; an allocation's graded questions whose result another of the
+  // student's allocations still holds (answer-rules.ts resultWithheld).
+  let withheld: (q: AttemptQuestion) => boolean;
   try {
     const attempts = await getAttemptsStrict(user.id);
     // A practice sitting's own attempt; an allocation's recorded submission
@@ -44,31 +48,43 @@ export async function POST(request: Request) {
     attempt = [...attempts].reverse().find((a) => !a.context?.cancelled && (sitting.alloc ? a.context?.allocationId === sitting.alloc : a.context?.sittingId === sitting.sid));
     if (!attempt) return NextResponse.json({ error: "Submit your answers first." }, { status: 409 });
     if (sitting.alloc) {
-      alloc = await getAllocation(user.id, sitting.alloc);
+      const allocs = await listAllocations(user.id);
+      alloc = allocs.find((a) => a.id === sitting.alloc) ?? null;
       if (!alloc || alloc.status !== "submitted") return NextResponse.json({ error: "Submit your answers first." }, { status: 409 });
+      // Released as each hold ends (the other allocation is submitted, or
+      // past due + 7 days); staff see everything.
+      const holding = staff ? new Set<string>() : holdingIds(allocs.filter((a) => a.id !== sitting.alloc), now);
+      withheld = (q) => !!q.held || resultWithheld(q, holding);
+    } else {
+      // Held as of the sitting's opening (not now): when a hold starts is
+      // plannable (a test's start - 14 days), so judging it now would let a
+      // sitting blank-submitted just before and reviewed just after name the
+      // test's questions.
+      const held = staff ? new Set<string>() : await heldIds(user.id, sitting.iat, null);
+      withheld = (q) => !!q.held || held.has(q.id);
     }
-    // Held as of the sitting's opening (not now): when a hold starts is
-    // plannable (a test's start - 14 days), so judging it now would let a
-    // sitting blank-submitted just before and reviewed just after name the
-    // test's questions.
-    held = isExamLabStaff(user.roles) ? new Set() : await heldIds(user.id, sitting.iat, sitting.alloc);
   } catch {
     return NextResponse.json({ error: "Exam Lab is temporarily unavailable. Please retry." }, { status: 503 });
   }
 
   const own = new Set(sitting.ids);
   const mine = attempt.questions.filter((q) => own.has(q.id));
-  // Questions stored held (see /attempt) carry no result: out of the score.
-  const mcqs = mine.filter((q) => q.paperType === "P1" && !q.held);
+  // Withheld questions carry no result here: out of the score. An
+  // allocation's are graded and come back when the hold ends: `pending`
+  // counts them ("N questions' results appear after your other test").
+  const shown = mine.filter((q) => !withheld(q));
+  const pendingN = sitting.alloc ? mine.filter((q) => !q.held && withheld(q)).length : 0;
+  const pending = pendingN ? { pending: pendingN } : {};
+  const mcqs = shown.filter((q) => q.paperType === "P1");
   const mcq = { got: mcqs.filter((q) => q.correct === true).length, total: mcqs.length };
   if (!revealAfterSubmit(sitting.strict, alloc?.mode ?? null)) {
-    return NextResponse.json({ mcq }, { status: 200, headers: { "cache-control": "no-store" } });
+    return NextResponse.json({ mcq, ...pending }, { status: 200, headers: { "cache-control": "no-store" } });
   }
 
   const items: Record<string, Item> = {};
   const msPaths: Record<string, string> = {};
   for (const aq of mine) {
-    if (aq.held || held.has(aq.id)) { items[aq.id] = { held: true }; continue; }
+    if (withheld(aq)) { items[aq.id] = { held: true }; continue; }
     const bq = questionById(aq.id);
     if (!bq) continue;
     if (bq.paperType === "P1") items[aq.id] = { answer: bq.answer ?? undefined, correct: aq.correct };
@@ -88,5 +104,5 @@ export async function POST(request: Request) {
   for (const [list, got] of [[reuse, signed], [renew, resigned]] as const) {
     if (got.ok) for (const [id, path] of list) if (got.urls[path]) items[id].ms = got.urls[path];
   }
-  return NextResponse.json({ mcq, items }, { status: 200, headers: { "cache-control": "no-store" } });
+  return NextResponse.json({ mcq, ...pending, items }, { status: 200, headers: { "cache-control": "no-store" } });
 }

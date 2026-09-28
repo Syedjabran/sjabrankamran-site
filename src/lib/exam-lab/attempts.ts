@@ -3,6 +3,8 @@
  * Stored as one JSON doc per user in the private 'exam-data' bucket
  * (service-role access) — no schema migration required.
  */
+import { gradedCount, listAllocations, recordGraded, type ExamAllocation } from "./allocations";
+import { allocationSubmissions, holdingIds, studentAttemptView } from "./answer-rules";
 import { readFreshJson, writeFreshJson } from "./storage-fresh";
 
 export type AttemptQuestion = {
@@ -23,6 +25,14 @@ export type AttemptQuestion = {
    *  and no marks, and left out of every score, record and analytics figure,
    *  so a practice paper can't be used to check a held question's answer. */
   held?: true;
+  /** SERVER-SET, allocation attempts only: the ids of the student's OTHER
+   *  allocations that held this question when it was graded. It is graded and
+   *  kept like the rest (staff see it all); the student is shown no
+   *  correctness, marks, feedback or mark scheme for it while one of them
+   *  still holds it (answer-rules.ts studentAttemptView). */
+  withheldFor?: string[];
+  /** Student view only (never stored): the result is withheld for now. */
+  resultPending?: true;
 };
 
 /**
@@ -92,6 +102,8 @@ export function isGenuineAttempt(at: Attempt): boolean {
 }
 
 const BUCKET = "exam-data";
+/** The attempt history keeps this many, newest last. */
+export const MAX_ATTEMPTS = 800;
 
 const docPath = (userId: string) => `${userId}.json`;
 
@@ -110,6 +122,26 @@ export async function getAttempts(userId: string): Promise<Attempt[]> {
   } catch {
     return [];
   }
+}
+
+/** An attempt as its STUDENT may see it (`pending`: questions whose result
+ *  is withheld for now -- answer-rules.ts studentAttemptView). */
+export type StudentAttempt = Attempt & { pending: number };
+
+/** What the student sees of their attempts: a graded question another of
+ *  their allocations still holds shows no correctness, marks or feedback,
+ *  and its marks are out of the attempt's score. `allocs` null (they could
+ *  not be read) withholds every such result. Every student-facing view of
+ *  attempts goes through this; staff views read the stored attempts. */
+export function studentAttempts(attempts: Attempt[], allocs: ExamAllocation[] | null, now = Date.now()): StudentAttempt[] {
+  const holding = holdingIds(allocs, now);
+  return attempts.map((a) => studentAttemptView(a, holding));
+}
+
+/** Display-only: the student's own attempts as they may see them. */
+export async function getStudentAttempts(userId: string, now = Date.now()): Promise<StudentAttempt[]> {
+  const [attempts, allocs] = await Promise.all([getAttempts(userId), listAllocations(userId).catch(() => null)]);
+  return studentAttempts(attempts, allocs, now);
 }
 
 export async function appendAttempt(userId: string, attempt: Attempt): Promise<boolean> {
@@ -160,6 +192,18 @@ export async function appendAttemptChecked(
   }
   if (refused) return "refused";
   existing.push(attempt);
-  // keep the most recent 800 attempts
-  return (await writeFreshJson(BUCKET, docPath(userId), { attempts: existing.slice(-800) })) ? "stored" : "failed";
+  // Keep the most recent 800 attempts. An allocation attempt about to be
+  // trimmed is first made sure of in its allocation's durable record
+  // (allocations.ts gradedCount): trimming never frees a graded submission.
+  const dropped = existing.slice(0, Math.max(0, existing.length - MAX_ATTEMPTS));
+  const allocIds = new Set(dropped.map((a) => a.context?.allocationId).filter((id): id is string => !!id));
+  try {
+    for (const id of allocIds) {
+      const n = allocationSubmissions(existing, id);
+      if ((await gradedCount(userId, id)) < n && !(await recordGraded(userId, id, n, { backfill: true }))) return "failed";
+    }
+  } catch {
+    return "failed";
+  }
+  return (await writeFreshJson(BUCKET, docPath(userId), { attempts: existing.slice(-MAX_ATTEMPTS) })) ? "stored" : "failed";
 }

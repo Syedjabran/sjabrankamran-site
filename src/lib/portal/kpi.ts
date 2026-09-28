@@ -36,7 +36,7 @@
  * /portal/my-ranking and the KPI APIs.
  */
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getAttempts, isGenuineAttempt, type Attempt } from "@/lib/exam-lab/attempts";
+import { getAttempts, isGenuineAttempt, studentAttempts, type Attempt } from "@/lib/exam-lab/attempts";
 import { getRegistry, staffRoleMap, isDemoStudentName } from "@/lib/portal/institutions";
 import { listAllocations, type ExamAllocation } from "@/lib/exam-lab/allocations";
 import { listTasks, type PersonalTask } from "@/lib/portal/tasks";
@@ -396,7 +396,7 @@ export async function buildKpiTable(prev: KpiTable | null): Promise<KpiTable> {
       const uid = st?.profile_id;
       if (!st?.id || !uid || roleMap.has(uid) || isDemoStudentName(st?.edu_profiles?.full_name)) return;
 
-      const [attempts, attRows, subRows, allocs, tasks, contrib] = await Promise.all([
+      const [storedAttempts, attRows, subRows, allocsRead, tasks, contrib] = await Promise.all([
         getAttempts(uid).catch(() => [] as Attempt[]),
         sb.from("edu_attendance").select("status").eq("student_id", st.id).then((x) => (x.data || []).map((y) => y.status as string)),
         sb.from("edu_submissions")
@@ -404,11 +404,15 @@ export async function buildKpiTable(prev: KpiTable | null): Promise<KpiTable> {
           .eq("student_id", st.id)
           .then((x) => ((x.data || []) as unknown as { status: string; marks: number | null; submitted_at: string | null; edu_assignments?: { title?: string; due_at?: string | null } }[])
             .map((y) => ({ status: y.status, marks: y.marks, submitted_at: y.submitted_at, due_at: y.edu_assignments?.due_at ?? null, title: y.edu_assignments?.title || "" }))),
-        listAllocations(uid).catch(() => [] as ExamAllocation[]),
+        listAllocations(uid).catch(() => null),
         listTasks(uid).catch(() => [] as PersonalTask[]),
         getContrib(uid).catch(() => null),
       ]);
 
+      const allocs: ExamAllocation[] = allocsRead ?? [];
+      // The student's own view (their KPI and ranking are shown to them): a
+      // result another of their open tests holds counts once that hold ends.
+      const attempts = studentAttempts(storedAttempts, allocsRead);
       const mastery = masteryPillar(attempts);
       const practice = practicePillar(attempts.filter(isGenuineAttempt));
       const genuineAllocIds = new Set(

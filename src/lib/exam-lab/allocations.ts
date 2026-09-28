@@ -252,7 +252,7 @@ export async function withFrozenSets(uid: string, items: ExamAllocation[], needs
  * failure or an unverifiable write, so a sitting never opens on ids the
  * attempt route would not recognise (fails closed).
  */
-export async function freezeAllocationIds(uid: string, id: string, pick: () => string[]): Promise<string[] | null> {
+export async function freezeAllocationIds(uid: string, id: string, pick: () => string[] | Promise<string[]>): Promise<string[] | null> {
   const first = await read(uid);
   const it = first.items.find((x) => x.id === id);
   if (!it) return null;
@@ -261,7 +261,7 @@ export async function freezeAllocationIds(uid: string, id: string, pick: () => s
   let ids = await readFrozenIds(uid, id);
   if (ids === null) throw new Error("Could not read the paper.");
   if (!ids) {
-    const mine = pick();
+    const mine = await pick();
     if (!mine.length) return [];
     if (!(await createFreshJson(DATA, frozenPath(uid, id), { ids: mine }))) {
       // Another opener got there first (or the create failed): adopt what is stored.
@@ -286,6 +286,45 @@ export async function freezeAllocationIds(uid: string, id: string, pick: () => s
   const check = (await read(uid)).items.find((x) => x.id === id);
   if (check && sameList(check.frozenIds, ids)) return ids;
   throw new Error("Could not save the paper.");
+}
+
+// The durable record of an allocation's graded submissions: one write-once
+// object per submission slot, exam-allocations/graded/<uid>/<allocId>/<n>.json
+// (slot n = the (n+1)-th graded submission). The attempt history keeps only
+// the last 800 attempts, so it can't be what decides whether a submission is
+// still allowed -- ~800 practice submissions would push an allocation's
+// graded one out of it. Nothing ever deletes these.
+// (An allocation id outside the safe path alphabet -- none is made today --
+// is spelled in hex rather than refused, so it can never block submissions.)
+const gradedDir = (uid: string, id: string) => `exam-allocations/graded/${uid}/${FROZEN_SAFE.test(id) ? id : `h-${Buffer.from(id).toString("hex").slice(0, 200)}`}`;
+const GRADED_SLOT = /^(\d{1,4})\.json$/;
+
+/** How many graded submissions the durable record holds for an allocation
+ *  (the highest slot + 1). THROWS when it can't be listed. */
+export async function gradedCount(uid: string, id: string): Promise<number> {
+  if (!FROZEN_SAFE.test(uid)) throw new Error("Could not read the submission record.");
+  const { data, error } = await createAdminClient().storage.from(DATA).list(gradedDir(uid, id), { limit: 1000 });
+  if (error) throw new Error("Could not read the submission record.");
+  let n = 0;
+  for (const f of data ?? []) {
+    const m = GRADED_SLOT.exec(f.name);
+    if (m) n = Math.max(n, Number(m[1]) + 1);
+  }
+  return n;
+}
+
+/**
+ * Makes the durable record hold at least `count` graded submissions for the
+ * allocation (writes slot count-1, write-once: a slot that already exists
+ * is never overwritten). True when the record now holds it; false when it
+ * could not be written or confirmed.
+ */
+export async function recordGraded(uid: string, id: string, count: number, entry: Record<string, unknown> = {}): Promise<boolean> {
+  if (count < 1 || !FROZEN_SAFE.test(uid)) return false;
+  const path = `${gradedDir(uid, id)}/${count - 1}.json`;
+  if (await createFreshJson(DATA, path, { at: Date.now(), ...entry })) return true;
+  const r = await readFreshJson(DATA, path); // already there (a retry, or a concurrent save), or the write failed
+  return r.ok && r.data !== null;
 }
 
 /** The guard mode an allocation runs under (mirrors `allocCfg` in papers-hub). */

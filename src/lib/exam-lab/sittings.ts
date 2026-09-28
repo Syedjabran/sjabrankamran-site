@@ -12,12 +12,14 @@ import "server-only";
 import { imageUrls, imagesOf } from "@/lib/sat/signed-images";
 import { formatPk } from "@/lib/portal/pk-time";
 import {
-  LAUNCHABLE_STATUSES, SITTING_MAX_AGE_MS, allocationQuestionIds, hasStarted, inPlayIds, isInPlay, pausedPaperTypes, revealScope, sittingTokenOk,
-  type SittingToken,
+  LAUNCHABLE_STATUSES, SITTING_MAX_AGE_MS, allocationQuestionIds, gradedUsed, hasStarted, inPlayHolders, inPlayIds, isInPlay, pausedPaperTypes, revealScope,
+  sittingAlreadySubmitted, sittingTokenOk, type SittingToken,
 } from "./answer-rules";
 import {
-  freezeAllocationIds, getAllocation, listAllocations, withFrozenSets, withProctorStatus, type AllocContent, type ExamAllocation,
+  freezeAllocationIds, getAllocation, gradedCount, listAllocations, withFrozenSets, withProctorStatus, type AllocContent, type ExamAllocation,
 } from "./allocations";
+import { getAttemptsStrict } from "./attempts";
+import { unlockCount } from "./proctor";
 import { idsOfPaper, isSecureQuestion, practiceBank, questionById, safeQuestion } from "./bank-all";
 import { IMAGE_BANK, type ImgQuestion } from "./image-bank";
 import { examLabKey } from "./keys";
@@ -75,15 +77,27 @@ async function holdingAllocations(uid: string, moments: number[], exceptAllocati
 }
 
 /** Question ids held back from `uid` at any of `moments` (a past moment for
- *  a review or a submission: as of its sitting's opening): those of their
- *  open or upcoming tests and no-help assignments (optionally except one).
- *  One read of the allocations. Throws when they cannot be read -- callers
- *  refuse rather than guess. */
-export async function heldIdsAt(uid: string, moments: number[], exceptAllocationId: string | null = null): Promise<Set<string>> {
+ *  a review or a submission: as of its sitting's opening), each with the
+ *  ids of the allocations holding it: those of their open or upcoming tests
+ *  and no-help assignments (optionally except one). One read of the
+ *  allocations. Throws when they cannot be read -- callers refuse rather
+ *  than guess. */
+export async function heldByAt(uid: string, moments: number[], exceptAllocationId: string | null = null): Promise<Map<string, Set<string>>> {
   const allocs = await holdingAllocations(uid, moments, exceptAllocationId);
-  const out = new Set<string>();
-  for (const t of moments) for (const id of inPlayIds(allocs, t, idsOfPaper, exceptAllocationId)) out.add(id);
+  const out = new Map<string, Set<string>>();
+  for (const t of moments) {
+    for (const [id, by] of inPlayHolders(allocs, t, idsOfPaper, exceptAllocationId)) {
+      const all = out.get(id) ?? new Set<string>();
+      for (const a of by) all.add(a);
+      out.set(id, all);
+    }
+  }
   return out;
+}
+
+/** Question ids held back from `uid` at any of `moments` (see heldByAt). */
+export async function heldIdsAt(uid: string, moments: number[], exceptAllocationId: string | null = null): Promise<Set<string>> {
+  return new Set((await heldByAt(uid, moments, exceptAllocationId)).keys());
 }
 
 /** Question ids held back from `uid` at `now` (see heldIdsAt). */
@@ -144,6 +158,21 @@ function allocStrict(a: ExamAllocation): boolean {
   return (a.integrity ?? (a.mode === "test" ? "strict" : a.mode === "assignment_nohelp" ? "standard" : "off")) === "strict";
 }
 
+/** The refusal of an allocation whose graded submission is used up: plain,
+ *  nothing about the answers on record. */
+export const ALREADY_RECORDED = "Your answers for this are already recorded. If you need another attempt, ask your teacher.";
+
+/** Whether an allocation's graded submissions are used up -- counted from
+ *  its durable record and its stored attempts, against one plus the
+ *  super-admin unlocks on record (the same rule /attempt applies). THROWS
+ *  when any of them can't be read. */
+async function submissionUsedUp(uid: string, alloc: ExamAllocation): Promise<boolean> {
+  const [existing, recorded] = await Promise.all([getAttemptsStrict(uid), gradedCount(uid, alloc.id)]);
+  if (!gradedUsed(existing, alloc.id, recorded)) return false;
+  const unlocks = await unlockCount(uid, alloc.attemptId);
+  return sittingAlreadySubmitted(existing, { sittingId: null, allocationId: alloc.id, allocSubmitted: false, unlocks, recorded });
+}
+
 /** One of the student's own allocations, once it has opened: its exact
  *  paper (a legacy randomised spec is frozen here, at the first open). */
 export async function openAllocation(uid: string, allocationId: string, now = Date.now()): Promise<SittingResult> {
@@ -159,13 +188,24 @@ export async function openAllocation(uid: string, allocationId: string, now = Da
   if (alloc.status === "submitted") return refuse(409, "You have already submitted this activity.");
   if (alloc.status === "locked") return refuse(423, "This test is locked. Request a review from your teacher.");
   if (!LAUNCHABLE_STATUSES.includes(alloc.status)) return refuse(409, "This activity can't be opened right now.");
+  // Its graded submission is already used (a sitting stored earlier, one its
+  // browser called cancelled included): refused here, not after a whole
+  // sitting, unless a super-admin unlock granted another.
+  try {
+    if (await submissionUsedUp(uid, alloc)) return refuse(409, ALREADY_RECORDED);
+  } catch {
+    return UNAVAILABLE;
+  }
 
   const c = alloc.content;
+  const allocId = alloc.id;
   let questions: ImgQuestion[];
   if (c.type === "drill" || c.type === "daily") {
     let ids: string[] | null;
     try {
-      ids = await freezeAllocationIds(uid, alloc.id, () => legacyDrillPick(c, IMAGE_BANK, Math.random));
+      // The first open draws the paper, leaving out (when the pool allows)
+      // what the student's other open allocations hold.
+      ids = await freezeAllocationIds(uid, allocId, async () => legacyDrillPick(c, IMAGE_BANK, Math.random, await heldIds(uid, now, allocId)));
     } catch {
       return UNAVAILABLE;
     }

@@ -3,16 +3,16 @@ import { z } from "zod";
 import { getPortalUser, isExamLabStaff } from "@/lib/edu/auth";
 import { appendAttemptChecked, submissionFlags, type Attempt, type AttemptContext, type AttemptQuestion } from "@/lib/exam-lab/attempts";
 import { idsOfPaper, questionById } from "@/lib/exam-lab/bank-all";
-import { getAllocation, isStrictAlloc, markSubmitted, readFrozenIds, type ExamAllocation } from "@/lib/exam-lab/allocations";
+import { getAllocation, gradedCount, isStrictAlloc, markSubmitted, readFrozenIds, recordGraded, type ExamAllocation } from "@/lib/exam-lab/allocations";
 import {
-  SUBMIT_MAX_AGE_MS, allocationQuestionIds, allocationSubmissions, frozenResponse, hasStarted, receiptMatches, revealScope, sameIdSet,
+  SUBMIT_MAX_AGE_MS, allocationQuestionIds, frozenResponse, gradedUsed, hasStarted, receiptMatches, revealScope, sameIdSet,
   sittingAlreadySubmitted, type MarkReceipt, type RevealRecord,
 } from "@/lib/exam-lab/answer-rules";
 import { examLabKey } from "@/lib/exam-lab/keys";
 import { unlockCount } from "@/lib/exam-lab/proctor";
 import { readReveals } from "@/lib/exam-lab/reveals";
 import { verifyToken } from "@/lib/exam-lab/seal";
-import { heldIdsAt, readSitting } from "@/lib/exam-lab/sittings";
+import { heldByAt, readSitting } from "@/lib/exam-lab/sittings";
 
 export const runtime = "nodejs";
 
@@ -162,18 +162,24 @@ export async function POST(request: Request) {
     reveals = read;
   }
   // A sitting may hold questions held back for the student by ANOTHER piece
-  // of work (an open test or no-help assignment's: in a whole practice
-  // paper, or in an allocation that shares questions with it): those are
-  // stored unscored -- no answer, no correctness, no marks -- so the score,
-  // "My question records" and /review say the same whatever was answered.
-  // Held as of submission (a paper opened before a hold began is no way
-  // round it), or as of the sitting's opening (the same holds /review
-  // withholds, answer-rules.ts isInPlay at the token's iat). An allocation's
-  // own hold never un-grades its own questions: they are its real result.
-  let held = new Set<string>();
+  // of work (an open test or no-help assignment's), as of submission (a
+  // paper opened before a hold began is no way round it) or as of the
+  // sitting's opening (the same holds /review withholds, answer-rules.ts
+  // isInPlay at the token's iat).
+  //  - In a PRACTICE paper they are stored unscored -- no answer, no
+  //    correctness, no marks -- so the score, "My question records" and
+  //    /review say the same whatever was answered.
+  //  - In an ALLOCATION (the study plan's daily and weekly share topic
+  //    pools; a teacher may set overlapping work) they are the student's
+  //    real work: answered, attempted, graded and stored for staff like the
+  //    rest, and recorded with the allocations holding them (`withheldFor`)
+  //    so every student-facing view withholds their result until those
+  //    holds end (answer-rules.ts studentAttemptView). An allocation's own
+  //    hold is never counted against its own questions.
+  let holders = new Map<string, Set<string>>();
   if ((alloc || sitting) && !isExamLabStaff(user.roles)) {
     try {
-      held = await heldIdsAt(user.id, sitting ? [sitting.iat, now] : [now], alloc?.id ?? null);
+      holders = await heldByAt(user.id, sitting ? [sitting.iat, now] : [now], alloc?.id ?? null);
     } catch {
       return NextResponse.json({ error: "Your answers couldn't be checked just now. Please retry." }, { status: 503 });
     }
@@ -183,7 +189,8 @@ export async function POST(request: Request) {
     const bq = questionById(q.id);
     if (!bq) return NextResponse.json({ error: "The attempt contains an unknown question." }, { status: 400 });
     const marks = bq.marks || 1;
-    if (held.has(bq.id)) {
+    const heldBy = holders.get(bq.id);
+    if (heldBy && !alloc) {
       questions.push({ id: bq.id, topic: bq.topic, level: bq.level, paperType: bq.paperType, marks, earned: null, correct: null, spentSec: null, response: null, feedback: null, held: true });
       continue;
     }
@@ -208,6 +215,7 @@ export async function POST(request: Request) {
       id: bq.id, topic: bq.topic, level: bq.level, paperType: bq.paperType, marks,
       earned, correct, spentSec: q.spentSec ?? null, expectedSec: q.expectedSec,
       response, feedback,
+      ...(heldBy ? { withheldFor: [...heldBy].sort() } : {}),
     });
   }
   const scored = questions.filter((q) => q.earned !== null);
@@ -256,17 +264,32 @@ export async function POST(request: Request) {
   // super-admin unlock on record. What the browser says about its sitting
   // (cancelled, integrity, proctored, flags) is stored for staff and never
   // consulted, so a "cancelled" sitting can't be graded again and again.
+  // An allocation's submissions are counted from its durable record, which
+  // trimming the attempt history never removes (allocations.ts gradedCount).
   let history: Attempt[] = [];
+  let used = 0;
   const result = await appendAttemptChecked(user.id, attempt, async (existing) => {
     history = existing;
-    // The unlocks matter (and are read) only once the allocation already has a submission.
-    const unlocks = alloc && allocationSubmissions(existing, alloc.id) > 0 ? await unlockCount(user.id, alloc.attemptId) : 0;
+    let recorded = 0;
+    let unlocks = 0;
+    if (alloc) {
+      recorded = await gradedCount(user.id, alloc.id);
+      used = gradedUsed(existing, alloc.id, recorded);
+      // The unlocks matter (and are read) only once the allocation already has a submission.
+      if (used > 0) unlocks = await unlockCount(user.id, alloc.attemptId);
+    }
     return sittingAlreadySubmitted(existing, {
-      sittingId: sitting?.sid ?? null, allocationId: alloc?.id ?? null, allocSubmitted: alloc?.status === "submitted", unlocks,
+      sittingId: sitting?.sid ?? null, allocationId: alloc?.id ?? null, allocSubmitted: alloc?.status === "submitted", unlocks, recorded,
     });
   });
   // A refusal says nothing about these answers: no score, no correctness.
   if (result === "refused") return NextResponse.json({ ok: false, alreadySubmitted: true, error: ALREADY }, { status: 409 });
+  // This submission is now on the allocation's durable record. If that write
+  // fails the attempt still counts through the history, and trimming it
+  // later writes the record first (attempts.ts appendAttemptChecked).
+  if (result === "stored" && alloc) {
+    await recordGraded(user.id, alloc.id, used + 1, { submissionId: attempt.context?.submissionId ?? null, sittingId: sitting?.sid ?? null }).catch(() => false);
+  }
   // A sitting its browser stopped (its guard cancelled it) is the
   // allocation's submission as it stood, and the runner never marks it
   // submitted: close it here, so the student isn't offered a re-sit that

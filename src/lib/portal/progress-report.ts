@@ -7,7 +7,7 @@
  * call fails. Used by the progress-email route (manual + scheduled agent).
  */
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getAttempts } from "@/lib/exam-lab/attempts";
+import { getStudentAttempts } from "@/lib/exam-lab/attempts";
 import { analyse } from "@/lib/exam-lab/analytics";
 import { attendancePercent } from "@/lib/edu/attendance";
 import { listTasks } from "@/lib/portal/tasks";
@@ -40,7 +40,8 @@ function model() {
 
 export async function buildStats(uid: string, studentId: string, name: string, className: string): Promise<ProgressStats> {
   const supabase = createAdminClient();
-  const attempts = uid ? await getAttempts(uid) : [];
+  // The student's own view: the report goes to them and their parents.
+  const attempts = uid ? await getStudentAttempts(uid) : [];
   const a = analyse(attempts);
 
   let attendancePct: number | null = null;

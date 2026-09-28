@@ -1,5 +1,5 @@
 /** Automated weakness-led study plans. SERVER-ONLY. */
-import { getAttempts } from "@/lib/exam-lab/attempts";
+import { getStudentAttempts } from "@/lib/exam-lab/attempts";
 import { analyse } from "@/lib/exam-lab/analytics";
 import { allocateToStudents, listAllocations, newAllocId } from "@/lib/exam-lab/allocations";
 import { assignTask, listTasks, type PersonalTask } from "@/lib/portal/tasks";
@@ -89,7 +89,8 @@ async function courseStage(uid: string): Promise<"AS" | "A2" | "OL"> {
  */
 export async function ensureStudyPlan(uid: string): Promise<StudyPlanSummary> {
   const [attempts, stage, classes] = await Promise.all([
-    getAttempts(uid).catch(() => []),
+    // The student's own view (the level and focus topics are shown to them).
+    getStudentAttempts(uid).catch(() => []),
     courseStage(uid),
     classesForUids([uid]).catch(() => []),
   ]);

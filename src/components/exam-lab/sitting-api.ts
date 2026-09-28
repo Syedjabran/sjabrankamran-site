@@ -71,7 +71,9 @@ export async function signSittingImages(token: string, paths: string[], fresh = 
 }
 
 export type ReviewItem = { answer?: string; correct?: boolean | null; ms?: string; held?: true };
-export type Review = { mcq: { got: number; total: number }; items?: Record<string, ReviewItem> };
+/** `pending`: an allocation's questions whose result is withheld while
+ *  another of the student's tests or no-help assignments holds them. */
+export type Review = { mcq: { got: number; total: number }; items?: Record<string, ReviewItem>; pending?: number };
 
 /** A submitted sitting's results (answers and mark schemes where allowed).
  *  `fresh`: questions whose mark-scheme image failed -- signed again. */
@@ -82,7 +84,7 @@ export async function fetchReview(token: string, fresh?: string[]): Promise<{ ok
     if (!r.ok) return { ok: false, error: errorOf(j, "Couldn't load your results.") };
     const v = j as Partial<Review> | null;
     if (!v?.mcq) return { ok: false, error: "Couldn't load your results." };
-    return { ok: true, review: { mcq: v.mcq, items: v.items } };
+    return { ok: true, review: { mcq: v.mcq, items: v.items, ...(typeof v.pending === "number" && v.pending > 0 ? { pending: v.pending } : {}) } };
   } catch {
     return { ok: false, error: "Couldn't load your results. Check your connection." };
   }

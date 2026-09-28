@@ -20,10 +20,16 @@
  * test pauses no practice paper (NB2); the first-open freeze is race-safe
  * and survives a stale write (NB3); reveals are listed once (NB4).
  * Round 4: holds follow the write-once frozen set after a stale write and
- * fail closed (NB5); inside an allocation, another allocation's held
- * questions are stored unscored (R1); an allocation takes one graded
- * submission whatever the browser says -- "cancelled" buys no re-sit, a
- * super-admin unlock buys exactly one (OS-A).
+ * fail closed (NB5); an allocation takes one graded submission whatever the
+ * browser says -- "cancelled" buys no re-sit, a super-admin unlock buys
+ * exactly one (OS-A).
+ * Round 5: inside an allocation, a question another allocation holds keeps
+ * its answer, counts as attempted and is graded for staff; only its result
+ * is withheld from the student until that hold ends, and a drill-style
+ * allocation's first draw avoids such questions when the pool allows (NB6,
+ * replacing round 4's R1); a used-up allocation is refused when it opens
+ * (NB7); the one-submission rule reads a durable record that trimming the
+ * 800-attempt history never removes (OS-A residual).
  */
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -38,6 +44,8 @@ const aiCalls = [];
 const reads = []; // storage paths read, to count reads
 const unreadable = new Set(); // storage paths whose read fails (fail-closed checks)
 let listFails = false; // storage listings fail
+let listFailsUnder = null; // storage listings under this prefix fail
+const completed = []; // linked tasks completed (completeTaskBySource)
 
 // ---- a tiny bank: two MCQs and two structured questions -----------------------
 const bankQs = [
@@ -100,7 +108,7 @@ const mocks = {
       return true;
     },
   },
-  "@/lib/portal/tasks": { completeTaskBySource: async () => {} },
+  "@/lib/portal/tasks": { completeTaskBySource: async (uid, id) => { completed.push([uid, id]); } },
   "@/lib/supabase/admin": {
     createAdminClient: () => ({
       storage: {
@@ -112,7 +120,7 @@ const mocks = {
             return { error: null };
           },
           download: async () => ({ data: new Blob(["img"]), error: null }),
-          list: async (prefix) => (listFails ? { data: null, error: { message: "list failed" } } : {
+          list: async (prefix) => (listFails || (listFailsUnder && prefix.startsWith(listFailsUnder)) ? { data: null, error: { message: "list failed" } } : {
             data: [...files.keys()].filter((k) => k.startsWith(`${bucket}/${prefix}/`)).map((k) => ({ name: k.slice(bucket.length + prefix.length + 2) })).filter((f) => !f.name.includes("/")),
             error: null,
           }),
@@ -168,6 +176,8 @@ const attemptRoute = load(src("app/api/exam-lab/attempt/route.ts"));
 const revealRoute = load(src("app/api/exam-lab/reveal/route.ts"));
 const markRoute = load(src("app/api/exam-lab/mark/route.ts"));
 const attempts = load(src("lib/exam-lab/attempts.ts"));
+const sittings = load(src("lib/exam-lab/sittings.ts"));
+const analytics = load(src("lib/exam-lab/analytics.ts"));
 mocks["@/lib/sat/image-access"] = load(src("lib/sat/image-access.ts"));
 const assetRoute = load(src("app/api/exam-lab/asset/route.ts"));
 
@@ -175,6 +185,14 @@ const assetRoute = load(src("app/api/exam-lab/asset/route.ts"));
 const req = (body) => ({ json: async () => structuredClone(body), headers: { get: () => null } });
 const sitting = (over) => seal.signToken({ v: 1, sid: seal.newSealId(), uid: "u1", alloc: null, help: true, strict: false, iat: Date.now(), ids: ["m1", "s1"], ...over }, KEYS.sitting);
 const open = async (body) => sittingRoute.POST(req(body));
+// An allocation opened as /sitting does, minus its rate limit (30 opens a minute; this file opens more).
+const openAlloc = async (id) => {
+  const res = await sittings.openAllocation("u1", id);
+  if (!res.ok) return { status: res.status, body: { error: res.error } };
+  const { ok: _ok, ...body } = res;
+  void _ok;
+  return { status: 200, body };
+};
 const receipt = (sid, qid, answer, awarded = 4) => seal.signToken({ v: 1, uid: "u1", sid, qid, h: rules.answerHash(answer), awarded, outOf: 4, iat: Date.now() }, KEYS.receipt);
 const sidOf = (token) => seal.verifyToken(token, KEYS.sitting).sid;
 let nonce = 0;
@@ -480,30 +498,115 @@ async function allocate(id, over) {
   assert.equal((await lastAttempt()).questions.find((q) => q.id === "m1").correct, true);
   await allocations.markSubmitted("u1", "lapsing", {});
 
-  // ===== R1: inside an allocation, another allocation's held questions are unscored =====
-  // A live test holds m2; two no-help assignments each share m2 with it.
+  // ===== NB6 (fix round 5): inside an allocation, a question another allocation holds is the
+  // student's real work -- answered, attempted, graded and stored for staff -- and only its
+  // result is withheld from the student, until that hold ends =====
+  const withoutResponse = ({ response: _r, ...rest }) => { void _r; return rest; };
+  const allocAttempt = async (id) => [...(await attempts.getAttemptsStrict("u1"))].reverse().find((a) => a.context?.allocationId === id);
+  const viewOf = async (id) => (await attempts.getStudentAttempts("u1")).slice().reverse().find((a) => a.context?.allocationId === id);
+  const submitted = async (id) => allocationsRoute.POST(req({ id, action: "submitted" }));
+  // (a) The study plan: today's daily challenge shares its topic pool with this week's open
+  // short test. Waves P1 = m1, m2: the weekly froze both, so the daily's draw can't avoid them.
+  const waves = { type: "drill", paperType: "P1", topics: ["Waves"], levels: ["LOT", "HOT"], count: 2 };
+  const planItem = { mode: "assignment_nohelp", integrity: "off", className: "Automated study plan" };
+  await allocate("wk", { ...planItem, content: waves, title: "Weekly short test · Waves", dueAt: new Date(Date.now() + 3 * 24 * 60 * 60_000).toISOString() });
+  r = await openAlloc("wk");
+  assert.equal(r.status, 200);
+  const wkToken = r.body.token;
+  assert.deepEqual(r.body.questions.map((q) => q.id).sort(), ["m1", "m2"], "the weekly froze the whole topic pool");
+  await allocate("dy", { ...planItem, content: waves, daily: true, title: "Daily challenge · Waves", dueAt: new Date(Date.now() + 8 * 60 * 60_000).toISOString() });
+  r = await openAlloc("dy");
+  assert.equal(r.status, 200);
+  const dyToken = r.body.token;
+  assert.deepEqual(r.body.questions.map((q) => q.id).sort(), ["m1", "m2"], "too few questions without the held ones: the normal draw");
+  r = await attempt(dyToken, [{ id: "m1", response: "B" }, { id: "m2", response: "D" }], { kind: "assignment", help: false }); // m1 right, m2 wrong (key C)
+  assert.deepEqual(r, { body: { ok: true }, status: 200 }, "the submission says nothing about correctness");
+  let dy = await allocAttempt("dy");
+  assert.equal(dy.attemptedCount, 2, "every answer counts as attempted");
+  assert.equal(dy.context.status, undefined, "not unattempted");
+  assert.deepEqual(dy.questions.map((q) => [q.id, q.response, q.correct, q.earned, q.withheldFor]), [["m1", "B", true, 1, ["wk"]], ["m2", "D", false, 0, ["wk"]]], "kept, graded and stored for staff, with the hold recorded");
+  assert.equal(dy.score, 1);
+  assert.equal(dy.total, 2);
+  completed.length = 0;
+  r = await submitted("dy");
+  assert.equal(r.status, 200);
+  assert.deepEqual(completed, [["u1", "dy"]], "the daily's mandatory task completes");
+  assert.equal((await allocations.getAllocation("u1", "dy")).unattempted, undefined, "and it is not flagged unattempted");
+  // The student sees no correctness for the shared questions while the weekly holds them.
+  r = await reviewRoute.POST(req({ token: dyToken }));
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { mcq: { got: 0, total: 0 }, pending: 2, items: { m1: { held: true }, m2: { held: true } } }, "the review: no letters, no correctness, out of the score");
+  let view = await viewOf("dy");
+  assert.deepEqual([view.score, view.total, view.scoredCount, view.pending], [0, 0, 0, 2], "My question records: the score leaves them out");
+  assert.deepEqual(view.questions.map((q) => [q.id, q.response, q.correct, q.earned, q.feedback, q.resultPending]), [["m1", "B", null, null, null, true], ["m2", "D", null, null, null, true]], "the answer is shown, its result is not");
+  const studentStats = analytics.analyse([view]);
+  assert.deepEqual([studentStats.questionsAttempted, studentStats.scoredQuestions, studentStats.byTopic.length], [2, 0, 0], "the student's analytics count the work, not its correctness");
+  assert.equal(analytics.analyse([dy]).scoredQuestions, 2, "(staff analytics over the stored attempt score both)");
+  // Staff see all: the stored attempt above, and a staff review of the same sitting.
+  user = { ...user, roles: ["teacher"] };
+  r = await reviewRoute.POST(req({ token: dyToken }));
+  assert.deepEqual([r.body.mcq, r.body.pending, r.body.items.m1, r.body.items.m2], [{ got: 1, total: 2 }, undefined, { answer: "B", correct: true }, { answer: "C", correct: false }], "staff see every result");
+  user = { ...user, roles: ["student"] };
+  // Released when the weekly is submitted (its hold ends).
+  r = await attempt(wkToken, [{ id: "m1", response: "B" }, { id: "m2", response: "C" }], { kind: "assignment", help: false });
+  assert.equal(r.status, 200);
+  assert.equal((await allocAttempt("wk")).questions.some((q) => q.withheldFor), false, "the submitted daily holds nothing");
+  assert.equal((await submitted("wk")).status, 200);
+  r = await reviewRoute.POST(req({ token: dyToken }));
+  assert.deepEqual(r.body, { mcq: { got: 1, total: 2 }, items: { m1: { answer: "B", correct: true }, m2: { answer: "C", correct: false } } }, "released: the review shows the results");
+  view = await viewOf("dy");
+  assert.deepEqual([view.score, view.total, view.pending, view.questions[0].correct, view.questions[1].earned], [1, 2, 0, true, 0], "and so do the records");
+
+  // (b) A teacher-set overlap: a live test holds m2; two no-help assignments share it with the
+  // test (and each other). Answered right in one, wrong in the other: the student can't tell.
   await allocate("r1-test", { mode: "test", content: { type: "custom", ids: ["m2"] } });
   await allocate("r1-a", { mode: "assignment_nohelp", content: { type: "custom", ids: ["m1", "m2"] } });
   await allocate("r1-b", { mode: "assignment_nohelp", content: { type: "custom", ids: ["m3", "m2"] } });
-  const r1a = await open({ allocationId: "r1-a" });
-  const r1b = await open({ allocationId: "r1-b" });
+  const r1a = await openAlloc("r1-a");
+  const r1b = await openAlloc("r1-b");
   assert.equal(r1a.status, 200);
   assert.equal(r1b.status, 200);
   const r1ctx = { kind: "assignment", help: false, integrity: "standard" };
   const resRight = await attempt(r1a.body.token, [{ id: "m1", response: "B" }, { id: "m2", response: "C" }], r1ctx); // m2's key is C
-  const recRight = (await lastAttempt()).questions;
   const resWrong = await attempt(r1b.body.token, [{ id: "m3", response: "A" }, { id: "m2", response: "D" }], r1ctx);
-  const recWrong = (await lastAttempt()).questions;
   assert.equal(JSON.stringify(resRight), JSON.stringify(resWrong), "the same response to the submission");
-  assert.equal(JSON.stringify(recRight.find((q) => q.id === "m2")), JSON.stringify(recWrong.find((q) => q.id === "m2")), "the same stored record for the held question");
-  assert.equal(recRight.find((q) => q.id === "m2").held, true);
-  assert.equal(recRight.find((q) => q.id === "m1").correct, true, "the allocation's own question is graded");
-  assert.equal(recWrong.find((q) => q.id === "m3").correct, true);
-  await allocations.markSubmitted("u1", "r1-a", {});
-  r = await reviewRoute.POST(req({ token: r1a.body.token }));
-  assert.deepEqual(r.body.items.m2, { held: true });
-  assert.deepEqual(r.body.mcq, { got: 1, total: 1 }, "the held question is out of the allocation's score");
-  for (const id of ["r1-b", "r1-test"]) await allocations.markSubmitted("u1", id, {});
+  const recRight = (await allocAttempt("r1-a")).questions.find((q) => q.id === "m2");
+  const recWrong = (await allocAttempt("r1-b")).questions.find((q) => q.id === "m2");
+  assert.deepEqual([recRight.response, recRight.correct, recRight.earned, recRight.withheldFor], ["C", true, 1, ["r1-b", "r1-test"]], "graded and kept for staff");
+  assert.deepEqual([recWrong.response, recWrong.correct, recWrong.earned, recWrong.withheldFor], ["D", false, 0, ["r1-a", "r1-test"]]);
+  for (const id of ["r1-a", "r1-b"]) assert.equal((await submitted(id)).status, 200);
+  const revRight = await reviewRoute.POST(req({ token: r1a.body.token }));
+  const revWrong = await reviewRoute.POST(req({ token: r1b.body.token }));
+  assert.deepEqual(revRight.body.items.m2, { held: true });
+  assert.equal(JSON.stringify([revRight.body.mcq, revRight.body.pending, revRight.body.items.m2]), JSON.stringify([revWrong.body.mcq, revWrong.body.pending, revWrong.body.items.m2]), "the same review of the shared question and the score");
+  assert.deepEqual([revRight.body.mcq, revRight.body.pending], [{ got: 1, total: 1 }, 1], "only the allocation's own question is in its score");
+  const viewRight = (await viewOf("r1-a")).questions.find((q) => q.id === "m2");
+  const viewWrong = (await viewOf("r1-b")).questions.find((q) => q.id === "m2");
+  assert.equal(JSON.stringify(withoutResponse(viewRight)), JSON.stringify(withoutResponse(viewWrong)), "the same record, but for the student's own answer");
+  // Still withheld when the allocations can't be read (fails closed).
+  unreadable.add("exam-allocations/u1.json");
+  assert.equal((await viewOf("r1-a")).questions.find((q) => q.id === "m2").resultPending, true, "unknown holds withhold");
+  unreadable.delete("exam-allocations/u1.json");
+  await allocations.markSubmitted("u1", "r1-test", {});
+  assert.equal((await reviewRoute.POST(req({ token: r1b.body.token }))).body.items.m2.correct, false, "released once the test is done");
+
+  // (c) The first open of a drill-style allocation leaves out what the student's other open
+  // allocations hold, when the pool allows. Waves + Kinematics P1 = m1, m2, m3.
+  const mixed = { type: "drill", paperType: "P1", topics: ["Waves", "Kinematics"], levels: ["LOT", "HOT"] };
+  await allocate("wk2", { ...planItem, content: { ...mixed, count: 2 } });
+  const wk2Ids = (await openAlloc("wk2")).body.questions.map((q) => q.id);
+  const free = ["m1", "m2", "m3"].filter((id) => !wk2Ids.includes(id));
+  assert.equal(free.length, 1);
+  for (let i = 0; i < 6; i++) {
+    await allocate(`dy2-${i}`, { ...planItem, content: { ...mixed, count: 1 }, daily: true });
+    r = await openAlloc(`dy2-${i}`);
+    assert.deepEqual(r.body.questions.map((q) => q.id), free, "the daily avoids the weekly's questions");
+    await allocations.markSubmitted("u1", `dy2-${i}`, {});
+  }
+  await allocate("dy2-big", { ...planItem, content: { ...mixed, count: 2 }, daily: true });
+  r = await openAlloc("dy2-big");
+  assert.equal(r.body.questions.length, 2, "too few without them: a full paper all the same (the overlap is withheld)");
+  for (const id of ["wk2", "dy2-big"]) await allocations.markSubmitted("u1", id, {});
 
   // ===== OS-A: an allocation takes ONE graded submission; the browser can't buy more =====
   const attemptsKey = "exam-data/u1.json";
@@ -579,6 +682,8 @@ async function allocate(id, over) {
   assert.equal((await lastAttempt()).questions.find((q) => q.id === "m1").correct, true);
   r = await attempt(null, [{ id: "m1", response: "C" }, { id: "m3", response: "C" }], osaCtx({ allocationId: "osa-test", kind: "test" }));
   assert.equal(r.status, 409, "exactly one more");
+  const usedUp = { status: 409, body: { error: sittings.ALREADY_RECORDED } };
+  assert.deepEqual(await openAlloc("osa-test"), usedUp, "NB7: and the used-up test no longer opens");
   await allocations.markSubmitted("u1", "osa-test", {});
   // A session unlocked before the ledger existed keeps its one grant through the reset.
   await allocate("osa-legacy", { mode: "test", content: { type: "custom", ids: ["m1"] } });
@@ -587,6 +692,89 @@ async function allocate(id, over) {
   await proctor.startSession("u1", "alloc-osa-legacy", sessionInit);
   assert.equal(await proctor.unlockCount("u1", "alloc-osa-legacy"), 1, "a legacy unlock still grants one");
   await allocations.markSubmitted("u1", "osa-legacy", {});
+
+  // ===== NB7 (fix round 5): a used-up allocation is refused when it opens, not after a whole sitting =====
+  // A proctored test whose proctor session never started (the runner starts the test anyway):
+  // its guard cancel stores the sitting, nothing locks or closes it, and there is no unlock path.
+  await allocate("nb7-test", { mode: "test", content: { type: "custom", ids: ["m1", "m3"] } });
+  r = await openAlloc("nb7-test");
+  assert.equal(r.status, 200);
+  r = await attempt(r.body.token, [{ id: "m1", response: "A" }, { id: "m3", response: "A" }], osaCtx({ kind: "test", integrity: "strict", proctored: true, cancelled: true }));
+  assert.equal(r.status, 200);
+  assert.notEqual((await allocations.getAllocation("u1", "nb7-test")).status, "submitted", "left open (proctored)");
+  assert.deepEqual(await openAlloc("nb7-test"), usedUp, "refused at open with the plain message: no score, no correctness");
+  assert.deepEqual(await open({ allocationId: "nb7-test" }), usedUp, "through /sitting too");
+  // A sitting stored before the durable record existed counts too.
+  const storedBefore = (allocationId, over = {}) => ({
+    id: `alloc-${allocationId}`, ts: Date.now() - 5 * 24 * 60 * 60_000, mode: "drill", paperType: "P1", score: 1, total: 1, qCount: 1, scoredCount: 1, attemptedCount: 1,
+    questions: [{ id: "m3", topic: "Kinematics", level: "LOT", paperType: "P1", marks: 1, earned: 1, correct: true, response: "A" }],
+    context: { integrity: "standard", kind: "assignment", help: false, revealsUsed: 0, proctored: false, cancelled: false, flags: 0, allocationId, ...over },
+  });
+  await allocate("nb7-old", { mode: "assignment_nohelp", content: { type: "custom", ids: ["m3"] } });
+  const pre = JSON.parse(files.get(attemptsKey));
+  pre.attempts.push(storedBefore("nb7-old", { cancelled: true }));
+  files.set(attemptsKey, JSON.stringify(pre));
+  assert.deepEqual(await openAlloc("nb7-old"), usedUp, "a pre-record sitting (browser-cancelled) is the submission");
+  // Nothing unreadable is guessed: the attempts, the record or the unlock ledger -> 503.
+  for (const [what, on, off] of [
+    ["attempts", () => unreadable.add("u1.json"), () => unreadable.delete("u1.json")],
+    ["record", () => { listFailsUnder = "exam-allocations/graded/"; }, () => { listFailsUnder = null; }],
+    ["unlocks", () => unreadable.add("proctor/u1/alloc-nb7-test.json"), () => unreadable.delete("proctor/u1/alloc-nb7-test.json")],
+  ]) {
+    on();
+    assert.equal((await openAlloc("nb7-test")).status, 503, `unreadable ${what}: 503`);
+    off();
+  }
+  for (const id of ["nb7-test", "nb7-old"]) await allocations.markSubmitted("u1", id, {});
+
+  // ===== OS-A residual (fix round 5): the history keeps 800 attempts; the durable record keeps
+  // every graded submission, and trimming writes it first =====
+  await allocate("flood", { mode: "assignment_nohelp", content: { type: "custom", ids: ["m1"] } });
+  r = await openAlloc("flood");
+  r = await attempt(r.body.token, [{ id: "m1", response: "C" }], osaCtx({}));
+  assert.equal(r.status, 200);
+  assert.ok(files.has("portal-data/exam-allocations/graded/u1/flood/0.json"), "the graded submission is on the durable record");
+  // ~800 practice submissions push it out of the history (simulated: the history without it).
+  const flooded = JSON.parse(files.get(attemptsKey));
+  flooded.attempts = flooded.attempts.filter((a) => a.context?.allocationId !== "flood");
+  files.set(attemptsKey, JSON.stringify(flooded));
+  before = [files.get(attemptsKey), files.get(allocKey)];
+  r = await attempt(null, [{ id: "m1", response: "B" }], osaCtx({ allocationId: "flood" }));
+  assert.deepEqual(r, { body: ALREADY, status: 409 }, "still its one graded submission");
+  assert.deepEqual([files.get(attemptsKey), files.get(allocKey)], before, "nothing stored");
+  assert.deepEqual(await openAlloc("flood"), usedUp, "and it doesn't open again");
+  listFailsUnder = "exam-allocations/graded/";
+  r = await attempt(null, [{ id: "m1", response: "B" }], osaCtx({ allocationId: "flood" }));
+  assert.equal(r.status, 503, "a record that can't be read is never read as none");
+  listFailsUnder = null;
+  // A real trim: a sitting stored before the record (none on it) is the oldest of 800.
+  await allocate("trimmed", { mode: "assignment_nohelp", content: { type: "custom", ids: ["m3"] } });
+  const filler = (i) => ({
+    id: `p${i}`, ts: Date.now() - 60_000 + i, mode: "drill", paperType: "P1", score: 0, total: 0, qCount: 0, scoredCount: 0, attemptedCount: 0, questions: [],
+    context: { integrity: "off", kind: "practice", help: true, revealsUsed: 0, proctored: false, cancelled: false, flags: 0, allocationId: null, sittingId: `fill-${i}` },
+  });
+  files.set(attemptsKey, JSON.stringify({ attempts: [storedBefore("trimmed"), ...Array.from({ length: attempts.MAX_ATTEMPTS - 1 }, (_, i) => filler(i))] }));
+  listFailsUnder = "exam-allocations/graded/";
+  before = files.get(attemptsKey);
+  r = await attempt(sitting({ ids: ["m2"] }), [{ id: "m2", response: "C" }]);
+  assert.equal(r.status, 503, "no trim without the record");
+  assert.equal(files.get(attemptsKey), before, "and nothing written");
+  listFailsUnder = null;
+  r = await attempt(sitting({ ids: ["m2"] }), [{ id: "m2", response: "C" }]);
+  assert.equal(r.status, 200, "a practice submission trims the history");
+  const history = JSON.parse(files.get(attemptsKey)).attempts;
+  assert.equal(history.length, attempts.MAX_ATTEMPTS);
+  assert.equal(history.some((a) => a.context?.allocationId === "trimmed"), false, "the allocation's sitting is gone from the history");
+  assert.ok(files.has("portal-data/exam-allocations/graded/u1/trimmed/0.json"), "but on its durable record first");
+  assert.deepEqual(await openAlloc("trimmed"), usedUp, "so it doesn't open");
+  r = await attempt(null, [{ id: "m3", response: "A" }], osaCtx({ allocationId: "trimmed" }));
+  assert.deepEqual(r, { body: ALREADY, status: 409 }, "nor take another graded submission");
+  for (const id of ["flood", "trimmed"]) await allocations.markSubmitted("u1", id, {});
+  // The record counts to its highest slot (a re-sit after a pre-record sitting starts at slot 1).
+  files.set("portal-data/exam-allocations/graded/u1/gap/1.json", "{}");
+  assert.equal(await allocations.gradedCount("u1", "gap"), 2);
+  assert.equal(await allocations.recordGraded("u1", "gap", 2), true, "an existing slot is confirmed, never overwritten");
+  assert.equal(files.get("portal-data/exam-allocations/graded/u1/gap/1.json"), "{}");
 
   // ===== m2: a student signs by path only what their own work references =====
   const sign = async (paths) => (await assetRoute.POST(req({ paths }))).status;

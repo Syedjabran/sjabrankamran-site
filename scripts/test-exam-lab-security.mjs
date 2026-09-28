@@ -5,9 +5,9 @@ import assert from "node:assert/strict";
 import { deriveKey, newSealId, openSealed, sealJson, sha256Hex, signToken, verifyToken } from "../src/lib/exam-lab/seal.ts";
 import {
   IN_PLAY_GRACE_MS, LAUNCHABLE_STATUSES, SITTING_MAX_AGE_MS, SUBMIT_MAX_AGE_MS, UPCOMING_WINDOW_MS, allocationQuestionIds, allocationSubmissions, answerHash,
-  classifyAssetPath, examLabSittingRunning, frozenResponse, hasStarted, helpAllowed, inPlayIds, isInPlay, markAllowedAfterReveal,
-  pastPaperKey, pausedPaperTypes, publicAllocation, questionKey, receiptMatches, revealAfterSubmit, revealScope, sameIdSet, sittingAlreadySubmitted,
-  sittingTokenOk, takeHit,
+  classifyAssetPath, examLabSittingRunning, frozenResponse, gradedUsed, hasStarted, helpAllowed, holdingIds, inPlayHolders, inPlayIds, isInPlay,
+  markAllowedAfterReveal, pastPaperKey, pausedPaperTypes, publicAllocation, questionKey, receiptMatches, resultWithheld, revealAfterSubmit, revealScope,
+  sameIdSet, sittingAlreadySubmitted, sittingTokenOk, studentAttemptView, takeHit,
 } from "../src/lib/exam-lab/answer-rules.ts";
 import {
   DAILY_QUESTIONS, MAX_DRILL_QUESTIONS, PAPERS_PAUSED, legacyDrillPick, pickPractice, practiceRefusal,
@@ -366,5 +366,55 @@ const loadedSel = selectionSummary(["x1", "y9"], { byId: new Map([["y9", { q: sq
 assert.equal(loadedSel.complete, true);
 assert.equal(loadedSel.marks, 5);
 assert.equal(selectionSummary([], null).complete, true);
+
+// --- fix round 5 ----------------------------------------------------------------------------------------
+// NB6: inside an allocation, a question another allocation holds is graded and kept; only its
+// result is withheld from the student, while one of the allocations that held it still does.
+const holders = inPlayHolders([...allocs, alloc({ id: "t2", content: { type: "custom", ids: ["n1", "x9"] } })], NOW, paperIds);
+assert.deepEqual([...holders.get("n1")].sort(), ["nh", "t2"], "every allocation holding a question is named");
+assert.deepEqual([...holders.get("p-q1")], ["t"]);
+assert.equal(holders.has("h1") || holders.has("d1"), false, "help-allowed and submitted work hold nothing");
+assert.deepEqual([...inPlayHolders(allocs, NOW, paperIds, "nh").keys()].sort(), ["lf1", "p-q1", "p-q2", "p-q3"], "an allocation's own hold is left out");
+const holdingNow = holdingIds(allocs, NOW);
+assert.deepEqual([...holdingNow].sort(), ["legacy", "legacy-frozen", "nh", "t"]);
+assert.equal(holdingIds(null, NOW), null);
+assert.equal(resultWithheld({ withheldFor: ["nh"] }, holdingNow), true, "withheld while its holder is in play");
+assert.equal(resultWithheld({ withheldFor: ["done"] }, holdingNow), false, "released once that hold ended");
+assert.equal(resultWithheld({ withheldFor: ["gone"] }, holdingNow), false, "or its allocation is gone");
+assert.equal(resultWithheld({}, holdingNow), false);
+assert.equal(resultWithheld({ withheldFor: [] }, null), false);
+assert.equal(resultWithheld({ withheldFor: ["done"] }, null), true, "holds that can't be read withhold");
+const graded = { score: 3, total: 5, scoredCount: 3, questions: [
+  { id: "q1", earned: 1, correct: true, marks: 1, response: "B" },
+  { id: "q2", earned: 0, correct: false, marks: 1, response: "D", withheldFor: ["nh"] },
+  { id: "q3", earned: 2, correct: null, marks: 3, response: "text", feedback: "fb", withheldFor: ["nh", "done"] },
+  { id: "q4", earned: null, correct: null, marks: 4, response: "x", withheldFor: ["done"] },
+] };
+const seen = studentAttemptView(graded, holdingNow);
+assert.deepEqual([seen.score, seen.total, seen.scoredCount, seen.pending], [1, 1, 1, 2], "the score leaves withheld marks out");
+assert.deepEqual(seen.questions[1], { id: "q2", earned: null, correct: null, marks: 1, response: "D", feedback: null, resultPending: true }, "the answer stays, the result goes");
+assert.deepEqual(seen.questions[2], { id: "q3", earned: null, correct: null, marks: 3, response: "text", feedback: null, resultPending: true });
+assert.deepEqual(seen.questions[3], { id: "q4", earned: null, correct: null, marks: 4, response: "x" }, "released: as stored, without the holders' ids");
+assert.deepEqual(seen.questions[0], graded.questions[0]);
+assert.equal(graded.questions[1].correct, false, "the stored attempt is untouched (staff see it all)");
+const releasedAll = studentAttemptView(graded, new Set());
+assert.deepEqual([releasedAll.score, releasedAll.total, releasedAll.scoredCount, releasedAll.pending], [3, 5, 3, 0]);
+assert.equal(studentAttemptView(graded, null).pending, 3, "nothing known: every such result withheld");
+// OS-A residual: the durable record counts what the trimmed history no longer shows.
+assert.equal(gradedUsed([], "A", 1), 1);
+assert.equal(gradedUsed([stored({ allocationId: "A" }), stored({ allocationId: "A" })], "A", 1), 2, "a sitting from before the record still counts");
+assert.equal(gradedUsed([], "A", NaN), 0);
+assert.equal(sittingAlreadySubmitted([], { ...allocSit, recorded: 1 }), true, "a submission trimmed from the history still counts");
+assert.equal(sittingAlreadySubmitted([], { ...allocSit, recorded: 1, unlocks: 1 }), false, "one unlock: one more");
+assert.equal(sittingAlreadySubmitted([], { ...allocSit, recorded: 2, unlocks: 1 }), true);
+assert.equal(sittingAlreadySubmitted([stored({ allocationId: "A" })], { ...allocSit, unlocks: NaN }), true, "a nonsense unlock count grants nothing");
+// NB6: the first open of a drill-style allocation leaves out other allocations' held questions
+// when the pool still gives as many; otherwise it draws normally.
+const wavesP1 = { type: "drill", paperType: "P1", topics: ["Waves"], levels: ["LOT", "HOT"], count: 2 }; // a1, a3, c1
+for (let i = 0; i < 20; i++) assert.deepEqual([...legacyDrillPick(wavesP1, bank, rng, new Set(["a1"]))].sort(), ["a3", "c1"], "the held question is left out");
+for (let i = 0; i < 20; i++) assert.deepEqual(legacyDrillPick({ ...wavesP1, count: 1 }, bank, rng, new Set(["a1", "a3"])), ["c1"]);
+assert.deepEqual([...legacyDrillPick({ ...wavesP1, count: 3 }, bank, rng, new Set(["a1"]))].sort(), ["a1", "a3", "c1"], "too few without it: the normal draw");
+assert.equal(legacyDrillPick({ ...wavesP1, count: 5 }, bank, rng, new Set(["a1"])).length, 3, "a pool smaller than the count: all of it, as before");
+assert.deepEqual(legacyDrillPick({ type: "drill", paperType: "P1", topics: ["Waves"], levels: ["HOT"], count: 5 }, bank, rng, new Set(["a3"])), ["a3"], "the spec's own pool is kept (no wider fallback to dodge a hold)");
 
 console.log("exam-lab security tests passed");

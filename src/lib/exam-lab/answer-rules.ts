@@ -92,17 +92,89 @@ export function isInPlay(a: Pick<AllocLike, "mode" | "status" | "dueAt"> & { sta
   return true;
 }
 
+/** Every question id held by the student's in-play allocations, with the ids
+ *  of the allocations holding it (optionally leaving one allocation out: a
+ *  sitting's own questions). */
+export function inPlayHolders(
+  allocs: AllocLike[], now: number, idsOfPaper: (code: string) => string[], exceptAllocationId: string | null = null,
+): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const a of allocs) {
+    if (a.id === exceptAllocationId || !isInPlay(a, now)) continue;
+    for (const id of allocationQuestionIds(a, idsOfPaper) ?? []) {
+      const by = out.get(id) ?? new Set<string>();
+      by.add(a.id);
+      out.set(id, by);
+    }
+  }
+  return out;
+}
+
 /** Every question id held by the student's in-play allocations (optionally
  *  leaving one allocation out: a finished sitting's own questions). */
 export function inPlayIds(
   allocs: AllocLike[], now: number, idsOfPaper: (code: string) => string[], exceptAllocationId: string | null = null,
 ): Set<string> {
-  const out = new Set<string>();
-  for (const a of allocs) {
-    if (a.id === exceptAllocationId || !isInPlay(a, now)) continue;
-    for (const id of allocationQuestionIds(a, idsOfPaper) ?? []) out.add(id);
-  }
-  return out;
+  return new Set(inPlayHolders(allocs, now, idsOfPaper, exceptAllocationId).keys());
+}
+
+// --- results withheld inside an allocation ------------------------------------
+//
+// An allocation's question that ANOTHER of the student's in-play allocations
+// also holds (the study plan's daily and weekly draw from one topic pool; a
+// teacher may set overlapping work) is graded like the rest -- its answer
+// kept, counted as attempted, marked, stored for staff -- and recorded with
+// the ids of the allocations holding it (`withheldFor`). Only what it tells
+// the STUDENT is withheld: its correctness, marks, feedback and mark scheme,
+// in every student-facing view, while one of those allocations still holds
+// it (is in play). The hold's end (submitted, or due + 7 days) releases it.
+
+/** The ids of the allocations in play at `now` (they hold their questions
+ *  back), or null when the allocations could not be read (unknown). */
+export function holdingIds(allocs: Pick<AllocLike, "id" | "mode" | "status" | "dueAt" | "startsAt" | "createdAt">[] | null, now: number): Set<string> | null {
+  return allocs ? new Set(allocs.filter((a) => isInPlay(a, now)).map((a) => a.id)) : null;
+}
+
+/** A graded question's result is withheld from the student while one of the
+ *  allocations that held it when it was graded still holds it. `holding`
+ *  null (the allocations are unknown) withholds every such question. */
+export function resultWithheld(q: { withheldFor?: string[] }, holding: ReadonlySet<string> | null): boolean {
+  if (!q.withheldFor || !q.withheldFor.length) return false;
+  return !holding || q.withheldFor.some((id) => holding.has(id));
+}
+
+export type GradedQuestionLike = { earned: number | null; correct: boolean | null; marks: number; feedback?: string | null; withheldFor?: string[] };
+
+/**
+ * What the student sees of one stored attempt: each question whose result is
+ * still withheld (resultWithheld) keeps its answer and is marked
+ * `resultPending`, with no correctness, marks or feedback; the attempt's
+ * score, total and scored count leave its marks out; `pending` counts them
+ * ("N questions' results appear after your other test"). The ids of the
+ * holding allocations stay on the server. Staff read the stored attempt,
+ * never this.
+ */
+export function studentAttemptView<Q extends GradedQuestionLike, A extends { score: number; total: number; scoredCount: number; questions: Q[] }>(
+  a: A, holding: ReadonlySet<string> | null,
+): A & { pending: number } {
+  let pending = 0;
+  let lessScore = 0;
+  let lessTotal = 0;
+  let lessScored = 0;
+  const questions = a.questions.map((q) => {
+    if (!q.withheldFor) return q;
+    const { withheldFor: _by, ...rest } = q;
+    void _by;
+    if (!resultWithheld(q, holding)) return rest as Q;
+    pending++;
+    if (q.earned !== null) {
+      lessScore += q.earned;
+      lessTotal += q.marks;
+      lessScored++;
+    }
+    return { ...rest, earned: null, correct: null, feedback: null, resultPending: true } as unknown as Q;
+  });
+  return { ...a, questions, score: a.score - lessScore, total: a.total - lessTotal, scoredCount: a.scoredCount - lessScored, pending };
 }
 
 /** A test or no-help assignment a TEACHER set (not an automated study-plan
@@ -222,23 +294,32 @@ export function allocationSubmissions(existing: StoredAttemptLike[], allocationI
   return existing.filter((a) => a.context?.allocationId === allocationId).length;
 }
 
+/** How many graded submissions an allocation has used: its durable record
+ *  (`recorded`, allocations.ts gradedCount -- the attempt history keeps only
+ *  the last 800 attempts, the record keeps every one), or the stored
+ *  attempts, for one from before the record existed. */
+export function gradedUsed(existing: StoredAttemptLike[], allocationId: string, recorded: number): number {
+  return Math.max(Number.isFinite(recorded) ? recorded : 0, allocationSubmissions(existing, allocationId));
+}
+
 /**
  * Whether a new attempt must be refused, decided by the server alone: one
  * attempt per opened sitting; an allocation that is marked submitted takes
  * no more; and an allocation takes ONE graded submission, plus one more for
- * each staff unlock the server recorded (`unlocks`, proctor.ts unlockCount).
+ * each staff unlock the server recorded (`unlocks`, proctor.ts unlockCount),
+ * counted from its durable record (`recorded`, see gradedUsed).
  * Nothing the browser reports about its sitting (cancelled, integrity,
  * proctored, flags) is consulted: those are stored for staff only, so a
  * sitting reported cancelled can't be used to be graded again and again.
  */
 export function sittingAlreadySubmitted(
   existing: StoredAttemptLike[],
-  s: { sittingId: string | null; allocationId: string | null; allocSubmitted: boolean; unlocks: number },
+  s: { sittingId: string | null; allocationId: string | null; allocSubmitted: boolean; unlocks: number; recorded?: number },
 ): boolean {
   if (s.sittingId && existing.some((a) => a.context?.sittingId === s.sittingId)) return true;
   if (!s.allocationId) return false;
   if (s.allocSubmitted) return true;
-  return allocationSubmissions(existing, s.allocationId) >= 1 + Math.max(0, s.unlocks);
+  return gradedUsed(existing, s.allocationId, s.recorded ?? 0) >= 1 + Math.max(0, Number.isFinite(s.unlocks) ? s.unlocks : 0);
 }
 
 /** Help (a mark scheme, Maxwell) for one question of a sitting: only in a

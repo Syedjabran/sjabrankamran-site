@@ -116,7 +116,16 @@ function legacyCount(spec: LegacySpec): number {
 }
 
 /** The questions a legacy randomised allocation spec resolves to, frozen on
- *  the server at the student's first open (sittings.ts openAllocation). */
-export function legacyDrillPick(spec: LegacySpec, bank: PoolQuestion[], rng: Rng): string[] {
-  return shuffled(legacyPool(spec, bank), rng).slice(0, legacyCount(spec)).map((q) => q.id);
+ *  the server at the student's first open (sittings.ts openAllocation).
+ *  `held`: the questions the student's OTHER open allocations hold (the
+ *  study plan's daily and weekly draw from one topic pool) -- left out when
+ *  the pool still gives as many questions without them; otherwise the draw
+ *  is the normal one, and an overlap is graded with its result withheld
+ *  (answer-rules.ts studentAttemptView). */
+export function legacyDrillPick(spec: LegacySpec, bank: PoolQuestion[], rng: Rng, held: ReadonlySet<string> = new Set()): string[] {
+  const pool = legacyPool(spec, bank);
+  const count = legacyCount(spec);
+  const open = held.size ? pool.filter((q) => !held.has(q.id)) : pool;
+  const from = open.length >= Math.min(count, pool.length) ? open : pool;
+  return shuffled(from, rng).slice(0, count).map((q) => q.id);
 }
