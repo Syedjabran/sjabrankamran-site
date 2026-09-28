@@ -34,14 +34,14 @@ export function RolePreviewSwitcher({ previewing }: { previewing: string | null 
   }
   return (
     <div className="relative">
-      <button onClick={() => setOpen((o) => !o)} title="Preview the portal as another role"
-        className="inline-flex items-center gap-1.5 rounded-full border border-white/15 px-3 py-1.5 text-xs text-fog transition hover:border-cyan/40 hover:text-cyan">
-        <Eye size={13} /> View as… <ChevronDown size={12} />
+      <button onClick={() => setOpen((o) => !o)} title="Preview the portal as another role" aria-label="View the portal as another role"
+        className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/15 px-2.5 text-xs text-fog transition hover:border-cyan/40 hover:text-cyan sm:px-3">
+        <Eye size={14} /> <span className="hidden sm:inline">View as…</span> <ChevronDown size={12} className="hidden sm:block" />
       </button>
       {open ? (
         <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 z-20 mt-2 max-h-[70vh] w-52 overflow-y-auto rounded-xl border border-white/10 bg-abyss/95 p-1 shadow-xl backdrop-blur">
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 z-50 mt-2 max-h-[70vh] w-52 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-white/10 bg-abyss/95 p-1 shadow-xl backdrop-blur">
             <p className="px-3 py-1.5 text-[10px] uppercase tracking-widest text-dust">Preview interface as</p>
             {ROLES.map(([v, l]) => (
               <button key={v} onClick={() => setRole(v)}

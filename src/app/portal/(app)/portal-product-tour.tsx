@@ -2,79 +2,46 @@
 
 import "driver.js/dist/driver.css";
 import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import { CircleHelp } from "lucide-react";
 import { driver, type Driver, type DriveStep } from "driver.js";
-import { itemForRoute } from "@/lib/portal/subjects";
+import { presentSteps, tourSteps, type PortalNav } from "@/lib/portal/portal-nav";
+import { TOUR_POPOVER_CLASS } from "@/lib/portal/tour-style";
 
-const SEEN_KEY = "sjak_portal_tooltips_seen_v1";
+// v2: the subject-first navigation replaced the sidebar the first tour
+// walked, so everyone sees the new tour once.
+const SEEN_KEY = "sjak_portal_tooltips_seen_v2";
 
-export function PortalProductTour({ autoStart = true }: { autoStart?: boolean }) {
+/**
+ * The product tour: the viewer's own navigation, step by step (portal-nav.ts
+ * `tourSteps`), on the page they are on. A step whose control isn't on the
+ * page (a group the role doesn't have, a space they can't open) is skipped.
+ */
+export function PortalProductTour({ nav, autoStart = true }: { nav: PortalNav; autoStart?: boolean }) {
   const tourRef = useRef<Driver | null>(null);
+  const pathname = usePathname();
 
   function startTour() {
     tourRef.current?.destroy();
-    const links = [...document.querySelectorAll<HTMLElement>("[data-portal-tour]")];
-    const steps: DriveStep[] = [
-      {
-        popover: {
-          title: "Welcome to your portal",
-          description: "Use Next to explore each live control. The highlighted items are the actual links you will use—not a video demonstration.",
-        },
-      },
-      {
-        element: "[data-tour='portal-navigation']",
-        popover: {
-          title: "Your role-aware navigation",
-          description: "The menu automatically shows only the tools available to your student, parent or staff role.",
-          side: "right",
-          align: "start",
-        },
-      },
-      ...links.map((link): DriveStep => {
-        const label = link.dataset.portalTour || link.textContent?.trim() || "Portal feature";
-        // Each link's one-line purpose comes from the subject registry.
-        const purpose = itemForRoute(link.getAttribute("href"))?.purpose;
-        return {
-          element: link,
-          popover: {
-            title: label,
-            description: purpose || "Open this section to use the related portal feature.",
-            side: "right",
-            align: "center",
-          },
-        };
-      }),
-      {
-        element: "[data-tour='portal-alerts']",
-        popover: {
-          title: "Real-time alerts",
-          description: "The bell updates for announcements, scheduled activities, reminders and marked work.",
-          side: "bottom",
-          align: "end",
-        },
-      },
-      {
-        element: "[data-tour='portal-profile']",
-        popover: {
-          title: "Profile and settings",
-          description: "Manage your profile, guardian information and available device settings here.",
-          side: "bottom",
-          align: "end",
-        },
-      },
-    ];
-
+    const steps = presentSteps(tourSteps(nav, pathname), (target) => !!document.querySelector(target))
+      .map((step): DriveStep => ({
+        element: step.target ?? undefined,
+        popover: { title: step.title, description: step.body, side: step.side, align: step.align },
+      }));
     const tour = driver({
       animate: true,
       smoothScroll: true,
       showProgress: true,
+      progressText: "{{current}} of {{total}}",
       allowClose: true,
-      overlayOpacity: 0.74,
-      stagePadding: 8,
-      stageRadius: 12,
-      nextBtnText: "Next feature",
+      overlayColor: "#02040b",
+      overlayOpacity: 0.72,
+      stagePadding: 6,
+      stageRadius: 14,
+      popoverClass: TOUR_POPOVER_CLASS,
+      nextBtnText: "Next",
       prevBtnText: "Back",
-      doneBtnText: "Finish",
+      doneBtnText: "Done",
       steps,
       onDestroyed: () => {
         try { localStorage.setItem(SEEN_KEY, "1"); } catch { /* ignore */ }
@@ -94,11 +61,16 @@ export function PortalProductTour({ autoStart = true }: { autoStart?: boolean })
     if (seen) return;
     const timer = window.setTimeout(startTour, 700);
     return () => window.clearTimeout(timer);
+    // Once per mount: the tour starts on the first portal page opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoStart]);
 
+  useEffect(() => () => tourRef.current?.destroy(), []);
+
   return (
-    <button type="button" onClick={startTour} className="inline-flex items-center gap-1.5 rounded-full border border-cyan/30 px-3 py-1.5 text-xs text-cyan transition hover:bg-cyan/10" title="Explain portal features">
-      <CircleHelp size={13} /> <span className="hidden sm:inline">Tour</span>
+    <button type="button" onClick={startTour} aria-label="Take the tour" title="Take the tour"
+      className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-white/15 text-fog transition hover:border-cyan/40 hover:text-cyan focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan">
+      <CircleHelp size={16} />
     </button>
   );
 }

@@ -1,24 +1,40 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import {
   Users, School, BookOpen, Receipt, AlertTriangle, Hourglass, GraduationCap,
-  UserPlus, ClipboardList, Mail, BarChart3, Activity, ShieldCheck, KeyRound,
+  UserPlus, ClipboardList, Mail, Activity, ShieldCheck, KeyRound,
   Ban, RotateCcw, Trash2, UserCog, FileText, Paperclip, ArrowRight, Building2,
-  BrainCircuit, CheckCircle2,
+  CheckCircle2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getPortalUser, isAdmin, isStaff, isSchoolScopedStaff, ROLE_LABELS, type EduRole } from "@/lib/edu/auth";
 import { getRegistry } from "@/lib/portal/institutions";
-import { effectiveRoles } from "@/lib/portal/view-as";
 import { AdminUserSearch } from "./admin-user-search";
 import { OnlineNow } from "./online-now";
-import { ensureStudyPlan } from "@/lib/portal/study-plan";
 import { DEMO_STUDENT_UID } from "@/lib/portal/demo-student";
-import { listAllocations } from "@/lib/exam-lab/allocations";
-import { listTasks } from "@/lib/portal/tasks";
 import { formatPk, pkToday } from "@/lib/portal/pk-time";
+import { viewerNav } from "@/lib/portal/viewer-nav";
+import { satProfileOf, studentWork } from "@/lib/portal/student-work";
+import { planLine, satGlance } from "@/lib/portal/glance";
+import { SPACE_COOKIE } from "@/lib/portal/space-cookie";
+import { courseOf, courseShortLabel, subjectOf, type SubjectId } from "@/lib/portal/subjects";
+import type { PortalNav } from "@/lib/portal/portal-nav";
+import { LinkGroup, MoreGroup, SubjectCards } from "./portal-home-nav";
 
 export const metadata = { title: "Portal Dashboard" };
+
+/** The home page's groups under the subject cards (the sidebar's replacement):
+ *  Administration for staff, General, and More (folded) when there is any. */
+function HomeGroups({ nav }: { nav: PortalNav }) {
+  return (
+    <>
+      <LinkGroup id="administration" title="Administration" links={nav.admin} tour="group-admin" />
+      <LinkGroup id="general" title="General" links={nav.general} tour="group-general" />
+      <MoreGroup links={nav.more} />
+    </>
+  );
+}
 
 async function count(table: string, filter?: (q: unknown) => unknown): Promise<number | null> {
   try {
@@ -131,17 +147,22 @@ export default async function PortalDashboard() {
     if (user.roles.includes("coordinator") || user.roles.includes("facilitator")) redirect("/portal/coordinator");
     redirect("/portal/admin/attendance-view");
   }
-  const { roles: effRoles } = await effectiveRoles(user);
+  const viewer = await viewerNav(user);
+  const { nav, roles: effRoles } = viewer;
 
   if (user.roles.length === 0) {
     return (
-      <div className="rounded-2xl border border-white/10 bg-space/60 p-8 text-center">
-        <Hourglass size={22} className="mx-auto text-cyan" />
-        <h1 className="mt-4 text-xl font-semibold text-ice">Account created — awaiting access</h1>
-        <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-fog">
-          Your account exists but no portal role has been assigned yet. An administrator will
-          link your account to a student, parent or staff profile.
-        </p>
+      <div className="space-y-8">
+        <div className="rounded-2xl border border-white/10 bg-space/60 p-8 text-center">
+          <Hourglass size={22} className="mx-auto text-cyan" />
+          <h1 className="mt-4 text-xl font-semibold text-ice">Account created — awaiting access</h1>
+          <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-fog">
+            Your account exists but no portal role has been assigned yet. An administrator will
+            link your account to a student, parent or staff profile.
+          </p>
+        </div>
+        {nav.spaces.length ? <SubjectCards nav={nav} /> : null}
+        <HomeGroups nav={nav} />
       </div>
     );
   }
@@ -191,6 +212,9 @@ export default async function PortalDashboard() {
           </div>
         ) : null}
 
+        <SubjectCards nav={nav} />
+        <HomeGroups nav={nav} />
+
         {/* KPIs */}
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
           <StatCard label="Students" value={students} icon={Users} href="/portal/admin/users?role=student" />
@@ -235,26 +259,9 @@ export default async function PortalDashboard() {
           </section>
           ) : null}
 
-          {/* Quick actions */}
+          {/* Who is online, and the schools */}
           <section className="space-y-3">
             <OnlineNow />
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-ice"><BarChart3 size={16} className="text-cyan" /> Quick actions</h2>
-            {[
-              { href: "/portal/admin/users", icon: Users, title: "Users & activity", desc: "Create, restrict, reset, view any user's activity" },
-              { href: "/portal/admin/assign", icon: ClipboardList, title: "Post assignment / test", desc: "With attachments & per-question timers" },
-              { href: "/portal/admin/analytics", icon: BarChart3, title: "Rankings & analytics", desc: "Leaderboards, levels & performance charts" },
-              { href: "/portal/admin/institutions", icon: Building2, title: "Institutions", desc: "Per-school & per-class analytics" },
-              { href: "/portal/admin/mail", icon: Mail, title: "Email", desc: "Message students, parents & classes" },
-            ].map((a) => (
-              <Link key={a.href} href={a.href} className="group flex items-center gap-3 rounded-2xl border border-white/10 bg-space/60 p-4 transition-all hover:-translate-y-0.5 hover:border-cyan/30 hover:bg-white/[0.03]">
-                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-cyan/25 text-cyan"><a.icon size={18} /></span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-ice">{a.title}</p>
-                  <p className="truncate text-[11px] text-dust">{a.desc}</p>
-                </div>
-                <ArrowRight size={15} className="text-dust transition group-hover:translate-x-0.5 group-hover:text-cyan" />
-              </Link>
-            ))}
             {schools.length ? (
               <div className="rounded-2xl border border-white/10 bg-space/60 p-4">
                 <p className="mb-2 text-[11px] uppercase tracking-widest text-dust">Schools</p>
@@ -271,30 +278,23 @@ export default async function PortalDashboard() {
     );
   }
 
-  // Non-staff (student / parent) home. In Super Admin's Student preview, use
-  // the private QA student's plan so the preview is representative and does
-  // not create student tasks against the administrator's own account.
+  // Non-staff (student / parent) home: the subject cards first, then the one
+  // dominant next action, deadlines, and the General and More groups. In
+  // Super Admin's Student preview, use the private QA student's work so the
+  // preview is representative and does not create student tasks against the
+  // administrator's own account.
   const planUid = user.roles.includes("student") ? user.id : DEMO_STUDENT_UID;
   const isStudent = effRoles.includes("student");
-  const [studentPlan, allocations, tasks] = isStudent
-    ? await Promise.all([
-        // A storage blip while generating the plan must not take down the
-        // dashboard — the plan card is simply hidden until the next load.
-        ensureStudyPlan(planUid).catch(() => null),
-        listAllocations(planUid).catch(() => []),
-        listTasks(planUid).catch(() => []),
-      ])
-    : [null, [], []];
+  const work = isStudent ? await studentWork(planUid) : null;
+  const physicsWork = nav.spaces.some((s) => s.modules.some((m) => m.id === "exam-lab"));
+  const satSpace = nav.spaces.some((s) => s.modules.some((m) => m.id === "sat-today"));
+  const satProfile = isStudent && satSpace ? await satProfileOf(planUid) : undefined;
 
   // Priority model (master prompt E1): 1 dominant continue-action, then
-  // deadlines, then the plan. Open allocations sort by due date; a missing
-  // due date sorts last. Tasks fill in when no allocation is open.
-  const openAllocs = (allocations as Awaited<ReturnType<typeof listAllocations>>)
-    .filter((a) => a.status === "assigned" || a.status === "in_progress" || a.status === "unlocked")
-    .sort((a, b) => (a.dueAt ? Date.parse(a.dueAt) : Infinity) - (b.dueAt ? Date.parse(b.dueAt) : Infinity));
-  const openTasks = (tasks as Awaited<ReturnType<typeof listTasks>>)
-    .filter((t) => t.status !== "done")
-    .sort((a, b) => (a.dueAt ? Date.parse(a.dueAt) : Infinity) - (b.dueAt ? Date.parse(b.dueAt) : Infinity));
+  // deadlines. Open allocations sort by due date; a missing due date sorts
+  // last. Tasks fill in when no allocation is open.
+  const openAllocs = work?.openAllocations ?? [];
+  const openTasks = work?.openTasks ?? [];
   const heroAlloc = openAllocs[0] || null;
   const heroTask = heroAlloc ? null : openTasks[0] || null;
   // Labels by Pakistan calendar day: past the due instant → overdue; else
@@ -330,11 +330,42 @@ export default async function PortalDashboard() {
     .sort((a, b) => (a.due ? Date.parse(a.due) : Infinity) - (b.due ? Date.parse(b.due) : Infinity))
     .slice(0, 4);
 
-  return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-semibold text-ice">Welcome{user.fullName ? `, ${user.fullName.split(" ")[0]}` : ""}</h1>
+  // Each subject card's one line, from the work read above, and its course.
+  const glances: Partial<Record<SubjectId, string | null>> = {};
+  if (work && physicsWork) {
+    const due = heroAlloc ? fmtDue(heroAlloc.dueAt) : null;
+    glances.physics = heroAlloc
+      ? `Next: ${heroAlloc.title}${due ? ` · due ${due}` : ""}`
+      : planLine(work.plan?.openMandatory ?? 0) ?? "All caught up.";
+  }
+  if (isStudent && satSpace) glances.sat = satGlance(satProfile, pkToday());
+  const courseLines: Partial<Record<SubjectId, string>> = {};
+  for (const def of (viewer.courseAccess?.allowed ?? []).map((c) => courseOf(c))) {
+    if (def?.code) courseLines[def.subject] = [courseLines[def.subject], courseShortLabel(def)].filter(Boolean).join(" · ");
+  }
 
-      {/* 1 — dominant continue-action */}
+  // "Continue in Physics": the space last opened, or the only one.
+  const rememberedId = (await cookies()).get(SPACE_COOKIE)?.value;
+  const continueIn = nav.spaces.find((s) => s.id === rememberedId) ?? (nav.spaces.length === 1 ? nav.spaces[0] : null);
+  // Where an all-caught-up student practises: their first space's practice page.
+  const practice = nav.spaces
+    .map((space) => ({ space, link: space.modules.find((m) => m.id === subjectOf(space.id)?.practice) }))
+    .find((p) => p.link);
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h1 className="text-2xl font-semibold text-ice">Welcome{user.fullName ? `, ${user.fullName.split(" ")[0]}` : ""}</h1>
+        {continueIn ? (
+          <Link href={continueIn.href} className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-white/15 px-3.5 text-sm text-fog transition hover:border-cyan/40 hover:text-cyan">
+            Continue in {continueIn.shortLabel} <ArrowRight size={14} aria-hidden="true" />
+          </Link>
+        ) : null}
+      </div>
+
+      <SubjectCards nav={nav} glances={glances} courses={courseLines} unavailable={viewer.subjectsUnavailable} />
+
+      {/* Up next — the dominant continue-action */}
       {heroAlloc ? (
         <a
           href={`/portal/exam-lab?allocation=${encodeURIComponent(heroAlloc.id)}`}
@@ -363,8 +394,10 @@ export default async function PortalDashboard() {
       ) : isStudent ? (
         <div className="rounded-3xl border border-emerald2/30 bg-emerald2/5 p-6">
           <p className="flex items-center gap-2 text-lg font-semibold text-emerald2"><CheckCircle2 size={18} /> All caught up</p>
-          <p className="mt-1 text-sm text-fog">No open assignments or tasks. Sit a practice paper in Exam Lab to stay sharp.</p>
-          <a href="/portal/exam-lab" className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-cyan">Open Exam Lab <ArrowRight size={14} /></a>
+          <p className="mt-1 text-sm text-fog">No open assignments or tasks.{practice ? ` Practise in ${practice.space.label} to stay sharp.` : ""}</p>
+          {practice?.link ? (
+            <Link href={practice.link.href} className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-cyan">Open {practice.link.name} <ArrowRight size={14} /></Link>
+          ) : null}
         </div>
       ) : (
         <div className="rounded-2xl border border-white/10 bg-space/60 p-6">
@@ -376,7 +409,7 @@ export default async function PortalDashboard() {
         </div>
       )}
 
-      {/* 2 — upcoming deadlines */}
+      {/* Coming up — the next deadlines after the one above */}
       {deadlines.length > 1 ? (
         <section className="rounded-2xl border border-white/10 bg-space/60 p-5" aria-label="Upcoming deadlines">
           <h2 className="mb-3 text-sm font-semibold text-ice">Coming up</h2>
@@ -395,19 +428,8 @@ export default async function PortalDashboard() {
           </ul>
         </section>
       ) : null}
-      {studentPlan ? (
-        <a href="/portal/study-plan" className="group block rounded-2xl border border-cyan/25 bg-gradient-to-br from-cyan/[0.08] to-space/60 p-6 transition hover:border-cyan/50 hover:bg-cyan/[0.1]">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="flex items-center gap-2 text-lg font-semibold text-ice"><BrainCircuit size={19} className="text-cyan" /> Personalised weekly study plan</p>
-              <p className="mt-2 max-w-2xl text-sm text-fog">A gradual plan based on your ranking, weak topics and Exam Lab evidence: targeted reading, video, simulation, assignment, short test and daily challenge.</p>
-              <p className="mt-3 text-xs text-cyan">Priority: {studentPlan.focusTopics.join(" · ")}</p>
-            </div>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/35 px-3 py-1.5 text-xs text-amber-300"><CheckCircle2 size={13} /> {studentPlan.openMandatory} mandatory outstanding</span>
-          </div>
-          <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-cyan">Open my plan <ArrowRight size={14} className="transition group-hover:translate-x-1" /></span>
-        </a>
-      ) : null}
+
+      <HomeGroups nav={nav} />
     </div>
   );
 }

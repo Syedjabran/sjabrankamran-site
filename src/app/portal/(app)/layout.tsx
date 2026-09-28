@@ -1,26 +1,20 @@
-import { PortalNavigation } from "@/components/portal-navigation";
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
-import { Eye, GraduationCap, LogOut, Settings } from "lucide-react";
+import { cookies, headers } from "next/headers";
+import { Eye } from "lucide-react";
 import { getPortalUser, ROLE_LABELS, isAdmin, isStaff, isRegistrarOnly, isCoordinatorOnly } from "@/lib/edu/auth";
 import { getPortalRestriction } from "@/lib/portal/access-control";
 import { onboardingStatus } from "@/lib/portal/onboarding";
-import { satOpenIn } from "@/lib/sat/access";
-import { resolveCourseAccess } from "@/lib/portal/course-access";
 import { HelperViewerCourses } from "@/components/helper-viewer";
-import { practicalLabAccess } from "@/lib/portal/practical-lab";
 import { PRACTICAL_LAB_PAGE } from "@/lib/portal/practical-lab-access";
-import { menuFor } from "@/lib/portal/portal-menu";
-import { effectiveRoles } from "@/lib/portal/view-as";
+import { viewerNav } from "@/lib/portal/viewer-nav";
+import { SPACE_COOKIE } from "@/lib/portal/space-cookie";
 import { isEmbeddedClient } from "@/lib/portal/embed";
 import { AccessLockMonitor } from "./access-lock-monitor";
 import { PresenceBeacon } from "./presence-beacon";
 import { PortalAccessBlocked } from "./portal-access-blocked";
 import { PwaPortal } from "./pwa-portal";
 import { RolePreviewSwitcher } from "./role-preview";
-import { NotificationBell } from "./notification-bell";
-import { PortalProductTour } from "./portal-product-tour";
+import { PortalTopBar } from "./portal-top-bar";
 
 export const metadata = { robots: { index: false } };
 
@@ -35,17 +29,17 @@ export default async function PortalLayout({ children }: { children: React.React
   // — this layout re-executes on every portal tab navigation.
   const pathname = (await headers()).get("x-pathname") || "";
   const isStudentUser = user.roles.includes("student");
-  // A failed SAT or Practical Lab access read hides that entry (fail closed).
-  // A student's course access is read once (strict, as satAccess reads it):
-  // it opens the SAT Lab entry and tells the helper which courses they take.
-  const [restriction, onboarding, courseAccess, practicalLabEnabled] = await Promise.all([
+  // The viewer's navigation (viewer-nav.ts): a student's course access is
+  // read once (strict, as satAccess reads it) with their Practical Lab switch;
+  // a failed read opens nothing (fail closed). It also tells the helper which
+  // courses they take.
+  const [restriction, onboarding, viewer] = await Promise.all([
     getPortalRestriction(user),
     isStudentUser ? onboardingStatus(user.id) : Promise.resolve("complete" as const),
-    isStudentUser ? resolveCourseAccess(user, { strict: true }).catch(() => null) : Promise.resolve(null),
-    isStudentUser ? practicalLabAccess(user).then((a) => a.ok).catch(() => false) : Promise.resolve(false),
+    viewerNav(user),
   ]);
   if (restriction) return <PortalAccessBlocked restriction={restriction} />;
-  const satEnabled = !!courseAccess && satOpenIn(courseAccess);
+  const { nav, courseAccess, previewing } = viewer;
 
   // Suspended accounts: block all portal activity immediately (in addition to
   // the GoTrue ban that stops new sign-ins / token refresh).
@@ -89,24 +83,25 @@ export default async function PortalLayout({ children }: { children: React.React
     if (!ok) redirect("/portal/admin/attendance-view");
   }
   if (isCoordinatorOnly(user.roles) && pathname) {
-    const allowed = ["/portal", "/portal/search", "/portal/coordinator", "/portal/admin/attendance-view", "/portal/timetable", "/portal/library", "/portal/resources", "/portal/notifications", "/portal/install", "/portal/settings", "/portal/auth", PRACTICAL_LAB_PAGE];
+    const allowed = ["/portal", "/portal/search", "/portal/subjects", "/portal/coordinator", "/portal/admin/attendance-view", "/portal/timetable", "/portal/library", "/portal/resources", "/portal/notifications", "/portal/install", "/portal/settings", "/portal/auth", PRACTICAL_LAB_PAGE];
     if (!allowed.some((a) => pathname === a || pathname.startsWith(a + "/"))) redirect("/portal/coordinator");
   }
 
   // Rendered inside the mobile app's WebView, which supplies its own title
-  // bar and full role-aware menu — the portal's own header and sidebar would
-  // just be a second copy of both.
+  // bar and full role-aware menu — the portal's own top bar would just be a
+  // second copy of both.
   const embedded = await isEmbeddedClient();
-  const { roles: navRoles, previewing } = await effectiveRoles(user);
-  // Role-aware menu, every entry described by the subject registry (portal-menu.ts).
-  const navSections = menuFor(navRoles, { sat: satEnabled, practicalLab: practicalLabEnabled });
   const realAdmin = isAdmin(user.roles);
   const roleBadges = user.roles.length
     ? user.roles.map((r) => ROLE_LABELS[r]).join(" · ")
     : "Awaiting role assignment";
+  // The space the viewer last opened (the top bar remembers it), when it is
+  // still one of theirs.
+  const rememberedId = (await cookies()).get(SPACE_COOKIE)?.value;
+  const remembered = nav.spaces.find((s) => s.id === rememberedId)?.id ?? null;
 
   return (
-    <div className={embedded ? "px-4 py-5" : "container-x py-8"}>
+    <div className={embedded ? "px-4 py-5" : "container-x py-6 sm:py-8"}>
       <AccessLockMonitor />
       <PresenceBeacon />
       {/* A student's own courses (staff teach every course: the helper keeps its default). */}
@@ -121,43 +116,16 @@ export default async function PortalLayout({ children }: { children: React.React
         </div>
       ) : null}
       {embedded ? null : (
-      <div className="el-noprint mb-8 flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.06] pb-6">
-        <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-xl border border-cyan/30 text-cyan">
-            <GraduationCap size={18} />
-          </span>
-          <div>
-            <p className="font-display text-sm font-semibold text-ice">
-              {user.fullName || user.email}
-            </p>
-            <p className="text-xs text-dust">{roleBadges}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <PortalProductTour autoStart={!mustOnboard} />
-          {realAdmin && !previewing ? <RolePreviewSwitcher previewing={null} /> : null}
-          {isStaff(user.roles) && !previewing ? (
-            <span className="rounded-full border border-emerald2/30 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-emerald2">
-              Staff
-            </span>
-          ) : null}
-          <span data-tour="portal-alerts"><NotificationBell /></span>
-          <Link data-tour="portal-profile" href="/portal/settings" className="inline-flex items-center gap-1.5 rounded-full border border-white/15 px-3 py-1.5 text-xs text-fog transition hover:border-cyan/40 hover:text-cyan" title="My profile & settings">
-            <Settings size={13} /> <span className="hidden sm:inline">Profile</span>
-          </Link>
-          <form action="/portal/auth/signout" method="post">
-            <button type="submit" className="btn-ghost !px-3.5 !py-1.5 text-xs">
-              <LogOut size={13} /> Sign out
-            </button>
-          </form>
-        </div>
-      </div>
+        <PortalTopBar
+          nav={nav}
+          remembered={remembered}
+          navigable={!mustOnboard}
+          tourAutoStart={!mustOnboard}
+          user={{ name: user.fullName || user.email, roles: roleBadges, staff: isStaff(user.roles) && !previewing }}
+          rolePreview={realAdmin && !previewing}
+        />
       )}
-
-      <div className={mustOnboard || embedded ? "" : "grid gap-6 lg:grid-cols-[13rem_1fr] lg:gap-8"}>
-        {embedded || mustOnboard ? null : <PortalNavigation sections={navSections} />}
-        <div id="portal-content" tabIndex={-1} className="min-w-0">{children}</div>
-      </div>
+      <div id="portal-content" tabIndex={-1} className="min-w-0">{children}</div>
     </div>
   );
 }

@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, KeyRound, Ban, RotateCcw, Trash2, Mail, GraduationCap, Activity, ShieldCheck, BookOpen, ClipboardList, Layers } from "lucide-react";
-import { DIRECT_SUBJECTS, subjectOf, subjectSwitchLabel, type SubjectId } from "@/lib/portal/subjects";
+import { DIRECT_SUBJECTS, coursesFromGrants, subjectOf, subjectSwitchLabel, type SubjectId } from "@/lib/portal/subjects";
+import { studentSpacesSentence } from "@/lib/portal/portal-nav";
 import { ROLES } from "../users-console";
 import { ActivityTimeline } from "./activity-timeline";
 import { StudentVisualReport, type StudentVisualData } from "./student-visual-report";
@@ -23,7 +24,7 @@ type Detail = {
   student: { id: string; student_no: string | null; school: string | null; admission_status: string; date_of_birth: string | null } | null;
   enrolments: { id: string; classId: string; status: string; className: string; school: string; section: string | null }[];
   /** `grants` is null when the subjects record couldn't be read. */
-  subjects: { grants: SubjectGrantMap | null; physicsClasses: string[] };
+  subjects: { grants: SubjectGrantMap | null; physicsClasses: string[]; classCourses?: string[] };
   onboarding: { completed: boolean; whatsapp: string | null; city: string | null; dob: string | null; guardians: { name: string; email: string; phone: string; relationship: string }[] } | null;
   progress: (StudentVisualData & { strengths: { topic: string; accuracy: number }[]; weaknesses: { topic: string; accuracy: number }[]; recentAttempts: { ts: number; mode: string; score: number; total: number; qCount: number }[] }) | null;
   attendance: { total: number; present: number; late: number; absent: number; pct: number } | null;
@@ -342,6 +343,11 @@ function SubjectsCard({ id, subjects }: { id: string; subjects: Detail["subjects
           );
         })}
       </ul>
+      {grants ? (
+        <p className="mt-3 text-xs leading-relaxed text-fog">
+          {studentSpacesSentence({ courses: [...(subjects.classCourses ?? []), ...coursesFromGrants(grants)], practicalLab: !!grants["practical-lab"] })}
+        </p>
+      ) : null}
       {error ? <p className="mt-2 text-xs text-signal">{error}</p> : null}
     </Card>
   );

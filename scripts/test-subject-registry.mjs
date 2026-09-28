@@ -9,7 +9,7 @@ import {
   subjectsForCourses, viewerSubjects, visibleItems, welcomeIntro,
 } from "../src/lib/portal/subjects.ts";
 import { PHYSICS_HELPER, helperCurriculum } from "../src/lib/portal/subject-helpers.ts";
-import { menuFor } from "../src/lib/portal/portal-menu.ts";
+import { allLinks, navigationFor } from "../src/lib/portal/portal-nav.ts";
 import { EXAM_LAB_SUBJECTS, examLabContext, examLabWorkLabel } from "../src/lib/portal/exam-lab-context.ts";
 import { COURSE_LABEL, welcomeCourse } from "../src/lib/portal/course-labels.ts";
 import { PRACTICAL_LAB_PAGE } from "../src/lib/portal/practical-lab-access.ts";
@@ -46,7 +46,7 @@ assert.deepEqual(SUBJECT_SPACES.map((s) => s.id), ["physics", "sat"], "Practical
 
 // Every place is described once, under a unique id and page.
 const EXPECTED_IDS = [
-  "home", "search", "notifications", "learning", "timetable", "library", "family", "profile", "install", "onboarding", "task",
+  "home", "search", "notifications", "learning", "timetable", "library", "family", "profile", "install", "onboarding", "task", "subject-space",
   "users", "access-locks", "analytics", "institutions", "post-work", "drill-records", "attendance",
   "daily-attendance", "proctoring", "email", "coordinator", "announcements", "academics", "finance", "classes",
   "demo-student-access",
@@ -56,7 +56,7 @@ const EXPECTED_IDS = [
 ];
 // Pages that are no destination (in no menu, finder or space), described so
 // their title and breadcrumb resolve.
-assert.deepEqual(ALL_ITEMS.filter((e) => e.item.listed === false).map((e) => e.item.id).sort(), ["demo-student-access", "onboarding", "task", "test-preview"]);
+assert.deepEqual(ALL_ITEMS.filter((e) => e.item.listed === false).map((e) => e.item.id).sort(), ["demo-student-access", "onboarding", "subject-space", "task", "test-preview"]);
 const ids = ALL_ITEMS.map((e) => e.item.id);
 assert.equal(new Set(ids).size, ids.length, "item ids are unique");
 assert.deepEqual([...ids].sort(), [...EXPECTED_IDS].sort(), "every PortalItemId is described");
@@ -93,14 +93,11 @@ for (const { item } of ALL_ITEMS) {
   assert.ok(!item.purpose.includes("\n") && item.purpose.length <= 110 && item.purpose.endsWith("."), `${item.id}: purpose is one short sentence`);
   assert.ok(item.access.length && item.access.every((a) => AUDIENCES.has(a)), `${item.id}: access names known audiences`);
 }
-// Places outside any subject never name one -- except the timetable's
-// menu label, today's "Physics timetable", kept until the subject-first
-// navigation renames it (Task 4's rename map: "Physics timetable" -> "Timetable").
+// Places outside any subject never name one (the timetable's old menu label,
+// "Physics timetable", became "Timetable" with the subject-first navigation).
 const subjectWords = new RegExp(`\\b(${[...SUBJECTS.flatMap((s) => [s.label, s.shortLabel]), ...COURSES.flatMap((c) => [c.level, c.code ?? c.level])].join("|")})\\b`, "i");
-const KEPT_UNTIL_TASK_4 = new Set(["timetable:Physics timetable"]);
 for (const { item } of [...GENERAL_ITEMS.map((item) => ({ item })), ...STAFF_ITEMS.map((item) => ({ item }))]) {
   for (const text of [item.name, item.menuLabel, item.purpose, item.deskLabel ?? ""]) {
-    if (KEPT_UNTIL_TASK_4.has(`${item.id}:${text}`)) continue;
     assert.doesNotMatch(text, subjectWords, `${item.id} is subject-free: "${text}"`);
   }
 }
@@ -121,7 +118,7 @@ for (const file of pageFiles) {
 }
 
 // The registry is pure: the middleware, client components and Node import it.
-for (const rel of ["src/lib/portal/subjects.ts", "src/lib/portal/subject-helpers.ts", "src/lib/portal/portal-menu.ts", "src/lib/portal/exam-lab-context.ts", "src/lib/portal/course-labels.ts", "src/lib/edu/roles.ts"]) {
+for (const rel of ["src/lib/portal/subjects.ts", "src/lib/portal/subject-helpers.ts", "src/lib/portal/portal-nav.ts", "src/lib/portal/exam-lab-context.ts", "src/lib/portal/course-labels.ts", "src/lib/edu/roles.ts"]) {
   const text = read(rel);
   assert.doesNotMatch(text, /from "@\//, `${rel} has no @/ imports`);
   assert.doesNotMatch(text, /server-only|from "react"|from "next/, `${rel} has no server or React imports`);
@@ -144,7 +141,7 @@ assert.equal(listed(["A", "B"], "or"), "A or B");
 assert.equal(listed(["A", "B", "C"]), "A, B and C");
 
 // The labels today's pages show, now read from the registry.
-assert.equal(portalItem("timetable").menuLabel, "Physics timetable");
+assert.equal(portalItem("timetable").menuLabel, "Timetable", "renamed from \"Physics timetable\" (Task 4)");
 assert.equal(portalItem("resources").menuLabel, "Physics Resources");
 assert.equal(portalItem("exam-lab").name, "Exam Lab");
 assert.equal(portalItem("sat-today").menuLabel, "SAT Lab");
@@ -191,11 +188,13 @@ assert.deepEqual(spaceModules("physics").map((m) => m.module.id), [
 assert.deepEqual(spaceModules("sat").map((m) => m.module.id), ["sat-today", "sat-practice", "sat-progress", "sat-tutor", "sat-settings", "sat-results"]);
 assert.equal(practiceItemOf(subjectOf("sat")).menuLabel, "SAT Lab");
 
-// --- today's menu, built from the registry ------------------------------------------
+// --- the menu before subject spaces: the reference ------------------------------------
 
 // Captured from the portal layout's own navFor before the registry described
 // it (branch portal-v2 at 0646a86): the label -> link legend, then each
-// persona's sections ("Title: a | b*", * = full page load).
+// persona's sections ("Title: a | b*", * = full page load). The sidebar it
+// drew is gone (Task 4's subject-first navigation, scripts/test-portal-nav.mjs);
+// it stays here as the reference for what every viewer could reach.
 const LEGACY_HREF = {
   "Search": "/portal/search", "Dashboard": "/portal", "Physics Resources": "/portal/resources", "Resource Library": "/portal/library",
   "Physics timetable": "/portal/timetable", "My study plan": "/portal/study-plan", "Exam Lab": "/portal/exam-lab",
@@ -230,23 +229,9 @@ const LEGACY_MENU = {
 };
 const compact = (menu) => menu.map((s) => (s.title ? `${s.title}: ` : "") + s.items.map((i) => i.label + (i.hardNavigate ? "*" : "")).join(" | "));
 
-// Items the registry describes that today's sidebar doesn't list (the header's
+// Items the registry describes that the old sidebar didn't list (the header's
 // Profile link, and the SAT Lab's own pages it links to).
 const NOT_IN_TODAYS_MENU = new Set(["profile", "sat-practice", "sat-progress", "sat-tutor", "sat-settings"]);
-
-for (const [persona, [roles, on, want]] of Object.entries(LEGACY_MENU)) {
-  const switchedOn = { sat: false, practicalLab: false, ...on };
-  const menu = menuFor(roles, switchedOn);
-  assert.deepEqual(compact(menu), want, `${persona}: the menu reads exactly as before`);
-  const shown = new Set();
-  for (const item of menu.flatMap((s) => s.items)) {
-    assert.equal(item.href, LEGACY_HREF[item.label], `${persona}: "${item.label}" links where it did`);
-    const described = itemForRoute(item.href);
-    assert.ok(described, `${persona}: ${item.href} is described in the registry`);
-    assert.ok([described.menuLabel, described.deskLabel].includes(item.label), `${persona}: "${item.label}" is the registry's label`);
-    shown.add(described.id);
-  }
-}
 
 // --- every role combination: the old menu, the new menu, the registry's rule ---------
 
@@ -313,19 +298,30 @@ function legacyMenu(roles, switchedOn) {
   sections.push({ title: "Portal App", items: [{ href: "/portal/install", label: "Install App" }] });
   return sections;
 }
-// The frozen copy agrees with the captured snapshot.
+// The frozen copy agrees with the captured snapshot, and every link it drew
+// is a registry place under its old label (or its new one: the timetable).
+const RENAMED = { "Physics timetable": "Timetable" };
 for (const [persona, [roles, on, want]] of Object.entries(LEGACY_MENU)) {
-  assert.deepEqual(compact(legacyMenu(roles, { sat: false, practicalLab: false, ...on })), want, `frozen reference matches the snapshot: ${persona}`);
+  const menu = legacyMenu(roles, { sat: false, practicalLab: false, ...on });
+  assert.deepEqual(compact(menu), want, `frozen reference matches the snapshot: ${persona}`);
+  for (const item of menu.flatMap((s) => s.items)) {
+    assert.equal(item.href, LEGACY_HREF[item.label], `${persona}: "${item.label}" links where it did`);
+    const described = itemForRoute(item.href);
+    assert.ok(described, `${persona}: ${item.href} is described in the registry`);
+    assert.ok([described.menuLabel, described.deskLabel].includes(RENAMED[item.label] ?? item.label), `${persona}: "${item.label}" is the registry's label`);
+  }
 }
 
 // All 12 roles in every combination, with the SAT and Practical Lab switches
-// on and off: 16,384 viewers. The menu reads exactly as before, and the
-// registry's one visibility rule (visibleItems, through viewerSubjects) shows
-// exactly the old menu's places -- a physics course assumed for everyone, as
-// the old menu showed physics to every student.
+// on and off: 16,384 viewers. The registry's one visibility rule
+// (visibleItems, through viewerSubjects) shows exactly the old menu's places
+// -- a physics course assumed for everyone, as the old menu showed physics to
+// every student. And the subject-first navigation built from it reaches every
+// one of them whether or not the viewer is in a physics class (a page whose
+// subject they don't have is under More).
 const ROLES = ["super_admin", "admin", "teacher", "teaching_assistant", "student", "parent", "counsellor", "content_manager", "finance_manager", "coordinator", "facilitator", "attendance_registrar"];
 let combinations = 0;
-const menuDiffs = [];
+const reachDiffs = [];
 const ruleDiffs = [];
 for (let mask = 0; mask < 1 << ROLES.length; mask++) {
   const roles = ROLES.filter((_, i) => mask & (1 << i));
@@ -333,16 +329,21 @@ for (let mask = 0; mask < 1 << ROLES.length; mask++) {
     for (const practicalLab of [false, true]) {
       combinations++;
       const old = legacyMenu(roles, { sat, practicalLab });
-      if (JSON.stringify(menuFor(roles, { sat, practicalLab })) !== JSON.stringify(old)) menuDiffs.push(`${roles.join("+")} sat=${sat} lab=${practicalLab}`);
       const shown = [...new Set(old.flatMap((section) => section.items).map((item) => itemForRoute(item.href)?.id))].sort();
       const facts = { roles, courses: ["9702", ...(sat ? ["SAT"] : [])], practicalLab };
       const visible = [...new Set(visibleItems(facts).map((e) => e.item.id).filter((id) => !NOT_IN_TODAYS_MENU.has(id)))].sort();
       if (JSON.stringify(visible) !== JSON.stringify(shown)) ruleDiffs.push(`${roles.join("+") || "(none)"} sat=${sat} lab=${practicalLab}: +[${visible.filter((v) => !shown.includes(v))}] -[${shown.filter((v) => !visible.includes(v))}]`);
+      for (const physicsClass of [true, false]) {
+        const nav = navigationFor({ roles, courses: [...(physicsClass ? ["9702"] : []), ...(sat ? ["SAT"] : [])], practicalLab });
+        const reached = [...new Set(allLinks(nav).map((l) => l.id).filter((id) => !NOT_IN_TODAYS_MENU.has(id)))].sort();
+        if (JSON.stringify(reached) !== JSON.stringify(shown)) reachDiffs.push(`${roles.join("+") || "(none)"} sat=${sat} lab=${practicalLab} physics=${physicsClass}: +[${reached.filter((v) => !shown.includes(v))}] -[${shown.filter((v) => !reached.includes(v))}]`);
+        if (physicsClass && nav.more.length) reachDiffs.push(`${roles.join("+")}: More is only for a subject the viewer lacks`);
+      }
     }
   }
 }
 assert.equal(combinations, 16384);
-assert.deepEqual(menuDiffs, [], "the menu reads exactly as before for every combination");
+assert.deepEqual(reachDiffs.slice(0, 5), [], `the subject-first navigation reaches exactly the old menu's places for every combination (${reachDiffs.length} differ)`);
 assert.deepEqual(ruleDiffs.slice(0, 5), [], `the registry's rule shows the old menu's places for every combination (${ruleDiffs.length} differ)`);
 
 // The product tour explains each menu link with its registry purpose; every
@@ -378,9 +379,9 @@ const LEGACY_TOUR_HELP = {
 for (const [label, help] of Object.entries(LEGACY_TOUR_HELP)) {
   assert.equal(itemForRoute(LEGACY_HREF[label])?.purpose, help, `tour: "${label}" is explained as before`);
 }
-// Every link the menu shows has a purpose for the tour (no generic fallback).
+// Every link the old menu showed has a purpose for the tour (no generic fallback).
 for (const [roles, on] of Object.values(LEGACY_MENU)) {
-  for (const item of menuFor(roles, { sat: false, practicalLab: false, ...on }).flatMap((s) => s.items)) {
+  for (const item of legacyMenu(roles, { sat: false, practicalLab: false, ...on }).flatMap((s) => s.items)) {
     assert.ok(itemForRoute(item.href)?.purpose, `tour: ${item.href} has a purpose`);
   }
 }

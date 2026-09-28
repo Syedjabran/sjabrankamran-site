@@ -72,7 +72,7 @@ export type Audience =
 export type PortalItemId =
   // General (every subject)
   | "home" | "search" | "notifications" | "learning" | "timetable" | "library" | "family" | "profile" | "install"
-  | "onboarding" | "task"
+  | "onboarding" | "task" | "subject-space"
   // Staff consoles
   | "users" | "access-locks" | "analytics" | "institutions" | "post-work" | "drill-records" | "attendance"
   | "daily-attendance" | "proctoring" | "email" | "coordinator" | "announcements" | "academics" | "finance" | "classes"
@@ -320,14 +320,9 @@ export const GENERAL_ITEMS: readonly PortalItem[] = [
     purpose: "Your daily starting point for upcoming classes, tasks, announcements and study priorities.",
   },
   {
-    id: "search", route: "/portal/search", name: "Search", menuLabel: "Search", icon: "Search",
-    access: ["member", "coordinator-desk"],
-    purpose: "Find any page, resource or piece of your own work you can open.",
-  },
-  {
-    id: "notifications", route: "/portal/notifications", name: "Notifications", menuLabel: "Notifications", icon: "Bell",
-    access: ["student", "staff", "coordinator-desk"],
-    purpose: "Read announcements, test reminders, class changes and marked-work alerts.",
+    id: "family", route: "/portal/family", name: "My Children", menuLabel: "My Children", icon: "Users",
+    access: ["parent"],
+    purpose: "Follow your children's attendance, results and progress.",
   },
   {
     id: "learning", route: "/portal/learn", name: "My Learning", menuLabel: "My Learning", icon: "NotebookPen",
@@ -336,11 +331,9 @@ export const GENERAL_ITEMS: readonly PortalItem[] = [
   },
   {
     // Class-based, so it belongs to every subject: it lists the lessons of
-    // every class the viewer is in (SAT classes too; timetable.ts). Its menu
-    // label is still today's "Physics timetable" -- the one subject word a
-    // general item carries, kept until the subject-first navigation renames
-    // it (Task 4's rename map: "Physics timetable" -> "Timetable").
-    id: "timetable", route: "/portal/timetable", name: "Timetable", menuLabel: "Physics timetable", icon: "CalendarClock",
+    // every class the viewer is in (SAT classes too; timetable.ts). Before the
+    // subject-first navigation its menu label was "Physics timetable".
+    id: "timetable", route: "/portal/timetable", name: "Timetable", menuLabel: "Timetable", icon: "CalendarClock",
     access: ["student", "parent", "staff", "registrar-desk", "coordinator-desk"],
     purpose: "See lessons and additional classes filtered for your school, class and group.",
   },
@@ -350,9 +343,14 @@ export const GENERAL_ITEMS: readonly PortalItem[] = [
     purpose: "Open approved notes, worksheets, videos and collaborative learning material.",
   },
   {
-    id: "family", route: "/portal/family", name: "My Children", menuLabel: "My Children", icon: "Users",
-    access: ["parent"],
-    purpose: "Follow your children's attendance, results and progress.",
+    id: "notifications", route: "/portal/notifications", name: "Notifications", menuLabel: "Notifications", icon: "Bell",
+    access: ["student", "staff", "coordinator-desk"],
+    purpose: "Read announcements, test reminders, class changes and marked-work alerts.",
+  },
+  {
+    id: "search", route: "/portal/search", name: "Search", menuLabel: "Search", icon: "Search",
+    access: ["member", "coordinator-desk"],
+    purpose: "Find any page, resource or piece of your own work you can open.",
   },
   {
     id: "profile", route: "/portal/settings", name: "Profile & settings", menuLabel: "Profile", icon: "Settings",
@@ -373,6 +371,15 @@ export const GENERAL_ITEMS: readonly PortalItem[] = [
     id: "task", route: "/portal/tasks/[id]", name: "Assigned task", menuLabel: "Assigned task", icon: "ListChecks",
     access: ["student"], listed: false,
     purpose: "One task assigned to you, with its details and due date.",
+  },
+  {
+    // The page each subject space is (`spaceRoute`). No destination of its
+    // own: the home page's subject cards and the subject switcher open it,
+    // and its title and breadcrumb come from the subject in its path
+    // (`spaceForPath`).
+    id: "subject-space", route: "/portal/subjects/[subject]", name: "Subject", menuLabel: "Subject", icon: "LayoutDashboard",
+    access: ["member", "coordinator-desk"], listed: false,
+    purpose: "One subject's own home: every page of that subject as a button.",
   },
 ];
 
@@ -417,6 +424,25 @@ export const CLASS_SUBJECTS: readonly SubjectDef[] = SUBJECTS.filter((s) => s.gr
 /** The subjects with a space of their own: every subject that isn't shown
  *  inside another (Physics, Digital SAT). */
 export const SUBJECT_SPACES: readonly SubjectDef[] = SUBJECTS.filter((s) => !s.partOf);
+
+/** The space a subject is shown in: the one it is part of (Practical Lab ->
+ *  Physics), or its own. */
+export function spaceOf(subject: SubjectDef): SubjectDef {
+  return (subject.partOf ? subjectOf(subject.partOf) : null) ?? subject;
+}
+
+/** The page of a subject's space ("/portal/subjects/physics"). */
+export function spaceRoute(id: SubjectId): string {
+  return `/portal/subjects/${id}`;
+}
+
+/** The subject space a path opens ("/portal/subjects/sat" -> Digital SAT);
+ *  null for any other path, and for a subject shown inside another. */
+export function spaceForPath(pathname: string | null | undefined): SubjectDef | null {
+  const match = /^\/portal\/subjects\/([a-z0-9-]+)\/?(?:[?#].*)?$/.exec((pathname || "").toLowerCase());
+  const subject = match ? subjectOf(match[1]) : null;
+  return subject && !subject.partOf ? subject : null;
+}
 
 /** The registry entry for a direct-grant subject id; null for a
  *  class-granted subject, an unknown id or a non-string. */
@@ -561,12 +587,12 @@ export function practiceItemOf(subject: SubjectDef): PortalItem | null {
   return subject.practice ? portalItem(subject.practice) : null;
 }
 
-/** The helper persona for a page: on a subject's page, that subject's persona
- *  (or that of the space it sits in -- Practical Lab shows Physics' helper),
- *  none when the subject has none (the SAT has its own tutor); anywhere else,
- *  the first subject's persona. */
+/** The helper persona for a page: on a subject's page or space, that
+ *  subject's persona (or that of the space it sits in -- Practical Lab shows
+ *  Physics' helper), none when the subject has none (the SAT has its own
+ *  tutor); anywhere else, the first subject's persona. */
 export function helperForPath(pathname: string | null | undefined): HelperPersona | null {
-  const subject = itemForPath(pathname)?.subject;
+  const subject = spaceForPath(pathname) ?? itemForPath(pathname)?.subject;
   if (!subject) return defaultHelper();
   const space = subject.partOf ? subjectOf(subject.partOf) : null;
   return subject.helper ?? space?.helper ?? null;

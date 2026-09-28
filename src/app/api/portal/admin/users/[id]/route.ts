@@ -11,7 +11,7 @@ import { getRankingsCached } from "@/lib/portal/rankings";
 import { getPortalRestriction } from "@/lib/portal/access-control";
 import { attendancePercent, countedStatuses, isAttended } from "@/lib/edu/attendance";
 import { pkToday } from "@/lib/portal/pk-time";
-import { courseFromYear } from "@/lib/portal/course-labels";
+import { courseFromYear, coursesForEnrolment } from "@/lib/portal/course-labels";
 import { subjectOf } from "@/lib/portal/subjects";
 import { readGrants } from "@/lib/portal/subject-grants";
 
@@ -152,6 +152,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     });
   const recognisedPhysics = placed.filter((c) => !!c.course && physicsCourses.includes(c.course));
   const physicsClasses = (recognisedPhysics.length ? recognisedPhysics : placed.filter((c) => !c.course)).map((c) => c.name);
+  // Every course the active classes open (course access's own rule), for the
+  // card's plain line on which subject spaces the student sees.
+  const activeClassIds = new Set(enrolments.filter((e) => e.status === "active").map((e) => e.classId));
+  const classCourses = activeClassIds.size ? [...coursesForEnrolment(activeClassIds, reg.classes)] : [];
 
   return NextResponse.json({
     profile: { id: profile.id, full_name: profile.full_name || "", email: profile.email || "", phone: profile.phone || "", status: profile.status, created_at: profile.created_at, roles },
@@ -160,7 +164,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     schools: reg.schools,
     student: student ? { id: student.id, student_no: student.student_no, school: student.school, admission_status: student.admission_status, date_of_birth: student.date_of_birth } : null,
     enrolments,
-    subjects: { grants, physicsClasses },
+    subjects: { grants, physicsClasses, classCourses },
     onboarding: onboarding ? { completed: !!onboarding.completed_at, whatsapp: onboarding.whatsapp || null, city: onboarding.city || null, dob: onboarding.date_of_birth || null, guardians: onboarding.guardians || [] } : null,
     progress: progress
       ? {

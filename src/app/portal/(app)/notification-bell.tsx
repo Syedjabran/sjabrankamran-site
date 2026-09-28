@@ -35,15 +35,18 @@ export function NotificationBell() {
   const [items, setItems] = useState<Notif[]>([]);
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
+  // "loading" until the first read answers: the list shows placeholder rows,
+  // never "No notifications yet." before it knows.
+  const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
   const ref = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
       const r = await fetch("/api/portal/notifications", { headers: { "content-type": "application/json" } });
-      if (!r.ok) return;
+      if (!r.ok) { setState((s) => (s === "ready" ? s : "failed")); return; }
       const j = await r.json();
-      setItems(j.items || []); setUnread(j.unread || 0);
-    } catch { /* ignore */ }
+      setItems(j.items || []); setUnread(j.unread || 0); setState("ready");
+    } catch { setState((s) => (s === "ready" ? s : "failed")); }
   }, []);
 
   useEffect(() => {
@@ -76,7 +79,7 @@ export function NotificationBell() {
   return (
     <div ref={ref} className="relative">
       <button onClick={() => setOpen((s) => !s)} aria-label="Notifications"
-        className="relative inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 text-fog transition hover:border-cyan/40 hover:text-cyan">
+        className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 text-fog transition hover:border-cyan/40 hover:text-cyan focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan">
         <Bell size={15} />
         {unread > 0 ? (
           <span className="absolute -right-1 -top-1 grid min-w-[16px] place-items-center rounded-full bg-signal px-1 text-[9px] font-bold leading-[15px] text-white">{unread > 9 ? "9+" : unread}</span>
@@ -84,14 +87,14 @@ export function NotificationBell() {
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-50 mt-2 w-80 max-w-[85vw] overflow-hidden rounded-2xl border border-white/10 bg-space shadow-xl">
+        <div className="absolute right-0 z-50 mt-2 w-80 max-w-[calc(100vw-5.5rem)] overflow-hidden rounded-2xl border border-white/10 bg-space shadow-xl">
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-2.5">
             <p className="text-sm font-semibold text-ice">Notifications</p>
             {unread > 0 ? (
               <button onClick={markAll} className="inline-flex items-center gap-1 text-[11px] text-cyan hover:underline"><CheckCheck size={12} /> Mark all read</button>
             ) : null}
           </div>
-          <ul className="max-h-[60vh] overflow-auto">
+          <ul className="max-h-[60vh] overflow-auto" aria-busy={state === "loading"}>
             {items.length ? items.map((n) => (
               <li key={n.id}>
                 <button onClick={() => openNotif(n)} className={"flex w-full items-start gap-2.5 border-b border-white/5 px-4 py-3 text-left transition hover:bg-white/[0.03] " + (n.read_at ? "" : "bg-cyan/[0.04]")}>
@@ -106,8 +109,15 @@ export function NotificationBell() {
                   </span>
                 </button>
               </li>
-            )) : (
-              <li className="px-4 py-8 text-center text-xs text-dust">No notifications yet.</li>
+            )) : state === "loading" ? (
+              Array.from({ length: 3 }).map((_, i) => (
+                <li key={i} aria-hidden="true" className="flex gap-2.5 border-b border-white/5 px-4 py-3 motion-safe:animate-pulse">
+                  <span className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded bg-white/10" />
+                  <span className="flex-1 space-y-1.5"><span className="block h-3 w-2/3 rounded bg-white/10" /><span className="block h-2.5 w-full rounded bg-white/[0.06]" /></span>
+                </li>
+              ))
+            ) : (
+              <li className="px-4 py-8 text-center text-xs text-dust">{state === "failed" ? "Notifications couldn’t be loaded just now." : "No notifications yet."}</li>
             )}
           </ul>
           <div className="border-t border-white/10 px-4 py-2.5 text-center">
