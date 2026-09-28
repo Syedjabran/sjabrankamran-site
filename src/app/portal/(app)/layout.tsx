@@ -67,8 +67,9 @@ export default async function PortalLayout({ children }: { children: React.React
 
   // Desk hard-scope: an attendance registrar, or a coordinator/facilitator,
   // with no fuller role may ONLY reach the pages their own navigation offers
-  // (their desk, its subject space, General) plus sign-in and onboarding --
-  // portal-nav.ts `deskRoutes`. Both roles pass isStaff() for what they do
+  // (their desk, its subject space, General) plus every page the portal's
+  // chrome links to (profile & settings, notifications, install, onboarding,
+  // sign-in) -- portal-nav.ts `deskRoutes`. Both roles pass isStaff() for what they do
   // read, so they are fenced out of every other staff surface here rather
   // than page-by-page. The portal home matches only exactly (it used to match
   // every portal path as a prefix, so this fence never fired).

@@ -7,8 +7,8 @@ export const metadata = { title: portalItem("notifications").menuLabel };
 export const dynamic = "force-dynamic";
 
 /** Full Notification Centre — every signed-in portal user (students, parents,
- * staff). Registrar-only users are fenced out by the layout's allowed-path
- * guard, matching their deliberately minimal surface. */
+ * staff, the desk roles too: the bell's "See all notifications" links here
+ * for everyone, so the layout's desk fence lets it through). */
 export default async function NotificationsPage() {
   const user = await getPortalUser();
   if (!user) redirect("/portal/login");

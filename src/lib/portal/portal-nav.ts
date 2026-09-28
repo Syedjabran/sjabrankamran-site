@@ -191,14 +191,21 @@ export function homeSections(nav: PortalNav, except?: string): { spaces: SpaceNa
 
 // --- the desk roles' fence ----------------------------------------------------------
 
-/** Pages every signed-in viewer's plumbing needs: the portal home (a desk
- *  role is sent on from it), sign-in callbacks and the onboarding form. */
-const DESK_PLUMBING = ["/portal", "/portal/auth", "/portal/onboarding"];
+/** Pages the portal's own chrome links to for every signed-in viewer, whatever
+ *  their navigation: the portal home (a desk role is sent on from it), the
+ *  account menu's Profile & settings, the bell's "See all notifications",
+ *  the install page, the onboarding gate and the sign-in / sign-out
+ *  callbacks. A desk role's fence never blocks them
+ *  (scripts/test-portal-nav.mjs reads every link the chrome renders). */
+export const CHROME_ROUTES: readonly string[] = [
+  "/portal", "/portal/settings", "/portal/notifications", "/portal/install", "/portal/onboarding", "/portal/auth",
+];
 
 /** The pages a desk role may open: every destination their navigation
- *  offers (spaces included) plus the plumbing. Paths without query or hash. */
+ *  offers (spaces included) plus every page the chrome links to. Paths
+ *  without query or hash. */
 export function deskRoutes(nav: PortalNav): string[] {
-  const pages = [...allLinks(nav).map((l) => l.href), ...nav.spaces.map((s) => s.href), nav.homeHref, ...DESK_PLUMBING];
+  const pages = [...allLinks(nav).map((l) => l.href), ...nav.spaces.map((s) => s.href), nav.homeHref, ...CHROME_ROUTES];
   return [...new Set(pages.map((p) => p.split(/[?#]/)[0]))];
 }
 

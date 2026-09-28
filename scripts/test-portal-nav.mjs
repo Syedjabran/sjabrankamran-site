@@ -177,13 +177,59 @@ assert.ok(fence(coordinator, "/portal/subjects/physics"), "the coordinator desk'
 assert.equal(fence(coordinator, "/portal/subjects/sat"), false, "not a space they don't have");
 assert.ok(fence(coordinator, "/portal/exam-lab?allocation=a1"), "Conduct class drill");
 assert.ok(fence(coordinator, "/portal/admin/assign") && fence(coordinator, "/portal/admin/drills/D1/print"), "Assign drill and a drill's paper");
-assert.equal(fence(registrar, "/portal/notifications"), false, "the registrar's desk has no notifications page, as before");
+assert.ok(fence(registrar, "/portal/notifications"), "the bell's \"See all notifications\" opens for a registrar too");
 assert.ok(fence(registrar, "/portal/timetable") && fence(registrar, "/portal/settings") && fence(registrar, "/portal/install"));
 assert.equal(onDeskRoute("/portal/exam-lab", ["/portal"]), false, "the portal home is matched exactly, never as a prefix");
 const layout = read("src/app/portal/(app)/layout.tsx");
 assert.match(layout, /\(isRegistrarOnly\(user\.roles\) \|\| isCoordinatorOnly\(user\.roles\)\) && pathname && !onDeskRoute\(pathname, deskRoutes\(nav\)\)/);
 assert.ok(layout.includes("redirect(nav.homeHref)"));
 assert.ok(!layout.includes('pathname.startsWith(a + "/")'), "no prefix match on the portal home");
+
+// The fence never blocks a page the portal's chrome links to. Every /portal
+// link the chrome renders -- the top bar (brand/Home, switcher, finder,
+// account menu), the bell (incl. "See all notifications"), the install card,
+// the access-lock monitor, the blocked and archived screens, the onboarding
+// gate -- read from its source, plus the links the chrome builds from the
+// navigation (Home, spaces, every finder row, "Search everything"), passes
+// every desk role's fence; a page outside it still doesn't.
+const CHROME_FILES = [
+  "portal-top-bar.tsx", "notification-bell.tsx", "portal-finder.tsx", "pwa-portal.tsx", "access-lock-monitor.tsx",
+  "role-preview.tsx", "portal-product-tour.tsx", "presence-beacon.tsx", "portal-access-blocked.tsx", "layout.tsx",
+].map((f) => `src/app/portal/(app)/${f}`);
+const chromeLinks = new Set();
+for (const f of CHROME_FILES) {
+  for (const m of read(f).matchAll(/["'`](\/portal(?:\/[a-z0-9-]+)*)(?=[?#"'`/$])/g)) chromeLinks.add(m[1]);
+}
+for (const p of ["/portal", "/portal/settings", "/portal/notifications", "/portal/auth/signout", "/portal/onboarding"]) {
+  assert.ok(chromeLinks.has(p), `the chrome's ${p} link was found in its source`);
+}
+const DESK_PERSONAS = {
+  coordinator: ["coordinator"], facilitator: ["facilitator"], registrar: ["attendance_registrar"],
+  "coordinator+registrar": ["coordinator", "attendance_registrar"], "facilitator+student": ["facilitator", "student"],
+  "registrar+parent": ["attendance_registrar", "parent"],
+};
+for (const [persona, roles] of Object.entries(DESK_PERSONAS)) {
+  for (const courses of [[], ["9702"], ["SAT"]]) {
+    for (const lab of [false, true]) {
+      const nav = navigationFor(viewer(roles, courses, lab));
+      assert.ok(nav.deskHome, `${persona} is a desk role`);
+      const search = nav.general.find((l) => l.id === "search")?.href;
+      const links = [
+        ...chromeLinks, nav.homeHref, ...nav.spaces.map((s) => s.href), ...finderEntries(nav).map((e) => e.link.href),
+        ...(search ? [`${search}?q=waves`] : []),
+      ];
+      for (const href of links) {
+        // Only the signed-in portal's pages are fenced (sign-in and the main website aren't).
+        if (!isPortalAppPath(href)) continue;
+        assert.ok(fence(nav, href), `${persona}: the chrome's ${href} passes the fence`);
+      }
+      for (const out of ["/portal/admin/users", "/portal/admin/analytics", "/portal/progress", "/portal/family", "/portal/admin/finance"]) {
+        assert.equal(fence(nav, out), false, `${persona}: ${out} still redirects to the desk`);
+      }
+    }
+  }
+}
+assert.equal(isPortalAppPath("/"), false, "Main website is outside the portal");
 
 // --- subject spaces and where a page sits ------------------------------------------------
 
@@ -243,6 +289,9 @@ const topBar = read("src/app/portal/(app)/portal-top-bar.tsx");
 for (const t of ["portal-home", "portal-switcher", "portal-finder", "portal-alerts", "portal-profile"]) assert.ok(topBar.includes(`data-tour="${t}"`), `the tour's ${t} target exists`);
 assert.ok(topBar.includes("href={nav.homeHref}"), "the brand is Home (a desk role's desk)");
 assert.ok(topBar.includes("PORTAL_NAME") && topBar.includes('href="/"'), "the brand, and the way back to the main website");
+const manifest = read("src/app/manifest.ts");
+assert.ok(manifest.includes("short_name: PORTAL_NAME") && manifest.includes("name: PORTAL_APP_NAME"), "the installed app's name is the portal's name");
+assert.equal(read("src/lib/portal/brand.ts").includes('PORTAL_NAME = "Learning Portal"'), true);
 assert.ok(!/role="menu"|role="menuitem"/.test(topBar), "disclosures, not ARIA menus without menu keys");
 assert.ok(topBar.includes("buttonRef.current?.focus()"), "Escape gives focus back to the button");
 assert.ok(topBar.includes('document.querySelector(".el-exam-live")'), "Ctrl+K never opens over a live sitting");
