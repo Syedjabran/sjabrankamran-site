@@ -8,5 +8,5 @@ export const dynamic = "force-dynamic";
 export default async function SettingsPage() {
   const user = await getPortalUser();
   if (!user) redirect("/portal/login");
-  return <SettingsClient />;
+  return <SettingsClient student={user.roles.includes("student")} />;
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, UserRound, Users, ShieldCheck, CheckCircle2, ImagePlus, X } from "lucide-react";
 import { PHOTO_MAX_BYTES, PHOTO_TYPES } from "@/lib/portal/onboarding-shared";
+import { FormSkeleton } from "@/components/portal-skeletons";
 
 type Guardian = { relationship: string; name: string; email: string; phone: string; is_primary?: boolean };
 
@@ -162,7 +163,9 @@ export function OnboardingForm() {
   }
 
   if (loading) {
-    return <div className="flex items-center gap-2 text-sm text-fog"><Loader2 className="animate-spin text-cyan" size={16} /> Loading…</div>;
+    // The same shape as the route's own skeleton, so the page doesn't change
+    // from one loader to another before the form appears.
+    return <FormSkeleton label="your profile form" fields={6} />;
   }
   if (done) {
     return (

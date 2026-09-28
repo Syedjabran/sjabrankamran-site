@@ -26,13 +26,6 @@ export function isLabStaff(roles: readonly string[]): boolean {
   return roles.some((r) => LAB_STAFF_ROLES.includes(r));
 }
 
-/** Whether the portal nav lists Practical Lab among a student's own
- *  (Learning) entries: when it's open to them, unless they are also lab
- *  staff -- staff already have it in their own section, so it shows once. */
-export function labInLearning(roles: readonly string[], open: boolean): boolean {
-  return open && !isLabStaff(roles);
-}
-
 /** A student's direct grants as read, or a failed read. */
 export type GrantsRead = { ok: true; grants: Partial<Record<SubjectId, unknown>> } | { ok: false };
 

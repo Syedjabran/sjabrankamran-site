@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, Loader2, Printer, Eye, EyeOff, AlertTriangle } from "lucide-react";
 import { signAssetPaths } from "@/components/exam-lab/sign-assets";
+import { PanelSkeleton } from "@/components/portal-skeletons";
 
 type SnapQ = {
   id: string; ref: string; paperType: string; code: string; qnum: number;
@@ -120,7 +121,7 @@ export function DrillPrintClient({ idOrRef }: { idOrRef: string }) {
   }, []);
 
   if (loading) {
-    return <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={15} className="animate-spin" /> Loading drill paper…</p>;
+    return <PanelSkeleton label="the question paper" panelClass="h-[28rem]" />;
   }
   if (error || !rec) {
     return (

@@ -7,7 +7,9 @@ import { createClient } from "@/lib/supabase/browser";
 
 type Me = { id: string; full_name: string; email: string; phone: string; roles: string[]; alias?: string; reveal_name?: boolean };
 
-export function SettingsClient() {
+/** `student`: the viewer is a student (known on the server), so the
+ *  Leaderboard identity block's place is held while the profile loads. */
+export function SettingsClient({ student = false }: { student?: boolean }) {
   const [me, setMe] = useState<Me | null>(null);
   const [meFailed, setMeFailed] = useState(false);
   const [fullName, setFullName] = useState("");
@@ -113,6 +115,7 @@ export function SettingsClient() {
       </section>
       )}
 
+      {!me && !meFailed && student ? <SkeletonCard className="h-60" label="your leaderboard identity" /> : null}
       {me?.roles?.includes("student") ? (
         <section className="space-y-3 rounded-2xl border border-white/10 bg-space/60 p-5">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-ice"><VenetianMask size={15} className="text-cyan" /> Leaderboard identity</h2>

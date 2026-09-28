@@ -46,7 +46,7 @@ globalThis.AsyncLocalStorage ??= AsyncLocalStorage;
 
 const {
   LAB_ARCHIVED_MESSAGE, LAB_STAFF_ROLES, PRACTICAL_LAB, PRACTICAL_LAB_ENTRY, PRACTICAL_LAB_PAGE,
-  archivedFrom, grantsReadFrom, isLabStaff, labAccess, labInLearning, labRefusalPage, labRequest,
+  archivedFrom, grantsReadFrom, isLabStaff, labAccess, labRefusalPage, labRequest,
 } = await import("../src/lib/portal/practical-lab-access.ts");
 const { EXAM_LAB_STAFF_ROLES } = await import("../src/lib/edu/auth.ts");
 const { practicalLabAccess } = await import("../src/lib/portal/practical-lab.ts");
@@ -90,13 +90,8 @@ assert.equal(labAccess(null, ON), "unknown", "roles that couldn't be read decide
 assert.equal(labAccess(null, OFF), "unknown");
 assert.equal(labAccess(["student"], { ok: true, grants: { "practical-lab": undefined } }), "deny");
 
-// --- the nav lists the lab once (labInLearning) ----------------------------------
-assert.equal(labInLearning(["student"], true), true, "a switched-on student gets it in Learning");
-assert.equal(labInLearning(["student"], false), false);
-for (const role of STAFF) {
-  assert.equal(labInLearning(["student", role], true), false, `student + ${role}: only the staff entry`);
-}
-assert.equal(labInLearning(["student", "teaching_assistant"], true), true, "a teaching assistant isn't lab staff");
+// (Where the navigation lists the lab -- once, inside Physics -- is tested in
+// scripts/test-portal-nav.mjs.)
 
 // --- the middleware's raw account-status read (archivedFrom) -------------------
 assert.equal(archivedFrom(200, '[{"status":"archived"}]'), true);

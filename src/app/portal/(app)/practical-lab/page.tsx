@@ -4,6 +4,7 @@ import { getPortalUser } from "@/lib/edu/auth";
 import { practicalLabAccess } from "@/lib/portal/practical-lab";
 import { PRACTICAL_LAB_ENTRY, PRACTICAL_LAB_PAGE } from "@/lib/portal/practical-lab-access";
 import { portalItem } from "@/lib/portal/subjects";
+import { LabFrame } from "./lab-frame";
 
 export const metadata = { title: portalItem("practical-lab").menuLabel, robots: { index: false } };
 export const dynamic = "force-dynamic";
@@ -32,11 +33,7 @@ export default async function PracticalLabPage() {
       {!access ? (
         <p className="rounded-2xl border border-signal/30 bg-signal/5 p-5 text-sm text-fog">Your access couldn&rsquo;t be checked just now. Please refresh.</p>
       ) : access.ok ? (
-        <iframe
-          src={PRACTICAL_LAB_ENTRY}
-          title="Practical Lab — 9702 virtual practicals"
-          className="block h-[calc(100dvh-8rem)] min-h-[28rem] w-full rounded-2xl border border-white/10 bg-abyss"
-        />
+        <LabFrame src={PRACTICAL_LAB_ENTRY} title="Practical Lab — 9702 virtual practicals" />
       ) : (
         <div className="rounded-2xl border border-amber-400/30 bg-amber-400/[0.05] px-6 py-8 text-center">
           <p className="mx-auto max-w-md font-display text-lg text-ice">Practical Lab isn&rsquo;t switched on for your account yet — ask the admin to add Practical Lab to your subjects.</p>

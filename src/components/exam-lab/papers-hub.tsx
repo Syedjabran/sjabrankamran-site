@@ -11,6 +11,7 @@ import { ClassDrillAssign } from "./class-drill-assign";
 import { openSitting, type Sitting, type SittingRequest } from "./sitting-api";
 import type { GuardMode } from "./use-exam-guard";
 import { courseOf, courseShortLabel } from "@/lib/portal/subjects";
+import { SkeletonCard } from "@/components/portal-skeletons";
 
 const SESS: Record<string, string> = { s: "May/June", w: "Oct/Nov", m: "Feb/March" };
 const PAPER_NAME: Record<string, string> = { P1: "Paper 1 · Multiple Choice", P2: "Paper 2 · AS Structured", P4: "Paper 4 · A2 Structured" };
@@ -331,6 +332,8 @@ export function PapersHub({ catalog, canTest = false, canPause = false, canCondu
   const [sitMode, setSitMode] = useState<SitMode>("practice");
   const [active, setActive] = useState<Active | null>(null);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
+  // Until the first read of assigned work answers, its board holds a placeholder.
+  const [allocationsLoaded, setAllocationsLoaded] = useState(false);
   const [launchError, setLaunchError] = useState("");
   const [launching, setLaunching] = useState(false);
   const launchingRef = useRef(false);
@@ -408,7 +411,7 @@ export function PapersHub({ catalog, canTest = false, canPause = false, canCondu
     const refresh = () => {
       if (document.visibilityState === "hidden") return;
       // A failed refresh keeps the last list rather than blanking the board.
-      fetch("/api/exam-lab/allocations", { cache: "no-store" }).then((r) => r.ok ? r.json() : null).then((j) => { if (alive && j) setAllocations(j.items || []); }).catch(() => {});
+      fetch("/api/exam-lab/allocations", { cache: "no-store" }).then((r) => r.ok ? r.json() : null).then((j) => { if (alive && j) setAllocations(j.items || []); }).catch(() => {}).finally(() => { if (alive) setAllocationsLoaded(true); });
     };
     refresh();
     const timer = active ? null : window.setInterval(refresh, 15000);
@@ -561,7 +564,8 @@ export function PapersHub({ catalog, canTest = false, canPause = false, canCondu
     <div>
       {launching ? <p className="fixed bottom-4 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-2 rounded-xl border border-cyan/30 bg-space/95 px-4 py-3 text-sm text-fog shadow-2xl" role="status"><Loader2 size={15} className="animate-spin text-cyan" /> Opening your paper…</p> : null}
       {launchError ? <p className="mb-4 rounded-xl border border-signal/35 bg-signal/[0.06] px-4 py-3 text-sm text-signal">{launchError}</p> : null}
-      {allocations.length ? <AssignedBoard allocations={allocations} onStart={startAllocation} /> : null}
+      {allocations.length ? <AssignedBoard allocations={allocations} onStart={startAllocation} />
+        : !allocationsLoaded ? <div className="mb-6"><SkeletonCard className="h-20" label="your assigned work" /></div> : null}
 
       {/* Course track selector — shown only when the guardrail permits more than
           one course (i.e. staff). A single-course student never sees a switch.
