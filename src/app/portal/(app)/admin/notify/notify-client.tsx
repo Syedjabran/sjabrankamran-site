@@ -16,6 +16,7 @@ const TARGETS = [
 export function NotifyComposer() {
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [schools, setSchools] = useState<string[]>([]);
+  const [listsLoaded, setListsLoaded] = useState(false);
   const [target, setTarget] = useState("all");
   const [school, setSchool] = useState("");
   const [classId, setClassId] = useState("");
@@ -31,7 +32,8 @@ export function NotifyComposer() {
     fetch("/api/portal/admin/classes")
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => { if (j) { setClasses(j.classes || []); setSchools(j.schools || []); } })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setListsLoaded(true));
   }, []);
 
   async function send() {
@@ -78,8 +80,8 @@ export function NotifyComposer() {
         {target === "school" ? (
           <div>
             <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-widest text-dust">School</label>
-            <select value={school} onChange={(e) => setSchool(e.target.value)} className={field}>
-              <option value="">— pick a school —</option>
+            <select value={school} onChange={(e) => setSchool(e.target.value)} className={field} disabled={!listsLoaded} aria-busy={!listsLoaded}>
+              <option value="">{listsLoaded ? "— pick a school —" : "Loading schools…"}</option>
               {schools.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
@@ -87,8 +89,8 @@ export function NotifyComposer() {
         {target === "class" ? (
           <div>
             <label className="mb-1.5 block font-mono text-[10px] uppercase tracking-widest text-dust">Class</label>
-            <select value={classId} onChange={(e) => setClassId(e.target.value)} className={field}>
-              <option value="">— pick a class —</option>
+            <select value={classId} onChange={(e) => setClassId(e.target.value)} className={field} disabled={!listsLoaded} aria-busy={!listsLoaded}>
+              <option value="">{listsLoaded ? "— pick a class —" : "Loading classes…"}</option>
               {classes.map((c) => (
                 <option key={c.id} value={c.id}>{c.school} · {c.name}{c.section ? ` (${c.section})` : ""} — {c.students} students</option>
               ))}

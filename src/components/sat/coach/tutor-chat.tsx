@@ -9,6 +9,7 @@
 // `explainFrom` from &from=) asks for an explanation of that finished
 // question once, then drops the parameters so a reload doesn't ask again.
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { SkeletonCard } from "@/components/portal-skeletons";
 import { useRouter } from "next/navigation";
 import { Loader2, SendHorizontal } from "lucide-react";
 import {
@@ -125,7 +126,7 @@ export function TutorChat({ firstName, explainId, explainFrom = null }: { firstN
   if (loadError && !meta) {
     return <p className="rounded-2xl border border-signal/30 bg-signal/5 p-5 text-sm text-fog">{loadError} <button className="ml-2 text-cyan underline" onClick={() => void load()}>Retry</button></p>;
   }
-  if (!meta) return <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading the tutor…</p>;
+  if (!meta) return <SkeletonCard className="h-96" label="the tutor" />;
 
   const lastAssistant = messages.map((m) => m.role).lastIndexOf("assistant");
   // An unreadable count (null) says "couldn't check" and leaves the box open:

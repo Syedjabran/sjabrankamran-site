@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { SkeletonRows } from "@/components/portal-skeletons";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Layers, Users, School, Clock3, FileText, ChevronLeft, Loader2, Hash, Printer, Search, CheckCircle2, AlertTriangle, Inbox } from "lucide-react";
@@ -174,7 +175,7 @@ export function DrillRecordsClient({ scoped = false }: { scoped?: boolean }) {
               ) : null}
             </div>
             {!subs ? (
-              <p className="mt-3 flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading submission statuses…</p>
+              <div className="mt-3"><SkeletonRows rows={3} label="submission statuses" /></div>
             ) : !subs.length ? (
               <p className="mt-3 text-sm text-dust">No active students found for this drill.</p>
             ) : (
@@ -250,7 +251,7 @@ export function DrillRecordsClient({ scoped = false }: { scoped?: boolean }) {
         />
         <button type="submit" className="btn-ghost !px-4 !py-1.5 text-xs"><Printer size={13} /> Open paper by reference</button>
       </form>
-      {loading ? <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading…</p>
+      {loading ? <SkeletonRows rows={4} label="drill records" />
         : !rows.length ? <div className="rounded-2xl border border-white/10 bg-space/60 p-6 text-sm text-dust">No drills recorded yet. Allot a drill or paper from <b className="text-fog">Post / Tests → Exam Lab</b> and it will be stored here with its paper.</div>
         : (
           <div className="grid gap-3 sm:grid-cols-2">

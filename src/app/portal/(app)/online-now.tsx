@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { SkeletonRows } from "@/components/portal-skeletons";
 import Link from "next/link";
 import { Radio, Circle } from "lucide-react";
 
@@ -50,7 +51,7 @@ export function OnlineNow() {
       {err ? (
         <p className="text-xs text-dust">Presence unavailable.</p>
       ) : !data ? (
-        <p className="text-xs text-dust">Loading…</p>
+        <SkeletonRows rows={2} label="who is online" />
       ) : data.users.length === 0 ? (
         <p className="rounded-lg border border-white/10 bg-abyss/40 p-3 text-xs text-dust">No one else is online right now.</p>
       ) : (

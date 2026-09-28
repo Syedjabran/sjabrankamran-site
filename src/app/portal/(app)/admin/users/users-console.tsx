@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { SkeletonRows } from "@/components/portal-skeletons";
 import Link from "next/link";
 import { UserCog, Search, UserPlus, ShieldAlert, KeyRound, Ban, RotateCcw, Copy, LockKeyhole, X } from "lucide-react";
 import { DIRECT_SUBJECTS, subjectSwitchLabel, type SubjectId } from "@/lib/portal/subjects";
@@ -125,7 +126,7 @@ export function UsersConsole({ isSuper }: { isSuper: boolean }) {
       {err ? <p className="rounded-xl border border-signal/30 bg-signal/5 p-4 text-sm text-fog">{err}</p> : null}
 
       {loading ? (
-        <p className="text-sm text-dust">Loading…</p>
+        <SkeletonRows rows={8} label="users" />
       ) : (
         <ul className="space-y-2">
           {filtered.map((u) => (

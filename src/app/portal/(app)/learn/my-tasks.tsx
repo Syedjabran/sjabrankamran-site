@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { SkeletonRows } from "@/components/portal-skeletons";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Target, Trophy, Link2, CheckCircle2, Clock, CircleDashed, Loader2, ArrowRight } from "lucide-react";
@@ -51,7 +52,7 @@ export function MyTasks({ initialTasks = null, readOnly = false, showEmpty = fal
     }
   }
 
-  if (!tasks) return <p className="py-6 text-center text-sm text-dust">Loading your study-plan activities…</p>;
+  if (!tasks) return <SkeletonRows rows={3} label="your study-plan activities" />;
   if (tasks.length === 0) return showEmpty ? (
     <div className="rounded-xl border border-white/10 bg-abyss/40 p-5 text-center">
       <p className="text-sm font-semibold text-ice">Your first personalised activities are being prepared.</p>

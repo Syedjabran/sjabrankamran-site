@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { PanelSkeleton } from "@/components/portal-skeletons";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, KeyRound, Ban, RotateCcw, Trash2, Mail, GraduationCap, Activity, ShieldCheck, BookOpen, ClipboardList, Layers } from "lucide-react";
@@ -103,7 +104,7 @@ export function UserDetail({ id, isSuper, selfId }: { id: string; isSuper: boole
   }
 
   if (err) return <p className="rounded-xl border border-signal/30 bg-signal/5 p-4 text-sm text-fog">{err}</p>;
-  if (!d) return <p className="text-sm text-dust">Loading…</p>;
+  if (!d) return <PanelSkeleton label="this user" stats={4} panels={2} />;
 
   const p = d.profile;
   const suspended = p.status === "archived" || d.access.banned || !!d.access.portalRestriction;

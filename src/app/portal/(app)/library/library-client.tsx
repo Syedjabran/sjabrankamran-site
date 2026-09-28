@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { SkeletonRows } from "@/components/portal-skeletons";
 import { Plus, MessageSquare, Paperclip, ThumbsUp, ArrowLeft, Trophy, Sparkles, Upload, FileText, Trash2, HandHelping, Lightbulb, Library, Loader2 } from "lucide-react";
 
 type Tag = "resource" | "help" | "topic" | "discussion";
@@ -29,6 +30,8 @@ function rel(ts: number) { const s = Math.floor((Date.now() - ts) / 1000); if (s
 
 export function LibraryClient({ isAdmin }: { isAdmin: boolean }) {
   const [threads, setThreads] = useState<ThreadMeta[]>([]);
+  // Until the first list read answers: placeholders, never "No posts yet".
+  const [listLoaded, setListLoaded] = useState(false);
   const [filter, setFilter] = useState<"" | Tag>("");
   const [open, setOpen] = useState<Thread | null>(null);
   const [community, setCommunity] = useState<Community | null>(null);
@@ -36,7 +39,7 @@ export function LibraryClient({ isAdmin }: { isAdmin: boolean }) {
   const [err, setErr] = useState("");
 
   const loadList = useCallback(async () => {
-    try { const j = await api(`/api/portal/library${filter ? `?tag=${filter}` : ""}`); setThreads(j.threads); } catch (e) { setErr((e as Error).message); }
+    try { const j = await api(`/api/portal/library${filter ? `?tag=${filter}` : ""}`); setThreads(j.threads); } catch (e) { setErr((e as Error).message); } finally { setListLoaded(true); }
   }, [filter]);
   const loadCommunity = useCallback(async () => { try { setCommunity(await api("/api/portal/community")); } catch { /* */ } }, []);
   useEffect(() => { loadList(); }, [loadList]);
@@ -84,7 +87,9 @@ export function LibraryClient({ isAdmin }: { isAdmin: boolean }) {
             ))}
           </div>
           {err ? <p className="text-xs text-signal">{err}</p> : null}
-          {threads.length ? (
+          {!listLoaded ? (
+            <SkeletonRows rows={5} label="posts" />
+          ) : threads.length ? (
             <ul className="space-y-2">
               {threads.map((t) => (
                 <li key={t.id}>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { SkeletonRows } from "@/components/portal-skeletons";
 import { Ban, Building2, Clock3, GraduationCap, LockKeyhole, RotateCcw, ShieldAlert, UserRound, UsersRound } from "lucide-react";
 import type { AccessRestriction, AccessRestrictionMode, AccessScopeType } from "@/lib/portal/access-shared";
 
@@ -197,7 +198,14 @@ export function AccessControlConsole() {
         </button>
       </section>
 
-      <RestrictionList title={`Active restrictions (${active.length})`} rows={active} busy={busy} onRelease={release} />
+      {data ? (
+        <RestrictionList title={`Active restrictions (${active.length})`} rows={active} busy={busy} onRelease={release} />
+      ) : !error ? (
+        <section>
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-dust">Active restrictions</h2>
+          <SkeletonRows rows={3} label="access restrictions" />
+        </section>
+      ) : null}
       {history.length ? <RestrictionList title="Restriction history" rows={history.slice(0, 50)} busy={busy} onRelease={release} history /> : null}
     </div>
   );

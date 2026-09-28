@@ -57,6 +57,7 @@ function statusFromWords(text: string): Status | null {
 
 export function VoiceAttendance() {
   const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [classesLoaded, setClassesLoaded] = useState(false);
   const [classId, setClassId] = useState("");
   const [date, setDate] = useState(() => pkToday());
   // The class + date the roster on screen belongs to. Saves always target
@@ -89,7 +90,7 @@ export function VoiceAttendance() {
   // the class/date changed is ignored instead of repopulating the old day.
   const registerSeqRef = useRef(0);
 
-  useEffect(() => { api("/api/portal/admin/classes").then((j) => setClasses(j.classes ?? [])).catch(() => {}); }, []);
+  useEffect(() => { api("/api/portal/admin/classes").then((j) => setClasses(j.classes ?? [])).catch(() => {}).finally(() => setClassesLoaded(true)); }, []);
   useEffect(() => {
     const w = window as unknown as { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown };
     setSupported(!!(w.SpeechRecognition || w.webkitSpeechRecognition));
@@ -432,8 +433,8 @@ export function VoiceAttendance() {
       <div className="flex flex-wrap items-end gap-2 rounded-2xl border border-white/10 bg-space/60 p-4">
         <div className="min-w-[14rem] flex-1">
           <label className="mb-1 block text-[11px] uppercase tracking-widest text-dust">Class</label>
-          <select value={classId} onChange={(e) => changeClass(e.target.value)} className="w-full rounded-lg border border-white/10 bg-abyss/60 px-3 py-2 text-sm text-ice focus:border-cyan focus:outline-none">
-            <option value="">Choose a class…</option>
+          <select value={classId} onChange={(e) => changeClass(e.target.value)} disabled={!classesLoaded} aria-busy={!classesLoaded} className="w-full rounded-lg border border-white/10 bg-abyss/60 px-3 py-2 text-sm text-ice focus:border-cyan focus:outline-none">
+            <option value="">{classesLoaded ? "Choose a class…" : "Loading classes…"}</option>
             {classes.map((c) => <option key={c.id} value={c.id}>{c.school} — {c.name}{c.section ? ` (${c.section})` : ""} · {c.students}</option>)}
           </select>
         </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { SkeletonRows } from "@/components/portal-skeletons";
 import { CalendarCheck, Users, RefreshCw } from "lucide-react";
 
 type Student = { name: string; status: string; reason?: string | null };
@@ -127,6 +128,7 @@ export function AttendanceView() {
 
       {err ? <p className="rounded-xl border border-signal/30 bg-signal/5 p-4 text-sm text-fog">{err}</p> : null}
 
+      {!data && !err ? <SkeletonRows rows={5} label="the register" /> : null}
       {data && !err ? (
         <>
           <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">

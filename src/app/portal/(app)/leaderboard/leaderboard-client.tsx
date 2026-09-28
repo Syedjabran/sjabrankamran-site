@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { SkeletonRows } from "@/components/portal-skeletons";
 import { Trophy, Medal, School, Users, Globe, Crown, Flame, VenetianMask, ShieldCheck } from "lucide-react";
 
 type Row = { name: string; isMe: boolean; anon?: boolean; score: number; accuracy: number | null; level: number; attempts: number; rankInClass: number; rankInSchool: number; rankOverall: number; hasData: boolean };
@@ -85,7 +86,7 @@ export function LeaderboardClient() {
   }, []);
 
   if (err) return <p className="rounded-xl border border-signal/30 bg-signal/5 p-4 text-sm text-fog">{err}</p>;
-  if (!data) return <p className="text-sm text-dust">Loading the leaderboard…</p>;
+  if (!data) return <SkeletonRows rows={8} label="the leaderboard" />;
 
   return (
     <div className="space-y-6">

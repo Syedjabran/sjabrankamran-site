@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useRef, useState, useEffect } from "react";
+import { SkeletonRows } from "@/components/portal-skeletons";
 import { Loader2, Send } from "lucide-react";
 import { DRILL_COUNT_DEFAULT, drillTitle, practiceTestTitle, type PracticeTestInfo } from "@/lib/sat/client-types";
 import { DrillFields, type DifficultyFilter, type SectionFilter } from "./drill-fields";
@@ -288,7 +289,7 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
 
       {mode === "class" ? (
         classesError ? <p className="mt-2 text-xs text-signal">{classesError}</p> :
-        !classes ? <p className="mt-2 flex items-center gap-2 text-xs text-dust"><Loader2 size={12} className="animate-spin" /> Loading your classes…</p> :
+        !classes ? <div className="mt-2"><SkeletonRows rows={2} label="your classes" /></div> :
         !classes.length ? <p className="mt-2 text-xs text-fog">No SAT classes are mapped to your account.</p> : (
           <div className="mt-2 grid max-h-48 grid-cols-1 gap-1.5 overflow-y-auto rounded-xl border border-white/10 bg-void p-2 sm:grid-cols-2">
             {classes.map((c) => {
@@ -306,7 +307,7 @@ export function SatAssign({ practiceTests }: { practiceTests: PracticeTestInfo[]
         )
       ) : (
         studentsError ? <p className="mt-2 text-xs text-signal">{studentsError}</p> :
-        !students ? <p className="mt-2 flex items-center gap-2 text-xs text-dust"><Loader2 size={12} className="animate-spin" /> Loading students…</p> :
+        !students ? <div className="mt-2"><SkeletonRows rows={3} label="students" /></div> :
         !students.length ? <p className="mt-2 text-xs text-fog">No SAT students are in your classes.</p> : (
           <div className="mt-2 max-h-48 space-y-1 overflow-y-auto rounded-xl border border-white/10 bg-void p-2">
             {students.map((s) => {

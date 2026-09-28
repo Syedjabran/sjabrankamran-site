@@ -33,6 +33,7 @@ async function api(url: string, opts?: RequestInit) {
 export function AssignForm({ canTest = false, papers = [] }: { canTest?: boolean; papers?: PaperMeta[] }) {
   const { bank } = useExamBank();
   const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [classesLoaded, setClassesLoaded] = useState(false);
   const [tab, setTab] = useState<"compose" | "attachments">("compose");
   const [type, setType] = useState<"assignment" | "test" | "examlab">("assignment");
   // Exam Lab allocation state
@@ -91,7 +92,7 @@ export function AssignForm({ canTest = false, papers = [] }: { canTest?: boolean
   const [msg, setMsg] = useState("");
   const [posted, setPosted] = useState<Posted | null>(null);
 
-  useEffect(() => { api("/api/portal/admin/classes").then((j) => setClasses(j.classes)).catch(() => {}); }, []);
+  useEffect(() => { api("/api/portal/admin/classes").then((j) => setClasses(j.classes)).catch(() => {}).finally(() => setClassesLoaded(true)); }, []);
 
   const addQ = () => setQuestions((s) => [...s, { prompt: "", marks: 1, kind: "mcq", options: "", correct: "", paper: "P1", difficulty: "MOT" }]);
   const setQ = (i: number, patch: Partial<Q>) => setQuestions((s) => s.map((q, j) => (j === i ? { ...q, ...patch } : q)));
@@ -181,8 +182,8 @@ export function AssignForm({ canTest = false, papers = [] }: { canTest?: boolean
         {type !== "examlab" ? (
           <div>
             <label className="mb-1 block text-[11px] uppercase tracking-widest text-dust">Class</label>
-            <select value={classId} onChange={(e) => setClassId(e.target.value)} className={input}>
-              <option value="">Choose a class…</option>
+            <select value={classId} onChange={(e) => setClassId(e.target.value)} className={input} disabled={!classesLoaded} aria-busy={!classesLoaded}>
+              <option value="">{classesLoaded ? "Choose a class…" : "Loading classes…"}</option>
               {classes.map((c) => <option key={c.id} value={c.id}>{c.school} — {c.name}{c.section ? ` (${c.section})` : ""} · {c.students} students</option>)}
             </select>
           </div>
@@ -200,8 +201,8 @@ export function AssignForm({ canTest = false, papers = [] }: { canTest?: boolean
               </div>
               <div className="mt-2">
                 {exTarget === "class" ? (
-                  <select value={exClassId} onChange={(e) => setExClassId(e.target.value)} className={input}>
-                    <option value="">Choose a class…</option>
+                  <select value={exClassId} onChange={(e) => setExClassId(e.target.value)} className={input} disabled={!classesLoaded} aria-busy={!classesLoaded}>
+                    <option value="">{classesLoaded ? "Choose a class…" : "Loading classes…"}</option>
                     {classes.map((c) => <option key={c.id} value={c.id}>{c.school} — {c.name}{c.section ? ` (${c.section})` : ""} · {c.students}</option>)}
                   </select>
                 ) : exTarget === "school" ? (

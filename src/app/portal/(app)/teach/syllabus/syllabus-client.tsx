@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { SkeletonRows } from "@/components/portal-skeletons";
 import { BookOpen, Check, Loader2, School, Globe2, Info, AlertTriangle } from "lucide-react";
 
 type ClassChoice = { id: string; name: string; school: string; section?: string | null; students?: number; active: boolean };
@@ -103,7 +104,7 @@ export function SyllabusCoverageClient({ isAdmin }: { isAdmin: boolean }) {
   };
 
   if (loading) {
-    return <p className="flex items-center gap-2 rounded-2xl border border-white/10 bg-space/60 p-6 text-sm text-dust"><Loader2 size={15} className="animate-spin" /> Loading your classes and coverage…</p>;
+    return <SkeletonRows rows={6} label="your classes and coverage" />;
   }
 
   if (!scope) {

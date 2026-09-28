@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { SkeletonRows } from "@/components/portal-skeletons";
 import { History, Radio, CalendarClock, Activity } from "lucide-react";
 
 type Item = { when: string | null; ts: number | null; kind: string; title: string; detail: string; status?: string };
@@ -60,7 +61,7 @@ export function ActivityTimeline({ id }: { id: string }) {
           ))}
         </div>
       </div>
-      {err ? <p className="text-xs text-signal">{err}</p> : !data ? <p className="text-xs text-dust">Loading…</p> : items.length ? (
+      {err ? <p className="text-xs text-signal">{err}</p> : !data ? <SkeletonRows rows={3} label="activity" /> : items.length ? (
         <ul className="space-y-1.5">{items.map((it, i) => <Row key={i} it={it} />)}</ul>
       ) : (
         <p className="text-xs text-dust">{tab === "future" ? "No upcoming lessons, tests or deadlines." : tab === "present" ? "Nothing in progress right now." : "No past activity recorded yet."}</p>

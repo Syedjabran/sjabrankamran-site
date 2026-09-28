@@ -13,9 +13,9 @@
 // arrives ("Updating…"). The server regenerates Coach says only when the
 // student's finished work, plan or day changed, so an idle refresh is free.
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { SkeletonCard } from "@/components/portal-skeletons";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
 import { DRILL_COUNT_DEFAULT, type CoachInsightsPayload, type CoachPayload, type InsightsView, type PlanItem } from "@/lib/sat/client-types";
 import { CoachSays, CoachSaysSkeleton } from "./coach-says";
 import { GoalsCard } from "./goals-card";
@@ -181,7 +181,7 @@ export function CoachHome() {
   if (loadError && !data) {
     return <Notice>{loadError} <button className="ml-2 text-cyan underline" onClick={() => void load()}>Retry</button></Notice>;
   }
-  if (!data) return <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading your plan…</p>;
+  if (!data) return <SkeletonCard className="h-64" label="your plan" />;
 
   return (
     <div className="space-y-6">

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { SkeletonCard } from "@/components/portal-skeletons";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Info, Loader2, MessagesSquare } from "lucide-react";
@@ -139,7 +140,7 @@ export function SatHub({ isStaff, coach = false }: { isStaff: boolean; coach?: b
     return (
       <div className="space-y-6">
         {coachHome}
-        <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading the SAT Lab…</p>
+        <SkeletonCard className="h-72" label="the SAT Lab" />
       </div>
     );
   }

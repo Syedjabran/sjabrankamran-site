@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { SkeletonRows } from "@/components/portal-skeletons";
 import { Target, Trophy, Plus, Trash2, Link2, Loader2, CheckCircle2, Clock, CircleDashed } from "lucide-react";
 
 type Task = {
@@ -25,6 +26,8 @@ const STATUS_META: Record<Task["status"], { label: string; cls: string; icon: Re
 
 export function IndividualTasks({ id, studentName }: { id: string; studentName: string }) {
   const [tasks, setTasks] = useState<Task[]>([]);
+  // Until the first read answers the list shows placeholders, never "no tasks".
+  const [loaded, setLoaded] = useState(false);
   const [show, setShow] = useState(false);
   const [kind, setKind] = useState<"task" | "challenge">("task");
   const [title, setTitle] = useState("");
@@ -36,7 +39,7 @@ export function IndividualTasks({ id, studentName }: { id: string; studentName: 
   const [err, setErr] = useState("");
 
   const load = useCallback(async () => {
-    try { const j = await api(`/api/portal/admin/users/${id}/tasks`); setTasks(j.tasks); } catch (e) { setErr((e as Error).message); }
+    try { const j = await api(`/api/portal/admin/users/${id}/tasks`); setTasks(j.tasks); } catch (e) { setErr((e as Error).message); } finally { setLoaded(true); }
   }, [id]);
   useEffect(() => { load(); }, [load]);
 
@@ -103,7 +106,9 @@ export function IndividualTasks({ id, studentName }: { id: string; studentName: 
         </div>
       ) : null}
 
-      {tasks.length ? (
+      {!loaded ? (
+        <div className="mt-3"><SkeletonRows rows={2} label="tasks" /></div>
+      ) : tasks.length ? (
         <ul className="mt-3 space-y-2">
           {tasks.map((t) => {
             const sm = STATUS_META[t.status];

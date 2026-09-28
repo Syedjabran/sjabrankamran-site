@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { SkeletonRows } from "@/components/portal-skeletons";
 import { useRouter } from "next/navigation";
 import {
   Bell, BellRing, CheckCheck, Target, Trophy, ClipboardList, FlaskConical,
@@ -215,7 +216,7 @@ export function NotificationsClient() {
 
       <div className="overflow-hidden rounded-2xl border border-white/10 bg-space/60">
         {loading ? (
-          <p className="px-5 py-10 text-center text-sm text-dust">Loading…</p>
+          <div className="p-3"><SkeletonRows rows={6} label="notifications" /></div>
         ) : shown.length ? (
           <ul>
             {shown.map((n) => (

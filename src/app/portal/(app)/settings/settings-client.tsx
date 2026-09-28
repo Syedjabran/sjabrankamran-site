@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { SkeletonCard } from "@/components/portal-skeletons";
 import { UserCircle, Save, KeyRound, Loader2, Check, Mail, Phone, VenetianMask, Copy } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 
@@ -8,6 +9,7 @@ type Me = { id: string; full_name: string; email: string; phone: string; roles: 
 
 export function SettingsClient() {
   const [me, setMe] = useState<Me | null>(null);
+  const [meFailed, setMeFailed] = useState(false);
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
@@ -27,7 +29,8 @@ export function SettingsClient() {
     fetch("/api/portal/me").then(async (r) => {
       const j = await r.json();
       if (r.ok) { setMe(j); setFullName(j.full_name || ""); setPhone(j.phone || ""); setRevealName(!!j.reveal_name); }
-    }).catch(() => {});
+      else setMeFailed(true);
+    }).catch(() => setMeFailed(true));
   }, []);
 
   async function toggleReveal(next: boolean) {
@@ -81,6 +84,11 @@ export function SettingsClient() {
         </div>
       </div>
 
+      {!me ? (
+        meFailed
+          ? <p className="rounded-2xl border border-signal/30 bg-signal/5 p-5 text-sm text-fog">Your profile couldn&rsquo;t be loaded just now. Refresh the page to try again.</p>
+          : <SkeletonCard className="h-64" label="your profile" />
+      ) : (
       <section className="space-y-3 rounded-2xl border border-white/10 bg-space/60 p-5">
         <h2 className="text-sm font-semibold text-ice">Profile</h2>
         <div>
@@ -103,6 +111,7 @@ export function SettingsClient() {
           {profileMsg ? <span className="inline-flex items-center gap-1 text-xs text-cyan"><Check size={12} /> {profileMsg}</span> : null}
         </div>
       </section>
+      )}
 
       {me?.roles?.includes("student") ? (
         <section className="space-y-3 rounded-2xl border border-white/10 bg-space/60 p-5">

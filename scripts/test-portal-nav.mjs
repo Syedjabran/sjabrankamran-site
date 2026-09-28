@@ -315,4 +315,19 @@ for (const { item } of ALL_ITEMS) assert.ok(opens(item.route.replace(/\[[^\]]+\]
 for (const link of allLinks(every)) assert.ok(opens(link.href), `${link.href} opens`);
 for (const s of SUBJECT_SPACES) assert.ok(opens(spaceRoute(s.id)), `${spaceRoute(s.id)} opens`);
 
+// --- loaders ---------------------------------------------------------------------------
+
+// Every portal page that reads data has its own route-level skeleton, so a
+// navigation shows the page's shape at once instead of holding the old page.
+const PORTAL_APP = path.join(ROOT, "src", "app", "portal", "(app)");
+(function walk(dir) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) walk(p);
+    else if (e.name === "page.tsx" && /export default async function/.test(fs.readFileSync(p, "utf8"))) {
+      assert.ok(fs.existsSync(path.join(dir, "loading.tsx")), `${path.relative(PORTAL_APP, dir) || "(home)"} has a loading.tsx`);
+    }
+  }
+})(PORTAL_APP);
+
 console.log("portal navigation: all tests passed");

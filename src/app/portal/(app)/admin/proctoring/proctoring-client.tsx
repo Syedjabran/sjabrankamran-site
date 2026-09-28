@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SkeletonCard, SkeletonRows } from "@/components/portal-skeletons";
 import {
   ShieldAlert, Lock, LockOpen, Loader2, Camera, Clock, User, RefreshCw, ChevronRight,
   AlertTriangle, CheckCircle2, MailQuestion,
@@ -127,7 +128,7 @@ export function ProctoringClient({ canUnlock }: { canUnlock: boolean }) {
         <div className="space-y-2">
           <p className="font-mono text-[11px] uppercase tracking-widest text-dust">{pending.length} locked · {locks.length} total</p>
           {loading ? (
-            <p className="text-sm text-dust"><Loader2 size={14} className="mr-1 inline animate-spin" /> Loading…</p>
+            <SkeletonRows rows={3} label="locked tests" />
           ) : locks.length === 0 ? (
             <div className="rounded-2xl border border-emerald2/20 bg-emerald2/[0.04] p-5 text-center text-sm text-fog"><CheckCircle2 size={20} className="mx-auto mb-2 text-emerald2" /> No locked tests. All clear.</div>
           ) : (
@@ -156,7 +157,7 @@ export function ProctoringClient({ canUnlock }: { canUnlock: boolean }) {
               <span className="flex items-center gap-2"><ChevronRight size={15} /> Select a locked test to view its forensic record.</span>
             </div>
           ) : detailBusy ? (
-            <p className="text-sm text-dust"><Loader2 size={14} className="mr-1 inline animate-spin" /> Loading forensic record…</p>
+            <SkeletonCard className="h-72" label="the forensic record" />
           ) : detail ? (
             <div className="space-y-4">
               <div className="rounded-2xl border border-white/10 bg-space/60 p-5">

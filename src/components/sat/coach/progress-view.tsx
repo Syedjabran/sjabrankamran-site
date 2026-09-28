@@ -7,6 +7,7 @@
 // (cyan on a lighter cyan track) with every value also written as text
 // beside its bar, so nothing depends on colour or hover.
 import { useEffect, useState, type ReactNode } from "react";
+import { SkeletonCard } from "@/components/portal-skeletons";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowDownRight, ArrowUpRight, Loader2, Minus } from "lucide-react";
@@ -81,7 +82,7 @@ export function ProgressView() {
       </p>
     );
   }
-  if (!analytics) return <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading your progress…</p>;
+  if (!analytics) return <SkeletonCard className="h-96" label="your progress" />;
   if (analytics.totals.attempted === 0 && analytics.scores.history.length === 0) return <EmptyProgress />;
 
   return (

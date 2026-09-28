@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { SkeletonCard } from "@/components/portal-skeletons";
 import type { DrillState, SessionState } from "@/lib/sat/client-types";
 import { ScoreReport } from "./score-report";
 import { pickImageUrls } from "./sat-runner-utils";
@@ -35,7 +35,7 @@ export function SatResultReport({ uid, id }: { uid: string; id: string }) {
       </p>
     );
   }
-  if (!state) return <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading the report…</p>;
+  if (!state) return <SkeletonCard className="h-80" label="the report" />;
 
   if ("status" in state && state.status === "finished" && state.report) {
     return <ScoreReport report={state.report} images={pickImageUrls(state)} />;

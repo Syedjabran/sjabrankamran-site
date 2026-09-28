@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { SkeletonRows } from "@/components/portal-skeletons";
 import {
   Library, FileText, ImageIcon, Video, Film, FileType2, Music, Link2, Search, Plus, Upload,
   Trash2, X, Loader2, ExternalLink, FolderOpen, GraduationCap, ChevronRight, Download, Sparkles,
@@ -127,7 +128,7 @@ export function ResourcesClient({ isSuper }: { isSuper: boolean }) {
       {err ? <p className="text-xs text-signal">{err}</p> : null}
 
       {loading ? (
-        <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={15} className="animate-spin" /> Loading…</p>
+        <SkeletonRows rows={5} label="resources" />
       ) : filtered.length ? (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((r) => (

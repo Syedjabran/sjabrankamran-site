@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
+import { SkeletonRows } from "@/components/portal-skeletons";
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
 import type { SessionSummary } from "@/lib/sat/client-types";
 import { formatPk } from "@/lib/portal/pk-time";
 import { OvertimeTag, ScoreBadge } from "./score-badge";
@@ -130,7 +130,7 @@ export function SatResults() {
       </p>
     );
   }
-  if (!data) return <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading results…</p>;
+  if (!data) return <SkeletonRows rows={4} label="results" />;
 
   if (!data.students.length) {
     return <p className="rounded-2xl border border-white/10 bg-space/60 p-5 text-sm text-fog">No SAT students in your classes yet.</p>;

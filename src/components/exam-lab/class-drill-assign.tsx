@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { SkeletonRows } from "@/components/portal-skeletons";
 import { Users, User, Search, Check, Loader2, Send, Printer, GraduationCap, ListChecks, RotateCcw } from "lucide-react";
 import type { SafeQuestion } from "@/lib/exam-lab/paper-meta";
 import { pkDateTimeToIso } from "@/lib/portal/pk-time";
@@ -235,7 +236,7 @@ export function ClassDrillAssign({ questions, title, onAssigned }: {
 
           {/* class picker (always shown; drives roster in students mode) */}
           {loading ? (
-            <p className="flex items-center gap-2 text-sm text-dust"><Loader2 size={14} className="animate-spin" /> Loading your classes…</p>
+            <SkeletonRows rows={2} label="your classes" />
           ) : !classes.length ? (
             <p className="rounded-xl border border-white/10 bg-abyss/40 px-3 py-2.5 text-sm text-fog">No classes are mapped to your account. Ask an administrator to assign your class.</p>
           ) : (
