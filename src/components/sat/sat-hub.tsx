@@ -74,6 +74,14 @@ export function SatHub({ isStaff, coach = false }: { isStaff: boolean; coach?: b
   }
   useEffect(() => { void load(); }, []);
 
+  // The SAT Practice module (subjects.ts) links to /portal/sat-lab#sat-practice;
+  // the section only exists once the sessions have loaded, after the
+  // browser's own jump to the #section, so jump again then.
+  const loaded = data !== null;
+  useEffect(() => {
+    if (loaded && window.location.hash === "#sat-practice") document.getElementById("sat-practice")?.scrollIntoView();
+  }, [loaded]);
+
   // Staff are never assigned SAT work themselves, so this never runs for them.
   useEffect(() => {
     if (isStaff) return;
@@ -169,7 +177,7 @@ export function SatHub({ isStaff, coach = false }: { isStaff: boolean; coach?: b
       ) : null}
       {assignmentsError ? <p className="text-xs text-signal">{assignmentsError}</p> : null}
 
-      <section className="min-w-0 rounded-2xl border border-white/10 bg-space/60 p-5">
+      <section id="sat-practice" className="min-w-0 scroll-mt-24 rounded-2xl border border-white/10 bg-space/60 p-5">
         <h2 className="font-display text-lg text-ice">Adaptive mock exam</h2>
         <p className="mt-2 text-sm text-fog">{MOCK_DESCRIPTION}</p>
         {!data.conversionTables ? <p className="mt-2 text-xs text-amber-200">Scores for mock exams appear once the official conversion tables are loaded.</p> : null}

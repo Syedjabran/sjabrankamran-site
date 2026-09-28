@@ -3,12 +3,13 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { Eye, GraduationCap, LogOut, Settings } from "lucide-react";
-import { getPortalUser, ROLE_LABELS, canConductDrills, isAdmin, isStaff, isRegistrarOnly, isCoordinatorOnly, isExamLabStaff, type EduRole } from "@/lib/edu/auth";
+import { getPortalUser, ROLE_LABELS, isAdmin, isStaff, isRegistrarOnly, isCoordinatorOnly } from "@/lib/edu/auth";
 import { getPortalRestriction } from "@/lib/portal/access-control";
 import { onboardingStatus } from "@/lib/portal/onboarding";
 import { satAccess } from "@/lib/sat/access";
 import { practicalLabAccess } from "@/lib/portal/practical-lab";
-import { PRACTICAL_LAB_PAGE, labInLearning } from "@/lib/portal/practical-lab-access";
+import { PRACTICAL_LAB_PAGE } from "@/lib/portal/practical-lab-access";
+import { menuFor } from "@/lib/portal/portal-menu";
 import { effectiveRoles } from "@/lib/portal/view-as";
 import { isEmbeddedClient } from "@/lib/portal/embed";
 import { AccessLockMonitor } from "./access-lock-monitor";
@@ -20,124 +21,6 @@ import { NotificationBell } from "./notification-bell";
 import { PortalProductTour } from "./portal-product-tour";
 
 export const metadata = { robots: { index: false } };
-
-type NavItem = { href: string; label: string; hardNavigate?: boolean };
-type NavSection = { title?: string; items: NavItem[] };
-/** The admin-switched subjects this (student) user has: they add their own
- *  nav entries. Staff get SAT Lab and Practical Lab from their role. */
-type SwitchedOn = { sat: boolean; practicalLab: boolean };
-
-/** Practical Lab: shown inside Physics (Task 4 moves it into the Physics space). */
-const PRACTICAL_LAB_NAV: NavItem = { href: PRACTICAL_LAB_PAGE, label: "Practical Lab" };
-
-/**
- * Role-aware navigation, grouped so the owner/staff see an Administration
- * console and only actual students see the personal Learning surfaces
- * (Exam Lab / My Learning / My Progress). This prevents the owner being shown
- * their own quiz attempts as if they were a student.
- */
-function navFor(roles: EduRole[], switchedOn: SwitchedOn): NavSection[] {
-  const staff = isStaff(roles);
-  const admin = isAdmin(roles);
-  const isStudent = roles.includes("student");
-  const isParent = roles.includes("parent");
-  const sections: NavSection[] = [];
-
-  // --- Attendance Registrar (school-scoped, view-only) ---
-  // A registrar with no fuller staff role gets a deliberately minimal nav:
-  // just the Dashboard and the read-only daily attendance view for their school.
-  if (isRegistrarOnly(roles)) {
-    return [
-      {
-        title: "Attendance",
-        items: [
-          { href: "/portal", label: "Dashboard" },
-          { href: "/portal/admin/attendance-view", label: "Daily attendance" },
-          { href: "/portal/timetable", label: "Physics timetable" },
-        ],
-      },
-    ];
-  }
-  if (isCoordinatorOnly(roles)) {
-    return [{ title: "Assigned class", items: [
-      { href: "/portal/coordinator", label: "Class staff desk" },
-      { href: "/portal/exam-lab", label: "Conduct class drill" },
-      PRACTICAL_LAB_NAV,
-      { href: "/portal/admin/assign", label: "Assign drill" },
-      { href: "/portal/admin/drills", label: "Drill Records" },
-      { href: "/portal/timetable", label: "Physics timetable" },
-      { href: "/portal/admin/attendance-view", label: "Daily attendance" },
-      { href: "/portal/library", label: "Resource Library" },
-      { href: "/portal/resources", label: "Physics Resources" },
-      { href: "/portal/notifications", label: "Notifications" },
-    ] }];
-  }
-
-  // --- Administration (staff / owner) ---
-  const adminItems: NavItem[] = [{ href: "/portal", label: "Dashboard" }];
-  if (staff) {
-    adminItems.push({ href: "/portal/timetable", label: "Physics timetable" });
-    adminItems.push({ href: "/portal/admin/users", label: "Users & activity" });
-    if (roles.includes("super_admin")) adminItems.push({ href: "/portal/admin/access", label: "Access locks" });
-    adminItems.push({ href: "/portal/admin/analytics", label: "Rankings & analytics" });
-    adminItems.push({ href: "/portal/admin/institutions", label: "Institutions" });
-    adminItems.push({ href: "/portal/admin/assign", label: "Post / Tests" });
-    if (canConductDrills(roles)) adminItems.push({ href: "/portal/admin/drills", label: "Drill Records" });
-    adminItems.push({ href: "/portal/admin/attendance", label: "Attendance" });
-    adminItems.push({ href: "/portal/admin/attendance-view", label: "Daily attendance" });
-    adminItems.push({ href: "/portal/admin/proctoring", label: "Proctoring & Locks" });
-    adminItems.push({ href: "/portal/admin/mail", label: "Email" });
-    adminItems.push({ href: "/portal/notifications", label: "Notifications" });
-  }
-  if (roles.includes("coordinator")) adminItems.push({ href: "/portal/coordinator", label: "Coordinator desk" });
-  if (admin) adminItems.push({ href: "/portal/admin/notify", label: "Announcements" });
-  if (admin) {
-    adminItems.push({ href: "/portal/admin/academics", label: "Academics" });
-    adminItems.push({ href: "/portal/admin/finance", label: "Fees & Finance" });
-  }
-  if (admin || roles.includes("teacher") || roles.includes("teaching_assistant")) {
-    adminItems.push({ href: "/portal/teach", label: "My Classes" });
-  }
-  if (canConductDrills(roles)) adminItems.push({ href: "/portal/exam-lab", label: "Exam Lab" });
-  if (isExamLabStaff(roles)) {
-    adminItems.push(PRACTICAL_LAB_NAV);
-    adminItems.push({ href: "/portal/sat-lab", label: "SAT Lab" });
-    adminItems.push({ href: "/portal/sat-lab/results", label: "SAT results" });
-  }
-  if (isExamLabStaff(roles)) adminItems.push({ href: "/portal/teach/syllabus", label: "Syllabus coverage" });
-  if (staff) adminItems.push({ href: "/portal/studio", label: "Physics Studio" });
-  // Available to everyone.
-  adminItems.push({ href: "/portal/resources", label: "Physics Resources" });
-  adminItems.push({ href: "/portal/library", label: "Resource Library" });
-  sections.push({ title: staff ? "Administration" : undefined, items: adminItems });
-
-  // --- Learning (students only) + parents ---
-  const learnItems: NavItem[] = [];
-  if (isStudent) {
-    learnItems.push({ href: "/portal/timetable", label: "Physics timetable" });
-    // This route was added after some students already had a long-lived PWA /
-    // App Router session. A hard navigation avoids replaying a stale client-side
-    // 404 cached before the route existed; the server response itself is always
-    // private/no-store and remains protected by the portal middleware.
-    learnItems.push({ href: "/portal/study-plan", label: "My study plan", hardNavigate: true });
-    learnItems.push({ href: "/portal/exam-lab", label: "Exam Lab" });
-    if (labInLearning(roles, switchedOn.practicalLab)) learnItems.push(PRACTICAL_LAB_NAV);
-    if (switchedOn.sat) learnItems.push({ href: "/portal/sat-lab", label: "SAT Lab" });
-    learnItems.push({ href: "/portal/exam-lab/review", label: "My answer scripts" });
-    learnItems.push({ href: "/portal/learn", label: "My Learning" });
-    learnItems.push({ href: "/portal/progress", label: "My Progress" });
-    learnItems.push({ href: "/portal/my-ranking", label: "My Ranking" });
-    learnItems.push({ href: "/portal/leaderboard", label: "Leaderboard" });
-    learnItems.push({ href: "/portal/notifications", label: "Notifications" });
-  }
-  if (isParent) {
-    learnItems.push({ href: "/portal/family", label: "My Children" });
-    learnItems.push({ href: "/portal/timetable", label: "Physics timetable" });
-  }
-  if (learnItems.length) sections.push({ title: staff ? "Learning" : undefined, items: learnItems });
-
-  return sections;
-}
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const user = await getPortalUser();
@@ -210,11 +93,8 @@ export default async function PortalLayout({ children }: { children: React.React
   // just be a second copy of both.
   const embedded = await isEmbeddedClient();
   const { roles: navRoles, previewing } = await effectiveRoles(user);
-  const navSections = navFor(navRoles, { sat: satEnabled, practicalLab: practicalLabEnabled });
-  // Global search is available to every signed-in role; the API only
-  // aggregates content the caller could already open.
-  if (!isRegistrarOnly(navRoles)) navSections.unshift({ items: [{ href: "/portal/search", label: "Search" }] });
-  navSections.push({ title: "Portal App", items: [{ href: "/portal/install", label: "Install App" }] });
+  // Role-aware menu, every entry described by the subject registry (portal-menu.ts).
+  const navSections = menuFor(navRoles, { sat: satEnabled, practicalLab: practicalLabEnabled });
   const realAdmin = isAdmin(user.roles);
   const roleBadges = user.roles.length
     ? user.roles.map((r) => ROLE_LABELS[r]).join(" · ")

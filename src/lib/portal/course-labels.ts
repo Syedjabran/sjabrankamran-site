@@ -6,6 +6,7 @@
  * aliases that only the Next.js/tsconfig build resolves, which breaks
  * `node --experimental-strip-types` in scripts/test-sat-access.mjs.
  */
+import { courseOf } from "./subjects.ts";
 
 export type Course = "9702" | "5054" | "SAT";
 
@@ -83,8 +84,11 @@ export function studentCourseAccess(courses: ReadonlySet<Course> | null): { allo
   return { allowed, primary: primaryCourse(courses), locked: allowed.length <= 1 };
 }
 
+/** Each course's full name, from the subject registry (subjects.ts COURSES). */
+const courseLabel = (id: Course) => courseOf(id)?.label ?? id;
+
 export const COURSE_LABEL: Record<Course, string> = {
-  "9702": "Cambridge A Level Physics · 9702",
-  "5054": "Cambridge O Level Physics · 5054",
-  "SAT": "Digital SAT",
+  "9702": courseLabel("9702"),
+  "5054": courseLabel("5054"),
+  "SAT": courseLabel("SAT"),
 };
