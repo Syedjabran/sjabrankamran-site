@@ -492,6 +492,10 @@ assert.match(welcomeIntro("SAT"), /^Welcome to your Digital SAT learning portal\
 assert.doesNotMatch(welcomeIntro("SAT"), /Physics|CAIE/);
 assert.equal(welcomeIntro(null), GENERAL_WELCOME, "no course");
 assert.ok(GENERAL_WELCOME.includes(PORTAL_NAME) && !/A-Level|9702|CAIE/.test(GENERAL_WELCOME));
+// The portal's own name is subject-neutral (it was "Physics Portal"): the top
+// bar shows it on every page to every student, SAT-only ones included.
+assert.equal(PORTAL_NAME, "Learning Portal");
+assert.doesNotMatch(PORTAL_NAME, subjectWords, "the portal's name names no subject");
 const CLASSES = [{ id: "as", year: "AS" }, { id: "ol", year: "O Level" }, { id: "sat", year: "Digital SAT" }, { id: "odd", year: "Saturday Batch" }];
 assert.equal(welcomeCourse("as", CLASSES, []), "9702");
 assert.equal(welcomeCourse("ol", CLASSES, []), "5054");

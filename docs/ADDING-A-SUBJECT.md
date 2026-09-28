@@ -187,8 +187,11 @@ Once the registry has the subject, these need no change:
 
 These were left as they are on purpose; each needs its own decision when a subject is added:
 
-- **The portal's name**, "Physics Portal" — what students installed the app as. It lives in one
-  place, `src/lib/portal/brand.ts`.
+- **The account emails' wording:** the new-account, password-reset and forgot-password emails still
+  say "Physics portal" (`src/lib/portal/admin.ts`, `src/lib/portal/mail.ts`,
+  `src/app/api/portal/forgot-password/route.ts`). The portal's own name is already neutral,
+  "Learning Portal", in one place: `src/lib/portal/brand.ts` (the top bar, the install pages, the web
+  manifest).
 - **The contact and sender address** (physics@sjabrankamran.com), in `src/lib/portal/mail.ts`, the
   access-paused messages and the email pages.
 - **Physics' own modules and content:** the study plan, My Progress, My Ranking and the Physics
