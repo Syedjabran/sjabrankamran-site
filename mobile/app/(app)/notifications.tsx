@@ -1,11 +1,11 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { Bell, CheckCheck } from 'lucide-react-native';
 import { PortalHeader } from '../../src/components/PortalHeader';
 import { Button, Card, Empty, ErrorNote, H2, Screen, T } from '../../src/components/ui';
 import { SkeletonList } from '../../src/components/Skeleton';
 import { useMarkNotificationsRead, useNotifications } from '../../src/api/hooks';
+import { useOpenLink } from '../../src/nav/open';
 import { alpha, colors, radius, spacing } from '../../src/theme/tokens';
 
 function relTime(iso: string): string {
@@ -23,7 +23,7 @@ function relTime(iso: string): string {
 }
 
 export default function NotificationsScreen() {
-  const router = useRouter();
+  const openLink = useOpenLink();
   const { data, isLoading, error, refetch } = useNotifications();
   const markRead = useMarkNotificationsRead();
 
@@ -59,15 +59,7 @@ export default function NotificationsScreen() {
             <Card
               key={n.id}
               style={[styles.item, unread && styles.itemUnread]}
-              onPress={
-                n.link
-                  ? () =>
-                      router.push({
-                        pathname: '/web',
-                        params: { path: n.link as string, title: n.title },
-                      })
-                  : undefined
-              }
+              onPress={n.link ? () => openLink(n.link, n.title) : undefined}
             >
               <View style={[styles.icon, unread && { borderColor: alpha.cyanBorder }]}>
                 <Bell size={15} color={unread ? colors.cyan : colors.dust} />

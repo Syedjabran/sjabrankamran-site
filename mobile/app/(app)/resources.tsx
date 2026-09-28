@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { FileText, Search } from 'lucide-react-native';
 import { PortalHeader } from '../../src/components/PortalHeader';
 import { Card, Empty, ErrorNote, H2, Screen, T } from '../../src/components/ui';
 import { SkeletonList } from '../../src/components/Skeleton';
 import { useResources } from '../../src/api/hooks';
+import { useOpenLink } from '../../src/nav/open';
 import type { Resource } from '../../src/api/types';
 import { alpha, colors, fonts, fontSize, radius, spacing } from '../../src/theme/tokens';
 
@@ -19,7 +19,7 @@ function sizeLabel(bytes: number): string {
 }
 
 export default function ResourcesScreen() {
-  const router = useRouter();
+  const openLink = useOpenLink();
   const { data: resources, isLoading, error, refetch } = useResources();
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState(ALL);
@@ -45,14 +45,9 @@ export default function ResourcesScreen() {
 
   function open(resource: Resource) {
     // href is an absolute URL — a signed storage link, or a Google Drive view
-    // URL. The web screen handles both, and only attaches the portal session
-    // when the target is the portal's own origin.
-    const target = resource.href || resource.embedUrl || resource.url;
-    if (!target) return;
-    router.push({
-      pathname: '/web',
-      params: { path: target, title: resource.title },
-    });
+    // URL. A portal page opens signed in inside the app; any other site
+    // (storage, Drive) opens in the phone's browser, without the session.
+    openLink(resource.href || resource.embedUrl || resource.url, resource.title);
   }
 
   return (

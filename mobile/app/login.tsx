@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Eye, EyeOff, GraduationCap, LogIn } from 'lucide-react-native';
 import { useAuth } from '../src/auth/context';
+import { PORTAL_NAME } from '../src/config';
 import { requestPasswordReset } from '../src/auth/session';
 import { Button, Eyebrow, T } from '../src/components/ui';
 import { alpha, colors, fonts, fontSize, radius, spacing, tracking } from '../src/theme/tokens';
@@ -70,7 +71,7 @@ export default function LoginScreen() {
           <View style={styles.logo}>
             <GraduationCap size={22} color={colors.cyan} />
           </View>
-          <Eyebrow>Student Portal</Eyebrow>
+          <Eyebrow>{PORTAL_NAME}</Eyebrow>
           <T weight="display" size="2xl" style={{ marginTop: spacing.sm, letterSpacing: tracking.tightest }}>
             Sign in
           </T>

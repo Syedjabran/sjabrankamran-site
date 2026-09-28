@@ -6,12 +6,16 @@ import { APP_NATIVE_SCREENS, APP_NAV_VERSION, appNavigation, modulesLine } from 
 import { allLinks, navigationFor } from "../src/lib/portal/portal-nav.ts";
 import { itemEntry, portalItem, visibleItems } from "../src/lib/portal/subjects.ts";
 import { PORTAL_NAME } from "../src/lib/portal/brand.ts";
+// The app's own reader of the reply (pure TypeScript, no React Native).
+import {
+  NATIVE_ROUTES, SUBJECT_SCREEN, SUPPORTED_NAV_VERSION, openTargetFor, parseAppNavigation, primaryTabs,
+} from "../mobile/src/nav/nav.ts";
 
 // The mobile app's navigation (Task 5 of the portal-v2 plan): GET
 // /api/portal/navigation hands the app the viewer's subject-first navigation,
 // built from the registry's one visibility rule. What each kind of viewer
 // gets, that it is exactly the portal's own navigation (every role x subject
-// combination).
+// combination), and that the app reads it back without losing anything.
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -143,13 +147,58 @@ for (let mask = 0; mask < 1 << ROLES.length; mask++) {
 }
 assert.equal(checked, 4096 * COURSE_SETS.length * 2);
 
-// --- the reply ------------------------------------------------------------------------------
+// --- the app reads it back ---------------------------------------------------------------
 
-// Every native screen named is a real registry item.
-for (const id of Object.keys(APP_NATIVE_SCREENS)) assert.ok(itemEntry(id), `${id} is a registry item`);
-for (const nav of [physics, satLab, satOnly, admin, coordinator, registrar, flagged]) {
-  assert.deepEqual(JSON.parse(JSON.stringify(nav)), nav, "the reply is plain JSON");
+assert.equal(SUPPORTED_NAV_VERSION, APP_NAV_VERSION, "the app reads the shape the portal sends");
+// Every native screen the portal names is one the app has, and every one the portal names is a real item.
+for (const [id, screen] of Object.entries(APP_NATIVE_SCREENS)) {
+  assert.ok(itemEntry(id), `${id} is a registry item`);
+  assert.ok(Object.hasOwn(NATIVE_ROUTES, screen), `the app has a "${screen}" screen (${id})`);
 }
+assert.equal(SUBJECT_SCREEN, "subject");
+for (const nav of [physics, satLab, satOnly, admin, coordinator, registrar, flagged]) {
+  const wire = JSON.parse(JSON.stringify(nav));
+  assert.deepEqual(wire, nav, "the reply is plain JSON");
+  assert.deepEqual(parseAppNavigation(wire), wire, "the app keeps every subject, module and flag");
+}
+// How the app opens things: a subject -> its subject screen; a native place -> its screen; anything else -> the WebView.
+assert.deepEqual(openTargetFor(physics.subjects[0]), { kind: "native", pathname: "/subject/[id]", params: { id: "physics" } });
+assert.deepEqual(openTargetFor(physics.general.find((p) => p.id === "learning")), { kind: "native", pathname: "/learn" });
+assert.deepEqual(openTargetFor(sat.modules.find((m) => m.id === "sat-tutor")), { kind: "web", path: "/portal/sat-lab/tutor", title: "Tutor" });
+// A screen from a later app release (unknown here) falls back to the WebView; so does a prototype name.
+for (const native of ["quiz-native", "toString", "__proto__"]) {
+  assert.deepEqual(openTargetFor({ id: "x", name: "X", icon: "", route: "/portal/x", purpose: "", native }), { kind: "web", path: "/portal/x", title: "X" });
+}
+// A new subject or module the registry gains later reaches the app with no app change.
+const future = parseAppNavigation({
+  ...JSON.parse(JSON.stringify(physics)),
+  futureField: true,
+  subjects: [...physics.subjects, {
+    id: "chemistry", name: "Chemistry", shortName: "Chemistry", icon: "FlaskConical", accent: "amber", route: "/portal/subjects/chemistry",
+    purpose: "Resources", native: "subject", modules: [{ id: "chem-resources", name: "Resources", icon: "Library", route: "/portal/chemistry/resources", purpose: "Notes.", native: null }],
+  }],
+});
+assert.deepEqual(future.subjects.map((s) => s.id), ["physics", "chemistry"]);
+assert.deepEqual(openTargetFor(future.subjects[1].modules[0]), { kind: "web", path: "/portal/chemistry/resources", title: "Resources" });
+// Entries it can't use are dropped, not trusted: no route, another host, an empty subject.
+const hostile = parseAppNavigation({
+  version: 1, portalName: "P", homeRoute: "//evil.tld", onboardingRoute: "https://evil.tld/",
+  subjects: [{ id: "s", name: "S", route: "/portal/subjects/s", modules: [] }],
+  general: [{ id: "a", name: "A", route: "https://evil.tld/" }, { id: "b", name: "B", route: "//evil.tld/x" }, { id: "c", name: "C" }, "junk", null],
+  admin: "not a list",
+});
+assert.deepEqual([hostile.subjects, hostile.general, hostile.admin, hostile.homeRoute, hostile.onboardingRoute], [[], [], [], "/portal", null]);
+assert.throws(() => parseAppNavigation({ version: APP_NAV_VERSION + 1 }), (e) => e.outdatedApp === true, "a newer shape asks for an app update");
+assert.throws(() => parseAppNavigation("<html>"), /could not read/);
+
+// The tab bar: the old role-based tabs, now only when the navigation holds them.
+assert.deepEqual(primaryTabs(physics), ["learn", "leaderboard", "resources"]);
+assert.deepEqual(primaryTabs(satOnly), ["learn", "resources", "library"], "no physics leaderboard for a SAT-only student");
+assert.deepEqual(primaryTabs(admin), ["users", "rankings", "resources"]);
+assert.deepEqual(primaryTabs(coordinator), ["resources", "library"]);
+assert.deepEqual(primaryTabs(registrar), []);
+assert.deepEqual(primaryTabs(app(["parent"], [])), ["resources", "library"]);
+assert.deepEqual(primaryTabs(null), []);
 
 assert.equal(modulesLine([{ name: "A" }, { name: "B" }]), "A and B");
 assert.equal(modulesLine([{ name: "A" }, { name: "B" }, { name: "C" }, { name: "D" }, { name: "E" }]), "A, B, C and 2 more");

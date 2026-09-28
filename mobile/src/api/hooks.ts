@@ -1,5 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from './client';
+import { parseAppNavigation } from '../nav/nav';
 import type {
   AccessStatus,
   AdminUser,
@@ -18,6 +19,7 @@ import type {
 
 export const qk = {
   me: ['me'] as const,
+  navigation: ['navigation'] as const,
   accessStatus: ['access-status'] as const,
   tasks: ['tasks'] as const,
   notifications: ['notifications'] as const,
@@ -32,6 +34,20 @@ export const qk = {
 
 export function useMe() {
   return useQuery({ queryKey: qk.me, queryFn: () => apiFetch<Me>('/api/portal/me') });
+}
+
+/**
+ * The signed-in user's subjects, modules, General and Administration: the
+ * portal's own subject-first navigation (src/nav/nav.ts). The ONE source of
+ * the app's menus, so a subject or module the portal adds shows up here
+ * without an app release, and only what the portal would show this user.
+ */
+export function usePortalNavigation() {
+  return useQuery({
+    queryKey: qk.navigation,
+    queryFn: async () => parseAppNavigation(await apiFetch<unknown>('/api/portal/navigation')),
+    staleTime: 60 * 1000,
+  });
 }
 
 /**

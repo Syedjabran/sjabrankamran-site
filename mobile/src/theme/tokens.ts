@@ -62,7 +62,29 @@ export const alpha = {
   spaceTranslucent: 'rgba(7,11,24,0.60)', // bg-space/60
   /** Skeleton placeholder fill — one step above .card so it reads as content. */
   skeleton: 'rgba(255,255,255,0.06)',
+  emeraldFaint: 'rgba(18,212,140,0.10)',
+  violetBorder: 'rgba(139,92,246,0.30)', // border-violet2/30
+  violetFaint: 'rgba(139,92,246,0.10)',
+  magentaBorder: 'rgba(240,61,206,0.30)', // border-magenta/30
+  magentaFaint: 'rgba(240,61,206,0.10)',
 } as const;
+
+/**
+ * A subject's accent, by the portal's token name (subjects.ts AccentToken:
+ * the website's ACCENT_CLASSES text / border / soft). An accent this app
+ * doesn't know yet -- one the portal added later -- reads as cyan.
+ */
+const ACCENTS: Record<string, { color: string; border: string; soft: string }> = {
+  cyan: { color: colors.cyan, border: alpha.cyanBorder, soft: alpha.cyanFaint },
+  violet: { color: colors.violet2, border: alpha.violetBorder, soft: alpha.violetFaint },
+  emerald: { color: colors.emerald2, border: alpha.emeraldBorder, soft: alpha.emeraldFaint },
+  amber: { color: colors.amber300, border: alpha.amberBorder, soft: alpha.amberFaint },
+  magenta: { color: colors.magenta, border: alpha.magentaBorder, soft: alpha.magentaFaint },
+};
+
+export function accentFor(token: string | null | undefined) {
+  return (token && Object.prototype.hasOwnProperty.call(ACCENTS, token) ? ACCENTS[token] : null) ?? ACCENTS.cyan;
+}
 
 /** Shared motion values so loading states feel like one system, not per-screen. */
 export const motion = {
