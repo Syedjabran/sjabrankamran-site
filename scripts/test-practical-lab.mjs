@@ -59,8 +59,8 @@ const { ACCESS_CONTROL_BUCKET, ACCESS_CONTROL_PATH } = await import("../src/lib/
 assert.equal(PRACTICAL_LAB, "practical-lab");
 assert.equal(PRACTICAL_LAB_PAGE, "/portal/practical-lab");
 assert.equal(PRACTICAL_LAB_ENTRY, "/lab/index.html");
-// The middleware can't import edu/auth.ts, so the lab keeps its own copy of
-// the staff list; it must stay the same five roles.
+// The lab's staff are the Exam Lab staff (the pure edu/roles.ts list, which
+// auth.ts re-exports and the middleware can import): the same five roles.
 assert.deepEqual([...LAB_STAFF_ROLES].sort(), [...EXAM_LAB_STAFF_ROLES].sort());
 assert.deepEqual([...LAB_STAFF_ROLES].sort(), ["admin", "coordinator", "facilitator", "super_admin", "teacher"]);
 

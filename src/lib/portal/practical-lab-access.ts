@@ -9,6 +9,7 @@
  */
 import { directGrantsIn, type SubjectId } from "./subjects.ts";
 import { isStorageNotFound } from "../exam-lab/storage-not-found.ts";
+import { EXAM_LAB_STAFF_ROLES } from "../edu/roles.ts";
 
 export const PRACTICAL_LAB: SubjectId = "practical-lab";
 /** The portal page that shows the lab inside the portal chrome. */
@@ -17,9 +18,9 @@ export const PRACTICAL_LAB_PAGE = "/portal/practical-lab";
 export const PRACTICAL_LAB_ENTRY = "/lab/index.html";
 
 /** Staff who always have the lab: teacher, coordinator, facilitator, admin
- *  and super admin -- the same people as EXAM_LAB_STAFF_ROLES in edu/auth.ts,
- *  which the middleware can't import; a test keeps the two lists equal. */
-export const LAB_STAFF_ROLES: readonly string[] = ["super_admin", "admin", "teacher", "coordinator", "facilitator"];
+ *  and super admin -- the Exam Lab staff (EXAM_LAB_STAFF_ROLES, from the pure
+ *  edu/roles.ts, which the middleware can import). */
+export const LAB_STAFF_ROLES: readonly string[] = EXAM_LAB_STAFF_ROLES;
 
 export function isLabStaff(roles: readonly string[]): boolean {
   return roles.some((r) => LAB_STAFF_ROLES.includes(r));
