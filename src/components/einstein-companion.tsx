@@ -6,6 +6,8 @@ import { Loader2, Send, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { helperPausedOnPath } from "@/lib/ai/helper-pause-paths";
 import { helperForPath } from "@/lib/portal/subjects";
+import { helperCurriculum } from "@/lib/portal/subject-helpers";
+import { useHelperViewerCourses } from "./helper-viewer";
 import { MarkdownRenderer } from "./markdown-renderer";
 import { ResilientImg } from "@/components/ui/resilient-image";
 
@@ -24,6 +26,9 @@ export function EinsteinCompanion() {
   // timed modules are sat there (the helper's API refuses those students too).
   const pausedHere = helperPausedOnPath(pathname);
   const helper = helperForPath(pathname);
+  // The signed-in viewer's courses (published by the portal layout): an
+  // O Level student's questions go as O-Level unless they pick otherwise.
+  const viewerCourses = useHelperViewerCourses();
   const [visible, setVisible] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [msgIndex, setMsgIndex] = useState(0);
@@ -32,7 +37,11 @@ export function EinsteinCompanion() {
   const [reducedMotion, setReducedMotion] = useState(false);
 
   const [question, setQuestion] = useState("");
-  const [curriculum, setCurriculum] = useState<string>(helper?.curricula[0] ?? "");
+  // What the viewer picked, if anything; the curriculum actually used is
+  // worked out on every render (helperCurriculum), never frozen from the
+  // first page -- a first page with no helper (the SAT Lab) has no default.
+  const [pickedCurriculum, setPickedCurriculum] = useState<string | null>(null);
+  const curriculum = helper ? helperCurriculum(helper, viewerCourses, pickedCurriculum) : "";
   const [loading, setLoading] = useState(false);
   const [answer, setAnswer] = useState<string | null>(null);
   const [label, setLabel] = useState<string>("");
@@ -322,7 +331,7 @@ export function EinsteinCompanion() {
               <div className="flex items-center gap-2">
                 <select
                   value={curriculum}
-                  onChange={(e) => setCurriculum(e.target.value)}
+                  onChange={(e) => setPickedCurriculum(e.target.value)}
                   aria-label="Curriculum"
                   className="rounded-lg border border-white/10 bg-abyss/60 px-2 py-1.5 text-xs text-ice focus:border-cyan focus:outline-none"
                 >

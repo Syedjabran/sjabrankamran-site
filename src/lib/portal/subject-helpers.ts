@@ -22,6 +22,10 @@ export interface HelperPersona {
   examples: readonly string[];
   /** The curriculum choices sent with a question; the first is the default. */
   curricula: readonly string[];
+  /** Which curriculum a viewer's course preselects, first match wins (so a
+   *  student in both physics courses gets O Level, as course access ranks
+   *  them). A course not listed keeps the default. */
+  curriculumFor: readonly (readonly [course: string, curriculum: string])[];
   /** The line above the examples. */
   intro: string;
   placeholder: string;
@@ -61,6 +65,7 @@ export const PHYSICS_HELPER: HelperPersona = {
     "What is the difference between e.m.f. and potential difference?",
   ],
   curricula: ["A-Level", "O-Level", "IBDP", "General"],
+  curriculumFor: [["5054", "O-Level"], ["9702", "A-Level"]],
   intro: "Ask anything from your physics course — the AI tutor explains step by step. Or start from an example:",
   placeholder: "Type your physics question…",
   thinking: "Working through the physics…",
@@ -74,3 +79,17 @@ export const PHYSICS_HELPER: HelperPersona = {
     body: "Stuck on a concept or a numerical? The AI tutor explains step by step with proper mathematical notation — available any time.",
   },
 };
+
+/**
+ * The curriculum a question is asked with: the one the viewer picked when it
+ * is one of this helper's, otherwise the one their courses preselect
+ * (`curriculumFor`), otherwise the helper's default. Worked out afresh on
+ * every render and every question, so it never depends on the page the
+ * companion first loaded on (on a page without a helper there is no persona
+ * to take a default from).
+ */
+export function helperCurriculum(helper: HelperPersona, courses: readonly string[], picked: string | null): string {
+  if (picked && helper.curricula.includes(picked)) return picked;
+  const preset = helper.curriculumFor.find(([course, curriculum]) => courses.includes(course) && helper.curricula.includes(curriculum));
+  return preset ? preset[1] : helper.curricula[0] ?? "";
+}

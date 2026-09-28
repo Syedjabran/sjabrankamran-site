@@ -7,7 +7,7 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin, isExamLabStaff, isStaff, type EduRole, type PortalUser } from "@/lib/edu/auth";
-import { resolveCourseAccess, courseFromYear } from "@/lib/portal/course-access";
+import { resolveCourseAccess, courseFromYear, type CourseAccess } from "@/lib/portal/course-access";
 import { visibleClassIdsForUid } from "@/lib/portal/timetable";
 import { getRegistry, type Registry } from "@/lib/portal/institutions";
 
@@ -18,7 +18,13 @@ import { getRegistry, type Registry } from "@/lib/portal/institutions";
  *  enrolled" (403, which the runner treats as final). */
 export async function satAccess(user: PortalUser): Promise<{ ok: boolean; isStaff: boolean }> {
   const access = await resolveCourseAccess(user, { strict: true });
-  return { ok: access.isStaff || access.allowed.includes("SAT"), isStaff: access.isStaff };
+  return { ok: satOpenIn(access), isStaff: access.isStaff };
+}
+
+/** Whether a strict course-access read opens the SAT Lab (the rule inside
+ *  satAccess): the portal layout reads course access once and asks this. */
+export function satOpenIn(access: CourseAccess): boolean {
+  return access.isStaff || access.allowed.includes("SAT");
 }
 
 /**

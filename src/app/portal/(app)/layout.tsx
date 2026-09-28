@@ -6,7 +6,9 @@ import { Eye, GraduationCap, LogOut, Settings } from "lucide-react";
 import { getPortalUser, ROLE_LABELS, isAdmin, isStaff, isRegistrarOnly, isCoordinatorOnly } from "@/lib/edu/auth";
 import { getPortalRestriction } from "@/lib/portal/access-control";
 import { onboardingStatus } from "@/lib/portal/onboarding";
-import { satAccess } from "@/lib/sat/access";
+import { satOpenIn } from "@/lib/sat/access";
+import { resolveCourseAccess } from "@/lib/portal/course-access";
+import { HelperViewerCourses } from "@/components/helper-viewer";
 import { practicalLabAccess } from "@/lib/portal/practical-lab";
 import { PRACTICAL_LAB_PAGE } from "@/lib/portal/practical-lab-access";
 import { menuFor } from "@/lib/portal/portal-menu";
@@ -34,13 +36,16 @@ export default async function PortalLayout({ children }: { children: React.React
   const pathname = (await headers()).get("x-pathname") || "";
   const isStudentUser = user.roles.includes("student");
   // A failed SAT or Practical Lab access read hides that entry (fail closed).
-  const [restriction, onboarding, satEnabled, practicalLabEnabled] = await Promise.all([
+  // A student's course access is read once (strict, as satAccess reads it):
+  // it opens the SAT Lab entry and tells the helper which courses they take.
+  const [restriction, onboarding, courseAccess, practicalLabEnabled] = await Promise.all([
     getPortalRestriction(user),
     isStudentUser ? onboardingStatus(user.id) : Promise.resolve("complete" as const),
-    isStudentUser ? satAccess(user).then((a) => a.ok).catch(() => false) : Promise.resolve(false),
+    isStudentUser ? resolveCourseAccess(user, { strict: true }).catch(() => null) : Promise.resolve(null),
     isStudentUser ? practicalLabAccess(user).then((a) => a.ok).catch(() => false) : Promise.resolve(false),
   ]);
   if (restriction) return <PortalAccessBlocked restriction={restriction} />;
+  const satEnabled = !!courseAccess && satOpenIn(courseAccess);
 
   // Suspended accounts: block all portal activity immediately (in addition to
   // the GoTrue ban that stops new sign-ins / token refresh).
@@ -104,6 +109,8 @@ export default async function PortalLayout({ children }: { children: React.React
     <div className={embedded ? "px-4 py-5" : "container-x py-8"}>
       <AccessLockMonitor />
       <PresenceBeacon />
+      {/* A student's own courses (staff teach every course: the helper keeps its default). */}
+      <HelperViewerCourses courses={courseAccess && !courseAccess.isStaff ? courseAccess.allowed : []} />
       <PwaPortal showInstallCard={!mustOnboard && !embedded} />
       {previewing ? (
         <div className="el-noprint mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/30 bg-amber-300/[0.06] px-4 py-2.5">
