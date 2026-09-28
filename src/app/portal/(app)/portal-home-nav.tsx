@@ -77,16 +77,18 @@ export function SubjectCards({ nav, glances = {}, courses = {}, unavailable = fa
   );
 }
 
-/** A small button for a general, staff or More page. */
+/** A small button for a general, staff or More page: the icon above the name
+ *  on a phone (two to a row, so a long name keeps the tile's full width),
+ *  beside it from the small breakpoint up. */
 function Tile({ link, tag }: { link: NavLink; tag?: string }) {
   return (
     <Go link={link}
-      className={`group flex min-h-14 min-w-0 items-center gap-3 rounded-2xl border border-white/10 bg-space/40 px-3 py-2.5 transition hover:border-cyan/30 hover:bg-white/[0.03] ${FOCUS}`}>
+      className={`group flex min-h-14 min-w-0 flex-col items-start gap-2 rounded-2xl border border-white/10 bg-space/40 px-3 py-2.5 transition hover:border-cyan/30 hover:bg-white/[0.03] sm:flex-row sm:items-center sm:gap-3 ${FOCUS}`}>
       <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-white/10 text-fog transition group-hover:text-cyan">
         <PortalIcon name={link.icon} size={16} />
       </span>
-      <span className="min-w-0">
-        <span className="line-clamp-2 text-sm leading-snug text-ice">{link.name}</span>
+      <span className="w-full min-w-0 sm:w-auto">
+        <span className="line-clamp-2 break-words text-sm leading-snug text-ice">{link.name}</span>
         {tag ? <span className="block truncate text-[11px] text-dust">{tag}</span> : null}
       </span>
     </Go>

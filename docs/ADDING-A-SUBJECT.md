@@ -13,13 +13,14 @@ No subject has been added this way yet. Physics is still the only subject with E
 |---|---|---|
 | `COURSES` | Each awarding-body course: id, full name, level, syllabus code, awarding body, and the first lines of a new student's welcome email | 9702, 5054, SAT |
 | `SUBJECTS` | Each subject: label, short label, lucide icon, accent token, how it is granted, its courses, its modules in display order, and optionally its Exam Lab papers, its practice module and its helper persona | Physics, Digital SAT, Practical Lab (shown inside Physics) |
-| `GENERAL_ITEMS` | Places that belong to every subject: home, search, notifications, My Learning, the timetable (class-based: it lists every class, SAT classes too), the library, My Children, profile, install, plus two pages that are no destination (onboarding, a single task) | 11 items |
+| `GENERAL_ITEMS` | Places that belong to every subject: home, My Children, My Learning, the timetable (class-based: it lists every class, SAT classes too), the library, notifications, search, profile, install, plus three pages that are no destination (onboarding, a single task, the subject space page itself) | 12 items |
 | `STAFF_ITEMS` | The staff consoles (Administration), plus the super admin's demo-student page | 16 items |
 
 Every place (a subject's module or a general/staff item) has: `id`, `route` (an existing portal
 page, optionally with a `#section`; a `[param]` segment matches any value, as in the page's folder
-name), `name` (the plain name inside its subject), `menuLabel` (its name where no subject is on
-screen, e.g. "Physics Resources"), an optional `deskLabel` (the coordinator desk's name for it),
+name), `name` (the plain name inside its subject: what its button says), `menuLabel` (its name where
+no subject is on screen: the browser-tab title, and a name the finder also knows it by, e.g. "Physics
+Resources"), an optional `deskLabel` (the coordinator desk's name for it),
 `icon`, a one-line `purpose`, and `access` — the audiences that see it. A page that is no
 destination (onboarding, a single task, a test preview) is marked `listed: false`: it is in no menu,
 finder or space, but its title and breadcrumb still resolve (`itemForPath`).
@@ -41,6 +42,24 @@ and, for a subject's module, has that subject. The subjects come from `viewerSub
 A student has only their own subjects: an SAT-only student sees no Physics module. With a physics
 course assumed for students, this shows exactly what the portal menu showed before the registry, for
 every combination of roles and switches (`npm run test:subject-registry` checks all 16,384).
+
+## How the navigation is built
+
+The portal has no sidebar and no menu list of its own. `src/lib/portal/portal-nav.ts`
+(`navigationFor`) turns the viewer's `visibleItems` into:
+
+- **subject spaces** — one per top-level subject (`SUBJECT_SPACES`) the viewer has anything in:
+  that subject's visible modules plus those of any subject shown inside it (`partOf`), in `order`.
+  Each space is a page, `/portal/subjects/<id>` (`spaceRoute`), and a card on the home page;
+- **General** — the visible `GENERAL_ITEMS` (Home and Profile live in the top bar);
+- **Administration** — the visible `STAFF_ITEMS`;
+- **More** — pages the old menu gave the viewer whose subject they don't have (it showed Physics to
+  every student): a SAT-only student keeps the physics pages, folded away under More on the home page.
+
+The home page (subject cards, then the groups), each subject space, the top bar (Home, the subject
+switcher, the breadcrumb, "Find a page…" / Ctrl+K), the admin's Subjects card line and the product
+tour (`tourSteps`) are all drawn from that one result. `src/lib/portal/viewer-nav.ts` reads the
+viewer's roles, courses and Practical Lab switch on the server once per request and calls it.
 
 ## Checklist for a new subject
 
@@ -84,10 +103,13 @@ the `PortalItemId` type. Give it:
 - an `icon`, a one-line `purpose` (the product tour shows it), an `order`, and its `access`
   (usually `["student", ...]` plus the staff audience that should see it).
 
-Then add the module to today's sidebar in `src/lib/portal/portal-menu.ts` (it lists items explicitly
-per role, exactly as the menu did before the registry existed). The planned subject-first
-navigation reads the registry's subject spaces directly (`spaceModules`, `visibleItems`), so this
-step goes away with it.
+That is all the navigation needs: the module appears in its subject's space, the finder and the
+tour for everyone its `access` and the subject rule allow (see "How the navigation is built"). If the
+module needs a live badge on its space card (a count of open work), add it where the space page
+works its badges out (`src/app/portal/(app)/subjects/[subject]/page.tsx`); the home page's subject
+card glance is worked out in `src/app/portal/(app)/page.tsx` from `src/lib/portal/glance.ts`.
+A portal page that reads data also gets a `loading.tsx` from `src/components/portal-skeletons.tsx`
+(`npm run test:portal` checks).
 
 ### 4. Access
 
@@ -128,7 +150,8 @@ server itself:
 Run `npm run test:subject-registry` (part of `npm run test:portal`). It checks that ids are unique,
 every route is a real page, every icon exists, courses and subjects agree, and that the general and
 staff items never name a subject. Update its expected lists (subject ids, item ids, the Physics and
-SAT spaces) to include the new subject. Then run the rest: `npx tsc --noEmit -p tsconfig.json`,
+SAT spaces) to include the new subject, and the personas in `scripts/test-portal-nav.mjs` (what each
+kind of viewer's home page and spaces show). Then run the rest: `npx tsc --noEmit -p tsconfig.json`,
 `npm run test:sat`, `npm run test:portal`, `npm run test:access`.
 
 ## What adapts on its own
@@ -140,7 +163,12 @@ Once the registry has the subject, these need no change:
 - **The Exam Lab page:** its header, intro, course choice and both "nothing here" messages read the
   subject's entry; the context rules (`src/lib/portal/exam-lab-context.ts`) only ever choose among
   courses the user may already open.
-- **The product tour:** each menu link is explained by its registry `purpose`.
+- **The navigation:** a card on the home page, its own space at `/portal/subjects/<id>` with a card
+  per module, an entry in the top bar's subject switcher, every module in "Find a page…", the
+  breadcrumb ("Chemistry › Resources"), and the admin's Subjects card line ("Their home page shows
+  …"). A subject shown inside another (`partOf`) appears in that space instead.
+- **The product tour:** it walks the subject cards on the home page and a space's modules in the
+  space, each explained by its registry `purpose`.
 - **The floating helper:** it follows the open page's subject.
 - **Admin:** the Subjects card switches, the Create account checkbox and the grants record for a
   directly granted subject.
@@ -155,13 +183,15 @@ These were left as they are on purpose; each needs its own decision when a subje
   place, `src/lib/portal/brand.ts`.
 - **The contact and sender address** (physics@sjabrankamran.com), in `src/lib/portal/mail.ts`, the
   access-paused messages and the email pages.
-- **The timetable's menu label**, "Physics timetable". The timetable is class-based and belongs to
-  every subject (it lists SAT classes too); its label is renamed with the subject-first navigation.
 - **Physics' own modules and content:** the study plan, My Progress, My Ranking and the Physics
   Performance Index, Physics Resources (with its Class Drive, the same shared folders for everyone),
   Physics Studio and syllabus coverage (9702 topics). They are described in the registry as Physics
   modules; a new subject brings its own.
 - **Emails:** the progress emails and the Saturday parent report have Physics (and SAT) sections.
   The welcome email already follows the new account's course (each course's `welcome`).
-- **The student home page** still suggests the Exam Lab when a student is all caught up; the
-  planned subject picker replaces that page.
+- **The subject cards' glances:** Physics' card shows the next Exam Lab work or the study-plan count
+  and the SAT's the exam countdown (`src/lib/portal/glance.ts`); a new subject's card lists its first
+  pages until it gets a glance of its own.
+- **More:** the rule behind it assumes the class-granted subjects (Physics) for every student, because
+  that is what the old menu showed. A second class-granted subject would put its pages under More for
+  students not in its classes too; decide then whether it should.

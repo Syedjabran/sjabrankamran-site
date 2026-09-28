@@ -84,7 +84,6 @@ function SubjectSwitcher({ spaces, current, here, onFind }: {
 }
 
 function Breadcrumb({ crumbs }: { crumbs: Crumb[] }) {
-  if (!crumbs.length) return null;
   const last = crumbs.length - 1;
   return (
     <nav aria-label="Breadcrumb" className="min-w-0">
@@ -200,9 +199,12 @@ export function PortalTopBar({ nav, remembered, navigable, tourAutoStart, user, 
               <House size={15} aria-hidden="true" /> <span className="hidden sm:inline">Home</span>
             </Link>
             {nav.spaces.length ? <SubjectSwitcher spaces={nav.spaces} current={shown} here={!!pageSpace} onFind={() => setFinding(true)} /> : null}
-            <div className="order-last w-full min-w-0 lg:order-none lg:w-auto lg:flex-1 lg:pl-2">
-              <Breadcrumb crumbs={crumbs} />
-            </div>
+            {crumbs.length ? (
+              // Its own line on phones and tablets; beside the switcher on a wide screen.
+              <div className="order-last w-full min-w-0 lg:order-none lg:w-auto lg:flex-1 lg:pl-2">
+                <Breadcrumb crumbs={crumbs} />
+              </div>
+            ) : null}
           </>
         ) : null}
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
