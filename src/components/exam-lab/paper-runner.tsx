@@ -18,6 +18,7 @@ import { AnswerPad } from "./answer-pad";
 import { useExamGuard, type GuardEvent, type GuardMode } from "./use-exam-guard";
 import { exitExamFullscreen, fullscreenSupported, isFullscreen, onFullscreenChange, requestExamFullscreen } from "@/lib/exam-lab/fullscreen";
 import { ProctorCamera } from "./proctor-camera";
+import { PORTAL_CONTACT_EMAIL } from "@/lib/portal/brand";
 
 type UrlMap = Record<string, string>;
 type LogMeta = { mode: "paper" | "drill"; code?: string; ref?: string; paperType: "P1" | "P2" | "P4" | "mixed" };
@@ -760,7 +761,7 @@ export function PaperRunner({
   const warnAt = Math.min(900, Math.max(60, totalSec * 0.25));
 
   const watermark = useMemo(() => {
-    const txt = `physics@sjabrankamran.com`;
+    const txt = PORTAL_CONTACT_EMAIL;
     const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='360' height='200'><text x='10' y='120' transform='rotate(-22 180 100)' font-family='monospace' font-size='15' fill='%23ffffff'>${encodeURIComponent(txt).replace(/'/g, "%27")}</text></svg>`;
     return `url("data:image/svg+xml,${svg}")`;
   }, []);

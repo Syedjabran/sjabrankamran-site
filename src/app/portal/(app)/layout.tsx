@@ -9,6 +9,7 @@ import { deskRoutes, onDeskRoute } from "@/lib/portal/portal-nav";
 import { viewerNav } from "@/lib/portal/viewer-nav";
 import { SPACE_COOKIE } from "@/lib/portal/space-cookie";
 import { isEmbeddedClient } from "@/lib/portal/embed";
+import { PORTAL_CONTACT_EMAIL } from "@/lib/portal/brand";
 import { AccessLockMonitor } from "./access-lock-monitor";
 import { PresenceBeacon } from "./presence-beacon";
 import { PortalAccessBlocked } from "./portal-access-blocked";
@@ -48,7 +49,7 @@ export default async function PortalLayout({ children }: { children: React.React
       <div className="container-x py-16">
         <div className="mx-auto max-w-md rounded-2xl border border-signal/30 bg-signal/5 p-8 text-center">
           <h1 className="text-xl font-semibold text-ice">Access suspended</h1>
-          <p className="mt-2 text-sm text-fog">Your portal access has been paused. Please contact your teacher at physics@sjabrankamran.com if you believe this is a mistake.</p>
+          <p className="mt-2 text-sm text-fog">Your portal access has been paused. Please contact your teacher at {PORTAL_CONTACT_EMAIL} if you believe this is a mistake.</p>
           <form action="/portal/auth/signout" method="post" className="mt-5">
             <button type="submit" className="btn-ghost !px-4 !py-2 text-xs">Sign out</button>
           </form>

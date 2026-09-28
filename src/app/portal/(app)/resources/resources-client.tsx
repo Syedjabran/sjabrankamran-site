@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
 import { portalItem } from "@/lib/portal/subjects";
+import { PORTAL_CONTACT_EMAIL } from "@/lib/portal/brand";
 
 const BUCKET = "physics-resources";
 /** "Physics Resources": the subject registry's name for this page. */
@@ -330,7 +331,7 @@ function GooglePanel({ input, onDone }: { input: string; onDone: () => void }) {
     <div className="rounded-xl border border-amber-300/25 bg-amber-300/[0.04] p-4">
       <p className="flex items-center gap-2 text-sm font-semibold text-amber-200"><Sparkles size={15} /> Google not connected yet</p>
       <p className="mt-2 text-xs leading-relaxed text-fog">
-        To pull materials from <b>physics@sjabrankamran.com</b>&apos;s Google Drive &amp; Classroom, a one-time OAuth connection is needed.
+        To pull materials from <b>{PORTAL_CONTACT_EMAIL}</b>&apos;s Google Drive &amp; Classroom, a one-time OAuth connection is needed.
         Add <code className="text-cyan">GOOGLE_CLIENT_ID</code>, <code className="text-cyan">GOOGLE_CLIENT_SECRET</code> and <code className="text-cyan">GOOGLE_REFRESH_TOKEN</code> in the Vercel project, then redeploy.
         A step-by-step setup guide has been prepared for you. Until then you can still upload files and add links above.
       </p>

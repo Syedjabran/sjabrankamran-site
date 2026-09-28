@@ -11,7 +11,7 @@ import {
 import { PHYSICS_HELPER, helperCurriculum } from "../src/lib/portal/subject-helpers.ts";
 import { allLinks, navigationFor } from "../src/lib/portal/portal-nav.ts";
 import { EXAM_LAB_SUBJECTS, examLabContext, examLabWorkLabel } from "../src/lib/portal/exam-lab-context.ts";
-import { COURSE_LABEL, welcomeCourse } from "../src/lib/portal/course-labels.ts";
+import { COURSE_LABEL, welcomeCourses } from "../src/lib/portal/course-labels.ts";
 import { PRACTICAL_LAB_PAGE } from "../src/lib/portal/practical-lab-access.ts";
 import { PORTAL_NAME } from "../src/lib/portal/brand.ts";
 
@@ -522,14 +522,15 @@ assert.ok(GENERAL_WELCOME.includes(PORTAL_NAME) && !/A-Level|9702|CAIE/.test(GEN
 assert.equal(PORTAL_NAME, "Learning Portal");
 assert.doesNotMatch(PORTAL_NAME, subjectWords, "the portal's name names no subject");
 const CLASSES = [{ id: "as", year: "AS" }, { id: "ol", year: "O Level" }, { id: "sat", year: "Digital SAT" }, { id: "odd", year: "Saturday Batch" }];
-assert.equal(welcomeCourse("as", CLASSES, []), "9702");
-assert.equal(welcomeCourse("ol", CLASSES, []), "5054");
-assert.equal(welcomeCourse("sat", CLASSES, []), "SAT");
-assert.equal(welcomeCourse(null, CLASSES, ["SAT"]), "SAT", "SAT switched on, no class");
-assert.equal(welcomeCourse("ol", CLASSES, ["SAT"]), "5054", "physics first, as course access ranks it");
-assert.equal(welcomeCourse("odd", CLASSES, []), "9702", "an unplaced class counts as A Level, as course access does");
-assert.equal(welcomeCourse("as", [], []), "9702", "a failed registry read: unplaced");
-assert.equal(welcomeCourse(null, CLASSES, []), null, "no class, no subject: the general welcome");
+// The new account's courses (portal-emails.ts words the email for them).
+assert.deepEqual(welcomeCourses("as", CLASSES, []), ["9702"]);
+assert.deepEqual(welcomeCourses("ol", CLASSES, []), ["5054"]);
+assert.deepEqual(welcomeCourses("sat", CLASSES, []), ["SAT"]);
+assert.deepEqual(welcomeCourses(null, CLASSES, ["SAT"]), ["SAT"], "SAT switched on, no class");
+assert.deepEqual(welcomeCourses("ol", CLASSES, ["SAT"]), ["5054", "SAT"], "a class and a grant: both, as course access counts them");
+assert.deepEqual(welcomeCourses("odd", CLASSES, []), ["9702"], "an unplaced class counts as A Level, as course access does");
+assert.deepEqual(welcomeCourses("as", [], []), ["9702"], "a failed registry read: unplaced");
+assert.deepEqual(welcomeCourses(null, CLASSES, []), [], "no class, no subject: the general welcome");
 // Nothing still hardcodes the A Level names where the course is known.
 assert.ok(!read("src/components/exam-lab/exam-runner.tsx").includes("CAIE 9702 Practice Paper"), "the practice paper header names its course");
 assert.ok(!read("src/app/portal/(app)/progress/page.tsx").includes("CAIE 9702"), "My Progress names the student's course");

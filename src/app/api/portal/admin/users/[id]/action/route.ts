@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireAdmin, audit, genPassword, emailCredentials, ALL_ROLES, isSuperAdmin } from "@/lib/portal/admin";
+import { requireAdmin, audit, genPassword, emailCredentials, accountCoursesFor, ALL_ROLES, isSuperAdmin } from "@/lib/portal/admin";
 import type { EduRole } from "@/lib/edu/auth";
 import { getAccessControlDocument, releaseDirectUserRestrictions, saveAccessControlDocument } from "@/lib/portal/access-control";
 import { isRestrictionActive, type AccessRestriction } from "@/lib/portal/access-shared";
@@ -60,7 +60,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       let emailStatus: string | undefined;
       if (b.send_email) {
         const { data: p } = await sb.from("edu_profiles").select("full_name, email").eq("id", uid).maybeSingle();
-        if (p?.email) emailStatus = (await emailCredentials(admin.id, p.email, p.full_name || "Student", password, true)).status;
+        if (p?.email) emailStatus = (await emailCredentials(admin.id, p.email, p.full_name || "Student", password, true, await accountCoursesFor(uid))).status;
       }
       return NextResponse.json({ ok: true, password, emailStatus }, { status: 200 });
     }
@@ -178,7 +178,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       if (error) return NextResponse.json({ error: error.message }, { status: 400 });
       const { data: p } = await sb.from("edu_profiles").select("full_name, email").eq("id", uid).maybeSingle();
       if (!p?.email) return NextResponse.json({ error: "No email on file." }, { status: 400 });
-      const r = await emailCredentials(admin.id, p.email, p.full_name || "Student", password, true);
+      const r = await emailCredentials(admin.id, p.email, p.full_name || "Student", password, true, await accountCoursesFor(uid));
       await audit(admin.id, "user.email_credentials", "edu_profiles", uid, { status: r.status });
       return NextResponse.json({ ok: true, emailStatus: r.status, password }, { status: 200 });
     }

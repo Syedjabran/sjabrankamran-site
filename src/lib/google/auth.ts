@@ -1,5 +1,6 @@
 /**
- * Google OAuth (user-delegated) for physics@sjabrankamran.com. SERVER-ONLY.
+ * Google OAuth (user-delegated) for the portal's mailbox (brand.ts
+ * PORTAL_CONTACT_EMAIL). SERVER-ONLY.
  *
  * Connects Google Drive + Google Classroom using a long-lived refresh token.
  * No heavyweight SDK — we mint access tokens against the OAuth token endpoint

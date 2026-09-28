@@ -10,6 +10,11 @@ import { courseOf } from "./subjects.ts";
 
 export type Course = "9702" | "5054" | "SAT";
 
+/** The long-standing default course, A Level (9702): what an enrolment whose
+ *  class names no course counts as (coursesForEnrolment), and the course a
+ *  progress report falls back to (portal-emails.ts reportCourses). */
+export const DEFAULT_COURSE: Course = "9702";
+
 /** Map a class `year` label to an awarding-body course, or null if it names none. */
 export function courseFromYear(year: string): Course | null {
   const y = (year || "").toUpperCase();
@@ -61,20 +66,20 @@ export function coursesForEnrolment(
   const unrecognised = [...enrolledClassIds].some((id) => !recognised.has(id));
   const noClasses = enrolledClassIds.size === 0;
   const physics = courses.has("9702") || courses.has("5054");
-  if ((unrecognised && !physics) || (noClasses && !directCourses.length)) courses.add("9702");
+  if ((unrecognised && !physics) || (noClasses && !directCourses.length)) courses.add(DEFAULT_COURSE);
   for (const course of directCourses) courses.add(course);
   return courses;
 }
 
-/** The course a new student's welcome email is written for: their class
- *  (`classId`, placed by the registry `classes`) and direct grants, ranked by
- *  primaryCourse; null with neither -- course access gives such a student no
- *  course. */
-export function welcomeCourse(
+/** The courses a new student's welcome email is written for: their class's
+ *  (`classId`, placed by the registry `classes`) and their direct grants', as
+ *  course access counts them; none with neither -- course access gives such
+ *  a student no course. */
+export function welcomeCourses(
   classId: string | null, classes: readonly { id: string; year: string }[], directCourses: readonly Course[],
-): Course | null {
-  if (!classId && !directCourses.length) return null;
-  return primaryCourse(coursesForEnrolment(new Set(classId ? [classId] : []), classes, { directCourses }));
+): Course[] {
+  if (!classId && !directCourses.length) return [];
+  return [...coursesForEnrolment(new Set(classId ? [classId] : []), classes, { directCourses })];
 }
 
 /** The course to show first: O Level precedence when a student is

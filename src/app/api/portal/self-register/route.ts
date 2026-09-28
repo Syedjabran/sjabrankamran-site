@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { audit, genPassword, isEmail, emailCredentials, welcomeCourseFor } from "@/lib/portal/admin";
+import { audit, genPassword, isEmail, emailCredentials, welcomeCoursesFor } from "@/lib/portal/admin";
 
 export const runtime = "nodejs";
 
@@ -183,7 +183,7 @@ export async function POST(request: Request) {
   // Send welcome email with credentials
   let emailStatus = "not_sent";
   try {
-    const result = await emailCredentials(uid, d.email, d.full_name, password, false, await welcomeCourseFor(["student"], d.class_id, []));
+    const result = await emailCredentials(uid, d.email, d.full_name, password, false, await welcomeCoursesFor(["student"], d.class_id, []));
     emailStatus = result.status;
   } catch {
     emailStatus = "error";

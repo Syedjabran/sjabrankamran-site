@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { PORTAL_LOGIN_URL } from "@/lib/portal/brand";
 
 const INPUT_CLASS =
   "w-full rounded-xl border border-white/10 bg-abyss/60 px-4 py-2.5 text-sm text-ice placeholder:text-dust/50 focus:border-cyan focus:outline-none focus:ring-1 focus:ring-cyan";
@@ -74,7 +75,7 @@ export function RegistrationForm({ classId, schoolName, className }: Props) {
         <h2 className="text-xl font-semibold text-ice">You&apos;re registered!</h2>
         <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-fog">{message}</p>
         <a
-          href="https://sjabrankamran.com/portal/login"
+          href={PORTAL_LOGIN_URL}
           className="mt-6 inline-block rounded-xl bg-cyan px-6 py-2.5 text-sm font-medium text-void transition hover:bg-cyan/90"
         >
           Go to Login
@@ -200,7 +201,7 @@ export function RegistrationForm({ classId, schoolName, className }: Props) {
 
       <p className="text-center text-xs text-dust">
         Already have an account?{" "}
-        <a href="https://sjabrankamran.com/portal/login" className="text-cyan hover:underline">
+        <a href={PORTAL_LOGIN_URL} className="text-cyan hover:underline">
           Login here
         </a>
       </p>

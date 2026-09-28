@@ -178,22 +178,28 @@ export interface CourseDef {
   code?: string;
   /** The awarding body's short name, when it prints one with the code ("CAIE"). */
   board?: string;
-  /** The first lines of a new student's welcome email (admin.ts credentialsEmail). */
+  /** The first lines of a new student's welcome email (portal-emails.ts credentialsEmail). */
   welcome: string;
+  /** Who teaches it, as the AI progress report introduces its writer
+   *  ("an experienced …", portal-emails.ts progressPrompt). */
+  teacher: string;
 }
 
 export const COURSES: readonly CourseDef[] = [
   {
     id: "9702", subject: "physics", label: "Cambridge A Level Physics · 9702", level: "A Level", code: "9702", board: "CAIE",
     welcome: "Welcome to your A-Level Physics learning portal. You now have your own account where you can sit real CAIE 9702 past papers, take timed topic drills with instant marking and feedback, and track your progress through the year.",
+    teacher: "Cambridge A-Level Physics teacher",
   },
   {
     id: "5054", subject: "physics", label: "Cambridge O Level Physics · 5054", level: "O Level", code: "5054", board: "CAIE",
     welcome: "Welcome to your O-Level Physics learning portal. You now have your own account where you can sit real CAIE 5054 past papers, take timed topic drills with instant marking and feedback, and track your progress through the year.",
+    teacher: "Cambridge O-Level Physics teacher",
   },
   {
     id: "SAT", subject: "sat", label: "Digital SAT", level: "Digital SAT",
     welcome: "Welcome to your Digital SAT learning portal. You now have your own account where you can practise with official College Board questions, sit full adaptive practice tests, and track your progress towards your target score.",
+    teacher: "Digital SAT tutor",
   },
 ];
 

@@ -1,5 +1,6 @@
 import { Metadata } from "next";
 import { RegistrationForm } from "../lgs-paragon-a1/registration-form";
+import { PORTAL_CONTACT_EMAIL } from "@/lib/portal/brand";
 
 export const metadata: Metadata = {
   title: "Student Registration — LGS Paragon A2 Physics",
@@ -37,8 +38,8 @@ export default function LGSParagonA2RegistrationPage() {
           {/* Footer */}
           <p className="mt-6 text-center text-xs text-dust">
             Having trouble? Contact your teacher or email{" "}
-            <a href="mailto:physics@sjabrankamran.com" className="text-cyan hover:underline">
-              physics@sjabrankamran.com
+            <a href={`mailto:${PORTAL_CONTACT_EMAIL}`} className="text-cyan hover:underline">
+              {PORTAL_CONTACT_EMAIL}
             </a>
           </p>
         </div>

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireAdmin, audit, genPassword, isEmail, ALL_ROLES, emailCredentials, isSuperAdmin, welcomeCourseFor } from "@/lib/portal/admin";
+import { requireAdmin, audit, genPassword, isEmail, ALL_ROLES, emailCredentials, isSuperAdmin, welcomeCoursesFor } from "@/lib/portal/admin";
 import { getAccessControlDocument } from "@/lib/portal/access-control";
 import { isRestrictionActive } from "@/lib/portal/access-shared";
 import type { EduRole } from "@/lib/edu/auth";
@@ -161,7 +161,7 @@ export async function POST(req: Request) {
 
   let emailStatus: string | undefined;
   if (b.send_email) {
-    const r = await emailCredentials(admin.id, email, fullName, password, false, await welcomeCourseFor(roles, enrolledClassId, granted));
+    const r = await emailCredentials(admin.id, email, fullName, password, false, await welcomeCoursesFor(roles, enrolledClassId, granted));
     emailStatus = r.status;
   }
 

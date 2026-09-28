@@ -1,5 +1,6 @@
 import { Ban, Clock3, LogOut, ShieldAlert } from "lucide-react";
 import type { AccessRestriction } from "@/lib/portal/access-shared";
+import { PORTAL_CONTACT_EMAIL } from "@/lib/portal/brand";
 
 function formatEnd(value: string | null) {
   if (!value) return null;
@@ -53,7 +54,7 @@ export function PortalAccessBlocked({ restriction }: { restriction: AccessRestri
           </p>
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.07] pt-5">
-            <p className="text-xs text-dust">For help, contact physics@sjabrankamran.com.</p>
+            <p className="text-xs text-dust">For help, contact {PORTAL_CONTACT_EMAIL}.</p>
             <form action="/portal/auth/signout" method="post">
               <button type="submit" className="btn-ghost !px-4 !py-2 text-xs">
                 <LogOut size={13} /> Sign out

@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { getPortalUser, canAccessGlobalStaffData } from "@/lib/edu/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { guardianEmails, EMAIL_RE } from "@/lib/portal/onboarding";
-import { buildStats, composeProgressEmail } from "@/lib/portal/progress-report";
+import { buildStats, composeProgressEmail, reportCoursesFor } from "@/lib/portal/progress-report";
+import { subjectName } from "@/lib/portal/portal-emails";
+import { PORTAL_NAME } from "@/lib/portal/brand";
 import { sendMail, mailConfigured } from "@/lib/portal/mail";
 
 export const runtime = "nodejs";
@@ -43,7 +45,8 @@ export async function POST(req: Request) {
 
   const supabase = createAdminClient();
 
-  // Resolve targets: [{ studentId, uid, name, email, className }]
+  // Resolve targets: [{ studentId, uid, name, email, className }]. A class
+  // with no name (or a student in none) is named by the report's subject below.
   type Target = { studentId: string; uid: string; name: string; email: string; className: string };
   const targets: Target[] = [];
 
@@ -52,7 +55,7 @@ export async function POST(req: Request) {
       supabase.from("edu_enrolments").select("edu_students(id, profile_id, edu_profiles!edu_students_profile_id_fkey(full_name, email))").eq("class_id", b.classId).eq("status", "active"),
       supabase.from("edu_classes").select("name").eq("id", b.classId).maybeSingle(),
     ]);
-    const className = (cls as { name?: string } | null)?.name || "Physics";
+    const className = (cls as { name?: string } | null)?.name || "";
     type Row = { edu_students?: { id: string; profile_id: string; edu_profiles?: { full_name?: string; email?: string } } };
     for (const r of (enr || []) as unknown as Row[]) {
       const s = r.edu_students;
@@ -64,7 +67,7 @@ export async function POST(req: Request) {
     const row = s as { id: string; profile_id: string; edu_profiles?: { full_name?: string; email?: string } } | null;
     if (row) {
       const { data: enr } = await supabase.from("edu_enrolments").select("edu_classes(name)").eq("student_id", row.id).eq("status", "active").limit(1).maybeSingle();
-      const className = (enr as { edu_classes?: { name?: string } } | null)?.edu_classes?.name || "Physics";
+      const className = (enr as { edu_classes?: { name?: string } } | null)?.edu_classes?.name || "";
       targets.push({ studentId: row.id, uid: row.profile_id, name: row.edu_profiles?.full_name || "Student", email: row.edu_profiles?.email || "", className });
     }
   }
@@ -73,7 +76,8 @@ export async function POST(req: Request) {
 
   const results: { name: string; sentTo: string[]; queued: number; sent: number; skipped?: string }[] = [];
   for (const t of targets) {
-    const stats = await buildStats(t.uid, t.studentId, t.name, t.className);
+    const courses = await reportCoursesFor(t.uid);
+    const stats = await buildStats(t.uid, t.studentId, t.name, t.className || subjectName(courses) || PORTAL_NAME, courses);
     // Skip students with zero activity AND no attendance — nothing to report yet.
     if (stats.attempts === 0 && stats.attendancePct == null) {
       results.push({ name: t.name, sentTo: [], queued: 0, sent: 0, skipped: "no activity yet" });

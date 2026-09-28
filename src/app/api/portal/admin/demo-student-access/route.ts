@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { audit, genPassword, isSuperAdmin, requireAdmin } from "@/lib/portal/admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { DEMO_STUDENT_UID } from "@/lib/portal/demo-student";
+import { PORTAL_LOGIN_URL } from "@/lib/portal/brand";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ export async function POST() {
   await audit(admin.id, "demo_login_rotated", "auth.users", DEMO_STUDENT_UID, { demo: true });
   return NextResponse.json(
     {
-      loginUrl: "https://sjabrankamran.com/portal/login",
+      loginUrl: PORTAL_LOGIN_URL,
       email,
       password,
       name: "Portal QA Student",

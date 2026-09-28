@@ -4,7 +4,7 @@ import { getPortalUser, canAccessGlobalStaffData } from "@/lib/edu/auth";
 import { getRegistry } from "@/lib/portal/institutions";
 import { getTemplates, listMail, mailConfigured } from "@/lib/portal/mail";
 import { MailComposer } from "./mail-composer";
-import { PORTAL_NAME } from "@/lib/portal/brand";
+import { PORTAL_CONTACT_EMAIL, PORTAL_NAME } from "@/lib/portal/brand";
 
 export const metadata = { title: `Email — ${PORTAL_NAME}`, robots: { index: false } };
 
@@ -22,14 +22,14 @@ export default async function MailPage() {
         <span className="grid h-10 w-10 place-items-center rounded-xl border border-cyan/30 text-cyan"><Mail size={18} /></span>
         <div>
           <h1 className="font-display text-2xl text-ice">Email</h1>
-          <p className="text-sm text-dust">Message students & parents · sent as physics@sjabrankamran.com</p>
+          <p className="text-sm text-dust">Message students & parents · sent as {PORTAL_CONTACT_EMAIL}</p>
         </div>
       </div>
 
       {!mailConfigured() && (
         <div className="mb-5 rounded-xl border border-amber-400/30 bg-amber-400/[0.05] px-4 py-3 text-xs text-amber-200/90">
           <b>Sending is not yet connected.</b> Messages you send are safely <b>queued</b> and logged, and will go out once the
-          Gmail relay (Apps Script for physics@sjabrankamran.com) is connected. See the setup guide JB was given.
+          Gmail relay (Apps Script for {PORTAL_CONTACT_EMAIL}) is connected. See the setup guide JB was given.
         </div>
       )}
 

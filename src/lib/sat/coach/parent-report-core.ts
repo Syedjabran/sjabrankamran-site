@@ -28,6 +28,7 @@
 // white; every interpolated string goes through escapeHtml.
 import type { PlanItem, SATAnalytics, SessionSummary } from "../client-types.ts";
 import { planItemTitle } from "../client-types.ts";
+import { PORTAL_SENDER_NAME, PORTAL_SITE_NAME } from "../../portal/brand.ts";
 import type { SATScore } from "../types.ts";
 import type { AnalyticsItem, SittingScore } from "../analytics.ts";
 import type { DoneMap } from "./plan-logic.ts";
@@ -106,7 +107,7 @@ const SCORE_DAY_FORMAT: Intl.DateTimeFormatOptions = { day: "numeric", month: "s
 const LATE_NOTE = "Sessions finished after their day count as missed here.";
 const NO_SCORE_YET = "No full-exam score yet — one appears after the first full practice exam.";
 const SAT_UNAVAILABLE = "Digital SAT: this week's SAT summary couldn't be prepared. It will be in next week's email.";
-const SIGN_OFF = ["Warm regards,", "Syed Jabran Ali Kamran", "sjabrankamran.com"];
+const SIGN_OFF = ["Warm regards,", PORTAL_SENDER_NAME, PORTAL_SITE_NAME];
 const TEXT_RULE = "------------------------------";
 
 // --- the weekly run ---------------------------------------------------------------

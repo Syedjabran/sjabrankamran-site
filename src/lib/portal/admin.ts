@@ -10,8 +10,11 @@ import { getPortalUser, isAdmin, canAccessGlobalStaffData, ROLE_LABELS, type Edu
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendMail } from "@/lib/portal/mail";
 import { getRegistry } from "@/lib/portal/institutions";
-import { welcomeCourse, type Course } from "@/lib/portal/course-labels";
-import { coursesFromGrants, welcomeIntro, type SubjectId } from "@/lib/portal/subjects";
+import { welcomeCourses, type Course } from "@/lib/portal/course-labels";
+import { studentCourses } from "@/lib/portal/course-access";
+import { coursesFromGrants, type SubjectId } from "@/lib/portal/subjects";
+import { GENERATED_PASSWORD_PREFIX } from "@/lib/portal/brand";
+import { credentialsEmail, type Courses } from "@/lib/portal/portal-emails";
 
 export const ALL_ROLES = Object.keys(ROLE_LABELS) as EduRole[];
 export const STUDENT_STATUSES = ["active", "archived", "invited"] as const;
@@ -41,7 +44,7 @@ export function genPassword(): string {
   globalThis.crypto.getRandomValues(arr);
   let s = "";
   for (const n of arr) s += PW_ALPHABET[n % PW_ALPHABET.length];
-  return "Phy-" + s;
+  return GENERATED_PASSWORD_PREFIX + s;
 }
 
 export function isEmail(e: string): boolean {
@@ -64,53 +67,34 @@ export async function audit(
   }
 }
 
-/** Welcome / credentials email (same voice as the student welcome blast).
- *  `course`: the course the new account's welcome is written for
- *  (welcomeCourseFor); null for an account with no course. */
-export function credentialsEmail(name: string, email: string, password: string, isReset = false, course: Course | null = null) {
-  const subject = isReset
-    ? "Your Physics portal password has been reset"
-    : "Your Physics portal login - sjabrankamran.com";
-  const intro = isReset
-    ? "Your Physics portal password has been reset. Here are your current sign-in details."
-    : welcomeIntro(course);
-  const text = `Dear ${name},
-
-${intro}
-
-YOUR LOGIN
-Portal: https://sjabrankamran.com/portal/login
-Email: ${email}
-${isReset ? "New password" : "Temporary password"}: ${password}
-
-${isReset ? "" : `FIRST LOGIN - please do this first
-On your first sign-in you will be asked to complete a short profile form (about two minutes). It asks for your details and a valid PARENT / GUARDIAN email and WhatsApp number, so we can send progress updates. You only do this once, and the rest of the portal unlocks after you submit it.
-
-`}Please keep your password private. You can change it any time using "Forgot password?" on the login page.
-
-NEED HELP?
-For anything at all, reply to this email (physics@sjabrankamran.com) or visit https://sjabrankamran.com .
-
-Warm regards,
-Syed Jabran Ali Kamran
-Physics | sjabrankamran.com`;
-  const esc = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111;line-height:1.55">${esc.replace(/\n/g, "<br>")}</div>`;
-  return { subject, text, html };
-}
-
 /**
- * The course a new account's welcome email is written for: a student's
- * class (read from the class registry) and directly granted subjects, ranked
- * as course access ranks them; null for anyone else, or a student with
+ * The courses a new account's welcome email is written for: a student's
+ * class (read from the class registry) and directly granted subjects, as
+ * course access counts them; none for anyone else, or a student with
  * neither. A failed registry read counts the class as unplaced, which course
  * access treats as A Level (9702).
  */
-export async function welcomeCourseFor(roles: readonly string[], classId: string | null | undefined, subjects: readonly SubjectId[]): Promise<Course | null> {
-  if (!roles.includes("student")) return null;
+export async function welcomeCoursesFor(roles: readonly string[], classId: string | null | undefined, subjects: readonly SubjectId[]): Promise<Course[]> {
+  if (!roles.includes("student")) return [];
   const directCourses = coursesFromGrants(Object.fromEntries(subjects.map((s) => [s, true])));
   const classes = classId ? (await getRegistry().catch(() => null))?.classes ?? [] : [];
-  return welcomeCourse(classId || null, classes, directCourses);
+  return welcomeCourses(classId || null, classes, directCourses);
+}
+
+/**
+ * The courses an existing account's emails are written for (an admin's
+ * password reset, "Forgot password?"): a student's courses as course access
+ * reads them; none for anyone else. A failed read counts as none, which
+ * words the email for the portal itself rather than for a course.
+ */
+export async function accountCoursesFor(uid: string): Promise<Course[]> {
+  try {
+    const { data, error } = await createAdminClient().from("edu_user_roles").select("role").eq("user_id", uid);
+    if (error || !(data || []).some((r) => r.role === "student")) return [];
+    return await studentCourses(uid);
+  } catch {
+    return [];
+  }
 }
 
 export async function emailCredentials(
@@ -119,9 +103,9 @@ export async function emailCredentials(
   name: string,
   password: string,
   isReset = false,
-  course: Course | null = null
+  courses: Courses = []
 ): Promise<{ status: string; error?: string }> {
-  const { subject, text, html } = credentialsEmail(name, to, password, isReset, course);
+  const { subject, text, html } = credentialsEmail(name, to, password, isReset, courses);
   const r = await sendMail({
     to: [to],
     subject,

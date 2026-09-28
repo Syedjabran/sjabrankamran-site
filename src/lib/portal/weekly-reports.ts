@@ -6,6 +6,7 @@ import { readStorageJson } from "@/lib/portal/forum";
 import { resolveCourseAccess, type Course } from "@/lib/portal/course-access";
 import { buildSatWeek } from "@/lib/sat/coach/parent-report";
 import { composeParentEmail, runBeforeDeadline, sectionsOrPhysics, type SatWeek } from "@/lib/sat/coach/parent-report-core";
+import { reportCourses } from "@/lib/portal/portal-emails";
 
 const BUCKET = "portal-data";
 // No new student is started after this long from the run's start: the route
@@ -30,13 +31,13 @@ async function coursesOf(uid: string): Promise<Course[]> {
 }
 
 /** The Physics stats exactly as before the SAT section existed; null when the
- *  student has no edu_students row. */
-async function physicsStats(db: Db, uid: string, name: string): Promise<ProgressStats | null> {
+ *  student has no edu_students row. `courses`: the report's (reportCourses). */
+async function physicsStats(db: Db, uid: string, name: string, courses: Course[]): Promise<ProgressStats | null> {
   const { data: student } = await db.from("edu_students").select("id").eq("profile_id", uid).maybeSingle();
   if (!student?.id) return null;
   const { data: enrolment } = await db.from("edu_enrolments").select("edu_classes(name)").eq("student_id", student.id).eq("status", "active").limit(1).maybeSingle();
   const cls = (enrolment as unknown as { edu_classes?: { name?: string } } | null)?.edu_classes?.name || "Physics";
-  return buildStats(uid, student.id, name, cls);
+  return buildStats(uid, student.id, name, cls, courses);
 }
 
 /** The student's SAT week (null: SAT not set up yet), or "unavailable" when
@@ -88,15 +89,18 @@ export async function sendSaturdayParentReports(weekKey: string) {
   /** One student's emails; true when every guardian's was sent or queued. */
   async function reportStudent(uid: string): Promise<boolean> {
     if (completed.has(uid)) { skipped++; return false; }
+    const courses = coursesOf(uid);
     const [subjects, contacts] = await Promise.all([
-      sectionsOrPhysics(() => coursesOf(uid), (e) => console.error("saturday-parent-reports: courses couldn't be read; sending the Physics email as before", uid, message(e))),
+      sectionsOrPhysics(() => courses, (e) => console.error("saturday-parent-reports: courses couldn't be read; sending the Physics email as before", uid, message(e))),
       guardianContacts(uid),
     ]);
     if (!contacts.length) { skipped++; return false; }
     const { data: profile } = await db.from("edu_profiles").select("full_name,email").eq("id", uid).maybeSingle();
     const name = profile?.full_name || profile?.email || "Student";
+    // The Physics section's courses; unreadable ones keep the Physics wording.
+    const physicsCourses = reportCourses(await courses.catch(() => null));
     const [stats, sat] = await Promise.all([
-      subjects.physics ? physicsStats(db, uid, name) : Promise.resolve(null),
+      subjects.physics ? physicsStats(db, uid, name, physicsCourses) : Promise.resolve(null),
       // The SAT side never sees the email address: first name only.
       subjects.sat ? satWeekOf(uid, weekKey, profile?.full_name || "", Date.now() - startedAt < AI_WINDOW_MS) : Promise.resolve(null),
     ]);

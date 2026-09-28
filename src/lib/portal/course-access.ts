@@ -103,10 +103,11 @@ export async function studentCourse(uid: string): Promise<Course | null> {
  * An SAT student is very often also a physics student, so course access can
  * no longer collapse to one value without locking them out of a platform
  * they are enrolled in. `studentCourse` keeps returning the single primary
- * for callers that want one.
+ * for callers that want one. `strict`: a failed read throws (see
+ * CourseAccessOptions).
  */
-export async function studentCourses(uid: string): Promise<Course[]> {
-  return studentCourseAccess(await enrolledCourses(uid)).allowed;
+export async function studentCourses(uid: string, options: CourseAccessOptions = {}): Promise<Course[]> {
+  return studentCourseAccess(await enrolledCourses(uid, options)).allowed;
 }
 
 export type CourseAccess = {

@@ -17,10 +17,11 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getAccessToken } from "@/lib/google/auth";
 import { readStorageJson, writeStorageJson } from "@/lib/portal/resources";
+import { PORTAL_CONTACT_EMAIL, PORTAL_LOGIN_URL, PORTAL_MAIL_FROM_NAME, PORTAL_NAME, PORTAL_SENDER_NAME } from "@/lib/portal/brand";
 
 export const MAIL_BUCKET = "portal-mail";
-export const MAIL_FROM_NAME = "Syed Jabran Ali Kamran — Physics";
-export const MAIL_FROM = "physics@sjabrankamran.com";
+export const MAIL_FROM_NAME = PORTAL_MAIL_FROM_NAME;
+export const MAIL_FROM = PORTAL_CONTACT_EMAIL;
 
 export type MailStatus = "sent" | "queued" | "failed";
 export type MailRecord = {
@@ -345,15 +346,17 @@ export async function saveTemplates(t: Template[]): Promise<boolean> {
   return writeJson("templates.json", t.slice(0, 100));
 }
 
+// The starting templates, until an admin saves their own. The welcome goes to
+// any mix of students, so it names the portal, not a subject.
 const DEFAULT_TEMPLATES: Template[] = [
   {
     id: "welcome", name: "Welcome / login",
-    subject: "Your Physics portal login",
-    body: "Dear {{name}},\n\nWelcome to the Physics learning portal. You can now sit real CAIE past papers, drill topics and track your progress.\n\nPortal: https://sjabrankamran.com/portal/login\n\nPlease complete your profile (including a parent email) at first login.\n\nWarm regards,\nSyed Jabran Ali Kamran",
+    subject: `Your ${PORTAL_NAME} login`,
+    body: `Dear {{name}},\n\nWelcome to the ${PORTAL_NAME}. You can now sit real past papers, drill topics and track your progress.\n\nPortal: ${PORTAL_LOGIN_URL}\n\nPlease complete your profile (including a parent email) at first login.\n\nWarm regards,\n${PORTAL_SENDER_NAME}`,
   },
   {
     id: "reminder", name: "Class reminder",
     subject: "Reminder: your Physics class",
-    body: "Dear {{name}},\n\nThis is a reminder of your upcoming Physics class. Please be on time and bring your materials.\n\nRegards,\nSyed Jabran Ali Kamran",
+    body: `Dear {{name}},\n\nThis is a reminder of your upcoming Physics class. Please be on time and bring your materials.\n\nRegards,\n${PORTAL_SENDER_NAME}`,
   },
 ];

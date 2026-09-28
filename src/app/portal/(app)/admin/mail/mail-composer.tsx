@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { Loader2, Send, Users, Mail, FileText, CheckCircle2, Clock, AlertTriangle, Sparkles, GraduationCap } from "lucide-react";
+import { PORTAL_CONTACT_EMAIL } from "@/lib/portal/brand";
 
 type ClassOpt = { id: string; label: string };
 type Template = { id: string; name: string; subject: string; body: string };
@@ -176,7 +177,7 @@ export function MailComposer({ classes, templates, initialLog }: { classes: Clas
         {/* body + send below */}
         <div className="mb-4"><label className={labelCls}>Message</label>
           <textarea className={inputCls + " min-h-52"} value={body} onChange={(e) => setBody(e.target.value)} placeholder="Write your message… (use {{name}} in templates)" />
-          <p className="mt-1 text-[11px] text-dust">Plain text — line breaks are preserved. Sent as {`{`}physics@sjabrankamran.com{`}`}.</p>
+          <p className="mt-1 text-[11px] text-dust">Plain text — line breaks are preserved. Sent as {`{`}{PORTAL_CONTACT_EMAIL}{`}`}.</p>
         </div>
 
         {msg && (
