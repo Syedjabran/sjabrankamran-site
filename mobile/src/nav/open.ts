@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SITE_ORIGIN } from '../config';
@@ -22,24 +22,34 @@ export function useOpenPlace() {
   );
 }
 
+/** What a screen says under an item whose link couldn't be opened. */
+export const LINK_REFUSED = 'This link can’t be opened in the app.';
+
 /**
  * Opens a link that arrived as data (a resource, a task's resource, a
- * notification): a page of the portal's own origin in the signed-in WebView;
- * any other website in the phone's browser, never with the session; anything
- * else not at all. Returns whether it opened.
+ * notification): a page of the portal's site in the signed-in WebView; any
+ * other website in the phone's browser, never with the session; anything
+ * else not at all. `refused` is the `key` of the last item whose link
+ * couldn't be opened (refused, or the phone had nothing to open it with),
+ * so the screen can say so under that item (LINK_REFUSED).
  */
 export function useOpenLink() {
   const router = useRouter();
-  return useCallback(
-    (link: string | null | undefined, title: string): boolean => {
+  const [refused, setRefused] = useState<string | null>(null);
+  const openLink = useCallback(
+    (link: string | null | undefined, title: string, key: string) => {
       const target = resolveWebTarget(link, SITE_ORIGIN);
       if (target.kind === 'portal') {
+        setRefused(null);
         router.push({ pathname: '/web', params: { path: target.path, title } });
       } else if (target.kind === 'external') {
-        void Linking.openURL(target.url).catch(() => undefined);
+        setRefused(null);
+        Linking.openURL(target.url).catch(() => setRefused(key));
+      } else {
+        setRefused(key);
       }
-      return target.kind !== 'refused';
     },
     [router]
   );
+  return { openLink, refused };
 }

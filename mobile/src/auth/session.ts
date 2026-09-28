@@ -1,5 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { PROJECT_REF, SUPABASE_ANON_KEY, SUPABASE_URL } from '../config';
+import { logoutRequest } from './sign-out';
 
 /** The session shape auth-js persists (and that @supabase/ssr re-reads). */
 export type Session = {
@@ -18,7 +19,9 @@ export type Session = {
 const STORE_KEY = 'sj.session';
 /** Matches @supabase/ssr's MAX_CHUNK_SIZE — cookies larger than this are split. */
 const MAX_CHUNK_SIZE = 3180;
-const COOKIE_KEY = `sb-${PROJECT_REF}-auth-token`;
+/** The session cookie's name (`sb-<ref>-auth-token`; chunks add `.0`, `.1`, ...). */
+export const SESSION_COOKIE_NAME = `sb-${PROJECT_REF}-auth-token`;
+const COOKIE_KEY = SESSION_COOKIE_NAME;
 
 /** base64url, the encoding @supabase/ssr uses behind its `base64-` prefix. */
 function toBase64Url(input: string): string {
@@ -119,6 +122,32 @@ export async function signInWithPassword(
     return { session: normalise(body) };
   } catch {
     return { error: 'Could not reach the server. Check your connection.' };
+  }
+}
+
+/** How long sign-out's server call may take before it is given up. */
+const REVOKE_TIMEOUT_MS = 8000;
+
+/**
+ * Ends this session on the server (GoTrue /logout, this device only), so its
+ * tokens -- including a copy the WebView keeps in a cookie -- stop working.
+ * An expired access token is refreshed first (/logout needs a live one).
+ * Best effort: the caller never waits on it (src/auth/sign-out.ts).
+ */
+export async function revokeSession(session: Session): Promise<void> {
+  let token = session.access_token;
+  if (isExpiring(session)) {
+    const fresh = await refreshSession(session.refresh_token);
+    if ('error' in fresh) return; // nothing left to end
+    token = fresh.session.access_token;
+  }
+  const { url, init } = logoutRequest(SUPABASE_URL, SUPABASE_ANON_KEY, token);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), REVOKE_TIMEOUT_MS);
+  try {
+    await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
   }
 }
 

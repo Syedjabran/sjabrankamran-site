@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { RefreshControl, StyleSheet, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
@@ -18,8 +18,8 @@ import { PortalHeader } from '../../src/components/PortalHeader';
 import { StatCard } from '../../src/components/StatCard';
 import { NavigationStatus, PlaceGroup, SubjectCard } from '../../src/components/NavPlaces';
 import { Button, Card, Empty, ErrorNote, H2, Screen, T } from '../../src/components/ui';
-import { Skeleton, SkeletonStatRow } from '../../src/components/Skeleton';
-import { useAdminUsers, useMe, usePortalNavigation, useRankings, useTasks } from '../../src/api/hooks';
+import { Skeleton, SkeletonList, SkeletonStatRow } from '../../src/components/Skeleton';
+import { qk, useAdminUsers, useMe, usePortalNavigation, useRankings, useTasks } from '../../src/api/hooks';
 import { allPlaces, type AppNavigation } from '../../src/nav/nav';
 import { useOpenPlace } from '../../src/nav/open';
 import { PORTAL_NAME } from '../../src/config';
@@ -40,6 +40,19 @@ export default function HomeScreen() {
   const { data: me, isLoading: meLoading, error: meError, refetch: refetchMe } = useMe();
   const navQuery = usePortalNavigation();
   const nav = navQuery.data;
+  const onboardingRoute = nav?.onboardingRoute ?? null;
+
+  // While the profile is still to be completed, re-ask the portal each time
+  // Home comes back into view (from the onboarding page, or another tab):
+  // the card goes as soon as the portal says the profile is done.
+  useFocusEffect(
+    useCallback(() => {
+      if (onboardingRoute) void qc.invalidateQueries({ queryKey: qk.navigation });
+    }, [onboardingRoute, qc])
+  );
+  // The card shows only on an answer given since Home was last opened: while
+  // that re-check runs, placeholders stand in for it.
+  const checkingOnboarding = !!onboardingRoute && navQuery.isFetching;
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
@@ -101,7 +114,9 @@ export default function HomeScreen() {
           onOpenPortal={openPortal}
         />
 
-        {nav?.onboardingRoute ? (
+        {checkingOnboarding ? (
+          <SkeletonList count={1} lines={1} showEyebrow={false} />
+        ) : onboardingRoute ? (
           <Card>
             <View style={styles.titleRow}>
               <UserCog size={16} color={colors.cyan} />
@@ -117,7 +132,7 @@ export default function HomeScreen() {
               onPress={() =>
                 router.push({
                   pathname: '/web',
-                  params: { path: nav.onboardingRoute as string, title: 'Complete your profile' },
+                  params: { path: onboardingRoute, title: 'Complete your profile' },
                 })
               }
               style={{ marginTop: spacing.lg, alignSelf: 'flex-start' }}

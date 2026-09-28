@@ -89,6 +89,16 @@ export function sameOrigin(a: Origin, b: Origin): boolean {
   return a.scheme === b.scheme && a.host === b.host && a.port === b.port;
 }
 
+/**
+ * The site's `www.` name (same scheme and port): the site redirects it to
+ * its canonical origin, so a link written with it names a portal page. Such
+ * a link is OPENED on the canonical origin (`resolveWebTarget` rebuilds it
+ * there); nothing is ever sent to the www name itself.
+ */
+export function isSiteAlias(origin: Origin, site: Origin): boolean {
+  return origin.scheme === site.scheme && origin.port === site.port && origin.host === `www.${site.host}`;
+}
+
 /** `%2e` is a dot to a browser when it resolves `.` and `..` segments. */
 const isDot = (segment: string) => segment === '.' || segment.toLowerCase() === '%2e';
 const isDotDot = (segment: string) => /^(?:\.|%2e){2}$/i.test(segment);
@@ -125,8 +135,10 @@ export function normalisePath(rest: string): string | null {
 /**
  * Where a link (a portal path such as "/portal/exam-lab", or an absolute
  * URL) opens: the signed-in WebView only when it is the portal's exact
- * origin. `input` is whatever arrived -- a route param, a deep link, an API
- * field -- so anything that isn't a string is refused.
+ * origin, or the site's www name, which is rebuilt on the exact origin (the
+ * returned `url` is always on the portal's origin). `input` is whatever
+ * arrived -- a route param, a deep link, an API field -- so anything that
+ * isn't a string is refused.
  */
 export function resolveWebTarget(input: unknown, site: Origin): WebTarget {
   if (typeof input !== 'string' || !input) return { kind: 'refused' };
@@ -138,7 +150,7 @@ export function resolveWebTarget(input: unknown, site: Origin): WebTarget {
   }
   const parsed = parseHttpUrl(input);
   if (!parsed) return { kind: 'refused' };
-  if (sameOrigin(parsed.origin, site)) {
+  if (sameOrigin(parsed.origin, site) || isSiteAlias(parsed.origin, site)) {
     const path = normalisePath(parsed.rest);
     return path ? { kind: 'portal', url: originString(site) + path, path } : { kind: 'refused' };
   }
@@ -147,8 +159,11 @@ export function resolveWebTarget(input: unknown, site: Origin): WebTarget {
 
 /** What the signed-in WebView does with a navigation it is about to make. */
 export type NavigationDecision =
-  /** Load it here: the portal, or a frame's blank page. */
+  /** Load it here: the portal, or what a frame inside a portal page may show. */
   | 'load'
+  /** Don't load it; load the same page on the portal's exact origin instead
+   *  (`resolveWebTarget(url).url`): a link written with the site's www name. */
+  | 'rewrite'
   /** Hand it to the phone: another website (the browser), mail or phone links. */
   | 'hand-off'
   /** Neither: script, data, file, intent and other schemes, odd links. */
@@ -157,26 +172,39 @@ export type NavigationDecision =
 /** Links the phone may open for a portal page (mail, phone and text links). */
 const HAND_OFF_SCHEMES = /^(?:mailto|tel|sms):/i;
 
+/** A `blob:` URL the portal's own pages made (a download, a preview). */
+function isSiteBlob(url: string, site: Origin): boolean {
+  const inner = /^blob:/i.test(url) ? parseHttpUrl(url.slice(5)) : null;
+  return !!inner && sameOrigin(inner.origin, site);
+}
+
 /**
- * The decision for a navigation inside the signed-in WebView. The top frame
- * may only ever show the portal's exact origin (it carries the session and
- * the injected cookie script); another website opens in the phone's browser.
- * Frames inside a portal page (a YouTube or Drive embed) load as the page
- * asks: the engine sends a frame only its own site's cookies, and the
- * session script runs in the top frame only. (iOS reports frames with
- * `isTopFrame: false`; Android asks about top-frame http(s) navigations only
- * and names no frame, so the caller passes true when it isn't told.)
+ * The decision for a navigation inside the signed-in WebView. Every frame is
+ * scheme-checked:
+ * - the top frame may only ever show the portal's exact origin (it carries
+ *   the session and the injected cookie script); the site's www name is
+ *   rewritten onto that origin; another website opens in the phone's
+ *   browser; mail, phone and text links go to the phone;
+ * - a frame inside a portal page (a YouTube or Drive embed, the Practical
+ *   Lab) may load a well-formed http(s) page of any site, a blank page or a
+ *   portal blob -- nothing else, and nothing is handed to the phone from a
+ *   frame. A frame gets no credentials of ours: the session cookie is
+ *   host-only (only a portal frame, which is the portal, carries it) and
+ *   the session script runs in the top frame only.
+ * (iOS reports frames with `isTopFrame: false`. Android's bridge doesn't
+ * say which frame asks, so the caller passes true when it isn't told: a
+ * frame is then judged by the stricter top-frame rule.)
  */
 export function navigationDecision(url: string, isTopFrame: boolean, site: Origin): NavigationDecision {
   if (typeof url !== 'string') return 'block';
   if (/^about:(?:blank|srcdoc)$/i.test(url)) return 'load';
-  if (!isTopFrame) return 'load';
-  if (/^blob:/i.test(url)) {
-    const inner = parseHttpUrl(url.slice(5));
-    return inner && sameOrigin(inner.origin, site) ? 'load' : 'block';
-  }
+  if (/^blob:/i.test(url)) return isSiteBlob(url, site) ? 'load' : 'block';
+  if (!isTopFrame) return parseHttpUrl(url) ? 'load' : 'block';
   const target = resolveWebTarget(url, site);
-  if (target.kind === 'portal') return 'load';
+  if (target.kind === 'portal') {
+    const asked = parseHttpUrl(url);
+    return asked && sameOrigin(asked.origin, site) ? 'load' : 'rewrite';
+  }
   if (target.kind === 'external') return 'hand-off';
   return HAND_OFF_SCHEMES.test(url) && !UNSAFE_CHAR.test(url) ? 'hand-off' : 'block';
 }

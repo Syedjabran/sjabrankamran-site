@@ -36,7 +36,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test": "node --no-warnings --experimental-strip-types scripts/test-web-target.mjs"
+    "test": "node --no-warnings --experimental-strip-types scripts/test-web-target.mjs && node --no-warnings --experimental-strip-types scripts/test-sign-out.mjs"
   },
   "private": true
 }

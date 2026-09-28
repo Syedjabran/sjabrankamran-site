@@ -5,7 +5,7 @@ import { PortalHeader } from '../../src/components/PortalHeader';
 import { Button, Card, Empty, ErrorNote, H2, Screen, T } from '../../src/components/ui';
 import { SkeletonList } from '../../src/components/Skeleton';
 import { useMarkNotificationsRead, useNotifications } from '../../src/api/hooks';
-import { useOpenLink } from '../../src/nav/open';
+import { LINK_REFUSED, useOpenLink } from '../../src/nav/open';
 import { alpha, colors, radius, spacing } from '../../src/theme/tokens';
 
 function relTime(iso: string): string {
@@ -23,7 +23,7 @@ function relTime(iso: string): string {
 }
 
 export default function NotificationsScreen() {
-  const openLink = useOpenLink();
+  const { openLink, refused } = useOpenLink();
   const { data, isLoading, error, refetch } = useNotifications();
   const markRead = useMarkNotificationsRead();
 
@@ -59,7 +59,7 @@ export default function NotificationsScreen() {
             <Card
               key={n.id}
               style={[styles.item, unread && styles.itemUnread]}
-              onPress={n.link ? () => openLink(n.link, n.title) : undefined}
+              onPress={n.link ? () => openLink(n.link, n.title, n.id) : undefined}
             >
               <View style={[styles.icon, unread && { borderColor: alpha.cyanBorder }]}>
                 <Bell size={15} color={unread ? colors.cyan : colors.dust} />
@@ -76,6 +76,11 @@ export default function NotificationsScreen() {
                 <T tone="dust" size="2xs" style={{ marginTop: spacing.sm }}>
                   {relTime(n.created_at)}
                 </T>
+                {refused === n.id ? (
+                  <T tone="signal" size="xs" style={{ marginTop: spacing.sm }}>
+                    {LINK_REFUSED}
+                  </T>
+                ) : null}
               </View>
             </Card>
           );

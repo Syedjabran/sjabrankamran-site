@@ -5,12 +5,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView, type WebViewNavigation, type WebViewProps } from 'react-native-webview';
 import { ArrowLeft, ExternalLink, RotateCw } from 'lucide-react-native';
 import { PORTAL_CLIENT_APP, PORTAL_CLIENT_COOKIE, PORTAL_NAME, SITE_ORIGIN } from '../../src/config';
-import { sessionCookiePairs } from '../../src/auth/session';
+import { SESSION_COOKIE_NAME, sessionCookiePairs } from '../../src/auth/session';
 import { useAuth } from '../../src/auth/context';
 import { Button, Card, ErrorNote, Screen, T } from '../../src/components/ui';
 import { SkeletonDocument, TopProgressBar } from '../../src/components/Skeleton';
 import { navigationDecision, resolveWebTarget, type WebTarget } from '../../src/web/portal-url';
-import { cookieHeader, sessionCookieScript } from '../../src/web/session-script';
+import { authCookieNames, cookieHeader, sessionCookieScript } from '../../src/web/session-script';
 import { alpha, colors, spacing } from '../../src/theme/tokens';
 
 /** How long the session cookie written into the page lives (the access token's life). */
@@ -18,6 +18,9 @@ const SESSION_COOKIE_SECONDS = 60 * 60;
 /** The app marker lives for a year: it only says "inside the app". */
 const APP_MARKER_SECONDS = 60 * 60 * 24 * 365;
 const APP_MARKER = [PORTAL_CLIENT_COOKIE, PORTAL_CLIENT_APP] as const;
+/** Every name a session cookie can have: the script expires the ones it
+ *  isn't writing, so a previous account's cookie never lingers. */
+const SESSION_COOKIE_NAMES = authCookieNames(SESSION_COOKIE_NAME);
 
 type ShouldStartLoadRequest = Parameters<NonNullable<WebViewProps['onShouldStartLoadWithRequest']>>[0];
 type OpenWindowEvent = Parameters<NonNullable<WebViewProps['onOpenWindow']>>[0];
@@ -126,13 +129,18 @@ function PortalPage({ url, title }: { url: string; title: string }) {
   // must not change `source`, which would reload the page mid-test.
   const [source] = useState(() => ({ uri: url, headers: { Cookie: cookieHeader([...pairs, APP_MARKER]) } }));
 
-  // The page's cookies before its content loads, on the portal's origin only.
+  // The page's cookies before its content loads, on the portal's origin
+  // only, after expiring any other session cookie the WebView still holds.
   const injected = useMemo(
     () =>
-      sessionCookieScript(SITE_ORIGIN, [
-        ...pairs.map(([name, value]) => [name, value, SESSION_COOKIE_SECONDS] as const),
-        [...APP_MARKER, APP_MARKER_SECONDS] as const,
-      ]),
+      sessionCookieScript(
+        SITE_ORIGIN,
+        [
+          ...pairs.map(([name, value]) => [name, value, SESSION_COOKIE_SECONDS] as const),
+          [...APP_MARKER, APP_MARKER_SECONDS] as const,
+        ],
+        SESSION_COOKIE_NAMES
+      ),
     [pairs]
   );
 
@@ -148,11 +156,18 @@ function PortalPage({ url, title }: { url: string; title: string }) {
     return () => sub.remove();
   }, [canGoBack]);
 
-  /** Every navigation the page makes: the portal loads here; another website
-   *  goes to the phone's browser; anything else goes nowhere. */
+  /** Every navigation the page makes: the portal loads here (a www link is
+   *  loaded on the portal's own origin instead); another website goes to the
+   *  phone's browser; anything else goes nowhere. */
   const onShouldStartLoadWithRequest = useCallback((request: ShouldStartLoadRequest) => {
     const decision = navigationDecision(request.url, request.isTopFrame !== false, SITE_ORIGIN);
     if (decision === 'hand-off') void Linking.openURL(request.url).catch(() => undefined);
+    if (decision === 'rewrite') {
+      const canonical = resolveWebTarget(request.url, SITE_ORIGIN);
+      if (canonical.kind === 'portal') {
+        webRef.current?.injectJavaScript(`location.assign(${JSON.stringify(canonical.url)});true;`);
+      }
+    }
     return decision === 'load';
   }, []);
 

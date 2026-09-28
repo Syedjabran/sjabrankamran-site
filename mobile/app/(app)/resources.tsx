@@ -5,7 +5,7 @@ import { PortalHeader } from '../../src/components/PortalHeader';
 import { Card, Empty, ErrorNote, H2, Screen, T } from '../../src/components/ui';
 import { SkeletonList } from '../../src/components/Skeleton';
 import { useResources } from '../../src/api/hooks';
-import { useOpenLink } from '../../src/nav/open';
+import { LINK_REFUSED, useOpenLink } from '../../src/nav/open';
 import type { Resource } from '../../src/api/types';
 import { alpha, colors, fonts, fontSize, radius, spacing } from '../../src/theme/tokens';
 
@@ -19,7 +19,7 @@ function sizeLabel(bytes: number): string {
 }
 
 export default function ResourcesScreen() {
-  const openLink = useOpenLink();
+  const { openLink, refused } = useOpenLink();
   const { data: resources, isLoading, error, refetch } = useResources();
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState(ALL);
@@ -47,7 +47,7 @@ export default function ResourcesScreen() {
     // href is an absolute URL — a signed storage link, or a Google Drive view
     // URL. A portal page opens signed in inside the app; any other site
     // (storage, Drive) opens in the phone's browser, without the session.
-    openLink(resource.href || resource.embedUrl || resource.url, resource.title);
+    openLink(resource.href || resource.embedUrl || resource.url, resource.title, resource.id);
   }
 
   return (
@@ -122,6 +122,11 @@ export default function ResourcesScreen() {
                   .filter(Boolean)
                   .join(' · ')}
               </T>
+              {refused === r.id ? (
+                <T tone="signal" size="xs" style={{ marginTop: spacing.sm }}>
+                  {LINK_REFUSED}
+                </T>
+              ) : null}
             </View>
           </Card>
         ))}

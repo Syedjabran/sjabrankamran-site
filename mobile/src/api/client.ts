@@ -73,8 +73,3 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   }
   return body as T;
 }
-
-/** URL for a WebView screen, e.g. webUrl('/portal/exam-lab'). */
-export function webUrl(path: string): string {
-  return SITE_URL + path;
-}

@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import vm from "node:vm";
 import {
-  navigationDecision, normalisePath, originString, parseHttpUrl, parseOrigin, resolveWebTarget, sameOrigin,
+  isSiteAlias, navigationDecision, normalisePath, originString, parseHttpUrl, parseOrigin, resolveWebTarget, sameOrigin,
 } from "../src/web/portal-url.ts";
-import { cookieHeader, sessionCookieScript } from "../src/web/session-script.ts";
+import { authCookieNames, cookieHeader, sessionCookieScript } from "../src/web/session-script.ts";
 
 // Which links the app opens with the user's portal session (src/web/portal-url.ts)
 // and how the session is written into the WebView (src/web/session-script.ts).
@@ -42,7 +42,24 @@ assert.equal(target("https://sjabrankamran.com").path, "/");
 assert.equal(target("https://sjabrankamran.com?x=1").path, "/?x=1");
 assert.equal(kind("http://sjabrankamran.com/portal"), "external", "plain http is another origin");
 assert.equal(kind("https://sjabrankamran.com:8443/portal"), "external", "another port is another origin");
-assert.equal(kind("https://www.sjabrankamran.com/portal"), "external", "a sibling subdomain is another origin");
+// The site's www name is the site (it redirects to the canonical origin): a
+// link written with it opens the same page, rebuilt on the canonical origin.
+assert.deepEqual(target("https://www.sjabrankamran.com/portal/exam-lab?x=1#y"), {
+  kind: "portal", url: `${PORTAL}/portal/exam-lab?x=1#y`, path: "/portal/exam-lab?x=1#y",
+});
+assert.equal(target("HTTPS://WWW.SJABRANKAMRAN.COM:443").url, `${PORTAL}/`);
+assert.ok(isSiteAlias(parseHttpUrl("https://www.sjabrankamran.com/").origin, SITE));
+for (const other of [
+  "http://www.sjabrankamran.com/portal", "https://www.sjabrankamran.com:8443/portal", "https://api.sjabrankamran.com/portal",
+  "https://www.www.sjabrankamran.com/", "https://wwwsjabrankamran.com/", "https://www.sjabrankamran.com.evil.tld/",
+]) {
+  assert.equal(kind(other), "external", `${other} is another site`);
+}
+assert.equal(kind("https://www.sjabrankamran.com@evil.tld/"), "refused");
+// The alias is only ever opened on the canonical origin: every portal target's URL is.
+for (const input of ["https://www.sjabrankamran.com/portal", "/portal", "https://sjabrankamran.com/portal", "https://www.sjabrankamran.com"]) {
+  assert.ok(target(input).url.startsWith(`${PORTAL}/`), `${input} opens on ${PORTAL}`);
+}
 assert.equal(kind("https://sjabrankamran.com./portal"), "external", "a trailing-dot host is not the portal's host");
 
 // --- the evil cases ------------------------------------------------------------------------
@@ -105,14 +122,30 @@ assert.equal(decide("tel:+923000000000"), "hand-off");
 assert.equal(decide("about:blank"), "load");
 assert.equal(decide(`blob:${PORTAL}/5d1c`), "load", "a download the portal page made");
 assert.equal(decide("blob:https://evil.tld/5d1c"), "block");
+assert.equal(decide("https://www.sjabrankamran.com/portal/learn"), "rewrite", "a www link loads on the canonical origin instead");
+assert.equal(decide("https://www.sjabrankamran.com/"), "rewrite");
+// Frames inside a portal page: well-formed http(s) of any site, blank pages and portal blobs -- every frame scheme-checked.
 assert.equal(decide("https://www.youtube.com/embed/x", false), "load", "a frame inside a portal page (the engine scopes its cookies)");
 assert.equal(decide("https://drive.google.com/file/d/x/preview", false), "load");
+assert.equal(decide(`${PORTAL}/lab/`, false), "load", "the Practical Lab frame");
+assert.equal(decide("about:blank", false), "load");
+assert.equal(decide("about:srcdoc", false), "load");
+assert.equal(decide(`blob:${PORTAL}/5d1c`, false), "load");
+for (const bad of [
+  "javascript:alert(1)", "JAVASCRIPT:alert(1)", "data:text/html,<script>1</script>", "intent://x#Intent;end", "file:///sdcard/x",
+  "sjkportal://web?path=/portal", "mailto:a@b.c", "tel:123", "blob:https://evil.tld/5d1c", "https://a@evil.tld/", "https://evil.tld\\x",
+  "about:config", "chrome://settings", "content://x", "market://details?id=x",
+]) {
+  assert.equal(decide(bad, false), "block", `a frame may not load ${bad}`);
+}
 
 // --- the session in the WebView -----------------------------------------------------------------
 
 const pairs = [["sb-ref-auth-token", "base64-eyJhIjoxfQ"], ["bad;name", "x"], ["ok", "bad value"]];
 assert.equal(cookieHeader([...pairs, ["portal_client", "app"]]), "sb-ref-auth-token=base64-eyJhIjoxfQ; portal_client=app", "only well-formed pairs");
 const script = sessionCookieScript(SITE, [["sb-ref-auth-token", "base64-eyJhIjoxfQ", 3600], ["portal_client", "app", 31536000]]);
+assert.deepEqual(authCookieNames("sb-ref-auth-token", 3), ["sb-ref-auth-token", "sb-ref-auth-token.0", "sb-ref-auth-token.1", "sb-ref-auth-token.2"]);
+assert.equal(authCookieNames("sb-ref-auth-token").length, 11, "the base name and ten chunks");
 assert.ok(!/domain=/i.test(script), "host-only cookies: never sent to another subdomain");
 assert.ok(script.includes("Secure"), "https portal: Secure");
 assert.ok(!sessionCookieScript(parseOrigin("http://192.168.1.20:3000"), [["a", "b", 60]]).includes("Secure"), "a local http dev server can't take Secure cookies");
@@ -137,6 +170,31 @@ for (const foreign of [
 ]) {
   assert.deepEqual(run(script, foreign), [], `nothing written on ${foreign.protocol}//${foreign.hostname}:${foreign.port}`);
 }
+// A previous account's session cookie never lingers: every session cookie
+// name not being written is expired (host-only), then every Domain=<host>
+// copy an older app version wrote, then the current cookies are written.
+const NAMES = authCookieNames("sb-ref-auth-token", 3);
+const chunked = sessionCookieScript(SITE, [["sb-ref-auth-token.0", "aaa", 3600], ["sb-ref-auth-token.1", "bbb", 3600], ["portal_client", "app", 60]], NAMES);
+assert.deepEqual(run(chunked, page("https:", "sjabrankamran.com")), [
+  "sb-ref-auth-token=; path=/; max-age=0; SameSite=Lax; Secure",
+  "sb-ref-auth-token.2=; path=/; max-age=0; SameSite=Lax; Secure",
+  "sb-ref-auth-token=; path=/; domain=sjabrankamran.com; max-age=0; SameSite=Lax; Secure",
+  "sb-ref-auth-token.0=; path=/; domain=sjabrankamran.com; max-age=0; SameSite=Lax; Secure",
+  "sb-ref-auth-token.1=; path=/; domain=sjabrankamran.com; max-age=0; SameSite=Lax; Secure",
+  "sb-ref-auth-token.2=; path=/; domain=sjabrankamran.com; max-age=0; SameSite=Lax; Secure",
+  "sb-ref-auth-token.0=aaa; path=/; max-age=3600; SameSite=Lax; Secure",
+  "sb-ref-auth-token.1=bbb; path=/; max-age=3600; SameSite=Lax; Secure",
+  "portal_client=app; path=/; max-age=60; SameSite=Lax; Secure",
+], "an unchunked cookie from the previous account can't shadow the new chunks");
+const single = run(sessionCookieScript(SITE, [["sb-ref-auth-token", "new", 3600]], NAMES), page("https:", "sjabrankamran.com"));
+for (const chunk of ["sb-ref-auth-token.0", "sb-ref-auth-token.1", "sb-ref-auth-token.2"]) {
+  assert.ok(single.includes(`${chunk}=; path=/; max-age=0; SameSite=Lax; Secure`), `the previous account's ${chunk} is expired`);
+}
+assert.equal(single.at(-1), "sb-ref-auth-token=new; path=/; max-age=3600; SameSite=Lax; Secure", "the new cookie is written last");
+assert.ok(!single.some((c) => c.startsWith("portal_client=;")), "the app marker is left alone");
+assert.deepEqual(run(chunked, page("https:", "evil.tld")), [], "nothing is expired or written on another origin");
+assert.deepEqual(run(sessionCookieScript(SITE, [], ["bad name;", "x=1"]), page("https:", "sjabrankamran.com")), [], "only cookie-token names are expired");
+
 // A value that could break out of the script's string never reaches it.
 const hostile = sessionCookieScript(SITE, [["x", "a\";alert(1);//", 60], ["y", "</script>", 60], ["z", "ok", -1]]);
 assert.deepEqual(run(hostile, page("https:", "sjabrankamran.com")), []);

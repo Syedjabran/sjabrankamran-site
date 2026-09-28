@@ -6,7 +6,7 @@ import { PortalHeader } from '../../src/components/PortalHeader';
 import { Badge, Card, Empty, ErrorNote, H2, Screen, T } from '../../src/components/ui';
 import { SkeletonList } from '../../src/components/Skeleton';
 import { useSetTaskStatus, useTasks } from '../../src/api/hooks';
-import { useOpenLink } from '../../src/nav/open';
+import { LINK_REFUSED, useOpenLink } from '../../src/nav/open';
 import type { PersonalTask, TaskStatus } from '../../src/api/types';
 import { alpha, colors, spacing } from '../../src/theme/tokens';
 
@@ -36,7 +36,7 @@ function dueLabel(dueAt: string | null): string | null {
 
 function TaskRow({ task }: { task: PersonalTask }) {
   const setStatus = useSetTaskStatus();
-  const openLink = useOpenLink();
+  const { openLink, refused } = useOpenLink();
   const due = dueLabel(task.dueAt);
   const overdue = due?.startsWith('Overdue') ?? false;
 
@@ -75,7 +75,7 @@ function TaskRow({ task }: { task: PersonalTask }) {
 
           {task.resourceUrl ? (
             <Pressable
-              onPress={() => openLink(task.resourceUrl, task.title)}
+              onPress={() => openLink(task.resourceUrl, task.title, task.id)}
               style={styles.resourceLink}
             >
               <ExternalLink size={13} color={colors.cyan} />
@@ -83,6 +83,11 @@ function TaskRow({ task }: { task: PersonalTask }) {
                 Open resource
               </T>
             </Pressable>
+          ) : null}
+          {refused === task.id ? (
+            <T tone="signal" size="xs" style={{ marginTop: spacing.sm }}>
+              {LINK_REFUSED}
+            </T>
           ) : null}
 
           <T tone="dust" size="2xs" style={{ marginTop: spacing.md }}>
