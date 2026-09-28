@@ -11,19 +11,36 @@ No subject has been added this way yet. Physics is still the only subject with E
 
 | Part | What it is | Today |
 |---|---|---|
-| `COURSES` | Each awarding-body course: id, full name, level, syllabus code | 9702, 5054, SAT |
+| `COURSES` | Each awarding-body course: id, full name, level, syllabus code, awarding body, and the first lines of a new student's welcome email | 9702, 5054, SAT |
 | `SUBJECTS` | Each subject: label, short label, lucide icon, accent token, how it is granted, its courses, its modules in display order, and optionally its Exam Lab papers, its practice module and its helper persona | Physics, Digital SAT, Practical Lab (shown inside Physics) |
-| `GENERAL_ITEMS` | Places that belong to every subject: home, search, notifications, My Learning, the library, My Children, profile, install | 8 items |
-| `STAFF_ITEMS` | The staff consoles (Administration) | 15 items |
+| `GENERAL_ITEMS` | Places that belong to every subject: home, search, notifications, My Learning, the timetable (class-based: it lists every class, SAT classes too), the library, My Children, profile, install, plus two pages that are no destination (onboarding, a single task) | 11 items |
+| `STAFF_ITEMS` | The staff consoles (Administration), plus the super admin's demo-student page | 16 items |
 
 Every place (a subject's module or a general/staff item) has: `id`, `route` (an existing portal
-page, optionally with a `#section`), `name` (the plain name inside its subject), `menuLabel` (its
-name where no subject is on screen, e.g. "Physics timetable"), an optional `deskLabel` (the
-coordinator desk's name for it), `icon`, a one-line `purpose`, and `access` — the audiences that see
-it. A subject's module is shown only to people who have that subject; staff have every subject.
+page, optionally with a `#section`; a `[param]` segment matches any value, as in the page's folder
+name), `name` (the plain name inside its subject), `menuLabel` (its name where no subject is on
+screen, e.g. "Physics Resources"), an optional `deskLabel` (the coordinator desk's name for it),
+`icon`, a one-line `purpose`, and `access` — the audiences that see it. A page that is no
+destination (onboarding, a single task, a test preview) is marked `listed: false`: it is in no menu,
+finder or space, but its title and breadcrumb still resolve (`itemForPath`).
 
 The audiences are listed at the top of `subjects.ts` (`Audience`). Each one names a rule from
 `src/lib/edu/roles.ts`, so the registry never repeats a list of roles.
+
+**Who sees what** is one function, `visibleItems({ roles, courses, practicalLab })`. The caller passes
+what the server knows: the viewer's roles, the courses course access opens for them
+(`resolveCourseAccess(user).allowed`; for a parent, their children's courses when known) and whether
+Practical Lab is switched on for them. An item is shown when the viewer is in one of its audiences
+and, for a subject's module, has that subject. The subjects come from `viewerSubjects`:
+
+- Exam Lab staff (teacher, coordinator, facilitator, admin, super admin) have every subject;
+- everyone else has the subjects of their own courses, plus Practical Lab when it is switched on;
+- anyone who isn't a student (other staff, parents, an account with no role) also keeps the
+  class-granted subjects (Physics), whose shared pages they have always had.
+
+A student has only their own subjects: an SAT-only student sees no Physics module. With a physics
+course assumed for students, this shows exactly what the portal menu showed before the registry, for
+every combination of roles and switches (`npm run test:subject-registry` checks all 16,384).
 
 ## Checklist for a new subject
 
@@ -31,9 +48,10 @@ The audiences are listed at the top of `subjects.ts` (`Audience`). Each one name
 
 - Add the course id to the `Course` type in `src/lib/portal/course-labels.ts`. Course ids are stored
   in student records, so pick one you will never rename.
-- Add a `COURSES` entry in `subjects.ts`: full name, level and syllabus code. The course names shown
-  across the portal (`COURSE_LABEL`, the Exam Lab's course choice, the staff question picker) are
-  built from these fields.
+- Add a `COURSES` entry in `subjects.ts`: full name, level, syllabus code, the awarding body when it
+  prints one with the code ("CAIE 9702"), and `welcome`, the first lines of a new student's welcome
+  email. The course names shown across the portal (`COURSE_LABEL`, the Exam Lab's course choice,
+  My Progress, the practice paper header, the staff question picker) are built from these fields.
 - **If the subject comes from class enrolment** (`grant: "class"`), teach `courseFromYear` in
   `course-labels.ts` to recognise the new classes' year labels. It matters: an enrolled class whose
   label names no course counts as A Level Physics (9702) (`coursesForEnrolment`, the long-standing
@@ -61,8 +79,8 @@ For each page of the subject, add a module to its `modules` list, in display ord
 the `PortalItemId` type. Give it:
 
 - the page's `route` (build the page first, under `src/app/portal/(app)/`),
-- a plain `name` ("Timetable") and a `menuLabel` that still makes sense with no subject around it
-  ("Chemistry timetable"),
+- a plain `name` ("Resources") and a `menuLabel` that still makes sense with no subject around it
+  ("Chemistry Resources"),
 - an `icon`, a one-line `purpose` (the product tour shows it), an `order`, and its `access`
   (usually `["student", ...]` plus the staff audience that should see it).
 
@@ -91,16 +109,19 @@ server itself:
 ### 5. Optional parts
 
 - **Exam Lab papers:** an `examLab` entry (its courses with papers, what the papers are, the tab
-  title, the header tagline and the intro banner). The Exam Lab page then offers the subject:
-  `/portal/exam-lab?subject=<id>` or `?course=<course>` opens it, and a student whose only course is
-  the new one opens on it by default. The papers themselves are drawn by a papers hub: today only
-  Physics' (`PapersHub`, for 9702 and 5054), so a new subject with papers also needs its own hub on
-  the Exam Lab page.
+  title -- which names no single course -- the header tagline and the intro banner). The Exam Lab has
+  no subject selector: the subject is reached by link, `/portal/exam-lab?subject=<id>` or
+  `?course=<course>`, and a student whose only paper course is the new one opens on it by default. A
+  staff user with more than one paper subject opens on the first in the registry unless the link
+  names another -- add a subject choice to the page when a second paper subject arrives. The papers
+  themselves are drawn by a papers hub: today only Physics' (`PapersHub`, for 9702 and 5054), so a new
+  subject with papers also needs its own hub on the Exam Lab page.
 - **A floating helper:** a persona in `src/lib/portal/subject-helpers.ts` (its name, lines,
-  examples, curricula, the API route it asks, its two images, its full page) set as the subject's
-  `helper`, plus that API route. The companion shows it on the subject's pages. A subject without
-  one shows no floating helper on its pages (the SAT has its own tutor page instead). If the
-  subject has timed or no-help work, add its paths to `src/lib/ai/helper-pause-paths.ts`.
+  examples, curricula and which curriculum each course preselects, the API route it asks, its two
+  images, its full page) set as the subject's `helper`, plus that API route. The companion shows it
+  on the subject's pages. A subject without one shows no floating helper on its pages (the SAT has
+  its own tutor page instead). If the subject has timed or no-help work, add its paths to
+  `src/lib/ai/helper-pause-paths.ts`.
 
 ### 6. Check it
 
@@ -134,11 +155,13 @@ These were left as they are on purpose; each needs its own decision when a subje
   place, `src/lib/portal/brand.ts`.
 - **The contact and sender address** (physics@sjabrankamran.com), in `src/lib/portal/mail.ts`, the
   access-paused messages and the email pages.
-- **Physics' own modules and content:** the timetable (class-based, called "Physics timetable"),
-  the study plan, My Progress, My Ranking and the Physics Performance Index, Physics Resources,
+- **The timetable's menu label**, "Physics timetable". The timetable is class-based and belongs to
+  every subject (it lists SAT classes too); its label is renamed with the subject-first navigation.
+- **Physics' own modules and content:** the study plan, My Progress, My Ranking and the Physics
+  Performance Index, Physics Resources (with its Class Drive, the same shared folders for everyone),
   Physics Studio and syllabus coverage (9702 topics). They are described in the registry as Physics
   modules; a new subject brings its own.
-- **Emails:** the welcome email, the progress emails and the Saturday parent report have Physics
-  (and SAT) sections.
+- **Emails:** the progress emails and the Saturday parent report have Physics (and SAT) sections.
+  The welcome email already follows the new account's course (each course's `welcome`).
 - **The student home page** still suggests the Exam Lab when a student is all caught up; the
   planned subject picker replaces that page.
