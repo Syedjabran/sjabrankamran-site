@@ -19,7 +19,7 @@ project, the same data. There is no separate backend and no mock layer.
 ```bash
 npm ci          # exact versions from package-lock.json (npm install also works)
 npx tsc --noEmit
-npm test        # the link-safety tests (plain Node, no phone needed)
+npm test        # link-safety and sign-out tests (plain Node, no phone needed)
 npx expo start
 ```
 
@@ -63,6 +63,7 @@ src/
   config.ts              Supabase + portal origin (override with EXPO_PUBLIC_*)
   auth/session.ts        sign-in, refresh, secure storage, session cookie
   auth/context.tsx       AuthProvider + session refresh
+  auth/sign-out.ts       what signing out clears, in order (pure)
   api/client.ts          authenticated fetch against /api/portal/*
   api/hooks.ts           react-query hooks (usePortalNavigation: the menus)
   api/types.ts           response types, verified against the live API
@@ -74,6 +75,7 @@ src/
   components/            shared UI (Card, Button, PortalIcon, NavPlaces…)
 scripts/
   test-web-target.mjs    `npm test`: link-safety tests
+  test-sign-out.mjs      `npm test`: sign-out clears everything, in order
 ```
 
 ### Subject-first, from one source
@@ -123,13 +125,20 @@ goes (`src/web/portal-url.ts`):
   `EXPO_PUBLIC_SITE_URL` — opens in the WebView with the session. The check
   parses the URL; it never compares string prefixes, refuses userinfo
   (`user@host`), whitespace and backslashes, and normalises paths.
+- A link written with the site's **www name** (`https://www.sjabrankamran.com/…`)
+  opens the same page in the app, rebuilt on the exact origin first; nothing is
+  ever sent to the www name itself.
 - **Another website** (a resource on Supabase Storage or Google Drive, a link
   inside a page) opens in the phone's browser, without the session. A deep link
   to another website asks first.
-- Anything else (`javascript:`, `intent:`, a malformed link) is refused.
+- Anything else (`javascript:`, `intent:`, a malformed link) is refused, and the
+  screen says "This link can't be opened in the app." under the item.
+- Frames inside a portal page (a YouTube or Drive embed, the Practical Lab) may
+  load well-formed http(s) pages, blank pages and the portal's own blobs only.
 - The session cookie written into the WebView is host-only (no `Domain`), so it
   is never sent to another subdomain, and the script that writes it checks the
-  page's origin first.
+  page's origin first. It also expires every other session cookie name (a
+  previous account's, or one an older app version wrote with `Domain`).
 - Deep links (`sjkportal://web?path=…`) go through exactly the same check.
 
 ### Authentication
@@ -143,6 +152,13 @@ Every API call presents the session two ways: as the `sb-<ref>-auth-token`
 cookie and as an `Authorization: Bearer` header. The portal accepts either
 (`src/lib/supabase/bearer.ts`; a session cookie wins when both arrive), and its
 access locks apply to both.
+
+**Signing out leaves nothing of the account on the phone** (`src/auth/sign-out.ts`,
+tested by `npm test`): the session in memory, the data cache (the menus,
+profile, tasks, notifications), the stored tokens, and the session itself —
+ended on the server (GoTrue `/logout`, this device only), so a copy the
+WebView still holds in a cookie stops working. The server call is best effort
+and never delays signing out. Signing in also starts from an empty cache.
 
 ---
 

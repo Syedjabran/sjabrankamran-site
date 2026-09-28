@@ -105,8 +105,9 @@ npx tsc --noEmit
 npm test
 ```
 
-`tsc` prints nothing on success; `npm test` ends with
-`mobile web targets: all tests passed`.
+`tsc` prints nothing on success; `npm test` prints
+`mobile web targets: all tests passed` and
+`mobile sign-out: all tests passed`.
 
 ---
 
