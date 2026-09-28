@@ -194,7 +194,12 @@ export type TabScreen = 'learn' | 'leaderboard' | 'users' | 'rankings' | 'resour
  * The (at most three) native screens on the tab bar beside Home and More:
  * staff lead with their consoles, everyone else with their learning; each
  * only when the user's navigation holds it, so the tab bar never offers a
- * page the portal wouldn't. Everything else is one tap away under More.
+ * page the portal wouldn't. The portal lists a place only for the viewers
+ * its page and API admit (Users & activity: admins only), so no tab -- the
+ * first included -- is one the user can't use: a teacher leads with
+ * Rankings. The portal's scripts/test-app-nav.mjs checks every role
+ * combination against each tab's API. Everything else is one tap away
+ * under More.
  */
 export function primaryTabs(nav: AppNavigation | null | undefined): TabScreen[] {
   if (!nav) return [];

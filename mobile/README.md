@@ -51,7 +51,7 @@ app/                     expo-router routes
     leaderboard.tsx      Leaderboard + contribution board
     resources.tsx        Physics Resources
     library.tsx          Resource Library
-    users.tsx            Users & activity (staff)
+    users.tsx            Users & activity (admins)
     rankings.tsx         Rankings & analytics (staff)
     notifications.tsx    Notifications
     settings.tsx         Profile & settings

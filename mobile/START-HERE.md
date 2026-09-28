@@ -178,7 +178,8 @@ the app.
 
 The tab bar holds Home, More and up to three screens you use most:
 
-- **Staff/admin:** Home · Users · Rankings · Resources · More
+- **Admin:** Home · Users · Rankings · Resources · More
+- **Teacher and other staff:** Home · Rankings · Resources · Library · More (Users & activity is for admins only)
 - **Student:** Home · Learning · Leaderboard · Resources · More
 
 **More** lists every page you have, grouped the same way.

@@ -6,7 +6,7 @@ import { PortalHeader } from '../../src/components/PortalHeader';
 import { Badge, Card, Empty, ErrorNote, H2, Screen, T } from '../../src/components/ui';
 import { SkeletonList, SkeletonStatRow, Spinner } from '../../src/components/Skeleton';
 import { useAdminUsers, useMe } from '../../src/api/hooks';
-import { ROLE_LABELS, isStaff } from '../../src/nav/roles';
+import { ROLE_LABELS, isAdmin } from '../../src/nav/roles';
 import { alpha, colors, fonts, fontSize, radius, spacing } from '../../src/theme/tokens';
 
 /** Debounce the search box so typing does not fire a request per keystroke. */
@@ -22,20 +22,21 @@ function useDebounced(value: string, delay: number): string {
 export default function UsersScreen() {
   const router = useRouter();
   const { data: me } = useMe();
-  const staff = me ? isStaff(me.roles) : false;
+  // Admins only, as the portal's page and /api/portal/admin/users are.
+  const admin = me ? isAdmin(me.roles) : false;
   const [query, setQuery] = useState('');
   const debounced = useDebounced(query, 300);
-  const { data, isLoading, isFetching, error, refetch } = useAdminUsers(debounced, staff);
+  const { data, isLoading, isFetching, error, refetch } = useAdminUsers(debounced, admin);
   // The list is kept on screen across searches, so a refetch is a field-level
   // event (spinner in the search box), not a reason to blank the whole screen.
   const searching = isFetching && !isLoading;
 
-  if (me && !staff) {
+  if (me && !admin) {
     return (
       <View style={styles.root}>
         <PortalHeader />
         <Screen>
-          <Empty message="This console is available to staff accounts only." />
+          <Empty message="This console is available to admin accounts only." />
         </Screen>
       </View>
     );

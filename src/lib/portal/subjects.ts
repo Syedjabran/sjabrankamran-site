@@ -395,7 +395,8 @@ export const STAFF_ITEMS: readonly PortalItem[] = [
   { id: "coordinator", route: "/portal/coordinator", name: "Coordinator desk", menuLabel: "Coordinator desk", deskLabel: "Class staff desk", icon: "School", access: ["coordinator", "coordinator-desk"], purpose: "Run your assigned school's classes: students, drills and attendance in one place." },
   { id: "classes", route: "/portal/teach", name: "My Classes", menuLabel: "My Classes", icon: "Presentation", access: ["class-teacher"], purpose: "Open the classes and students assigned to you." },
   { id: "post-work", route: "/portal/admin/assign", name: "Post / Tests", menuLabel: "Post / Tests", deskLabel: "Assign drill", icon: "ClipboardList", access: ["staff", "coordinator-desk"], purpose: "Assign learning activities and Exam Lab assessments." },
-  { id: "users", route: "/portal/admin/users", name: "Users & activity", menuLabel: "Users & activity", icon: "UserCog", access: ["staff"], purpose: "Manage portal users and inspect authorised activity records." },
+  // Admins only, as its page and API are (the old sidebar listed it for all staff, who were bounced).
+  { id: "users", route: "/portal/admin/users", name: "Users & activity", menuLabel: "Users & activity", icon: "UserCog", access: ["admin"], purpose: "Manage portal users and inspect authorised activity records." },
   { id: "attendance", route: "/portal/admin/attendance", name: "Attendance", menuLabel: "Attendance", icon: "CalendarCheck", access: ["staff"], purpose: "Record and manage lesson attendance." },
   { id: "daily-attendance", route: "/portal/admin/attendance-view", name: "Daily attendance", menuLabel: "Daily attendance", icon: "CalendarDays", access: ["staff", "registrar-desk", "coordinator-desk"], purpose: "Review the current attendance picture for authorised classes." },
   { id: "drill-records", route: "/portal/admin/drills", name: "Drill Records", menuLabel: "Drill Records", icon: "ClipboardCheck", access: ["drill-staff", "coordinator-desk"], purpose: "Look back at the class drills you conducted and how each student did." },
@@ -656,7 +657,9 @@ export type ViewerFacts = { roles: readonly EduRole[]; courses: readonly string[
  * A student has only their own: a student in no physics class has no Physics.
  * With a physics course assumed for students, this shows exactly what the
  * portal menu showed before the registry for every combination of the 12
- * roles and both switches (scripts/test-subject-registry.mjs).
+ * roles and both switches, less one deliberate change: Users & activity is
+ * listed for admins only, as its page and API are
+ * (scripts/test-subject-registry.mjs).
  */
 export function viewerSubjects({ roles, courses, practicalLab }: ViewerFacts): SubjectId[] {
   if (isExamLabStaff(roles)) return SUBJECTS.map((s) => s.id);

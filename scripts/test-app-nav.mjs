@@ -6,6 +6,7 @@ import { APP_NATIVE_SCREENS, APP_NAV_VERSION, appNavigation, modulesLine } from 
 import { allLinks, navigationFor } from "../src/lib/portal/portal-nav.ts";
 import { itemEntry, portalItem, visibleItems } from "../src/lib/portal/subjects.ts";
 import { PORTAL_NAME } from "../src/lib/portal/brand.ts";
+import { canAccessGlobalStaffData, isAdmin } from "../src/lib/edu/roles.ts";
 // The app's own reader of the reply (pure TypeScript, no React Native).
 import {
   NATIVE_ROUTES, SUBJECT_SCREEN, SUPPORTED_NAV_VERSION, openTargetFor, parseAppNavigation, primaryTabs,
@@ -120,6 +121,15 @@ assert.equal(flagged.onboardingRoute, "/portal/onboarding");
 
 const ROLES = ["super_admin", "admin", "teacher", "teaching_assistant", "student", "parent", "counsellor", "content_manager", "finance_manager", "coordinator", "facilitator", "attendance_registrar"];
 const COURSE_SETS = [[], ["9702"], ["5054", "SAT"], ["SAT"]];
+// Who each tab-bar screen's API admits (final fix wave, M3). Checked against the routes below.
+const TAB_GATE = {
+  users: isAdmin, // /api/portal/admin/users: requireAdmin
+  rankings: canAccessGlobalStaffData, // /api/portal/admin/rankings: requireStaff
+  leaderboard: (roles) => roles.includes("student"), // /api/portal/leaderboard: students only
+  learn: () => true, // /api/portal/tasks: any signed-in user
+  resources: () => true, // /api/portal/resources
+  library: () => true, // /api/portal/library
+};
 let checked = 0;
 for (let mask = 0; mask < 1 << ROLES.length; mask++) {
   const roles = ROLES.filter((_, i) => mask & (1 << i));
@@ -141,6 +151,8 @@ for (let mask = 0; mask < 1 << ROLES.length; mask++) {
         assert.ok(p.route.startsWith("/portal") && !p.route.startsWith("//"), `${p.id}: a portal path`);
         assert.equal(p.native, APP_NATIVE_SCREENS[p.id] ?? null);
       }
+      // The tab bar offers no screen -- first or otherwise -- whose API refuses this viewer.
+      for (const tab of primaryTabs(out)) assert.ok(TAB_GATE[tab](roles), `${roles.join("+") || "no role"}: the ${tab} tab is theirs to use`);
       checked++;
     }
   }
@@ -195,10 +207,24 @@ assert.throws(() => parseAppNavigation("<html>"), /could not read/);
 assert.deepEqual(primaryTabs(physics), ["learn", "leaderboard", "resources"]);
 assert.deepEqual(primaryTabs(satOnly), ["learn", "resources", "library"], "no physics leaderboard for a SAT-only student");
 assert.deepEqual(primaryTabs(admin), ["users", "rankings", "resources"]);
+// A teacher's first tab used to be Users, whose screen said "Admins only.": it is Rankings now.
+assert.deepEqual(primaryTabs(app(["teacher"], [])), ["rankings", "resources", "library"]);
 assert.deepEqual(primaryTabs(coordinator), ["resources", "library"]);
 assert.deepEqual(primaryTabs(registrar), []);
 assert.deepEqual(primaryTabs(app(["parent"], [])), ["resources", "library"]);
 assert.deepEqual(primaryTabs(null), []);
+// The gates the tab check above uses are the routes' own.
+const adminLib = read("src/lib/portal/admin.ts");
+assert.match(adminLib, /export async function requireAdmin[\s\S]*?!isAdmin\(u\.roles\)/);
+assert.match(adminLib, /export async function requireStaff[\s\S]*?!canAccessGlobalStaffData\(u\.roles\)/);
+assert.match(read("src/app/api/portal/admin/users/route.ts"), /export async function GET[\s\S]*?requireAdmin\(\)/);
+assert.match(read("src/app/api/portal/admin/rankings/route.ts"), /export async function GET[\s\S]*?requireStaff\(\)/);
+assert.ok(read("src/app/api/portal/leaderboard/route.ts").includes('if (!user.roles.includes("student"))'));
+for (const api of ["tasks", "resources", "library"]) {
+  assert.match(read(`src/app/api/portal/${api}/route.ts`), /export async function GET[\s\S]*?if \(!user\) return[^\n]*401/, `${api}: any signed-in user`);
+}
+// The app's own Users screen asks for an admin too.
+assert.match(read("mobile/app/(app)/users.tsx"), /const admin = me \? isAdmin\(me\.roles\) : false;/);
 
 assert.equal(modulesLine([{ name: "A" }, { name: "B" }]), "A and B");
 assert.equal(modulesLine([{ name: "A" }, { name: "B" }, { name: "C" }, { name: "D" }, { name: "E" }]), "A, B, C and 2 more");

@@ -41,7 +41,8 @@ and, for a subject's module, has that subject. The subjects come from `viewerSub
 
 A student has only their own subjects: an SAT-only student sees no Physics module. With a physics
 course assumed for students, this shows exactly what the portal menu showed before the registry, for
-every combination of roles and switches (`npm run test:subject-registry` checks all 16,384).
+every combination of roles and switches (`npm run test:subject-registry` checks all 16,384), with one
+deliberate change: Users & activity is listed for admins only, because its page and API are admin-only.
 
 ## How the navigation is built
 

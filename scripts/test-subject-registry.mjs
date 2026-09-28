@@ -322,18 +322,31 @@ for (const [persona, [roles, on, want]] of Object.entries(LEGACY_MENU)) {
 // Leaderboard): exactly those leave their navigation, and nothing else does
 // (their shared Physics Resources stays, in General). The routes still open.
 const PHYSICS_ONLY = ["answer-scripts", "exam-lab", "leaderboard", "progress", "ranking", "study-plan"];
+// One deliberate difference from the old menu (final fix wave, M3): "Users &
+// activity" is listed for admins only. Its page and API have always been
+// admin-only; the old menu listed it for every staff member, and the page
+// sent everyone but an admin back to the portal home (in the app it was a
+// teacher's first tab, showing "Admins only."). Every other place is as before.
+const ADMIN_ONLY_NOW = ["users"];
+const lessAdminOnly = (roles, ids) => (lAdmin(roles) ? ids : ids.filter((id) => !ADMIN_ONLY_NOW.includes(id)));
 const ROLES = ["super_admin", "admin", "teacher", "teaching_assistant", "student", "parent", "counsellor", "content_manager", "finance_manager", "coordinator", "facilitator", "attendance_registrar"];
 let combinations = 0;
 const reachDiffs = [];
 const ruleDiffs = [];
 let withoutPhysics = 0;
+let adminOnlyDrops = 0;
 for (let mask = 0; mask < 1 << ROLES.length; mask++) {
   const roles = ROLES.filter((_, i) => mask & (1 << i));
   for (const sat of [false, true]) {
     for (const practicalLab of [false, true]) {
       combinations++;
       const old = legacyMenu(roles, { sat, practicalLab });
-      const shown = [...new Set(old.flatMap((section) => section.items).map((item) => itemForRoute(item.href)?.id))].sort();
+      const oldIds = [...new Set(old.flatMap((section) => section.items).map((item) => itemForRoute(item.href)?.id))].sort();
+      const shown = lessAdminOnly(roles, oldIds);
+      if (shown.length !== oldIds.length) {
+        adminOnlyDrops++;
+        assert.ok(lStaff(roles) && !lAdmin(roles), `only a non-admin staff member loses Users & activity: ${roles.join("+")}`);
+      }
       const facts = { roles, courses: ["9702", ...(sat ? ["SAT"] : [])], practicalLab };
       const visible = [...new Set(visibleItems(facts).map((e) => e.item.id).filter((id) => !NOT_IN_TODAYS_MENU.has(id)))].sort();
       if (JSON.stringify(visible) !== JSON.stringify(shown)) ruleDiffs.push(`${roles.join("+") || "(none)"} sat=${sat} lab=${practicalLab}: +[${visible.filter((v) => !shown.includes(v))}] -[${shown.filter((v) => !visible.includes(v))}]`);
@@ -353,7 +366,19 @@ for (let mask = 0; mask < 1 << ROLES.length; mask++) {
   }
 }
 assert.equal(combinations, 16384);
-assert.deepEqual(reachDiffs.slice(0, 5), [], `the subject-first navigation reaches exactly the old menu's places (less Physics' own pages for a viewer without Physics) for every combination (${reachDiffs.length} differ)`);
+assert.deepEqual(reachDiffs.slice(0, 5), [], `the subject-first navigation reaches exactly the old menu's places (less Physics' own pages for a viewer without Physics, less Users & activity for non-admins) for every combination (${reachDiffs.length} differ)`);
+// The deliberate difference, counted: the old menu listed Users & activity for
+// staff outside the desks, so it leaves every role set with a teacher, teaching
+// assistant, counsellor, content manager or finance manager role and no admin
+// or desk role -- 31 such staff sets x 4 (student, parent either way) = 124 --
+// under each of the 4 switch settings.
+assert.equal(adminOnlyDrops, 124 * 4, "Users & activity leaves exactly the non-admin staff menus that listed it");
+{
+  const ids = (roles) => [...new Set(legacyMenu(roles, { sat: false, practicalLab: false }).flatMap((s) => s.items).map((i) => itemForRoute(i.href)?.id))];
+  const reach = (roles) => allLinks(navigationFor({ roles, courses: ["9702"], practicalLab: false })).map((l) => l.id);
+  assert.deepEqual(ids(["teacher"]).filter((id) => !reach(["teacher"]).includes(id)), ["users"], "a teacher: Users & activity is the one place gone");
+  assert.ok(reach(["admin"]).includes("users") && reach(["super_admin"]).includes("users"), "admins keep it");
+}
 assert.ok(withoutPhysics > 0, "some viewers don't take Physics");
 // A student who doesn't take Physics: exactly the six physics-only pages leave, the shared Resources stays.
 {

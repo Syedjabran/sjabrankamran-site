@@ -21,7 +21,8 @@ import { isPortalAppPath } from "../src/lib/portal/portal-paths.ts";
 // emails and notifications used still opening a page.
 // (scripts/test-subject-registry.mjs proves, for all 16,384 role x switch
 // combinations, that the navigation reaches exactly what the old sidebar
-// did, less Physics' own pages for a viewer who doesn't take Physics.)
+// did, less Physics' own pages for a viewer who doesn't take Physics and
+// Users & activity for a non-admin, whose page always refused them.)
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), "utf8");
@@ -108,7 +109,8 @@ assert.deepEqual(shape(admin), {
 assert.ok(navigationFor(viewer(["super_admin"])).admin.some((l) => l.id === "access-locks"));
 // A long group shows its first eight: a teacher's own classes are among them.
 const teacher = navigationFor(viewer(["teacher"]));
-assert.equal(teacher.admin.length, 10);
+assert.equal(teacher.admin.length, 9);
+assert.ok(!teacher.admin.some((l) => l.id === "users"), "Users & activity is the admins' only, as its page and API are");
 assert.ok(teacher.admin.slice(0, 8).some((l) => l.id === "classes"), "My Classes never folds away");
 assert.ok(teacher.admin.slice(0, 8).some((l) => l.id === "post-work"));
 // Home and Profile are the top bar's, never repeated in General.
