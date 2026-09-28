@@ -3,8 +3,11 @@ import { redirect } from "next/navigation";
 import { CalendarClock, Clock3, ExternalLink, School, Sparkles } from "lucide-react";
 import { getPortalUser, isAdmin } from "@/lib/edu/auth";
 import { timetableForUid, WEEKDAY } from "@/lib/portal/timetable";
+import { portalItem } from "@/lib/portal/subjects";
 
-export const metadata = { title: "Physics timetable" };
+/** "Physics timetable": the subject registry's name for this page. */
+const TITLE = portalItem("timetable").menuLabel;
+export const metadata = { title: TITLE };
 export const dynamic = "force-dynamic";
 
 function time(t: string | null) {
@@ -24,7 +27,7 @@ export default async function TimetablePage() {
     <div className="space-y-7">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="flex items-center gap-2.5 text-2xl font-semibold text-ice"><CalendarClock size={22} className="text-cyan" /> Physics timetable</h1>
+          <h1 className="flex items-center gap-2.5 text-2xl font-semibold text-ice"><CalendarClock size={22} className="text-cyan" /> {TITLE}</h1>
           <p className="mt-1 max-w-2xl text-sm text-fog">
             {isAdmin(user.roles)
               ? "Syed Jabran Ali Kamran · Super Admin / CEO · Head of sjabrankamran.com Physics World — all schools timetable."

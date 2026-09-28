@@ -20,6 +20,7 @@ import { ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, GripVertical, Ima
 import type { ExamCourse, SafeQuestion } from "@/lib/exam-lab/paper-meta";
 import { questionSeconds } from "@/lib/portal/timing";
 import { selectionSummary } from "./selection-summary";
+import { courseCodeLabel, courseOf } from "@/lib/portal/subjects";
 
 type BankCourse = ExamCourse;
 type Source = BankCourse | "secure";
@@ -33,7 +34,9 @@ const SIGN_BATCH = 80; // /api/exam-lab/asset signs at most 80 keys per call
 const UNTAGGED = "__untagged";
 const PAPERS: PaperType[] = ["P1", "P2", "P4"];
 const LEVELS: Level[] = ["LOT", "HOT"];
-const SOURCE_LABEL: Record<Source, string> = { "9702": "A Level 9702", "5054": "O Level 5054", secure: "Class tests (staff bank)" };
+/** "A Level 9702" / "O Level 5054" from the subject registry. */
+const bankLabel = (course: BankCourse) => { const def = courseOf(course); return def ? courseCodeLabel(def) : course; };
+const SOURCE_LABEL: Record<Source, string> = { "9702": bankLabel("9702"), "5054": bankLabel("5054"), secure: "Class tests (staff bank)" };
 const SESSION_NAME: Record<string, string> = { sp: "Specimen", m: "Feb/March", s: "May/June", w: "Oct/Nov" };
 const SESSION_ORDER: Record<string, number> = { sp: 0, m: 1, s: 2, w: 3 };
 const SESSION_RE = /_(sp|[smw])(\d\d)_\d\d$/;

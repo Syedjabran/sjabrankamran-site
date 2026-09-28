@@ -9,6 +9,7 @@
  * recent few are downloaded for their current-activity label.
  */
 import { createAdminClient } from "@/lib/supabase/admin";
+import { portalItem } from "@/lib/portal/subjects";
 
 export const PRESENCE_BUCKET = "portal-data";
 export const PRESENCE_DIR = "presence";
@@ -33,7 +34,7 @@ export function activityLabel(path: string): string {
   if (p.startsWith("/portal/admin/mail")) return "Email";
   if (p.startsWith("/portal/admin")) return "Admin";
   if (p.startsWith("/portal/teach")) return "Teaching";
-  if (p.startsWith("/portal/studio")) return "Physics Studio";
+  if (p.startsWith("/portal/studio")) return portalItem("studio").menuLabel;
   if (p.startsWith("/portal/family")) return "My Children";
   return "In portal";
 }

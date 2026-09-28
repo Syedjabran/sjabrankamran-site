@@ -6,6 +6,11 @@ import { getPortalUser, isAdmin } from "@/lib/edu/auth";
 import { getRegistry, type ClassMeta, type Registry } from "@/lib/portal/institutions";
 import { PORTAL_BUCKET } from "@/lib/portal/onboarding";
 import { readStorageJson, writeStorageJson } from "@/lib/portal/resources";
+import { CLASS_SUBJECTS } from "@/lib/portal/subjects";
+
+/** A new class's subject when none is typed: the subject class enrolment
+ *  grants (Physics), from the subject registry. */
+const DEFAULT_CLASS_SUBJECT = CLASS_SUBJECTS[0]?.label ?? "";
 
 export const metadata = { title: "Academics" };
 
@@ -36,7 +41,7 @@ async function createClass(formData: FormData) {
   const school = field("school", 160);
   const year = field("year", 40);
   const section = field("section", 40) || null;
-  const subject = field("subject", 80) || "Physics";
+  const subject = field("subject", 80) || DEFAULT_CLASS_SUBJECT;
   if (!name || !school || !year) return;
   const supabase = await createClient();
   const { data: created, error } = await supabase
@@ -139,7 +144,7 @@ export default async function AcademicsPage() {
           <input
             name="name"
             required
-            placeholder="New course name (e.g. A2 Physics 2027)"
+            placeholder={`New course name (e.g. A2 ${DEFAULT_CLASS_SUBJECT} 2027)`}
             className="w-64 rounded-lg border border-white/10 bg-abyss/60 px-3 py-2 text-xs text-ice placeholder:text-dust focus:border-cyan focus:outline-none"
           />
           <select
@@ -215,7 +220,7 @@ export default async function AcademicsPage() {
           />
           <input
             name="subject"
-            defaultValue="Physics"
+            defaultValue={DEFAULT_CLASS_SUBJECT}
             aria-label="Subject"
             className="w-28 rounded-lg border border-white/10 bg-abyss/60 px-3 py-2 text-xs text-ice placeholder:text-dust focus:border-cyan focus:outline-none"
           />

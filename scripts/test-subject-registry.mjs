@@ -223,6 +223,46 @@ for (const [persona, [roles, on, want]] of Object.entries(LEGACY_MENU)) {
   assert.deepEqual([...visible].sort(), [...shown].sort(), `${persona}: the registry's rules show the menu's places`);
 }
 
+// The product tour explains each menu link with its registry purpose; every
+// explanation the tour had before (its own label-keyed list) reads the same.
+const LEGACY_TOUR_HELP = {
+  "Dashboard": "Your daily starting point for upcoming classes, tasks, announcements and study priorities.",
+  "Physics timetable": "See lessons and additional classes filtered for your school, class and group.",
+  "My study plan": "Follow personalised weekly activities based on your performance and learning needs.",
+  "Exam Lab": "Open assigned tests, topical practice, past papers and timed assessments.",
+  "My answer scripts": "Review submitted answers, marks, correct responses and teacher feedback.",
+  "My Learning": "Find assignments and individual tasks, organised by status and deadline.",
+  "My Progress": "Track patterns across assessments, practice and attendance.",
+  "My Ranking": "Understand the performance pillars behind your private comparative position.",
+  "Leaderboard": "View privacy-safe class and network comparisons using student call-signs.",
+  "Notifications": "Read announcements, test reminders, class changes and marked-work alerts.",
+  "Resource Library": "Open approved notes, worksheets, videos and collaborative learning material.",
+  "Physics Resources": "Browse curated Cambridge Physics resources and supporting content.",
+  "Users & activity": "Manage portal users and inspect authorised activity records.",
+  "Access locks": "Lock or suspend a user, group, class or school with a custom message.",
+  "Rankings & analytics": "Review performance evidence and portal analytics.",
+  "Institutions": "Manage the school, class and group hierarchy.",
+  "Post / Tests": "Assign learning activities and Exam Lab assessments.",
+  "Attendance": "Record and manage lesson attendance.",
+  "Daily attendance": "Review the current attendance picture for authorised classes.",
+  "Proctoring & Locks": "Monitor proctored assessments and exam restrictions.",
+  "Email": "Manage portal email communication and delivery status.",
+  "Announcements": "Publish targeted announcements to portal users.",
+  "Academics": "Manage academic configuration and teaching structures.",
+  "Fees & Finance": "Access authorised fee and finance administration.",
+  "My Classes": "Open the classes and students assigned to you.",
+  "Physics Studio": "Reach the teaching and studio workspace.",
+};
+for (const [label, help] of Object.entries(LEGACY_TOUR_HELP)) {
+  assert.equal(itemForRoute(LEGACY_HREF[label])?.purpose, help, `tour: "${label}" is explained as before`);
+}
+// Every link the menu shows has a purpose for the tour (no generic fallback).
+for (const [roles, on] of Object.values(LEGACY_MENU)) {
+  for (const item of menuFor(roles, { sat: false, practicalLab: false, ...on }).flatMap((s) => s.items)) {
+    assert.ok(itemForRoute(item.href)?.purpose, `tour: ${item.href} has a purpose`);
+  }
+}
+
 // The audiences behind those rules.
 assert.deepEqual([...audiencesOf(["attendance_registrar"])].sort(), ["everyone", "registrar-desk"]);
 assert.deepEqual([...audiencesOf(["coordinator", "student"])].sort(), ["coordinator-desk", "everyone"], "the coordinator desk is all a coordinator sees");

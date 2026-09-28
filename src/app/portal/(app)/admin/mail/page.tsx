@@ -4,8 +4,9 @@ import { getPortalUser, canAccessGlobalStaffData } from "@/lib/edu/auth";
 import { getRegistry } from "@/lib/portal/institutions";
 import { getTemplates, listMail, mailConfigured } from "@/lib/portal/mail";
 import { MailComposer } from "./mail-composer";
+import { PORTAL_NAME } from "@/lib/portal/brand";
 
-export const metadata = { title: "Email — Physics portal", robots: { index: false } };
+export const metadata = { title: `Email — ${PORTAL_NAME}`, robots: { index: false } };
 
 export default async function MailPage() {
   const user = await getPortalUser();

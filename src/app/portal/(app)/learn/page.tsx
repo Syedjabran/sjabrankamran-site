@@ -7,9 +7,14 @@ import { effectiveRoles } from "@/lib/portal/view-as";
 import { getMyStudent } from "@/lib/edu/student";
 import { attendancePercent } from "@/lib/edu/attendance";
 import { formatPk, pkToday } from "@/lib/portal/pk-time";
+import { defaultHelper } from "@/lib/portal/subjects";
 import { MyTasks } from "./my-tasks";
 
 export const metadata = { title: "My Learning" };
+
+/** My Learning belongs to no subject, so its helper card shows the first
+ *  subject's helper (Physics' Einstein and the Physics Studio). */
+const helper = defaultHelper();
 
 export default async function LearnHome() {
   const user = await getPortalUser();
@@ -232,19 +237,18 @@ export default async function LearnHome() {
         )}
       </section>
 
-      {/* AI tutor */}
-      <section className="rounded-2xl border border-cyan/20 bg-space/60 p-5">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-ice">
-          <CheckSquare size={14} className="text-cyan" /> Physics Studio AI
-        </h2>
-        <p className="mt-2 text-sm leading-relaxed text-fog">
-          Stuck on a concept or a numerical? The AI tutor explains step by step with proper
-          mathematical notation — available any time.
-        </p>
-        <Link href="/physics-studio" className="btn-ghost mt-3 text-xs">
-          Open Physics Studio →
-        </Link>
-      </section>
+      {/* AI tutor: the helper persona's full page (subject registry). */}
+      {helper ? (
+        <section className="rounded-2xl border border-cyan/20 bg-space/60 p-5">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-ice">
+            <CheckSquare size={14} className="text-cyan" /> {helper.card.title}
+          </h2>
+          <p className="mt-2 text-sm leading-relaxed text-fog">{helper.card.body}</p>
+          <Link href={helper.fullPage.href} className="btn-ghost mt-3 text-xs">
+            Open {helper.fullPage.label} →
+          </Link>
+        </section>
+      ) : null}
     </div>
   );
 }

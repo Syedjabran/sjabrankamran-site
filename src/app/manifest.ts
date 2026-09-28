@@ -1,4 +1,9 @@
 import type { MetadataRoute } from "next";
+import { PORTAL_APP_NAME, PORTAL_NAME } from "@/lib/portal/brand";
+import { portalItem } from "@/lib/portal/subjects";
+
+const TIMETABLE = portalItem("timetable");
+const EXAM_LAB = portalItem("exam-lab");
 
 /**
  * PWA web manifest — makes the site (and the Education Portal) installable
@@ -6,8 +11,8 @@ import type { MetadataRoute } from "next";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "SJAK Physics Portal",
-    short_name: "Physics Portal",
+    name: PORTAL_APP_NAME,
+    short_name: PORTAL_NAME,
     description:
       "Cambridge Physics educator, entrepreneur and AI consultant. Physics Studio tutor and the Education Portal for students, parents, teachers and staff.",
     start_url: "/portal",
@@ -25,8 +30,9 @@ export default function manifest(): MetadataRoute.Manifest {
     shortcuts: [
       { name: "Education Portal", short_name: "Portal", url: "/portal" },
       { name: "Notifications", short_name: "Alerts", url: "/portal/notifications" },
-      { name: "Physics timetable", short_name: "Timetable", url: "/portal/timetable" },
-      { name: "Exam Lab", short_name: "Exam Lab", url: "/portal/exam-lab" },
+      // Subject pages: named by the subject registry.
+      { name: TIMETABLE.menuLabel, short_name: TIMETABLE.name, url: TIMETABLE.route },
+      { name: EXAM_LAB.menuLabel, short_name: EXAM_LAB.name, url: EXAM_LAB.route },
     ],
   };
 }

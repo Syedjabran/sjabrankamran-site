@@ -6,6 +6,8 @@ import { getPortalUser, isExamLabStaff } from "@/lib/edu/auth";
 import { resolveCourseAccess, COURSE_LABEL } from "@/lib/portal/course-access";
 import { examLabCatalog } from "@/lib/exam-lab/catalog";
 import { redirect } from "next/navigation";
+import { EXAM_LAB_SUBJECTS, examLabContext } from "@/lib/portal/exam-lab-context";
+import { courseClassLabel, courseCodeLabel, courseOf, listed, portalItem, type CourseDef } from "@/lib/portal/subjects";
 
 // The hub bundles the paper runner and proctor camera; code-splitting it keeps
 // that payload out of the route's critical JS so tab-to-tab navigation paints
@@ -30,9 +32,35 @@ function PapersHubSkeleton() {
   );
 }
 
-export const metadata = { title: "Exam Lab — Real CAIE 9702 Past Papers", robots: { index: false } };
+const EXAM_LAB = portalItem("exam-lab");
+const FIRST_PAPERS = EXAM_LAB_SUBJECTS[0]?.examLab;
+export const metadata = { title: FIRST_PAPERS ? `${EXAM_LAB.name} — ${FIRST_PAPERS.title}` : EXAM_LAB.name, robots: { index: false } };
 
-export default async function PortalExamLabPage() {
+const courseDefs = (ids: readonly string[]) => ids.map((id) => courseOf(id)).filter((c): c is CourseDef => !!c);
+
+/** The page header, shared by every state of the page. */
+function ExamLabHeader({ subtitle }: { subtitle: string }) {
+  return (
+    <div className="mb-6 flex items-center gap-3">
+      <span className="grid h-10 w-10 place-items-center rounded-xl border border-cyan/30 text-cyan">
+        <FlaskConical size={18} />
+      </span>
+      <div>
+        <h1 className="font-display text-2xl text-ice">{EXAM_LAB.name}</h1>
+        <p className="text-sm text-dust">{subtitle}</p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The Exam Lab, for the subject and course in the page's context
+ * (exam-lab-context.ts): ?course= / ?subject= choose among the courses this
+ * user may open, and without them the student's own course opens -- a
+ * one-course student never sees a choice. Physics is the only subject with
+ * papers today, so a physics user sees exactly the page they always did.
+ */
+export default async function PortalExamLabPage({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
   const user = await getPortalUser();
   const first = (user?.fullName || user?.email || "").split(" ")[0];
   // Owner-defined staff set (super_admin / admin / teacher / coordinator /
@@ -45,54 +73,39 @@ export default async function PortalExamLabPage() {
 
   if (!user) redirect("/portal/login?next=%2Fportal%2Fexam-lab");
   // Course guardrail: a student only ever reaches their enrolled course(s);
-  // an unassigned user reaches none. Staff keep every track. Exam Lab itself
-  // stays physics-only (SAT lives in the SAT Lab), so narrow `allowed` down
-  // to the physics courses before it reaches PapersHub -- SAT must never
-  // appear in its course switch.
-  const access = await resolveCourseAccess(user);
-  const physicsCourses = access.allowed.filter(
-    (c): c is "9702" | "5054" => c === "9702" || c === "5054"
-  );
+  // an unassigned user reaches none. Staff keep every track. The context
+  // narrows `allowed` to the courses of one subject with papers (physics)
+  // before it reaches PapersHub -- SAT never appears in its course choice.
+  const [access, query] = await Promise.all([resolveCourseAccess(user), searchParams]);
+  const context = examLabContext(access, query);
 
-  if (physicsCourses.length === 0) {
-    if (access.allowed.includes("SAT")) {
-      return (
-        <div>
-          <div className="mb-6 flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-xl border border-cyan/30 text-cyan">
-              <FlaskConical size={18} />
-            </span>
-            <div>
-              <h1 className="font-display text-2xl text-ice">Exam Lab</h1>
-              <p className="text-sm text-dust">Course access is assigned by your teacher.</p>
-            </div>
-          </div>
-          <div className="rounded-2xl border border-amber-400/30 bg-amber-400/[0.05] px-6 py-8 text-center">
-            <p className="font-display text-lg text-ice">Exam Lab is for physics</p>
-            <p className="mx-auto mt-2 max-w-md text-sm text-fog">
-              Your SAT practice is in the SAT Lab.{" "}
-              <Link href="/portal/sat-lab" className="text-cyan hover:underline">Go to the SAT Lab</Link>
-            </p>
-          </div>
-        </div>
-      );
-    }
+  if (context.kind === "elsewhere") {
     return (
       <div>
-        <div className="mb-6 flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-xl border border-cyan/30 text-cyan">
-            <FlaskConical size={18} />
-          </span>
-          <div>
-            <h1 className="font-display text-2xl text-ice">Exam Lab</h1>
-            <p className="text-sm text-dust">Course access is assigned by your teacher.</p>
-          </div>
+        <ExamLabHeader subtitle="Course access is assigned by your teacher." />
+        <div className="rounded-2xl border border-amber-400/30 bg-amber-400/[0.05] px-6 py-8 text-center">
+          <p className="font-display text-lg text-ice">{EXAM_LAB.name} is for {listed(EXAM_LAB_SUBJECTS.map((s) => s.label))}</p>
+          {context.places.map(({ subject, item }) => (
+            <p key={subject.id} className="mx-auto mt-2 max-w-md text-sm text-fog">
+              Your {subject.shortLabel} practice is in the {item.menuLabel}.{" "}
+              <Link href={item.route} className="text-cyan hover:underline">Go to the {item.menuLabel}</Link>
+            </p>
+          ))}
         </div>
+      </div>
+    );
+  }
+  if (context.kind === "none") {
+    const subjects = listed(EXAM_LAB_SUBJECTS.map((s) => s.label), "or");
+    const classes = listed(courseDefs(EXAM_LAB_SUBJECTS.flatMap((s) => s.examLab?.courses ?? [])).map(courseClassLabel), "or");
+    return (
+      <div>
+        <ExamLabHeader subtitle="Course access is assigned by your teacher." />
         <div className="rounded-2xl border border-amber-400/30 bg-amber-400/[0.05] px-6 py-8 text-center">
           <p className="font-display text-lg text-ice">No course assigned yet</p>
           <p className="mx-auto mt-2 max-w-md text-sm text-fog">
-            Your account isn&rsquo;t enrolled in a physics course, so the Exam Lab is locked.
-            Once your teacher assigns you to an A Level (9702) or O Level (5054) class,
+            Your account isn&rsquo;t enrolled in a {subjects} course, so the {EXAM_LAB.name} is locked.
+            Once your teacher assigns you to an {classes} class,
             your papers and drills will appear here automatically.
           </p>
         </div>
@@ -100,30 +113,31 @@ export default async function PortalExamLabPage() {
     );
   }
 
-  // access.primary favours physics over SAT already (course-access.ts), but
-  // fall back to the first physics course for the rare shape where it doesn't.
-  const physicsPrimary = access.primary === "9702" || access.primary === "5054" ? access.primary : physicsCourses[0];
+  const papers = context.subject.examLab;
+  // PapersHub holds Physics' papers (9702 + 5054), so it takes their course
+  // ids; a subject whose papers it doesn't hold never reaches it.
+  const hubCourses = context.courses.filter((c): c is "9702" | "5054" => c === "9702" || c === "5054");
+  const hubCourse = hubCourses.find((c) => c === context.course);
+  const courseLine = access.isStaff && papers
+    ? `${papers.source} · ${courseDefs(papers.courses).map(courseCodeLabel).join(" + ")}`
+    : COURSE_LABEL[context.course];
 
   return (
     <div>
-      <div className="mb-6 flex items-center gap-3">
-        <span className="grid h-10 w-10 place-items-center rounded-xl border border-cyan/30 text-cyan">
-          <FlaskConical size={18} />
-        </span>
-        <div>
-          <h1 className="font-display text-2xl text-ice">Exam Lab</h1>
-          <p className="text-sm text-dust">{access.isStaff ? "Real CAIE past papers · A Level 9702 + O Level 5054" : COURSE_LABEL[physicsPrimary]} · exact questions with diagrams{first ? ` · ${first}` : ""}</p>
+      <ExamLabHeader subtitle={`${courseLine}${papers ? ` · ${papers.tagline}` : ""}${first ? ` · ${first}` : ""}`} />
+
+      {papers ? (
+        <div className="mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-emerald2/25 bg-emerald2/[0.04] px-5 py-4 text-sm text-fog">
+          <ShieldCheck size={16} className="text-emerald2" />
+          {papers.intro}
         </div>
-      </div>
+      ) : null}
 
-      <div className="mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-emerald2/25 bg-emerald2/[0.04] px-5 py-4 text-sm text-fog">
-        <ShieldCheck size={16} className="text-emerald2" />
-        Sit a full past paper under timed conditions, or drill a topic. Paper 1 auto-marks; Paper 2 &amp; 4 reveal the official mark scheme. Every question is the exact Cambridge original — diagrams, graphs and all.
-      </div>
-
-      <Suspense fallback={<div className="text-sm text-dust">Loading Exam Lab…</div>}>
-        <PapersHub catalog={examLabCatalog()} canConduct={canConduct} canTest={canTest} canPause={canPause} allowedCourses={physicsCourses} initialCourse={physicsPrimary} userId={user.id} />
-      </Suspense>
+      {hubCourse ? (
+        <Suspense fallback={<div className="text-sm text-dust">Loading Exam Lab…</div>}>
+          <PapersHub catalog={examLabCatalog()} canConduct={canConduct} canTest={canTest} canPause={canPause} allowedCourses={hubCourses} initialCourse={hubCourse} userId={user.id} />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

@@ -18,6 +18,7 @@
  */
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendPush } from "@/lib/portal/push";
+import { PORTAL_NAME } from "@/lib/portal/brand";
 import { listAllocations } from "@/lib/exam-lab/allocations";
 import { listTasks } from "@/lib/portal/tasks";
 import { getRegistry } from "@/lib/portal/institutions";
@@ -187,7 +188,7 @@ export async function notifyMailReceived(toEmails: string[], subject: string): P
     await notify({ uids }, {
       type: "mail",
       title: `You've got mail: ${subject.slice(0, 140)}`,
-      body: "An email from the Physics portal has been sent to your inbox — check your email.",
+      body: `An email from the ${PORTAL_NAME} has been sent to your inbox — check your email.`,
       href: null,
     });
   } catch { /* best effort */ }

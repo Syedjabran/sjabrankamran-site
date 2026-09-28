@@ -6,8 +6,11 @@ import {
   Trash2, X, Loader2, ExternalLink, FolderOpen, GraduationCap, ChevronRight, Download, Sparkles,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
+import { portalItem } from "@/lib/portal/subjects";
 
 const BUCKET = "physics-resources";
+/** "Physics Resources": the subject registry's name for this page. */
+const TITLE = portalItem("resources").menuLabel;
 
 type Kind = "pdf" | "image" | "video" | "animation" | "document" | "audio" | "link";
 type Source = "upload" | "link" | "youtube" | "drive";
@@ -71,7 +74,7 @@ export function ResourcesClient({ isSuper }: { isSuper: boolean }) {
         <div className="flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-xl border border-cyan/30 text-cyan"><Library size={18} /></span>
           <div>
-            <h1 className="text-2xl font-semibold text-ice">Physics Resources</h1>
+            <h1 className="text-2xl font-semibold text-ice">{TITLE}</h1>
             <p className="text-xs text-dust">Notes, past papers, videos, animations & simulations — curated for you.</p>
           </div>
         </div>

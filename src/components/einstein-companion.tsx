@@ -5,39 +5,25 @@ import { usePathname } from "next/navigation";
 import { Loader2, Send, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { helperPausedOnPath } from "@/lib/ai/helper-pause-paths";
+import { helperForPath } from "@/lib/portal/subjects";
 import { MarkdownRenderer } from "./markdown-renderer";
 import { ResilientImg } from "@/components/ui/resilient-image";
 
 /**
- * Einstein-inspired floating companion — site-wide "ask a physics question"
- * widget. Original illustration (not a copyrighted meme asset). Two frames
- * (tongue-out / smile) cross-fade playfully. Clicking the character opens a
- * mini ask panel powered by the same /api/physics-question endpoint as the
- * Physics Studio. Respects prefers-reduced-motion; dismissible per session.
+ * Floating AI helper companion — site-wide "ask a question" widget. Its
+ * persona (name, lines, examples, curricula, the API it asks, its two
+ * cross-fading frames) is the open page's subject's helper from the subject
+ * registry (subjects.ts helperForPath): today Physics' Einstein, an original
+ * illustration (not a copyrighted meme asset) backed by the Physics Studio's
+ * /api/physics-question. Respects prefers-reduced-motion; dismissible per
+ * session.
  */
-
-const MESSAGES = [
-  "Curious minds ask better questions.",
-  "Stuck on a physics problem? Ask me.",
-  "Let us turn confusion into understanding.",
-  "Ready to challenge the universe?",
-  "No question is too small for physics.",
-  "Ask before gravity pulls your marks down.",
-  "Let us calculate it together.",
-];
-
-const EXAMPLES = [
-  "Why does a satellite in a higher orbit move more slowly?",
-  "A car brakes from 30 m/s to rest in 60 m. Find the deceleration.",
-  "What is the difference between e.m.f. and potential difference?",
-];
-
-const CURRICULA = ["A-Level", "O-Level", "IBDP", "General"] as const;
-
 export function EinsteinCompanion() {
+  const pathname = usePathname();
   // Not shown in the Exam Lab or the SAT Lab: tests, no-help assignments and
   // timed modules are sat there (the helper's API refuses those students too).
-  const pausedHere = helperPausedOnPath(usePathname());
+  const pausedHere = helperPausedOnPath(pathname);
+  const helper = helperForPath(pathname);
   const [visible, setVisible] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [msgIndex, setMsgIndex] = useState(0);
@@ -46,7 +32,7 @@ export function EinsteinCompanion() {
   const [reducedMotion, setReducedMotion] = useState(false);
 
   const [question, setQuestion] = useState("");
-  const [curriculum, setCurriculum] = useState<(typeof CURRICULA)[number]>("A-Level");
+  const [curriculum, setCurriculum] = useState<string>(helper?.curricula[0] ?? "");
   const [loading, setLoading] = useState(false);
   const [answer, setAnswer] = useState<string | null>(null);
   const [label, setLabel] = useState<string>("");
@@ -156,7 +142,7 @@ export function EinsteinCompanion() {
   useEffect(() => {
     if (dismissed || !visible || open) return;
     const msgTimer = window.setInterval(
-      () => setMsgIndex((i) => (i + 1) % MESSAGES.length),
+      () => setMsgIndex((i) => (i + 1) % Math.max(1, helper?.greetings.length ?? 1)),
       8000
     );
     let tongueTimer: number | undefined;
@@ -171,7 +157,7 @@ export function EinsteinCompanion() {
       clearInterval(msgTimer);
       if (tongueTimer) clearInterval(tongueTimer);
     };
-  }, [dismissed, visible, reducedMotion, open]);
+  }, [dismissed, visible, reducedMotion, open, helper]);
 
   // Position management: NO auto-roaming. He stays exactly where you drop him.
   // Opening the ask panel docks him to a corner so the panel always fits;
@@ -188,6 +174,7 @@ export function EinsteinCompanion() {
 
   async function ask(e?: React.FormEvent) {
     e?.preventDefault();
+    if (!helper) return;
     setError(null);
     if (question.trim().length < 10) {
       setError("Please write a slightly longer question (at least 10 characters).");
@@ -196,7 +183,7 @@ export function EinsteinCompanion() {
     setLoading(true);
     setAnswer(null);
     try {
-      const res = await fetch("/api/physics-question", {
+      const res = await fetch(helper.endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -215,13 +202,11 @@ export function EinsteinCompanion() {
         setError(j.error || "Something went wrong. Please try again.");
       } else if (j.answer) {
         setAnswer(j.answer);
-        setLabel(j.label || "AI Physics Tutor");
+        setLabel(j.label || helper.answerLabel);
       } else {
         setAnswer(null);
         setLabel("");
-        setError(
-          "The tutor is offline right now — your question was saved for a personal teacher review. Try the full Physics Studio to leave your email."
-        );
+        setError(helper.offline);
       }
     } catch {
       setError("Network error. Please try again.");
@@ -235,7 +220,7 @@ export function EinsteinCompanion() {
     try { sessionStorage.setItem("einstein-dismissed", "1"); } catch { /* dismissal lasts for this page view only */ }
   }
 
-  if (dismissed || !visible || pausedHere) return null;
+  if (dismissed || !visible || pausedHere || !helper) return null;
 
   return (
     <div
@@ -260,11 +245,11 @@ export function EinsteinCompanion() {
           ref={panelRef}
           className="pointer-events-auto flex max-h-[70vh] w-[calc(100vw-1.5rem)] max-w-sm flex-col overflow-hidden rounded-2xl border border-cyan/20 bg-space/95 shadow-2xl backdrop-blur sm:w-96"
           role="dialog"
-          aria-label="Ask Einstein a physics question"
+          aria-label={helper.ariaLabel}
         >
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
             <p className="flex items-center gap-2 text-sm font-semibold text-ice">
-              <Sparkles size={14} className="text-cyan" /> Ask a physics question
+              <Sparkles size={14} className="text-cyan" /> {helper.panelTitle}
             </p>
             <button
               type="button"
@@ -302,16 +287,13 @@ export function EinsteinCompanion() {
                 <div className="skeleton h-4 w-full" />
                 <div className="skeleton h-14 w-full" />
                 <div className="skeleton h-4 w-3/4" />
-                <p className="pt-1 text-center text-xs text-dust">Working through the physics…</p>
+                <p className="pt-1 text-center text-xs text-dust">{helper.thinking}</p>
               </div>
             ) : (
               <>
-                <p className="text-xs leading-relaxed text-fog">
-                  Ask anything from your physics course — the AI tutor explains step by step. Or start from an
-                  example:
-                </p>
+                <p className="text-xs leading-relaxed text-fog">{helper.intro}</p>
                 <ul className="space-y-1.5">
-                  {EXAMPLES.map((q) => (
+                  {helper.examples.map((q) => (
                     <li key={q}>
                       <button
                         type="button"
@@ -334,17 +316,17 @@ export function EinsteinCompanion() {
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 rows={2}
-                placeholder="Type your physics question…"
+                placeholder={helper.placeholder}
                 className="w-full resize-none rounded-xl border border-white/10 bg-abyss/60 px-3 py-2 text-sm text-ice placeholder:text-dust focus:border-cyan focus:outline-none"
               />
               <div className="flex items-center gap-2">
                 <select
                   value={curriculum}
-                  onChange={(e) => setCurriculum(e.target.value as (typeof CURRICULA)[number])}
+                  onChange={(e) => setCurriculum(e.target.value)}
                   aria-label="Curriculum"
                   className="rounded-lg border border-white/10 bg-abyss/60 px-2 py-1.5 text-xs text-ice focus:border-cyan focus:outline-none"
                 >
-                  {CURRICULA.map((c) => (
+                  {helper.curricula.map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
@@ -360,8 +342,8 @@ export function EinsteinCompanion() {
               </div>
               <p className="text-center text-[10px] leading-snug text-dust">
                 AI-assisted · answers are labelled ·{" "}
-                <Link href="/physics-studio" className="text-cyan hover:underline" onClick={() => setOpen(false)}>
-                  open the full Physics Studio
+                <Link href={helper.fullPage.href} className="text-cyan hover:underline" onClick={() => setOpen(false)}>
+                  open the full {helper.fullPage.label}
                 </Link>
               </p>
             </form>
@@ -376,7 +358,7 @@ export function EinsteinCompanion() {
             key={msgIndex}
             className={reducedMotion ? "text-xs leading-snug text-ice" : "animate-msg-fade text-xs leading-snug text-ice"}
           >
-            {MESSAGES[msgIndex]}
+            {helper.greetings[msgIndex % helper.greetings.length]}
           </p>
         </div>
       )}
@@ -396,7 +378,7 @@ export function EinsteinCompanion() {
           onPointerMove={onDragMove}
           onPointerUp={onRelease}
           onPointerCancel={onRelease}
-          aria-label={open ? "Close the ask panel" : "Ask Einstein a physics question (left-click and drag to move him)"}
+          aria-label={open ? "Close the ask panel" : `${helper.ariaLabel} (left-click and drag to move him)`}
           title="Click to ask · left-click and drag to move me"
           aria-expanded={open}
           className={`relative block h-14 w-14 rounded-full border border-cyan/20 bg-abyss/70 shadow-lg outline-none transition hover:scale-105 focus-visible:ring-2 focus-visible:ring-cyan sm:h-20 sm:w-20 lg:h-24 lg:w-24 ${
@@ -405,14 +387,14 @@ export function EinsteinCompanion() {
           style={{ touchAction: "none" }}
         >
           <ResilientImg
-            src="/einstein/einstein-tongue.webp"
+            src={helper.images[0]}
             alt=""
             fetchPriority="high"
             className={`absolute inset-0 h-full w-full rounded-full object-cover object-top transition-opacity duration-500 ${tongueOut ? "opacity-100" : "opacity-0"}`}
             loading="eager"
           />
           <ResilientImg
-            src="/einstein/einstein-smile.webp"
+            src={helper.images[1]}
             alt=""
             fetchPriority="high"
             className={`absolute inset-0 h-full w-full rounded-full object-cover object-top transition-opacity duration-500 ${tongueOut ? "opacity-0" : "opacity-100"}`}

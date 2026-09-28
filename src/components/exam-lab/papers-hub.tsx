@@ -10,6 +10,7 @@ import { exitExamFullscreen, requestExamFullscreen } from "@/lib/exam-lab/fullsc
 import { ClassDrillAssign } from "./class-drill-assign";
 import { openSitting, type Sitting, type SittingRequest } from "./sitting-api";
 import type { GuardMode } from "./use-exam-guard";
+import { courseOf, courseShortLabel } from "@/lib/portal/subjects";
 
 const SESS: Record<string, string> = { s: "May/June", w: "Oct/Nov", m: "Feb/March" };
 const PAPER_NAME: Record<string, string> = { P1: "Paper 1 · Multiple Choice", P2: "Paper 2 · AS Structured", P4: "Paper 4 · A2 Structured" };
@@ -187,7 +188,7 @@ function OLevelHub({ canTest, catalog, onLaunch }: { canTest: boolean; catalog: 
   return (
     <div>
       <div className="mb-5 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-        <p className="font-display text-lg text-ice">Cambridge O Level Physics · 5054</p>
+        <p className="font-display text-lg text-ice">{courseOf("5054")?.label}</p>
         <p className="mt-1 text-sm text-dust">Exact past-paper questions — Paper 1 multiple choice, Paper 2 theory and Paper 4 alternative to practical. Same flow as A Level.</p>
       </div>
 
@@ -563,17 +564,18 @@ export function PapersHub({ catalog, canTest = false, canPause = false, canCondu
       {allocations.length ? <AssignedBoard allocations={allocations} onStart={startAllocation} /> : null}
 
       {/* Course track selector — shown only when the guardrail permits more than
-          one course (i.e. staff). A single-course student never sees a switch. */}
+          one course (i.e. staff). A single-course student never sees a switch.
+          The page passes the courses in the subject registry's order. */}
       {allowedCourses.length > 1 ? (
         <div className="mb-5 flex flex-wrap gap-2">
-          {([
-            { id: "9702" as const, label: "A Level · 9702" },
-            { id: "5054" as const, label: "O Level · 5054" },
-          ]).filter((c) => allowedCourses.includes(c.id)).map((c) => (
-            <button key={c.id} onClick={() => chooseCourse(c.id)} className={"rounded-full border px-4 py-2 text-sm transition " + (course === c.id ? "border-cyan bg-cyan text-space font-semibold" : "border-white/15 text-fog hover:border-cyan")}>
-              {c.label}
-            </button>
-          ))}
+          {allowedCourses.map((id) => {
+            const def = courseOf(id);
+            return (
+              <button key={id} onClick={() => chooseCourse(id)} className={"rounded-full border px-4 py-2 text-sm transition " + (course === id ? "border-cyan bg-cyan text-space font-semibold" : "border-white/15 text-fog hover:border-cyan")}>
+                {def ? courseShortLabel(def) : id}
+              </button>
+            );
+          })}
         </div>
       ) : null}
 

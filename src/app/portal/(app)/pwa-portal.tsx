@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, X, Share, Bell } from "lucide-react";
+import { PORTAL_NAME } from "@/lib/portal/brand";
 
 /**
  * Portal PWA layer (client). Three jobs, all self-contained:
@@ -243,7 +244,7 @@ export function PwaPortal({ showInstallCard = true }: { showInstallCard?: boolea
       <div className="flex items-start gap-3">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-cyan/30 text-cyan"><Download size={18} /></span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-ice">Install the Physics Portal app</p>
+          <p className="text-sm font-semibold text-ice">Install the {PORTAL_NAME} app</p>
           <p className="mt-1 text-xs leading-relaxed text-fog">
             Add it to your home screen for instant, real-time alerts about announcements, scheduled classes, tests, daily tasks and challenges — even when the app is closed.
           </p>

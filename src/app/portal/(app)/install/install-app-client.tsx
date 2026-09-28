@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Bell, CheckCircle2, Download, Monitor, Share, Smartphone } from "lucide-react";
+import { PORTAL_NAME } from "@/lib/portal/brand";
 
 type InstallPrompt = Event & {
   prompt: () => Promise<void>;
@@ -86,7 +87,7 @@ export function InstallAppClient() {
           </div>
         ) : (
           <div>
-            <h2 className="font-display text-lg text-ice">Install the Physics Portal</h2>
+            <h2 className="font-display text-lg text-ice">Install the {PORTAL_NAME}</h2>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-fog">
               Installation gives you a full-screen portal, a home-screen icon, faster access, and device notifications for classes, tests, assignments, marks, and announcements.
             </p>

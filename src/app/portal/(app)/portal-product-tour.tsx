@@ -4,37 +4,9 @@ import "driver.js/dist/driver.css";
 import { useEffect, useRef } from "react";
 import { CircleHelp } from "lucide-react";
 import { driver, type Driver, type DriveStep } from "driver.js";
+import { itemForRoute } from "@/lib/portal/subjects";
 
 const SEEN_KEY = "sjak_portal_tooltips_seen_v1";
-
-const HELP: Record<string, string> = {
-  "Dashboard": "Your daily starting point for upcoming classes, tasks, announcements and study priorities.",
-  "Physics timetable": "See lessons and additional classes filtered for your school, class and group.",
-  "My study plan": "Follow personalised weekly activities based on your performance and learning needs.",
-  "Exam Lab": "Open assigned tests, topical practice, past papers and timed assessments.",
-  "My answer scripts": "Review submitted answers, marks, correct responses and teacher feedback.",
-  "My Learning": "Find assignments and individual tasks, organised by status and deadline.",
-  "My Progress": "Track patterns across assessments, practice and attendance.",
-  "My Ranking": "Understand the performance pillars behind your private comparative position.",
-  "Leaderboard": "View privacy-safe class and network comparisons using student call-signs.",
-  "Notifications": "Read announcements, test reminders, class changes and marked-work alerts.",
-  "Resource Library": "Open approved notes, worksheets, videos and collaborative learning material.",
-  "Physics Resources": "Browse curated Cambridge Physics resources and supporting content.",
-  "Users & activity": "Manage portal users and inspect authorised activity records.",
-  "Access locks": "Lock or suspend a user, group, class or school with a custom message.",
-  "Rankings & analytics": "Review performance evidence and portal analytics.",
-  "Institutions": "Manage the school, class and group hierarchy.",
-  "Post / Tests": "Assign learning activities and Exam Lab assessments.",
-  "Attendance": "Record and manage lesson attendance.",
-  "Daily attendance": "Review the current attendance picture for authorised classes.",
-  "Proctoring & Locks": "Monitor proctored assessments and exam restrictions.",
-  "Email": "Manage portal email communication and delivery status.",
-  "Announcements": "Publish targeted announcements to portal users.",
-  "Academics": "Manage academic configuration and teaching structures.",
-  "Fees & Finance": "Access authorised fee and finance administration.",
-  "My Classes": "Open the classes and students assigned to you.",
-  "Physics Studio": "Reach the teaching and studio workspace.",
-};
 
 export function PortalProductTour({ autoStart = true }: { autoStart?: boolean }) {
   const tourRef = useRef<Driver | null>(null);
@@ -60,11 +32,13 @@ export function PortalProductTour({ autoStart = true }: { autoStart?: boolean })
       },
       ...links.map((link): DriveStep => {
         const label = link.dataset.portalTour || link.textContent?.trim() || "Portal feature";
+        // Each link's one-line purpose comes from the subject registry.
+        const purpose = itemForRoute(link.getAttribute("href"))?.purpose;
         return {
           element: link,
           popover: {
             title: label,
-            description: HELP[label] || "Open this section to use the related portal feature.",
+            description: purpose || "Open this section to use the related portal feature.",
             side: "right",
             align: "center",
           },
