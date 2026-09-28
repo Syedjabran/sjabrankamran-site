@@ -377,16 +377,19 @@ function DriveBrowser({ onImport }: { onImport: (t: string, u: string | null) =>
   const [stack, setStack] = useState<{ id: string; name: string }[]>([{ id: "root", name: "My Drive" }]);
   const [q, setQ] = useState(""); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const [shared, setShared] = useState<Record<string, string>>({});
+  // The folder whose sharing is being changed: its button says so and waits.
+  const [sharing, setSharing] = useState<string | null>(null);
 
   const loadShared = useCallback(async () => {
     try { const j = await api("/api/portal/admin/google/shared"); setShared(Object.fromEntries((j.folders || []).map((f: { id: string; name: string }) => [f.id, f.name]))); } catch { /* */ }
   }, []);
   async function toggleShare(f: DriveFile) {
+    setSharing(f.id);
     try {
       if (shared[f.id]) await api(`/api/portal/admin/google/shared?id=${encodeURIComponent(f.id)}`, { method: "DELETE" });
       else await api("/api/portal/admin/google/shared", { method: "POST", body: JSON.stringify({ id: f.id, name: f.name }) });
       await loadShared();
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { setErr((e as Error).message); } finally { setSharing(null); }
   }
 
   const load = useCallback(async (folderId: string, search: string) => {
@@ -432,7 +435,7 @@ function DriveBrowser({ onImport }: { onImport: (t: string, u: string | null) =>
                 </a>
               )}
               {f.kind === "folder" ? (
-                <button onClick={() => toggleShare(f)} title={shared[f.id] ? "Shared with students — click to stop" : "Share this folder with all users"} className={"shrink-0 rounded-lg border px-2 py-0.5 text-[10px] " + (shared[f.id] ? "border-emerald2/50 bg-emerald2/10 text-emerald2" : "border-white/15 text-dust hover:border-amber-300/50 hover:text-amber-200")}>{shared[f.id] ? "✓ Shared" : "Share"}</button>
+                <button onClick={() => toggleShare(f)} disabled={sharing !== null} aria-busy={sharing === f.id} title={shared[f.id] ? "Shared with students — click to stop" : "Share this folder with all users"} className={"shrink-0 rounded-lg border px-2 py-0.5 text-[10px] disabled:opacity-60 " + (shared[f.id] ? "border-emerald2/50 bg-emerald2/10 text-emerald2" : "border-white/15 text-dust hover:border-amber-300/50 hover:text-amber-200")}>{sharing === f.id ? "Saving…" : shared[f.id] ? "✓ Shared" : "Share"}</button>
               ) : (
                 <button onClick={() => onImport(f.name, f.webViewLink)} className="shrink-0 rounded-lg border border-cyan/40 px-2 py-0.5 text-[10px] text-cyan hover:bg-cyan/10">Add</button>
               )}
