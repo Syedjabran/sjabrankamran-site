@@ -2,9 +2,15 @@
 -- portal-v2-001 — answer security (Task 2b-A; answer-leak audit H5, H6, M5,
 -- M6, L4, L6). Idempotent: safe to run more than once.
 --
--- NOT applied by the app or by the task that wrote it. The controller applies
--- it to the scholexai copy after review; the sjabrankamran production
--- database is never touched. The UNDO section at the end reverses it.
+-- Applied to production by the owner at deploy; agents never apply it to
+-- production. The app never applies it either. Apply it right AFTER the
+-- portal-v2 code is live: the code before portal-v2 hands in assignments
+-- with the student's own token (status, submitted_at), which the M6 grants
+-- below no longer allow. The portal-v2 code works with or without it. The
+-- owner's steps -- back up the policies, apply, verify (SQL and signed-out
+-- REST checks), undo -- are in docs/DEPLOY-PORTAL-V2.md. It was applied to
+-- the scholexai copy by the controller after review. The UNDO section at the
+-- end reverses it.
 --
 -- Every app path that reads or writes these objects was checked against
 -- these revokes (see .superpowers/sdd/2026-09-27-portal-v2/task-2bA-report.md):

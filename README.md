@@ -40,6 +40,11 @@ Run migration files in `supabase/migrations/` using the Supabase CLI or SQL Edit
 5. Deploy a preview and test the enquiry flow.
 6. Point `www.sjabrankamran.com` to Vercel only after approval of biography, portrait, venture titles, and contact details.
 
+**Deploying the portal-v2 release** (the learning portal's subject spaces, Practical Lab and
+answer security): follow [`docs/DEPLOY-PORTAL-V2.md`](docs/DEPLOY-PORTAL-V2.md). It includes a
+database migration (`supabase/migrations/portal-v2-001-answer-security.sql`) that you apply to
+production yourself, right after the deploy, and the environment variables it needs.
+
 ## Content safeguards
 
 The current public copy uses verified facts only. Outstanding qualifications, roles, institutional claims, distinction counts, private photographs, and sensitive project details remain withheld until explicitly confirmed.
