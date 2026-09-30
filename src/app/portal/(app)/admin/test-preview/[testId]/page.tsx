@@ -6,14 +6,27 @@ import { SECURE_BANK } from "@/lib/exam-lab/image-bank";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Test question preview" };
 
-const TESTS: Record<string, { title: string; slot: string }> = {
+const TESTS: Record<string, { title: string; slot: string; prefix: string; count: number; summary: string }> = {
   "ct1-lacas-sep11-7pm": {
     title: "CAIE 9702 Class Test 1 · Physical Quantities & Units",
     slot: "LACAS JT · 11 September 2026 · 7:00 pm PKT",
+    prefix: "9702_ct1_pqu-",
+    count: 20,
+    summary: "20 MCQs · 20 marks · 30 minutes · 7 LOT, 8 MOT, 5 HOT",
   },
   "ct1-lgs55-sep11-9pm": {
     title: "CAIE 9702 Class Test 2 · Physical Quantities & Units",
     slot: "LGS 55 Main · 11 September 2026 · 9:00 pm PKT",
+    prefix: "9702_ct1_pqu-",
+    count: 20,
+    summary: "20 MCQs · 20 marks · 30 minutes · 7 LOT, 8 MOT, 5 HOT",
+  },
+  "lacas-a1-pqu-drill-sep2026": {
+    title: "LACAS A1 · Physical Quantities Class Drill",
+    slot: "Year 1 · G1 and G2 · review draft (not assigned)",
+    prefix: "9702_lacas_a1_pqu_drill_202609-",
+    count: 25,
+    summary: "25 MCQs · 25 marks · 35 minutes · secure custom class drill",
   },
 };
 
@@ -27,9 +40,9 @@ export default async function TestPreviewPage({ params }: { params: Promise<{ te
   if (!meta) notFound();
 
   const questions = [...SECURE_BANK]
-    .filter((q) => q.id.startsWith("9702_ct1_pqu-"))
+    .filter((q) => q.id.startsWith(meta.prefix))
     .sort((a, b) => a.qnum - b.qnum);
-  if (questions.length !== 20) notFound();
+  if (questions.length !== meta.count) notFound();
 
   const paths = questions.map((q) => q.img);
   const { data } = await createAdminClient().storage.from("exam-assets").createSignedUrls(paths, 3600);
@@ -41,7 +54,7 @@ export default async function TestPreviewPage({ params }: { params: Promise<{ te
         <p className="font-mono text-[10px] uppercase tracking-widest text-cyan">Super-admin sealed-paper preview</p>
         <h1 className="mt-2 text-2xl font-semibold text-ice">{meta.title}</h1>
         <p className="mt-1 text-sm text-fog">{meta.slot}</p>
-        <p className="mt-3 text-xs text-dust">20 MCQs · 20 marks · 30 minutes · 7 LOT, 8 MOT, 5 HOT. Students receive these same questions in a randomized order; autocheck follows question IDs.</p>
+        <p className="mt-3 text-xs text-dust">{meta.summary}. This is a sealed staff review view; students cannot access it until the drill is assigned.</p>
       </header>
 
       <div className="space-y-5">
