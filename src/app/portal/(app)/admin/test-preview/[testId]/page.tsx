@@ -1,12 +1,53 @@
 import { notFound, redirect } from "next/navigation";
 import { requireAdmin, isSuperAdmin } from "@/lib/portal/admin";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { SECURE_BANK } from "@/lib/exam-lab/image-bank";
+import { IMAGE_BANK, SECURE_BANK } from "@/lib/exam-lab/image-bank";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Test question preview" };
 
-const TESTS: Record<string, { title: string; slot: string; prefix: string; count: number; summary: string }> = {
+type TestPreview = {
+  title: string;
+  slot: string;
+  count: number;
+  summary: string;
+  prefix?: string;
+  ids?: string[];
+};
+
+const LACAS_PQU_TOPICAL_IDS = [
+  // Estimation (2)
+  "pp-p1-9702_s21_11-q1",
+  "pp-p1-9702_w24_11-q4",
+  // Unit conversion (3)
+  "pp-p1-9702_w22_13-q1",
+  "pp-p1-9702_w23_12-q1",
+  "pp-p1-9702_s24_12-q8",
+  // SI base units, dimensions and homogeneity (10)
+  "pp-p1-9702_w18_11-q2",
+  "pp-p1-9702_w18_12-q2",
+  "pp-p1-9702_m19_12-q2",
+  "pp-p1-9702_s19_12-q3",
+  "pp-p1-9702_w21_11-q2",
+  "pp-p1-9702_s22_11-q2",
+  "pp-p1-9702_w22_13-q2",
+  "pp-p1-9702_s23_13-q2",
+  "pp-p1-9702_m24_12-q3",
+  "pp-p1-9702_w24_11-q1",
+  // Uncertainties, errors and graphs (10)
+  "pp-p1-9702_s18_11-q5",
+  "pp-p1-9702_s18_12-q4",
+  "pp-p1-9702_s18_13-q4",
+  "pp-p1-9702_w18_11-q5",
+  "pp-p1-9702_w18_13-q5",
+  "pp-p1-9702_s19_12-q5",
+  "pp-p1-9702_s19_12-q6",
+  "pp-p1-9702_s19_12-q7",
+  "pp-p1-9702_s19_13-q6",
+  "pp-p1-9702_w21_11-q5",
+] as const;
+
+const TESTS: Record<string, TestPreview> = {
   "ct1-lacas-sep11-7pm": {
     title: "CAIE 9702 Class Test 1 · Physical Quantities & Units",
     slot: "LACAS JT · 11 September 2026 · 7:00 pm PKT",
@@ -24,9 +65,9 @@ const TESTS: Record<string, { title: string; slot: string; prefix: string; count
   "lacas-a1-pqu-drill-sep2026": {
     title: "LACAS A1 · Physical Quantities Class Drill",
     slot: "Year 1 · G1 and G2 · review draft (not assigned)",
-    prefix: "9702_lacas_a1_pqu_drill_202609-",
+    ids: [...LACAS_PQU_TOPICAL_IDS],
     count: 25,
-    summary: "25 MCQs · 25 marks · 35 minutes · secure custom class drill",
+    summary: "25 MCQs selected from the Exam Lab P1 topical bank · 25 marks · 35 minutes",
   },
 };
 
@@ -39,9 +80,9 @@ export default async function TestPreviewPage({ params }: { params: Promise<{ te
   const meta = TESTS[testId];
   if (!meta) notFound();
 
-  const questions = [...SECURE_BANK]
-    .filter((q) => q.id.startsWith(meta.prefix))
-    .sort((a, b) => a.qnum - b.qnum);
+  const questions = meta.ids
+    ? meta.ids.map((id) => IMAGE_BANK.find((q) => q.id === id)).filter((q) => q !== undefined)
+    : [...SECURE_BANK].filter((q) => q.id.startsWith(meta.prefix || "")).sort((a, b) => a.qnum - b.qnum);
   if (questions.length !== meta.count) notFound();
 
   const paths = questions.map((q) => q.img);
@@ -51,10 +92,10 @@ export default async function TestPreviewPage({ params }: { params: Promise<{ te
   return (
     <div className="space-y-6">
       <header className="rounded-2xl border border-cyan/20 bg-cyan/[0.04] p-5">
-        <p className="font-mono text-[10px] uppercase tracking-widest text-cyan">Super-admin sealed-paper preview</p>
+        <p className="font-mono text-[10px] uppercase tracking-widest text-cyan">Super-admin Exam Lab drill preview</p>
         <h1 className="mt-2 text-2xl font-semibold text-ice">{meta.title}</h1>
         <p className="mt-1 text-sm text-fog">{meta.slot}</p>
-        <p className="mt-3 text-xs text-dust">{meta.summary}. This is a sealed staff review view; students cannot access it until the drill is assigned.</p>
+        <p className="mt-3 text-xs text-dust">{meta.summary}. Review only; the drill has not been assigned to students.</p>
       </header>
 
       <div className="space-y-5">
@@ -64,6 +105,7 @@ export default async function TestPreviewPage({ params }: { params: Promise<{ te
               <p className="font-semibold text-ice">Question {index + 1}</p>
               <div className="flex gap-2 font-mono text-[10px] uppercase tracking-widest">
                 <span className="rounded-full border border-cyan/30 px-2 py-1 text-cyan">{q.level}</span>
+                <span className="rounded-full border border-white/10 px-2 py-1 text-dust">{q.ref}</span>
                 <span className="rounded-full border border-white/10 px-2 py-1 text-dust">Answer {q.answer}</span>
               </div>
             </div>
