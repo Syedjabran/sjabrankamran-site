@@ -1,16 +1,21 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getPortalUser } from "@/lib/edu/auth";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { resolveCourseAccess } from "@/lib/portal/course-access";
+import { resolveCourseAccess, type Course } from "@/lib/portal/course-access";
 import { isSafeStorageKey } from "@/lib/request-guards";
+import { imageUrls } from "@/lib/sat/signed-images";
 
 export const runtime = "nodejs";
 
-const schema = z.object({ paths: z.array(z.string().min(3).max(200)).min(1).max(80) });
+// `fresh`: sign again rather than hand out the hour's URL -- the one retry
+// of an image that failed to load (a new signature is a genuinely new request).
+const schema = z.object({ paths: z.array(z.string().min(3).max(200)).min(1).max(80), fresh: z.boolean().optional() });
 
 // Returns short-lived signed URLs for private exam-asset images. Portal-only:
 // real past-paper question/mark-scheme images are never publicly reachable.
+// The same image gets the same URL for an hour (src/lib/sat/signed-images.ts)
+// so the browser and the storage CDN can cache it; every URL handed out
+// still has at least an hour to run.
 export async function POST(request: Request) {
   const user = await getPortalUser();
   if (!user) return NextResponse.json({ error: "Please sign in to the portal." }, { status: 401 });
@@ -21,25 +26,29 @@ export async function POST(request: Request) {
   if (!parsed.data.paths.every(isSafeStorageKey)) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
 
   // Course guardrail (defence-in-depth): a student may only ever fetch images
-  // for the course they are enrolled into. O Level assets live under o-level/*;
-  // everything else is 9702. Staff (both courses) pass unrestricted.
-  const access = await resolveCourseAccess(user);
-  const courseOf = (p: string): "9702" | "5054" => (p.startsWith("o-level/") ? "5054" : "9702");
+  // for a course they are enrolled into. O Level assets live under o-level/*,
+  // SAT assets under sat/*; everything else is 9702. Staff (all courses) pass
+  // unrestricted. A request for SAT images checks access strictly: a failed
+  // enrolment/registry read answers 503 (retryable), never a false 403 --
+  // the same rule as the SAT routes. Physics requests are unchanged.
+  let access;
+  try {
+    access = await resolveCourseAccess(user, { strict: parsed.data.paths.some((p) => p.startsWith("sat/")) });
+  } catch {
+    return NextResponse.json({ error: "Your access couldn't be checked. Please try again." }, { status: 503 });
+  }
+  const courseOf = (p: string): Course => {
+    if (p.startsWith("o-level/")) return "5054";
+    if (p.startsWith("sat/")) return "SAT";
+    return "9702";
+  };
   if (parsed.data.paths.some((p) => !access.allowed.includes(courseOf(p)))) {
     return NextResponse.json({ error: "You do not have access to this course's papers." }, { status: 403 });
   }
 
-  const supabase = createAdminClient();
-  const { data, error } = await supabase.storage
-    .from("exam-assets")
-    .createSignedUrls(parsed.data.paths, 3600);
-  if (error) {
-    console.error("signed url error", error.message);
-    return NextResponse.json({ error: "Could not load images." }, { status: 500 });
-  }
-  const urls: Record<string, string> = {};
-  for (const d of data ?? []) {
-    if (d.signedUrl && d.path) urls[d.path] = d.signedUrl;
-  }
-  return NextResponse.json({ urls }, { status: 200 });
+  // Local development with SAT_LOCAL_CROPS=1 (the crops on disk, not yet
+  // uploaded) points sat/ paths at the dev-only local image route instead.
+  const signed = await imageUrls(parsed.data.paths, { fresh: parsed.data.fresh });
+  if (!signed.ok) return NextResponse.json({ error: "Could not load images." }, { status: 500 });
+  return NextResponse.json({ urls: signed.urls }, { status: 200 });
 }

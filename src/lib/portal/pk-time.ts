@@ -44,6 +44,15 @@ export function formatPk(
   return new Date(value).toLocaleString("en-GB", { ...options, timeZone: PK_TZ });
 }
 
+/** A Pakistan calendar day ("2026-10-05") as shown text, "Mon 5 Oct" by
+ *  default. Read at PKT noon, so no host timezone can shift the day. */
+export function formatPkDay(
+  day: string,
+  options: Intl.DateTimeFormatOptions = { weekday: "short", day: "numeric", month: "short" },
+): string {
+  return formatPk(`${day}T12:00:00${PK_OFFSET}`, options);
+}
+
 /** Today's calendar date in Pakistan as YYYY-MM-DD. */
 export function pkToday(now: number | Date = Date.now()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: PK_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(now));

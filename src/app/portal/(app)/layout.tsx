@@ -6,6 +6,7 @@ import { Eye, GraduationCap, LockKeyhole, LogOut, Settings } from "lucide-react"
 import { getPortalUser, ROLE_LABELS, canConductDrills, isAdmin, isStaff, isRegistrarOnly, isCoordinatorOnly, isExamLabStaff, type EduRole } from "@/lib/edu/auth";
 import { getPortalRestriction } from "@/lib/portal/access-control";
 import { onboardingStatus } from "@/lib/portal/onboarding";
+import { satAccess } from "@/lib/sat/access";
 import { effectiveRoles } from "@/lib/portal/view-as";
 import { AccessLockMonitor } from "./access-lock-monitor";
 import { PresenceBeacon } from "./presence-beacon";
@@ -26,7 +27,7 @@ type NavSection = { title?: string; items: NavItem[] };
  * (Exam Lab / My Learning / My Progress). This prevents the owner being shown
  * their own quiz attempts as if they were a student.
  */
-function navFor(roles: EduRole[]): NavSection[] {
+function navFor(roles: EduRole[], satEnabled: boolean): NavSection[] {
   const staff = isStaff(roles);
   const admin = isAdmin(roles);
   const isStudent = roles.includes("student");
@@ -88,6 +89,10 @@ function navFor(roles: EduRole[]): NavSection[] {
     adminItems.push({ href: "/portal/teach", label: "My Classes" });
   }
   if (canConductDrills(roles)) adminItems.push({ href: "/portal/exam-lab", label: "Exam Lab" });
+  if (isExamLabStaff(roles)) {
+    adminItems.push({ href: "/portal/sat-lab", label: "SAT Lab" });
+    adminItems.push({ href: "/portal/sat-lab/results", label: "SAT results" });
+  }
   if (isExamLabStaff(roles)) adminItems.push({ href: "/portal/teach/syllabus", label: "Syllabus coverage" });
   if (staff) adminItems.push({ href: "/portal/studio", label: "Physics Studio" });
   // Available to everyone.
@@ -105,6 +110,7 @@ function navFor(roles: EduRole[]): NavSection[] {
     // private/no-store and remains protected by the portal middleware.
     learnItems.push({ href: "/portal/study-plan", label: "My study plan", hardNavigate: true });
     learnItems.push({ href: "/portal/exam-lab", label: "Exam Lab" });
+    if (satEnabled) learnItems.push({ href: "/portal/sat-lab", label: "SAT Lab" });
     learnItems.push({ href: "/portal/exam-lab/review", label: "My answer scripts" });
     learnItems.push({ href: "/portal/learn", label: "My Learning" });
     learnItems.push({ href: "/portal/progress", label: "My Progress" });
@@ -132,9 +138,10 @@ export default async function PortalLayout({ children }: { children: React.React
   // — this layout re-executes on every portal tab navigation.
   const pathname = (await headers()).get("x-pathname") || "";
   const isStudentUser = user.roles.includes("student");
-  const [restriction, onboarding] = await Promise.all([
+  const [restriction, onboarding, satEnabled] = await Promise.all([
     getPortalRestriction(user),
     isStudentUser ? onboardingStatus(user.id) : Promise.resolve("complete" as const),
+    isStudentUser ? satAccess(user).then((a) => a.ok).catch(() => false) : Promise.resolve(false),
   ]);
   if (restriction) return <PortalAccessBlocked restriction={restriction} />;
 
@@ -185,7 +192,7 @@ export default async function PortalLayout({ children }: { children: React.React
   }
 
   const { roles: navRoles, previewing } = await effectiveRoles(user);
-  const navSections = navFor(navRoles);
+  const navSections = navFor(navRoles, satEnabled);
   // Global search is available to every signed-in role; the API only
   // aggregates content the caller could already open.
   if (!isRegistrarOnly(navRoles)) navSections.unshift({ items: [{ href: "/portal/search", label: "Search" }] });

@@ -73,7 +73,12 @@ export function ResetForm() {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4">
+    // method="post" + action: if the browser submits this natively before React
+    // hydrates, the new password travels in the POST body instead of a GET query
+    // string. /portal/reset/submit never reads that body — it just bounces back
+    // here — so nothing is ever logged or echoed. `onSubmit` intercepts once
+    // hydrated and this string action is never actually used.
+    <form onSubmit={submit} method="post" action="/portal/reset/submit" className="space-y-4">
       <div>
         <label htmlFor="new-password" className="mb-1.5 block text-xs font-medium text-fog">
           New password

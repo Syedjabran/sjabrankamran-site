@@ -145,8 +145,11 @@ export function OnboardingForm() {
       });
       const j = await r.json();
       if (r.ok && j.ok) {
+        // The server names the next step (SAT setup when SAT still needs
+        // setting up); anything that isn't a portal path falls back to /portal.
+        const next = typeof j.next === "string" && j.next.startsWith("/portal") ? j.next : "/portal";
         setDone(true);
-        setTimeout(() => { router.replace("/portal"); router.refresh(); }, 1200);
+        setTimeout(() => { router.replace(next); router.refresh(); }, 1200);
       } else {
         setErrors(j.errors || [j.error || "Please check the form."]);
         window.scrollTo({ top: 0, behavior: "smooth" });

@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { FlaskConical, ShieldCheck } from "lucide-react";
 import { getPortalUser, isExamLabStaff } from "@/lib/edu/auth";
 import { resolveCourseAccess, COURSE_LABEL } from "@/lib/portal/course-access";
@@ -42,11 +43,39 @@ export default async function PortalExamLabPage() {
   const canPause = canConduct;
 
   if (!user) redirect("/portal/login?next=%2Fportal%2Fexam-lab");
-  // Course guardrail: a student only ever reaches their enrolled course; an
-  // unassigned user reaches none. Staff keep both tracks.
+  // Course guardrail: a student only ever reaches their enrolled course(s);
+  // an unassigned user reaches none. Staff keep every track. Exam Lab itself
+  // stays physics-only (SAT lives in the SAT Lab), so narrow `allowed` down
+  // to the physics courses before it reaches PapersHub -- SAT must never
+  // appear in its course switch.
   const access = await resolveCourseAccess(user);
+  const physicsCourses = access.allowed.filter(
+    (c): c is "9702" | "5054" => c === "9702" || c === "5054"
+  );
 
-  if (access.allowed.length === 0) {
+  if (physicsCourses.length === 0) {
+    if (access.allowed.includes("SAT")) {
+      return (
+        <div>
+          <div className="mb-6 flex items-center gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-xl border border-cyan/30 text-cyan">
+              <FlaskConical size={18} />
+            </span>
+            <div>
+              <h1 className="font-display text-2xl text-ice">Exam Lab</h1>
+              <p className="text-sm text-dust">Course access is assigned by your teacher.</p>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-amber-400/30 bg-amber-400/[0.05] px-6 py-8 text-center">
+            <p className="font-display text-lg text-ice">Exam Lab is for physics</p>
+            <p className="mx-auto mt-2 max-w-md text-sm text-fog">
+              Your SAT practice is in the SAT Lab.{" "}
+              <Link href="/portal/sat-lab" className="text-cyan hover:underline">Go to the SAT Lab</Link>
+            </p>
+          </div>
+        </div>
+      );
+    }
     return (
       <div>
         <div className="mb-6 flex items-center gap-3">
@@ -70,6 +99,10 @@ export default async function PortalExamLabPage() {
     );
   }
 
+  // access.primary favours physics over SAT already (course-access.ts), but
+  // fall back to the first physics course for the rare shape where it doesn't.
+  const physicsPrimary = access.primary === "9702" || access.primary === "5054" ? access.primary : physicsCourses[0];
+
   return (
     <div>
       <div className="mb-6 flex items-center gap-3">
@@ -78,7 +111,7 @@ export default async function PortalExamLabPage() {
         </span>
         <div>
           <h1 className="font-display text-2xl text-ice">Exam Lab</h1>
-          <p className="text-sm text-dust">{access.isStaff ? "Real CAIE past papers · A Level 9702 + O Level 5054" : COURSE_LABEL[access.primary ?? access.allowed[0]]} · exact questions with diagrams{first ? ` · ${first}` : ""}</p>
+          <p className="text-sm text-dust">{access.isStaff ? "Real CAIE past papers · A Level 9702 + O Level 5054" : COURSE_LABEL[physicsPrimary]} · exact questions with diagrams{first ? ` · ${first}` : ""}</p>
         </div>
       </div>
 
@@ -88,7 +121,7 @@ export default async function PortalExamLabPage() {
       </div>
 
       <Suspense fallback={<div className="text-sm text-dust">Loading Exam Lab…</div>}>
-        <PapersHub canConduct={canConduct} canTest={canTest} canPause={canPause} allowedCourses={access.allowed} initialCourse={access.primary ?? access.allowed[0]} userId={user.id} />
+        <PapersHub canConduct={canConduct} canTest={canTest} canPause={canPause} allowedCourses={physicsCourses} initialCourse={physicsPrimary} userId={user.id} />
       </Suspense>
     </div>
   );

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Bell, Check, CheckCheck, Target, Trophy, ClipboardList, FlaskConical, Megaphone, Mail, BookOpen, CheckSquare, CalendarX2, TrendingUp, AlarmClock } from "lucide-react";
+import { Bell, Check, CheckCheck, Target, Trophy, ClipboardList, FlaskConical, Megaphone, Mail, BookOpen, CheckSquare, CalendarX2, TrendingUp, AlarmClock, GraduationCap } from "lucide-react";
 
 type Notif = { id: string; kind: string; title: string; body: string | null; link: string | null; read_at: string | null; created_at: string };
 
@@ -19,6 +19,7 @@ const KIND_ICON: Record<string, React.ReactNode> = {
   attendance: <CalendarX2 size={14} className="text-signal" />,
   rank: <TrendingUp size={14} className="text-cyan" />,
   reminder: <AlarmClock size={14} className="text-amber-300" />,
+  sat: <GraduationCap size={14} className="text-cyan" />,
 };
 function rel(ts: string) {
   const s = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
