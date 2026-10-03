@@ -5,10 +5,13 @@
       "has": [{ "type": "host", "value": "www.sjabrankamran.com" }],
       "destination": "https://sjabrankamran.com/:path*",
       "permanent": true
-    }
-  ],
-  "crons": [
-    { "path": "/api/cron/daily-study-plans", "schedule": "0 1 * * *" },
-    { "path": "/api/cron/saturday-parent-reports", "schedule": "0 13 * * 6" }
+    },
+    { "source": "/portal", "destination": "https://scholexai.com/portal", "permanent": true },
+    { "source": "/portal/:path*", "destination": "https://scholexai.com/portal/:path*", "permanent": true },
+    { "source": "/register/:path*", "destination": "https://scholexai.com/register/:path*", "permanent": true },
+    { "source": "/lab", "destination": "https://scholexai.com/lab", "permanent": true },
+    { "source": "/lab/:path*", "destination": "https://scholexai.com/lab/:path*", "permanent": true },
+    { "source": "/api/portal/:path*", "destination": "https://scholexai.com/api/portal/:path*", "permanent": true },
+    { "source": "/api/exam-lab/:path*", "destination": "https://scholexai.com/api/exam-lab/:path*", "permanent": true }
   ]
 }
