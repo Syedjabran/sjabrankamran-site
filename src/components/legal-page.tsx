@@ -33,7 +33,7 @@ export function LegalSection({ title, children }: { title: string; children: Rea
   return (
     <section className="space-y-4">
       <h2 className="font-display text-xl font-semibold text-ice md:text-2xl">{title}</h2>
-      <div className="space-y-4 [&_a]:text-cyan [&_a:hover]:underline [&_li]:pl-1 [&_strong]:text-ice [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-5">
+      <div className="space-y-4 [&_a]:text-cyan [&_a:hover]:underline [&_code]:rounded [&_code]:bg-white/[0.06] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[13px] [&_code]:text-ice [&_li]:pl-1 [&_strong]:text-ice [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-5">
         {children}
       </div>
     </section>

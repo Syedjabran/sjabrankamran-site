@@ -56,6 +56,37 @@ export default function TermsPage() {
         </p>
       </LegalSection>
 
+      <LegalSection title="TikTok integration">
+        <p>
+          You can connect a TikTok account to sign in, show your TikTok videos on this site, and upload or
+          publish videos to TikTok. By connecting, you agree that:
+        </p>
+        <ul>
+          <li>
+            your use of TikTok remains subject to{" "}
+            <a href="https://www.tiktok.com/legal/terms-of-service" rel="noopener" target="_blank">
+              TikTok&apos;s Terms of Service
+            </a>{" "}
+            and{" "}
+            <a href="https://www.tiktok.com/community-guidelines" rel="noopener" target="_blank">
+              Community Guidelines
+            </a>;
+          </li>
+          <li>
+            you are responsible for the videos and captions you post, and you have the rights to post
+            them;
+          </li>
+          <li>
+            videos are posted only when you choose to post them, with the caption and privacy setting you
+            select.
+          </li>
+        </ul>
+        <p>
+          You can disconnect at any time, as described in the <Link href="/privacy">Privacy Policy</Link>.
+          This site is not affiliated with, endorsed by or sponsored by TikTok.
+        </p>
+      </LegalSection>
+
       <LegalSection title="Intellectual property">
         <p>
           The text, design, graphics, explanations and other material on this site belong to me unless
@@ -76,7 +107,7 @@ export default function TermsPage() {
 
       <LegalSection title="Links to other sites">
         <p>
-          This site links to other websites, including scholexai.com, LinkedIn and X. I am not
+          This site links to other websites, including scholexai.com, TikTok, LinkedIn and X. I am not
           responsible for their content or for how they handle your information.
         </p>
       </LegalSection>

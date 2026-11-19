@@ -5,7 +5,7 @@ import { LegalPage, LegalSection } from "@/components/legal-page";
 export const metadata: Metadata = {
   title: "Privacy Policy",
   description:
-    "How sjabrankamran.com collects, uses and protects personal information submitted through the contact form and Physics Studio.",
+    "How sjabrankamran.com collects, uses and protects personal information submitted through the contact form and Physics Studio, and data received from TikTok when you connect your account.",
   alternates: { canonical: "/privacy" },
 };
 
@@ -50,7 +50,54 @@ export default function PrivacyPage() {
             <strong>Analytics.</strong> The site uses Vercel Web Analytics, which counts page views
             without cookies and without identifying individual visitors.
           </li>
+          <li>
+            <strong>TikTok.</strong> If you connect your TikTok account, the information described in
+            the next section.
+          </li>
         </ul>
+      </LegalSection>
+
+      <LegalSection title="TikTok integration">
+        <p>
+          You can choose to connect a TikTok account to this site. Connecting is optional, and nothing
+          is read from or posted to TikTok unless you sign in with TikTok and approve the permissions it
+          asks for. The site uses three TikTok products:
+        </p>
+        <ul>
+          <li>
+            <strong>Login Kit</strong> (scope <code>user.info.basic</code>). When you sign in with TikTok,
+            the site receives your TikTok open ID, display name and profile picture. These are used only
+            to identify your connected account and show who is signed in.
+          </li>
+          <li>
+            <strong>Display API</strong> (scope <code>video.list</code>). The site reads the list of your
+            public TikTok videos, including each video&apos;s ID, title, cover image, link and posting
+            date, so it can show them on this site.
+          </li>
+          <li>
+            <strong>Content Posting API</strong> (scopes <code>video.upload</code> and{" "}
+            <code>video.publish</code>). The site uploads or publishes a video to your TikTok account only
+            when you explicitly choose to post it. You see the video, caption and privacy setting
+            before anything is sent, and nothing is ever posted automatically.
+          </li>
+        </ul>
+        <p>
+          <strong>Tokens.</strong> TikTok issues an access token and a refresh token when you connect.
+          They are stored on the server, never shown in your browser, and used only for the actions
+          above.
+        </p>
+        <p>
+          <strong>What I don&apos;t do.</strong> TikTok data is not sold, not used for advertising, not
+          used to train AI models, and not shared with anyone else. It is used only to provide the
+          features you asked for.
+        </p>
+        <p>
+          <strong>Disconnecting.</strong> You can revoke access at any time in the TikTok app under
+          Settings and privacy &rarr; Security &rarr; Manage app permissions, or by asking me through the{" "}
+          <Link href="/contact">contact form</Link>. When you disconnect, your tokens are deleted
+          straight away, and the TikTok profile and video information stored here is deleted within 30
+          days.
+        </p>
       </LegalSection>
 
       <LegalSection title="Cookies and local storage">
@@ -71,6 +118,13 @@ export default function PrivacyPage() {
           <li>
             <strong>Google (Gemini API)</strong> generates the AI answers in Physics Studio. Your question
             text is sent to it. Your email address is not.
+          </li>
+          <li>
+            <strong>TikTok</strong> receives the requests needed to sign you in, read your videos, and
+            post the videos you choose to post. Its use of your information is covered by{" "}
+            <a href="https://www.tiktok.com/legal/privacy-policy" rel="noopener" target="_blank">
+              TikTok&apos;s Privacy Policy
+            </a>.
           </li>
         </ul>
         <p>I do not sell, rent or trade personal information, and I do not use it for advertising.</p>
