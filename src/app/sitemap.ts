@@ -20,6 +20,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     "ai-technology",
     "insights",
     "contact",
+    "privacy",
+    "terms",
   ];
 
   const staticEntries: MetadataRoute.Sitemap = pages.map((p) => ({

@@ -37,6 +37,7 @@ export function SiteFooter() {
           <p>© {YEAR} Syed Jabran Ali Kamran. All rights reserved.</p>
           <div className="flex gap-5">
             <Link href="/privacy" className="hover:text-fog">Privacy</Link>
+            <Link href="/terms" className="hover:text-fog">Terms</Link>
             <Link href="/contact" className="hover:text-fog">Contact</Link>
           </div>
         </div>
